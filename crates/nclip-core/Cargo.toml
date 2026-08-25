@@ -1,0 +1,17 @@
+# nclip-core — 도메인 + 포트 + i18n. **허브**: 다른 nclip 크레이트에 의존하지 않는다.
+# 어댑터(plat/store/ui)가 이쪽에 의존하고, core가 선언한 포트를 구현한다(의존성 역전).
+[package]
+name = "nclip-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Nexa Clip 도메인 — 항목/표현 모델 · 정책 · 포트 · i18n"
+
+[lints]
+workspace = true
+
+# 외부 crate 0(DR-8). 여기에 무엇이든 추가하려면 docs/10 §3 원장에 기록한다.
+[dependencies]

@@ -4,6 +4,9 @@
 
 ## 2026-08-26
 
+- ★ **코드 착수** — 워크스페이스 8 크레이트 · vendor 무수정 복사(`nbeep-gfx`·`nbeep-ctl`) · `nclip-core`(i18n·항목/표현 모델·포트) · `nclip-plat::watch` 게이트 · `ViewMode` · CI(3-OS + **vendor 무결성**). **162 테스트 통과** · clippy `-D warnings` 클린 → [journal 6차](journal/2026-08-26.md)
+- ★ **아이콘** — 계열 골격(라운드 스퀘어·그라디언트·흰 전경) 유지 + **클립보드 + 히스토리 스택** 모티프 · 청록 `#22C3D6→#0B7FA6`. SVG 정본 + 1024/256/64 PNG + ICO → [journal 6차](journal/2026-08-26.md)
+- **DR-15**(vendor 원본명 유지) · **DR-16**(i18n core 동형) 확정 · D-8/35/37 닫힘 → [journal 6차](journal/2026-08-26.md)
 - **[20 구현 설계서](20-implementation-spec.md)** — 화면 레이아웃 개괄 · 기능 목록 · ★ **각 기능의 구현 방법**(감시 3-OS · 다중 표현 · 전역 단축키 · 포커스 복원/키 주입 · 저장 · 검색 · 가변높이 가상화 · 제한 리치 렌더러 · 트레이 · 민감 차단) · 설정 구성 · 크레이트 배치 · **수직 슬라이스 11단계** → [journal](journal/2026-08-26.md)
 - **[17 참조 UI 해부](17-reference-ui-teardown.md) · [14 설정 레지스트리](14-settings-registry.md)** — Maccy/CopyQ 실물 기반. ★ **번호 단축키 설계 오류**·**Maccy 파일 캡처 사실 오류** 정정 → [journal](journal/2026-08-26.md)
 - **DR-13**(화면 캡처 범위 밖) · **DR-14**(세로 밀도 우선 — 좌측 세로 툴바) 확정 → [journal](journal/2026-08-26.md)

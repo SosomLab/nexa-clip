@@ -1,0 +1,35 @@
+# CI — "main은 항상 green"(docs/16 §3)을 검증하는 수단.
+# 3타깃 × fmt/clippy/test + ★ vendor 무결성(U-1) 검사.
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+
+      # ★ vendor(crates/vendor/*)는 nexa-beep 무수정 복사다 — 고치면 여기서 막힌다.
+      - name: vendor 무결성 (U-1)
+        run: python tools/check-vendor.py
+
+      - name: fmt
+        run: cargo fmt --all --check
+      - name: clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: test
+        run: cargo test --workspace

@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="Nexa Clip">
+  <!--
+    Nexa Clip 앱 아이콘 (SSOT · 벡터 소스)
+    - SosomLab "Nexa" 계열: 풀블리드 라운드 스퀘어 배경(nexa-beep과 같은 골격 · rx 232/1024).
+    - 모티프: 클립보드(집게 달린 보드) + 뒤로 겹친 카드 2장(= 기록/히스토리).
+      nexa-dir2의 `>_`(폴더+터미널), nexa-beep의 말풍선+파동 자리에
+      **클립보드 + 히스토리 스택**을 둔 것이 계열 내 차별점.
+    - 색: 청록(teal-cyan) 계열 — beep의 파랑·dir2의 초록 액센트와 한눈에 구분된다.
+    수정 시 이 파일을 고치고 PNG/ICO를 재추출한다(README.md).
+  -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#22C3D6"/>
+      <stop offset="1" stop-color="#0B7FA6"/>
+    </linearGradient>
+    <linearGradient id="board" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#E6F8FF"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 배경 -->
+  <rect x="0" y="0" width="1024" height="1024" rx="232" ry="232" fill="url(#bg)"/>
+
+  <!-- 히스토리 스택 — 뒤로 겹친 카드 2장(오른쪽으로 계단식) -->
+  <rect x="392" y="284" width="432" height="492" rx="48" ry="48" fill="#FFFFFF" opacity="0.38"/>
+  <rect x="344" y="266" width="432" height="528" rx="52" ry="52" fill="#FFFFFF" opacity="0.68"/>
+
+  <!-- 클립보드 본체 -->
+  <rect x="296" y="248" width="432" height="560" rx="56" ry="56" fill="url(#board)"/>
+
+  <!-- 집게(클립) — 보드 상단에 걸친다 -->
+  <rect x="424" y="192" width="176" height="112" rx="36" ry="36" fill="#0B7FA6"/>
+  <rect x="470" y="150" width="84" height="84" rx="30" ry="30" fill="#0B7FA6"/>
+  <rect x="494" y="176" width="36" height="36" rx="18" ry="18" fill="#E6F8FF"/>
+
+  <!-- 보드 안 내용 줄 3개 -->
+  <g fill="#0B7FA6">
+    <rect x="364" y="424" width="296" height="44" rx="22" ry="22"/>
+    <rect x="364" y="522" width="224" height="44" rx="22" ry="22"/>
+    <rect x="364" y="620" width="272" height="44" rx="22" ry="22"/>
+  </g>
+</svg>

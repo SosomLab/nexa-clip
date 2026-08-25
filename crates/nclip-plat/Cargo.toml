@@ -1,0 +1,15 @@
+[package]
+name = "nclip-plat"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Nexa Clip 플랫폼 경계 — 클립보드 감시·전역 단축키·포커스 복원/키 주입·트레이"
+
+[lints]
+workspace = true
+
+[dependencies]
+nclip-core.workspace = true

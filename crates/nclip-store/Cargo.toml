@@ -1,0 +1,15 @@
+[package]
+name = "nclip-store"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Nexa Clip 영속 — 암호화 세그먼트·내용 주소 blob·인덱스"
+
+[lints]
+workspace = true
+
+[dependencies]
+nclip-core.workspace = true

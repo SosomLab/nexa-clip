@@ -1,0 +1,42 @@
+# vendor 무결성 잠금 — U-1(복사본 불변) 기계 강제
+#
+# 출처   : SosomLab/nexa-beep  crates/nbeep-gfx · crates/nbeep-ctl
+# 리비전 : 7118252
+# 복사일 : 2026-08-26
+#
+# ★ 이 파일이 U-1을 '규칙'에서 '검증'으로 바꾼다.
+#   검증: python tools/check-vendor.py
+#   의도적 갱신(upstream 동기화)이라면 --update 로 다시 굽고
+#   journal에 diff 요약을 남긴다(docs/13 §5 U-3).
+f2f323e11daed8177301eed2c05dcdcaa90e65198dd1bd57ac6bc6ad1be1b840  nbeep-ctl/Cargo.toml
+b0509076c56bdbec329567c3b4bc7eee389d0fce2b8ea81d2fb078e6ab5dbb35  nbeep-ctl/src/avatar.rs
+23bec851c771d8a6473a134741315932f9c661f996fa4412bcc9e29a038d241c  nbeep-ctl/src/controls/button.rs
+8ba74f2689dd66af91a8d8b0304a8a24e5a43729849950c2fc3a5ed119f14e6c  nbeep-ctl/src/controls/carousel.rs
+4915e48b14583edb3c5a98cdb2d4bc8d8a68f92857bca38a62f0f2cd97fe693b  nbeep-ctl/src/controls/checkbox.rs
+76d2d13754b243ac30d0086363f99a10b65a4466be54a783e2ab6cb7d67b0b0e  nbeep-ctl/src/controls/colorpick.rs
+fb81ce66cd806530bbf26554f22ddb706bae78d5336a870dce6404f9665281ff  nbeep-ctl/src/controls/combo.rs
+87ffe36da78580d1503574e843574b7c3b61529bda978d58306aef72fd204bee  nbeep-ctl/src/controls/ctxmenu.rs
+547d1b949f36e0615366ad24711cc27c59b86061167e3822323b39032c621a52  nbeep-ctl/src/controls/editmenu.rs
+95e9da2415ffbf2fa56151f42ce95a9e4525c2cb97e450171a3da87c1b948a4c  nbeep-ctl/src/controls/icondrop.rs
+b35b98d0f940d4b4df226bf8f757d50d3497d3f26f11d2bae035d62afbf82960  nbeep-ctl/src/controls/mod.rs
+4e9b07e50b1d47d8f4f4996dfe32c33468a7440f7c4a5359c0626870ac85efe4  nbeep-ctl/src/controls/posgrid.rs
+25441080a6ad54080a986b1c89183eedb0c6e595fc87c9ee55d9f5e180e851f5  nbeep-ctl/src/controls/pulldown.rs
+ac604ba22dc0558aab4e16a5c7d2b2c5687f5ffa725ab607d1ee1d0a718768e8  nbeep-ctl/src/controls/radio.rs
+f7371b7fb43fab574842da87081934073d263d871312f853c2c869db5825bc70  nbeep-ctl/src/controls/scroll.rs
+3d174e30d7225f7a58f71eb88ec864af6da73c7853dcef2cea256065754883b3  nbeep-ctl/src/controls/switch.rs
+65f3c4ba39632db5b8ae2e047bf3d2bd31dc4a1a2268d69b073289df450f735b  nbeep-ctl/src/controls/textbox.rs
+837dd43e8ff07ab640f1e214fc3b30f399e9e1a91b18d52037159bc968371db6  nbeep-ctl/src/controls/timeout_button.rs
+c63b3a1a48578885fbe51c073766931f68429faff3aa227953dbfe80904d597c  nbeep-ctl/src/controls/toolbar.rs
+f5627522a2e8f0eb6f5f2e95922382afa90dd3c8a29d88dd3bb7cdb42e6c8f9f  nbeep-ctl/src/controls/tree.rs
+6415c3e27267221b542eaf53d43c201475a333a00fc3d0be263f58473524e3db  nbeep-ctl/src/draw.rs
+e240add5e6090b3fa7851507b2178062fe3c96c0b54afd125d61f205ad9c35db  nbeep-ctl/src/edit.rs
+b768e2b239624b60a2f8f1f18234e41b118d1ee48ae0c1f651244fc79897be67  nbeep-ctl/src/event.rs
+03133da1907e424888d51753c51bdb1b7fd684a9147867209a7a7e2e40cf1661  nbeep-ctl/src/geom.rs
+6965d7d5c3cbbad207c448cd2281c80a79e46f29eb7dfe56c1c234225fc99d7d  nbeep-ctl/src/lib.rs
+71851a8f38056c880cca9d8e266d6b5fc83678986cd4fd72c3ecb9d17d503320  nbeep-ctl/src/raster.rs
+dee1de405d840fde0b2e05cf3d11c18ed71a0ae6950fd2928147309843b43ca0  nbeep-ctl/src/theme.rs
+89665269d40115f478d678b523089d54f09d5c8aae3e396f4a08c8443ee8d637  nbeep-ctl/src/widget.rs
+553bddba0fff33d5f1f546ffcf471dcea3d09f8682dd7934d16090163f1d9188  nbeep-gfx/Cargo.toml
+106618163e6744bee723cccb4c50f04302863aee527d7a7329ee9e8d9524f559  nbeep-gfx/src/lib.rs
+f76d308cb53b993ec9eeb635bfa24809e2a1bc2f3431aeabaee7fcd2cfbb9e51  nbeep-gfx/src/surface.rs
+30d84fe9a027e9382c79f9ff0a7ae84e8767bf5af0e8a21e2686a08ba2d38cdd  nbeep-gfx/src/text.rs
