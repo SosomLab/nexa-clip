@@ -1,0 +1,17 @@
+[package]
+name = "nclip-ui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Nexa Clip 화면 S1~S8 — 퀵 팝업·메인창·설정·트레이 메뉴"
+
+[lints]
+workspace = true
+
+[dependencies]
+nclip-core.workspace = true
+nclip-ctl.workspace = true
+nbeep-gfx.workspace = true

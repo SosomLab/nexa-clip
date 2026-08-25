@@ -1,0 +1,26 @@
+# nexa-clip — 본체. 조립 지점(어댑터 주입) · 생명주기 · 창 라우팅.
+[package]
+name = "nexa-clip"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "크로스플랫폼 클립보드 매니저 (본체)"
+
+[[bin]]
+name = "nexa-clip"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+nclip-core.workspace = true
+nclip-ctl.workspace = true
+nclip-plat.workspace = true
+nclip-store.workspace = true
+nclip-ui.workspace = true
+nbeep-gfx.workspace = true
