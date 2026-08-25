@@ -24,7 +24,10 @@
 
 | 상태 | 항목 |
 |:--:|---|
-| 📐 | 워크스페이스 + `nclip-core` 항목 모델 |
+| ✅ | **워크스페이스 8 크레이트** + vendor 무수정 복사 + `VENDOR.lock` + CI(3-OS) |
+| ✅ | `nclip-core` — i18n · **항목/다중 표현 모델** · 포트(`ClipboardWatch`·`WatchCapability`) |
+| ✅ | `nclip-plat::watch` 게이트(민감 표식 > 일시정지 > 다음 1건) · `ViewMode` |
+| 🚧 | 보관 정책 · 타입 판별 · 중복 승격 파이프라인 |
 | 📐 | `nclip-plat` — 클립보드 감시 3-OS(Win 이벤트 · mac 폴링 · X11/Wayland) |
 | 📐 | `nclip-plat` — 전역 단축키 · **직전 포커스 창 복원 + 키 주입** · 트레이 · 자동시작 |
 | 📐 | `nclip-store` — 암호화 세그먼트 + 내용 주소 blob |
