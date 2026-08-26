@@ -4,6 +4,8 @@
 
 ## 2026-08-26
 
+- **DR-23 앱 격리** — 릴레이 탐색은 같은 앱끼리만. **RID 도메인 분리 + Noise prologue**로 ★ 검사가 아니라 **구조**로 강제(서버 변경 0). 브리지는 나중에 옵트인 → [journal 10차](journal/2026-08-26.md)
+- 🔴 **[22 beep 전달 원장](22-upstream-beep-liaison.md)** — 서버·와이어 변경 연락 창구. **모든 변경에서 점검하는 체크리스트**를 CLAUDE.md·메모리에 등록. 현재 미전달 3건 → [journal 10차](journal/2026-08-26.md)
 - ★ **창·렌더 데모**(T-12b2) — winit/softbuffer + CPU 래스터라이저로 **S1 팝업 레이아웃 실제 렌더**. 보기 3모드·테마 전환. 폰트 mmap 이식(맑은 고딕 확인). 외부 의존 3개(`memmap2`·`winit`·`softbuffer`) 원장 기록 → [journal 9차](journal/2026-08-26.md)
 - **DR-22** 클립보드 **보내기** — 제안 → 승인 → 등록. **단일 요청 = 단일 승인** · 수신자 신뢰 목록이 관문 · 미등록은 안내 후 중지 → [journal 9차](journal/2026-08-26.md)
 - ★ **K-1 스파이크**(T-9b) — 포커스 복원 + 키 주입. Windows ✅(`AttachThreadInput` 우회 · `INPUT` 40B 컴파일 assert) · macOS 🚧 구현/미검증(objc 런타임 직접 호출) · Wayland ✕. `PasteCapability`를 Full/**NeedsPermission**/ClipboardOnly 셋으로 → [journal 8차](journal/2026-08-26.md)
