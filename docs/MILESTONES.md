@@ -28,7 +28,9 @@
 | ✅ | `nclip-core` — i18n · **항목/다중 표현 모델** · 포트(`ClipboardWatch`·`WatchCapability`) |
 | ✅ | `nclip-plat::watch` 게이트(민감 표식 > 일시정지 > 다음 1건) · `ViewMode` |
 | ✅ | ★ **K-1 포커스 복원 + 키 주입**(Win 동작 · mac 미검증) · `nclip-plat::{font,paths}` 이식 |
-| ✅ | ★ **창 + 렌더 데모** — winit/softbuffer + CPU 래스터라이저 + 보기 3모드 |
+| ✅ | ★ **창 + 렌더 데모** — winit/softbuffer + CPU 래스터라이저 + 보기 3모드 + 알파 합성 |
+| ✅ | ★ **설정 화면(S3)** — 이식 프레임워크 2,000줄 + 레지스트리 21항목 + **검색·즉시 적용·스플리터** |
+| ✅ | 진단 로그(`diag`) — 원인+조치 · 링 버퍼 |
 | 🚧 | 보관 정책 · 타입 판별 · 중복 승격 파이프라인 |
 | 📐 | `nclip-plat` — 클립보드 감시 3-OS(Win 이벤트 · mac 폴링 · X11/Wayland) |
 | 📐 | `nclip-plat` — 전역 단축키 · **직전 포커스 창 복원 + 키 주입** · 트레이 · 자동시작 |

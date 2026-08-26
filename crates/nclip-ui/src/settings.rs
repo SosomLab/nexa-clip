@@ -483,6 +483,8 @@ pub struct SettingsWidget {
     sidebar_w: i32,
     /// 스플리터 드래그 중.
     split_drag: bool,
+    /// ★ 스플리터 위에 커서가 있는가 — VS Code처럼 **하이라이트**로 조절 가능함을 알린다.
+    split_hover: bool,
     /// 비활성 설정 키(호스트가 지정) — 흐리게 그리고 입력을 받지 않는다.
     disabled: std::collections::HashSet<&'static str>,
     /// 특정 설정 행 **바로 아래**에 붙는 한 줄 정보(자리 고정 — 호스트가 채운다).
@@ -534,6 +536,7 @@ impl SettingsWidget {
             bars: ScrollBars::new(),
             sidebar_w: SIDEBAR_W,
             split_drag: false,
+            split_hover: false,
             disabled: std::collections::HashSet::new(),
             notes: HashMap::new(),
         };
@@ -1475,6 +1478,19 @@ impl Widget for SettingsWidget {
                     self.split_drag = true;
                     return;
                 }
+                // ★ 스플리터 hover — 커서가 근처에 오면 하이라이트한다(조절 가능 신호).
+                InputEvent::MouseMove { x, y } if !self.split_drag => {
+                    let hot = self.wants_col_resize_cursor(x, y);
+                    if hot != self.split_hover {
+                        self.split_hover = hot;
+                        inv.push(Rect::new(
+                            split_x - self.s(4),
+                            self.bounds.y,
+                            self.s(9),
+                            self.bounds.h,
+                        ));
+                    }
+                }
                 InputEvent::MouseMove { x, .. } if self.split_drag => {
                     let logical = ((x - bx) as f32 / self.scale).round() as i32;
                     let clamped = logical.clamp(110, 320);
@@ -1731,10 +1747,33 @@ impl Widget for SettingsWidget {
         );
         self.search.paint(ctx, theme);
         self.tree.paint(ctx, theme);
-        ctx.fill_rect(
-            Rect::new(self.bounds.x + sw - 1, self.bounds.y, 1, self.bounds.h),
-            theme.border,
-        );
+        // ★ 스플리터 — 평소엔 1px 경계선, hover·드래그면 accent로 두껍게 + 손잡이(VS Code 방식).
+        let split_active = self.split_hover || self.split_drag;
+        if split_active {
+            let w = self.s(2).max(2);
+            ctx.fill_rect(
+                Rect::new(
+                    self.bounds.x + sw - w / 2 - 1,
+                    self.bounds.y,
+                    w,
+                    self.bounds.h,
+                ),
+                theme.accent,
+            );
+            // 가운데 손잡이 — "여기를 잡으면 된다"를 말해 준다.
+            let gh = self.s(28).max(16);
+            let gy = self.bounds.y + (self.bounds.h - gh) / 2;
+            ctx.fill_round_rect(
+                Rect::new(self.bounds.x + sw - w / 2 - 1, gy, w, gh),
+                w / 2,
+                theme.accent,
+            );
+        } else {
+            ctx.fill_rect(
+                Rect::new(self.bounds.x + sw - 1, self.bounds.y, 1, self.bounds.h),
+                theme.border,
+            );
+        }
 
         // 하위 섹션 제목(스크롤과 함께 올라간다 — 고정 밴드가 그 위를 덮는다).
         let vp_clip = self.right_viewport();

@@ -13,6 +13,7 @@
 //! | ★ **설정 검색** | 상단에 타이핑 → **레지스트리 단일 원천**이 걸러진다 |
 //! | ★ 즉시 적용 | 값을 바꾸면 `take_changes()`가 방출한다(콘솔에 찍는다) |
 //! | 우리 레지스트리 | 21항목 · 카테고리 8개가 우리 것으로 나온다 |
+//! | ★ **스플리터** | 사이드바 경계에 커서를 두면 **하이라이트 + 좌우 리사이즈 커서** · 드래그로 조절 |
 
 use nclip_ctl::draw::DrawCtx;
 use nclip_ctl::event::{InputEvent, Key as CtlKey, WHEEL_DELTA};
@@ -31,7 +32,7 @@ use winit::application::ApplicationHandler;
 use winit::event::{ElementState, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{Key, ModifiersState, NamedKey};
-use winit::window::{Window, WindowId};
+use winit::window::{CursorIcon, Window, WindowId};
 
 struct App {
     window: Option<Rc<Window>>,
@@ -48,6 +49,8 @@ struct App {
     laid_out: (i32, i32),
     /// 마지막 커서 위치(winit은 클릭 이벤트에 좌표를 싣지 않는다).
     cursor: (i32, i32),
+    /// ★ 지금 좌우 리사이즈 커서를 보이고 있는가 — 바뀔 때만 OS에 전달한다.
+    col_resize: bool,
 }
 
 impl App {
@@ -67,6 +70,7 @@ impl App {
             started: Instant::now(),
             laid_out: (0, 0),
             cursor: (0, 0),
+            col_resize: false,
         }
     }
 
@@ -143,7 +147,7 @@ impl ApplicationHandler for App {
             return;
         }
         let attrs = Window::default_attributes()
-            .with_title("Nexa Clip — 설정 (검색 · T 테마 · Esc 종료)")
+            .with_title("Nexa Clip — 설정 (검색 · 사이드바 경계 드래그 · Esc 종료)")
             .with_inner_size(winit::dpi::LogicalSize::new(760.0, 560.0));
         let Ok(win) = el.create_window(attrs) else {
             eprintln!("창 생성 실패");
@@ -201,6 +205,19 @@ impl ApplicationHandler for App {
                 self.cursor = (position.x as i32, position.y as i32);
                 let (x, y) = self.cursor;
                 self.feed(InputEvent::MouseMove { x, y });
+                // ★ 스플리터 위면 좌우 리사이즈 커서로 바꾼다(VS Code 방식 —
+                //   위젯은 "보여야 하는가"만 말하고, OS 커서 번역은 호스트 몫이다).
+                let want = self.widget.wants_col_resize_cursor(x, y);
+                if want != self.col_resize {
+                    self.col_resize = want;
+                    if let Some(w) = &self.window {
+                        w.set_cursor(if want {
+                            CursorIcon::ColResize
+                        } else {
+                            CursorIcon::Default
+                        });
+                    }
+                }
             }
             WindowEvent::MouseWheel { delta, .. } => {
                 // 원시 delta를 그대로 넘긴다 — 분수 노치 누적은 위젯이 `WheelAccum`으로 한다.
