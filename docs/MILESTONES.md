@@ -38,7 +38,7 @@
 | 🚧 | 남은 컨트롤에 hover 적용(스위치·색상·툴바·풀다운) |
 | 🚧 | 보관 정책 · 타입 판별 · 중복 승격 파이프라인 |
 | 📐 | `nclip-plat` — 클립보드 감시 3-OS(Win 이벤트 · mac 폴링 · X11/Wayland) |
-| 📐 | ★ **캡처 파이프라인** — 종류 판정 순서 · `Preview` 생성 · 용량 규칙([27](27-capture-cases.md)) |
+| ✅ | ★ **캡처 파이프라인** — 종류 판정 · `Preview` · 용량 규칙([27](27-capture-cases.md) → `nclip-core::capture`) |
 | 📐 | `nclip-plat` — 전역 단축키 · **직전 포커스 창 복원 + 키 주입** · 트레이 · 자동시작 |
 | 📐 | `nclip-store` — 암호화 세그먼트 + 내용 주소 blob |
 | 📐 | ★ **beep UI 이식** — `gfx`·`ctl` 무수정 복사 · **설정 화면 프레임워크**(registry만 교체) · 트레이 · 중립 모듈 |

@@ -11,6 +11,8 @@
 //! 떨어진다. **올라온 표현을 이름과 함께 그대로** 들고 있다가 그대로 돌려주면 앱마다 대응할
 //! 필요가 없다.
 
+use crate::capture::Preview;
+
 /// 항목 식별자(16B).
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
 pub struct ItemId(pub [u8; 16]);
@@ -75,7 +77,7 @@ pub struct Representation {
 
 /// 기록 항목 하나.
 ///
-/// ⚠️ **`preview`는 목록 표시 전용으로 잘라 둔 평문**이다. 원문이 아니다 —
+/// ⚠️ **`preview`는 목록 표시 전용**이다. 원문이 아니다 —
 /// 전문은 `reps`의 blob을 열어야 한다([docs/06 §2-1](../../../docs/06-storage-design.md)).
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct ClipItem {
@@ -83,8 +85,11 @@ pub struct ClipItem {
     pub id: ItemId,
     /// 표시 분류.
     pub kind: ClipKind,
-    /// ★ 목록에 보이는 잘린 평문(약 200바이트).
-    pub preview: String,
+    /// ★ **목록이 읽는 유일한 것**([`Preview`] · [docs/27 §6](../../../docs/27-capture-cases.md)).
+    ///
+    /// 캡처 때 **한 번** 만든다 — 스크롤마다 3MB DIB를 디코드할 수 없고,
+    /// HTML 정제(스크립트 제거)도 여기 한 지점에 모인다.
+    pub preview: Preview,
     /// 보유 표현 목록 — **폴백 순서가 아니라 보유 순서**다.
     pub reps: Vec<Representation>,
     /// 생성 시각(UNIX 밀리초).
@@ -134,6 +139,21 @@ impl ClipItem {
         self.last_copied_ms = now_ms;
         self.copy_count = self.copy_count.saturating_add(1);
     }
+
+    /// 사다리 꼭대기 표현 — ★ **저장하지 않고 그때그때 구한다**.
+    ///
+    /// 인덱스를 필드로 들고 있으면 [`select_reps`](crate::capture::select_reps)가
+    /// 표현을 버릴 때 **가리키는 자리가 밀린다**. 파생값은 파생으로 둔다.
+    #[must_use]
+    pub fn primary(&self) -> Option<&Representation> {
+        crate::capture::primary_index(&self.reps).map(|i| &self.reps[i])
+    }
+
+    /// 목록 한 줄에 쓸 글자 — 종류가 무엇이든 **빈 줄을 주지 않는다**.
+    #[must_use]
+    pub fn one_line(&self) -> String {
+        self.preview.one_line()
+    }
 }
 
 /// 그 포맷 이름이 **평문**인가(3-OS 이름을 한곳에서 판정).
@@ -161,7 +181,7 @@ mod tests {
         ClipItem {
             id: ItemId::from_bytes([1; 16]),
             kind: ClipKind::RichText,
-            preview: "이름\t나이".into(),
+            preview: Preview::Text("이름 나이".into()),
             reps,
             created_ms: 1_000,
             last_copied_ms: 1_000,
