@@ -4,6 +4,7 @@
 
 ## 2026-08-26
 
+- ⚠️ **점검 화면이 거짓말을 하고 있었다** — `default view`가 저장값이 아니라 `ViewMode::default()`였다. 저장본을 읽도록 고치면서 **영속을 터미널에서 검증**할 수 있게 됐다 → [journal 17차](journal/2026-08-26.md)
 - ★ **개수 설정을 숫자로**(사용자 확정) — `SettingKind::Number` 신설. *"보통"* 이 몇 개인지 알려면 설명을 읽어야 하지만 **`1000`은 그 자체로 답**이다. `store.max_items`(10~100000) · `ui.tray_recent_n`(3~20) · 범위 밖은 경고+원복 → [14](14-settings-registry.md)
 - ★ **붙여넣기 모드 4개**([DR-35](10-decision-record.md)) — 원본/평문/**객체로**/**경로만**. **설정이 아니라 단축키**(붙여넣기 전에 앱을 예상해 설정을 바꾸는 건 순서가 거꾸로다). ★ 넷 다 *"고르는 게 아니라 빼는"* 같은 기계 · `PasteAs::applicable`이 단일 원천 → [journal 16차](journal/2026-08-26.md)
 - ★ **설정 영속**(T-12c2) — `nexa-conf` **이름 유지**([DR-32](10-decision-record.md) · 공용 크레이트 추출의 첫 후보). 지연 저장 · 종료 flush · **미지 키 보존** · 포터블 우선([DR-33](10-decision-record.md)) → [journal 16차](journal/2026-08-26.md)

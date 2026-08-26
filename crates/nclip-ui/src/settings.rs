@@ -2112,6 +2112,29 @@ mod validate_tests {
         );
     }
 
+    /// ★ 후보에 없는 **직접 입력값이 화면에서 사라지지 않는다**.
+    ///
+    /// ⚠️ `Combo::select_value`는 값이 후보에 없으면 **`set_custom_entry`가 먼저
+    /// 불려 있어야만** 그 값을 붙잡는다. 순서가 뒤바뀌면 저장된 `2500`이
+    /// **빈 콤보**로 뜨고, 사용자는 자기 설정이 사라진 줄 안다.
+    /// 빌더 순서가 뒤집히는 회귀를 여기서 잡는다.
+    #[test]
+    fn custom_number_value_is_shown_not_dropped() {
+        use nclip_ctl::controls::{Combo, ComboItem};
+
+        let presets = ["200", "500", "1000"];
+        let items: Vec<ComboItem> = presets.iter().map(|v| ComboItem::new(*v, *v)).collect();
+        let mut c = Combo::new(items, 0);
+        // ★ 이 줄이 select_value보다 **먼저** 와야 한다(빌더와 같은 순서).
+        c.set_custom_entry("직접 입력…", "");
+        c.select_value("2500");
+        assert_eq!(c.selected_value(), "2500", "★ 직접 입력값이 사라졌다");
+
+        // 후보에 있는 값은 그대로 후보 선택으로 잡힌다.
+        c.select_value("1000");
+        assert_eq!(c.selected_value(), "1000");
+    }
+
     /// 규칙이 없는 키는 통과한다(검증은 **등록된 키에만** 건다).
     #[test]
     fn unregistered_keys_pass() {

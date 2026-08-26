@@ -87,11 +87,38 @@ fn status() {
         }
     }
 
+    // ★ 설정 영속 — **저장된 값이 실제로 읽히는지**를 여기서 보인다(T-12c2).
+    //
+    //   ⚠️ 예전에는 `ViewMode::default()`를 찍었다 — 사용자가 설정에서 바꿔도
+    //   이 줄은 영원히 `Compact`였다. **점검 화면이 거짓말을 하면 점검이 아니다.**
+    let conf = conf::Settings::load();
+    let saved = conf.path().exists();
+    println!(
+        "settings        : {} ({})",
+        conf.path().display(),
+        if saved {
+            "저장본 사용"
+        } else {
+            "아직 없음 — 기본값"
+        }
+    );
+
+    let view = ViewMode::from_code(conf.state.get("ui.view_mode")).unwrap_or_default();
+    // `ViewMode`는 nclip-ctl에 있고 그쪽은 도메인(Msg)을 모른다 — 번역은 여기서 붙인다.
+    let view_label = match view {
+        ViewMode::Rich => Msg::ViewRich,
+        ViewMode::Compact => Msg::ViewCompact,
+        ViewMode::Plain => Msg::ViewPlain,
+    };
     println!(
         "default view    : {} ({})",
-        tr(lang, Msg::ViewCompact),
-        ViewMode::default().code()
+        tr(lang, view_label),
+        view.code()
     );
+    println!("theme           : {}", conf.state.get("ui.theme"));
+    println!("max items       : {}", conf.state.get("store.max_items"));
+    println!("tray recent     : {}", conf.state.get("ui.tray_recent_n"));
+
     println!("sync            : {}", tr(lang, Msg::SyncEndToEnd));
     println!("status          : {}", tr(lang, Msg::StatusLocalOnly));
 }
