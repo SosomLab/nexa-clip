@@ -9,6 +9,8 @@
 //! ★ **K-1 스파이크**(포커스 복원 + 키 주입)다 — 이 왕복이 안 되면 제품이 성립하지 않으므로
 //! 창보다 먼저 검증한다([docs/02 §7](../../docs/02-roadmap.md) · [docs/21](../../docs/21-manual-test.md)).
 
+mod demo;
+
 use nclip_core::{
     current_lang, tr, ClipboardWatch as _, Msg, PasteAs, PasteCapability, PasteInjector as _,
     WatchCapability,
@@ -21,6 +23,7 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
         Some("spike-paste") => spike_paste(&args[1..]),
+        Some("demo") => demo::run(),
         Some("--help" | "-h" | "help") => usage(),
         Some(other) => {
             eprintln!("알 수 없는 명령: {other}\n");
@@ -37,6 +40,8 @@ fn usage() {
 nexa-clip [명령]
 
   (없음)         환경 점검 — 이 PC에서 무엇이 되고 무엇이 안 되는지
+  demo           렌더 데모 — 창을 열고 S1 퀵 팝업 레이아웃을 그린다
+                 (1/2/3 보기 모드 · T 테마 · Esc 종료)
   spike-paste    K-1 스파이크 — 포커스 복원 + 붙여넣기 키 주입 검증
       --plain        평문 붙여넣기 경로로 시도
       --wait <초>    대상 앱을 고를 시간(기본 5)

@@ -4,6 +4,8 @@
 
 ## 2026-08-26
 
+- ★ **창·렌더 데모**(T-12b2) — winit/softbuffer + CPU 래스터라이저로 **S1 팝업 레이아웃 실제 렌더**. 보기 3모드·테마 전환. 폰트 mmap 이식(맑은 고딕 확인). 외부 의존 3개(`memmap2`·`winit`·`softbuffer`) 원장 기록 → [journal 9차](journal/2026-08-26.md)
+- **DR-22** 클립보드 **보내기** — 제안 → 승인 → 등록. **단일 요청 = 단일 승인** · 수신자 신뢰 목록이 관문 · 미등록은 안내 후 중지 → [journal 9차](journal/2026-08-26.md)
 - ★ **K-1 스파이크**(T-9b) — 포커스 복원 + 키 주입. Windows ✅(`AttachThreadInput` 우회 · `INPUT` 40B 컴파일 assert) · macOS 🚧 구현/미검증(objc 런타임 직접 호출) · Wayland ✕. `PasteCapability`를 Full/**NeedsPermission**/ClipboardOnly 셋으로 → [journal 8차](journal/2026-08-26.md)
 - ★ **[21 실기 점검표](21-manual-test.md)** — OS별 검증 현황·절차·증상 기록. **⏳(점검 요청)** 을 ✅과 구분 → [journal 8차](journal/2026-08-26.md)
 - **DR-19**(동기화=핵심 기능) · **DR-20**(보안 = 네트워크 ≫ 로컬 · D-9 닫힘) · **DR-21**(i18n 4언어) 확정 → [journal 8차](journal/2026-08-26.md)

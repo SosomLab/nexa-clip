@@ -13,3 +13,7 @@ workspace = true
 
 [dependencies]
 nclip-core.workspace = true
+# 시스템 폰트 mmap — 원장 docs/10 §3.
+# fs::read는 폰트 파일을 통째로 힙에 복사한다(맑은 고딕 12.8MB · macOS 한글 TTC 55MB) —
+# 상주 앱 예산(DR-9)을 그대로 잠식한다. mmap은 실제로 읽은 글리프 페이지만 상주한다.
+memmap2 = "0.9"
