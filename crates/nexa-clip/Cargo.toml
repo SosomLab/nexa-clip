@@ -24,6 +24,8 @@ nclip-plat.workspace = true
 nclip-store.workspace = true
 nclip-ui.workspace = true
 nclip-gfx.workspace = true
+# 설정 영속 — ★ nexa 계열 공용 크레이트(DR-32 · nclip 의존 0).
+nexa-conf.workspace = true
 # 창·입력(winit) + CPU 픽셀 제출(softbuffer) — 원장 docs/10 §3.
 # 우리는 픽셀을 직접 그리므로(DR-1) GPU 스택이 필요 없다. 이 둘은 "창을 얻고
 # 버퍼를 화면에 올리는" 최소 경계만 담당한다(beep과 같은 판 — 실증된 조합).

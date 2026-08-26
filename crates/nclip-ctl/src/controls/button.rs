@@ -12,6 +12,7 @@ use crate::draw::{DrawCtx, FontSlot};
 use crate::event::{InputEvent, Key};
 use crate::geom::{Point, Rect};
 use crate::theme::{IconImage, Theme};
+use crate::tokens::{hover_alpha, Fade};
 use crate::widget::{Invalidations, Widget};
 use std::rc::Rc;
 
@@ -75,6 +76,8 @@ pub struct Button {
     tone: ButtonTone,
     /// 라벨 폰트 슬롯(08-17 — 카드 등 작은 폰트에 맞추려면 Status). 기본 Base.
     font: FontSlot,
+    /// ★ 커서가 올라가 있는가 — **서서히** 밝아진다(사용자 확정 08-26).
+    hover: Fade,
 }
 
 impl Button {
@@ -91,6 +94,7 @@ impl Button {
             clicked: false,
             tone: ButtonTone::Default,
             font: FontSlot::Base,
+            hover: Fade::hover(),
         }
     }
 
@@ -107,7 +111,13 @@ impl Button {
             clicked: false,
             tone: ButtonTone::Default,
             font: FontSlot::Base,
+            hover: Fade::hover(),
         }
+    }
+
+    /// ★ hover 페이드 틱 — 밝기가 변했으면 `true`(그때만 다시 그린다).
+    pub fn tick(&mut self, now_ms: u64) -> bool {
+        self.hover.tick(now_ms)
     }
 
     /// 색조 지정(체이닝 · 08-17) — Safe(초록)·Danger(붉은 벽돌)는 흰 글씨.
@@ -227,6 +237,11 @@ impl Widget for Button {
 
     fn on_event(&mut self, ev: &InputEvent, inv: &mut Invalidations) {
         match *ev {
+            // ★ hover 목표만 바꾼다 — 밝기는 `tick`이 시간에 맞춰 옮긴다.
+            InputEvent::MouseMove { x, y } => {
+                let over = self.base.bounds.contains(Point { x, y });
+                self.hover.set(over);
+            }
             InputEvent::MouseDown { x, y, .. } => {
                 let badge = self.help_badge_rect(self.base.bounds);
                 if self.handle_help_click(x, y, badge) {
@@ -260,6 +275,17 @@ impl Widget for Button {
     fn paint(&self, ctx: &mut dyn DrawCtx, theme: &Theme) {
         let b = self.base.bounds;
         let radius = self.s(RADIUS);
+        // ★ hover 오버레이는 **배경을 칠한 다음** 얹는다 — 아래에서 배경을 그리고
+        //   여기서 값을 계산해 두면 분기마다 다시 계산하지 않는다.
+        //   눌림은 페이드를 쓰지 않는다(누른 건 즉시 보여야 한다).
+        let hov = hover_alpha(
+            false,
+            if self.pressed {
+                0.0
+            } else {
+                self.hover.value()
+            },
+        );
 
         match self.mode {
             ButtonMode::Image(fit) => {
@@ -284,6 +310,9 @@ impl Widget for Button {
                     // clip = 버튼 영역 → Cover에서 넘치는 부분은 잘린다.
                     ctx.image_scaled(dst, img, area);
                 }
+                if hov > 0.0 {
+                    ctx.fill_round_rect_alpha(b, radius, theme.text, hov);
+                }
                 ctx.stroke_round_rect(b, radius, theme.border, 1.0);
             }
             ButtonMode::Normal => {
@@ -303,6 +332,15 @@ impl Widget for Button {
                     ButtonTone::Danger => (dim_if(theme.danger, self.pressed), on),
                 };
                 ctx.fill_round_rect(b, radius, bg);
+                if hov > 0.0 {
+                    // 색조 버튼은 흰 글씨 위라 **흰색**으로 밝힌다(전경색으로 덮으면 탁해진다).
+                    let over = if matches!(self.tone, ButtonTone::Default) {
+                        theme.text
+                    } else {
+                        on
+                    };
+                    ctx.fill_round_rect_alpha(b, radius, over, hov);
+                }
                 ctx.stroke_round_rect(b, radius, theme.border, 1.0);
 
                 // 아이콘 변 = 공용 단일 원천(콤보/Choose/트리와 동일 — 드리프트 방지).

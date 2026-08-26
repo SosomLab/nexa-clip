@@ -30,6 +30,7 @@ use nclip_ctl::draw::{DrawCtx, FontSlot};
 use nclip_ctl::event::{InputEvent, Key};
 use nclip_ctl::geom::{Point, Rect};
 use nclip_ctl::theme::Theme;
+use nclip_ctl::tokens::Fade;
 use nclip_ctl::widget::{Invalidations, Widget};
 use std::collections::HashMap;
 
@@ -485,10 +486,11 @@ pub struct SettingsWidget {
     split_drag: bool,
     /// ★ 스플리터 위에 커서가 있는가 — VS Code처럼 **하이라이트**로 조절 가능함을 알린다.
     split_hover: bool,
-    /// ★ 글로우 진행도 0.0~1.0 — hover하면 **서서히 밝아진다**(사용자 요청 08-26).
-    split_glow: f32,
-    /// 글로우 보간의 직전 시각(ms) — `tick`이 델타를 재는 기준.
-    split_glow_at: u64,
+    /// ★ 글로우 — hover하면 **서서히 밝아진다**(사용자 요청 08-26).
+    ///
+    /// 손으로 보간하던 것을 공용 [`Fade`]로 바꿨다(08-26 2차) — hover 페이드를
+    /// 트리·버튼·콤보로 넓히면서 **같은 타이밍을 세 번 적지 않기 위해**서다.
+    split_fade: Fade,
     /// 비활성 설정 키(호스트가 지정) — 흐리게 그리고 입력을 받지 않는다.
     disabled: std::collections::HashSet<&'static str>,
     /// 특정 설정 행 **바로 아래**에 붙는 한 줄 정보(자리 고정 — 호스트가 채운다).
@@ -541,8 +543,7 @@ impl SettingsWidget {
             sidebar_w: SIDEBAR_W,
             split_drag: false,
             split_hover: false,
-            split_glow: 0.0,
-            split_glow_at: 0,
+            split_fade: Fade::hover(),
             disabled: std::collections::HashSet::new(),
             notes: HashMap::new(),
         };
@@ -1040,46 +1041,24 @@ impl SettingsWidget {
             .map(|r| r.group)
     }
 
-    /// 스크롤바 자동숨김 + ★ **스플리터 글로우** 틱 — 표시가 바뀌면 `true`(재그리기).
-    pub fn tick(&mut self, now_ms: u64) -> bool {
-        // `||`는 단축 평가라 트리 바가 안 돌 수 있다 — 둘 다 재워야 한다.
-        let bars = self.bars.tick(now_ms) | self.tree.tick(now_ms);
-        bars | self.tick_split_glow(now_ms)
-    }
-
-    /// 스플리터 글로우를 목표값으로 **선형 보간**한다.
+    /// 스크롤바 자동숨김 + ★ **hover 페이드** 틱 — 표시가 바뀌면 `true`(재그리기).
     ///
-    /// 들어올 때는 느리게(`SPLITTER_IN_MS` 1000ms), 나갈 때는 빠르게(`SPLITTER_OUT_MS`) —
-    /// *"서서히 밝아지되 잔상은 남기지 않는다"*.
-    fn tick_split_glow(&mut self, now_ms: u64) -> bool {
-        let target: f32 = if self.split_hover || self.split_drag {
-            1.0
-        } else {
-            0.0
-        };
-        // 첫 호출·시계 역행은 델타 0으로 보고 기준만 잡는다. 상한은 프레임 폭주 방어.
-        let dt = now_ms.saturating_sub(self.split_glow_at).min(200) as f32;
-        self.split_glow_at = now_ms;
-        if (self.split_glow - target).abs() < f32::EPSILON {
-            return false;
+    /// ⚠️ **`||` 단축 평가를 쓰면 안 된다** — 앞이 참이면 뒤가 시간을 못 흘려서
+    /// 그 컨트롤의 페이드가 멈춘다. 전부 `|`로 묶는다.
+    pub fn tick(&mut self, now_ms: u64) -> bool {
+        let mut dirty = self.bars.tick(now_ms) | self.tree.tick(now_ms);
+        self.split_fade.set(self.split_hover || self.split_drag);
+        dirty |= self.split_fade.tick(now_ms);
+        // 행 컨트롤 — 콤보(닫힌 박스)와 버튼이 각자 자기 페이드를 옮긴다.
+        for row in &mut self.rows {
+            dirty |= match &mut row.ctl {
+                RowCtl::Combo(c) => c.tick_hover(now_ms),
+                RowCtl::Act(b) => b.tick(now_ms),
+                RowCtl::Font { size, .. } => size.tick_hover(now_ms),
+                _ => false,
+            };
         }
-        let dur = if target > self.split_glow {
-            nclip_ctl::tokens::motion::SPLITTER_IN_MS
-        } else {
-            nclip_ctl::tokens::motion::SPLITTER_OUT_MS
-        } as f32;
-        let step = if dur <= 0.0 { 1.0 } else { dt / dur };
-        let before = self.split_glow;
-        if target > self.split_glow {
-            self.split_glow = (self.split_glow + step).min(1.0);
-        } else {
-            self.split_glow = (self.split_glow - step).max(0.0);
-        }
-        // 눈에 안 보이는 변화로 매 프레임 깨우지 않는다 — 남은 거리가 작으면 목표로 붙인다.
-        if (self.split_glow - before).abs() < 0.002 {
-            self.split_glow = target;
-        }
-        true
+        dirty
     }
 
     /// 스플리터 무효화 사각형(글로우가 번지는 띠).
@@ -1797,7 +1776,7 @@ impl Widget for SettingsWidget {
         //   예전에는 가운데 손잡이가 글로우에 따라 **자라나서** 중심에서 번지는 그라데이션처럼
         //   읽혔다. 스플리터는 **띠 전체가 하나의 대상**이라 부분이 먼저 밝아지면
         //   "어디를 잡아야 하는가"가 흐려진다 — 한 값으로 **전체를 같이** 올린다.
-        let g = self.split_glow.clamp(0.0, 1.0);
+        let g = self.split_fade.value().clamp(0.0, 1.0);
         if g <= 0.0 {
             ctx.fill_rect(
                 Rect::new(self.bounds.x + sw - 1, self.bounds.y, 1, self.bounds.h),

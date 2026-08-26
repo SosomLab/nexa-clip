@@ -708,9 +708,14 @@ dependencies = [
  "nclip-plat",
  "nclip-store",
  "nclip-ui",
+ "nexa-conf",
  "softbuffer",
  "winit",
 ]
+
+[[package]]
+name = "nexa-conf"
+version = "0.1.0"
 
 [[package]]
 name = "num_enum"

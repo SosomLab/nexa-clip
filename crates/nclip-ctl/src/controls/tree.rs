@@ -21,6 +21,7 @@ use crate::draw::{DrawCtx, FontSlot};
 use crate::event::{InputEvent, Key};
 use crate::geom::Rect;
 use crate::theme::{IconImage, Theme};
+use crate::tokens::{hover_alpha, HoverFade};
 use crate::widget::{Invalidations, Widget};
 use std::rc::Rc;
 
@@ -186,6 +187,17 @@ pub trait TreeControl: Control {
     fn set_scroll(&mut self, x: i32, y: i32);
     /// 오버레이 스크롤바 상태(구현 필수).
     fn bars_mut(&mut self) -> &mut ScrollBars;
+    /// ★ **커서가 올라간 행의 페이드 상태**(구현 필수 — 상태를 가지므로 기본 구현 불가).
+    fn hover(&self) -> &HoverFade;
+    /// 위와 같은 것의 가변 참조.
+    fn hover_mut(&mut self) -> &mut HoverFade;
+
+    /// hover 페이드 시간을 흘린다 — **밝기가 변했으면 `true`**(그때만 다시 그린다).
+    ///
+    /// 호스트의 프레임 틱에서 부른다([`TreeView::tick`]가 스크롤바 틱과 함께 묶어 준다).
+    fn tick_hover(&mut self, now_ms: u64) -> bool {
+        self.hover_mut().tick(now_ms)
+    }
 
     /// 트리 영역의 top(헤더 아래 등 — 그리드가 재정의). 기본 = bounds.y.
     fn tree_top(&self) -> i32 {
@@ -267,6 +279,7 @@ pub trait TreeControl: Control {
         row: &FlatRow,
         cell: Rect,
         selected: bool,
+        hover: f32,
     ) {
         if selected {
             ctx.fill_rect(
@@ -277,6 +290,12 @@ pub trait TreeControl: Control {
                     theme.sel_bg_inactive
                 },
             );
+        }
+        // ★ hover — **색을 새로 만들지 않고** 전경색을 알파로 덮는다([docs/25 §3-4]).
+        //   진행도(0~1)를 곱하므로 **서서히** 밝아진다(사용자 확정 08-26).
+        let a = hover_alpha(selected, hover);
+        if a > 0.0 {
+            ctx.fill_rect_alpha(cell, theme.text, a);
         }
         let chev_x = cell.x + self.s(4) + self.s(INDENT) * row.depth as i32;
         let cy = cell.y + (cell.h - self.s(CHEV_W)) / 2;
@@ -319,6 +338,16 @@ fn tree_event<T: TreeControl + ?Sized>(t: &mut T, ev: &InputEvent, inv: &mut Inv
     if consumed || matches!(ev, InputEvent::MouseMove { .. }) {
         inv.push(t.bounds());
     }
+    // ★ hover 대상 갱신 — 스크롤바가 먹은 이동이면 행 hover는 **끈다**
+    //   (막대 위에 있는데 아래 행이 밝아지면 어디를 가리키는지 흐려진다).
+    if let InputEvent::MouseMove { x, y } = *ev {
+        let target = if consumed {
+            None
+        } else {
+            t.row_hit(x, y).map(|(i, _)| i)
+        };
+        t.hover_mut().set(target);
+    }
     if consumed {
         return;
     }
@@ -360,6 +389,8 @@ pub struct TreeView {
     scroll_y: i32,
     bars: ScrollBars,
     border: BorderSpec,
+    /// ★ 커서가 올라간 행 — 서서히 밝아진다.
+    hover: HoverFade,
 }
 
 impl TreeView {
@@ -374,6 +405,7 @@ impl TreeView {
             scroll_y: 0,
             bars: ScrollBars::new(),
             border: BorderSpec::default(),
+            hover: HoverFade::default(),
         }
     }
 
@@ -387,9 +419,13 @@ impl TreeView {
         self.rows().get(self.selected).map(|r| r.label.clone())
     }
 
-    /// 스크롤바 자동숨김 틱 — 표시 상태 변화 시 `true`. `now_ms`는 호스트 시계(단조).
+    /// 스크롤바 자동숨김 + ★ **hover 페이드** 틱 — 다시 그려야 하면 `true`.
+    /// `now_ms`는 호스트 시계(단조).
     pub fn tick(&mut self, now_ms: u64) -> bool {
-        self.bars.tick(now_ms)
+        // ⚠️ `||`로 묶으면 앞이 참일 때 뒤가 **안 돈다** — 둘 다 시간을 흘려야 한다.
+        let bars = self.bars.tick(now_ms);
+        let hover = self.tick_hover(now_ms);
+        bars || hover
     }
 }
 
@@ -424,6 +460,12 @@ impl TreeControl for TreeView {
     fn bars_mut(&mut self) -> &mut ScrollBars {
         &mut self.bars
     }
+    fn hover(&self) -> &HoverFade {
+        &self.hover
+    }
+    fn hover_mut(&mut self) -> &mut HoverFade {
+        &mut self.hover
+    }
 }
 
 impl Widget for TreeView {
@@ -450,7 +492,14 @@ impl Widget for TreeView {
                 continue;
             }
             let cell = Rect::new(b.x - self.scroll_x, ry, b.w + self.scroll_x, rh);
-            self.paint_tree_cell(ctx, theme, row, cell, i == self.selected);
+            self.paint_tree_cell(
+                ctx,
+                theme,
+                row,
+                cell,
+                i == self.selected,
+                self.hover.value(i),
+            );
         }
         let (cw, ch) = self.content_size();
         self.bars.paint(
@@ -509,6 +558,8 @@ pub struct TreeGrid {
     scroll_y: i32,
     bars: ScrollBars,
     border: BorderSpec,
+    /// ★ 커서가 올라간 행 — 서서히 밝아진다.
+    hover: HoverFade,
 }
 
 impl TreeGrid {
@@ -524,6 +575,7 @@ impl TreeGrid {
             scroll_y: 0,
             bars: ScrollBars::new(),
             border: BorderSpec::default(),
+            hover: HoverFade::default(),
         }
     }
 
@@ -539,7 +591,10 @@ impl TreeGrid {
 
     /// 스크롤바 자동숨김 틱 — 표시 상태 변화 시 `true`. `now_ms`는 호스트 시계(단조).
     pub fn tick(&mut self, now_ms: u64) -> bool {
-        self.bars.tick(now_ms)
+        // ⚠️ `||`로 묶으면 앞이 참일 때 뒤가 **안 돈다** — 둘 다 시간을 흘려야 한다.
+        let bars = self.bars.tick(now_ms);
+        let hover = self.tick_hover(now_ms);
+        bars || hover
     }
 }
 
@@ -573,6 +628,12 @@ impl TreeControl for TreeGrid {
     }
     fn bars_mut(&mut self) -> &mut ScrollBars {
         &mut self.bars
+    }
+    fn hover(&self) -> &HoverFade {
+        &self.hover
+    }
+    fn hover_mut(&mut self) -> &mut HoverFade {
+        &mut self.hover
     }
     /// 그리드는 헤더 아래부터 트리 행.
     fn tree_top(&self) -> i32 {
@@ -635,9 +696,14 @@ impl Widget for TreeGrid {
                     },
                 );
             }
-            // 첫 열 = 트리 셀(배경 재도색 방지 selected=false · 가로 스크롤).
+            // ★ hover는 **행 전체**에 얹는다(첫 열만 밝아지면 행이 잘려 보인다).
+            let a = hover_alpha(i == self.selected, self.hover.value(i));
+            if a > 0.0 {
+                ctx.fill_rect_alpha(Rect::new(b.x, y, b.w, rh), theme.text, a);
+            }
+            // 첫 열 = 트리 셀(배경·hover 재도색 방지 — 위에서 이미 얹었다).
             let tree_cell = Rect::new(b.x - ox, y, tree_w, rh);
-            self.paint_tree_cell(ctx, theme, row, tree_cell, false);
+            self.paint_tree_cell(ctx, theme, row, tree_cell, false, 0.0);
             // 나머지 열 = 셀 값.
             let mut colx = b.x + tree_w - ox;
             for (ci, col) in self.columns.iter().enumerate().skip(1) {

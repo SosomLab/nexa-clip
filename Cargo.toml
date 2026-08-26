@@ -13,6 +13,7 @@ members = [
   "crates/nclip-plat",         # 플랫폼 경계 — 클립보드 감시·전역 단축키·포커스/주입·트레이
   "crates/nclip-store",        # 영속 — 암호화 세그먼트·내용 주소 blob
   "crates/nclip-ui",           # 화면 S1~S8
+  "crates/nexa-conf",          # 설정 영속 — ★ nexa 계열 공용(nclip 의존 0 · DR-32)
   "crates/nexa-clip",          # (bin) 진입·조립·생명주기
 ]
 
@@ -38,6 +39,7 @@ unwrap_used = "warn"
 
 [workspace.dependencies]
 nclip-core = { path = "crates/nclip-core" }
+nexa-conf = { path = "crates/nexa-conf" }
 nclip-gfx = { path = "crates/nclip-gfx" }
 nclip-ctl = { path = "crates/nclip-ctl" }
 nclip-plat = { path = "crates/nclip-plat" }

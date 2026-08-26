@@ -22,6 +22,7 @@ use crate::edit::EditState;
 use crate::event::{InputEvent, Key};
 use crate::geom::{Point, Rect};
 use crate::theme::{IconImage, Theme};
+use crate::tokens::{hover_alpha, Fade};
 use crate::widget::{Invalidations, Widget};
 use std::rc::Rc;
 
@@ -116,6 +117,11 @@ pub struct ComboCore {
     /// 드롭다운 후버(키보드/마우스 하이라이트).
     hover: usize,
     changed: bool,
+    /// ★ 닫힌 박스에 커서가 올라가 있는가 — **서서히** 밝아진다(사용자 확정 08-26).
+    ///
+    /// 위의 [`ComboCore::hover`]와 다른 것이다 — 저건 **열린 목록 안의 하이라이트**,
+    /// 이건 **닫힌 박스 자체의 hover**다.
+    box_hover: Fade,
     /// 팝업이 넘지 못하는 **뷰포트 하한 y**(08-20 — 창 아래 끝에서 목록이
     /// 잘려 선택 불가). None = 종전대로 아래로만. 호스트가 창/위젯 경계를 준다.
     viewport_bottom: Option<i32>,
@@ -129,6 +135,7 @@ impl ComboCore {
             selected,
             open: false,
             hover: selected,
+            box_hover: Fade::hover(),
             changed: false,
             viewport_bottom: None,
         }
@@ -163,6 +170,11 @@ pub trait ComboControl: Control {
     fn core(&self) -> &ComboCore;
     /// 공유 콤보 상태 가변(구현 필수).
     fn core_mut(&mut self) -> &mut ComboCore;
+
+    /// ★ 닫힌 박스 hover 페이드 틱 — 밝기가 변했으면 `true`(그때만 다시 그린다).
+    fn tick_hover(&mut self, now_ms: u64) -> bool {
+        self.core_mut().box_hover.tick(now_ms)
+    }
 
     /// ⇕(편집 가능=확장) vs ∨(일반) — `Choose`가 `true`로 재정의.
     fn is_editable(&self) -> bool {
@@ -313,6 +325,18 @@ pub trait ComboControl: Control {
     fn paint_combo(&self, ctx: &mut dyn DrawCtx, theme: &Theme, box_text: &str) {
         let b = self.bounds();
         ctx.fill_round_rect(b, self.s(6), theme.field_bg);
+        // ★ hover — 열려 있을 때는 얹지 않는다(드롭다운이 이미 시선을 가져갔다).
+        let hov = hover_alpha(
+            false,
+            if self.core().open {
+                0.0
+            } else {
+                self.core().box_hover.value()
+            },
+        );
+        if hov > 0.0 {
+            ctx.fill_round_rect_alpha(b, self.s(6), theme.text, hov);
+        }
         ctx.stroke_round_rect(b, self.s(6), theme.border, 1.0);
         self.draw_focus_ring(ctx, theme, b);
 
@@ -994,6 +1018,11 @@ impl Choose {
 /// 콤보 공통 이벤트 처리(일반·확장 공용) — 마우스/키보드로 열기·후버·선택.
 fn combo_event<C: ComboControl + ?Sized>(c: &mut C, ev: &InputEvent, inv: &mut Invalidations) {
     match *ev {
+        // ★ 닫힌 박스 hover — 목표만 바꾸고 밝기는 `tick_hover`가 옮긴다.
+        InputEvent::MouseMove { x, y } => {
+            let over = c.bounds().contains(Point { x, y });
+            c.core_mut().box_hover.set(over);
+        }
         InputEvent::MouseDown { x, y, .. } => {
             let badge = c.help_badge_rect(c.bounds());
             if c.handle_help_click(x, y, badge) {
