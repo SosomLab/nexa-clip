@@ -16,11 +16,13 @@ pub mod paste;
 pub mod ports;
 
 pub use capture::{
-    capture, classify, classify_with_text, select_reps, CapturePolicy, Captured, Preview,
-    PreviewMissing, ThumbInfo,
+    capture, classify, classify_with_text, decode_plain, parse_hdrop, parse_uri_list, select_reps,
+    CapturePolicy, Captured, Preview, PreviewMissing, RepInfo, ThumbInfo,
 };
 pub use diag::{DiagLog, Level, Record};
 pub use i18n::{current_lang, set_lang, tr, Lang, Msg};
 pub use item::{is_plain_format, ClipItem, ClipKind, ItemId, Representation};
 pub use paste::{PasteAs, PasteCapability, PasteError, PasteInjector, PasteUnsupported};
-pub use ports::{ClipSnapshot, ClipboardWatch, UnsupportedReason, WatchCapability, WatchError};
+pub use ports::{
+    ClipSnapshot, ClipboardWatch, RawRep, UnsupportedReason, WatchCapability, WatchError,
+};

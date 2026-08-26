@@ -17,3 +17,5 @@ pub mod font;
 pub mod paste;
 pub mod paths;
 pub mod watch;
+#[cfg(windows)]
+pub mod watch_win;

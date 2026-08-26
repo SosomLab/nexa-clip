@@ -12,6 +12,7 @@
 mod conf;
 mod demo;
 mod settings_win;
+mod watch_cmd;
 
 use nclip_core::{
     current_lang, tr, ClipboardWatch as _, Msg, PasteAs, PasteCapability, PasteInjector as _,
@@ -27,6 +28,7 @@ fn main() {
         Some("spike-paste") => spike_paste(&args[1..]),
         Some("demo") => demo::run(),
         Some("settings") => settings_win::run(),
+        Some("watch") => watch_cmd::run(),
         Some("--help" | "-h" | "help") => usage(),
         Some(other) => {
             eprintln!("알 수 없는 명령: {other}\n");
@@ -46,6 +48,8 @@ nexa-clip [명령]
   demo           렌더 데모 — 창을 열고 S1 퀵 팝업 레이아웃을 그린다
                  (1/2/3 보기 모드 · T 테마 · Esc 종료)
   settings       설정 창 — 좌측 카테고리 + 검색 + 우측 폼(이식 프레임워크)
+  watch          ★ 클립보드 감시 — 복사할 때마다 무엇이 잡히는지 찍는다
+                 (종류 판정 · 표현 목록 · 용량 규칙 · Ctrl+C 종료)
   spike-paste    K-1 스파이크 — 포커스 복원 + 붙여넣기 키 주입 검증
       --plain        평문 붙여넣기 경로로 시도
       --wait <초>    대상 앱을 고를 시간(기본 5)

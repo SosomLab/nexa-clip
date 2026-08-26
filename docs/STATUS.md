@@ -16,6 +16,44 @@
 
 ---
 
+## 2026-08-27 (15차) — ★ 제품이 처음으로 "동작"한다 (T-14b)
+
+```
+$ nexa-clip watch
+클립보드 감시: ok (win32-listener)
+[3] 종류: Text · 표현 6개 · 미리보기: 한글 평문 확인
+```
+
+- ★ **Windows 클립보드 감시** — 메시지 전용 창 + 전용 스레드(`GetMessageW`가 블록 → 유휴 CPU 0).
+  ⚠️ 클립보드는 한 번에 한 프로세스만 연다 → **재시도** · 핸들 포맷은 `GlobalLock` 금지.
+- ★ **`nexa-clip watch`** — 복사할 때마다 무엇이 잡히는지 찍는다. **저장 경로와 같은 함수**를 쓴다.
+- ★ **첫 실행에서 버그 넷** — 전부 *조용히 틀리는* 종류였다:
+  ① `CF_UNICODETEXT`가 **UTF-16LE**(한글이 통째로 사라졌다) ·
+  ② `DataObject` 하나가 텍스트를 리치로 · ③ **`CF_OEMTEXT` 누락** ·
+  ④ *"벤더면 무조건 리치"* 가 **그림까지** 리치로.
+- 설계 정정: `ClipSnapshot`이 **`RawRep`**(감시는 `blob_id`를 만들 수 없다) ·
+  `capture`가 `RepInfo` 제네릭 · `Captured.keep`(인덱스) · `PreviewMissing::ThumbMissing`.
+
+| 실기(Windows) | 결과 |
+|---|:--:|
+| 평문 · 색 · 파일 · 이미지 분류 | ✅ 자동 확인 |
+| ⏳ **Word·Excel·Chrome·PPT 훑기** | 점검 요청([21 §1-2](21-manual-test.md)) |
+
+**실측**: **286 테스트** · clippy `-D warnings` 클린.
+
+---
+
+## 2026-08-27 (14차 이어서) — macOS Retina 배율 정정
+
+- ⚠️ 설정 창에서 **레이아웃은 2배인데 글자만 1배**였다(사용자 스크린샷).
+  `RasterCtx`에 배율을 안 넘겼다 — beep은 `.with_scale(entry.scale)`를 부르고 있었다.
+- ★ **테스트가 아니라 구조로** 막았다 — `RasterCtx::new(surface, font, **scale**)` 필수 인자.
+  Windows(배율 1.0)에서는 우연히 맞아 보여 **한쪽 OS에서만 조용히 틀리는** 버그였다.
+- ✅ **macOS K-1 통과**(사용자 실기) — 손쉬운 사용에 iTerm 추가 후 Sublime 붙여넣기.
+  ⚠️ 권한 주체가 터미널이라 **배포본(.app) 통과를 뜻하지 않는다**(→ T-9d).
+
+---
+
 ## 2026-08-26 (14차) — ★ 캡처 파이프라인 (T-14a)
 
 [27](27-capture-cases.md)의 규칙이 코드가 됐다 — `nclip-core::capture`.

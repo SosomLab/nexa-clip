@@ -161,7 +161,13 @@ impl ClipItem {
 pub fn is_plain_format(fmt: &str) -> bool {
     matches!(
         fmt,
-        "CF_UNICODETEXT" | "CF_TEXT" | "public.utf8-plain-text" | "text/plain"
+        "CF_UNICODETEXT"
+            | "CF_TEXT"
+            // ★ 08-27 실기 누락 — 없으면 "모르는 포맷 = 벤더"에 걸려
+            //   **맨 텍스트가 서식 글로** 분류된다(Windows는 셋을 함께 올린다).
+            | "CF_OEMTEXT"
+            | "public.utf8-plain-text"
+            | "text/plain"
     ) || fmt.starts_with("text/plain;")
 }
 
