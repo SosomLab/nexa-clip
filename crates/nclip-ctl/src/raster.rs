@@ -77,12 +77,20 @@ pub struct RasterCtx<'s, 'b, 'f> {
 
 impl<'s, 'b, 'f> RasterCtx<'s, 'b, 'f> {
     /// 표면과 폰트로 컨텍스트를 만든다(기본 슬롯 = Base).
-    pub fn new(surface: &'s mut Surface<'b>, font: &'f Font) -> Self {
-        Self::with_font_set(surface, FontSet::single(font))
+    ///
+    /// ★ **`scale`은 선택이 아니라 필수다**(08-27 macOS 회귀 정정).
+    ///
+    /// 예전에는 기본값 1.0으로 만들고 `with_scale()`로 얹는 구조였는데,
+    /// 그 한 줄을 빠뜨리면 **레이아웃만 2배가 되고 글자는 1배로 남는다** —
+    /// Retina에서 *"빈 줄만 큼직하고 글씨는 깨알"* 이 된다. Windows(배율 1.0)에서는
+    /// 우연히 맞아 보여서 **한쪽 OS에서만 조용히 틀리는** 종류의 버그였다.
+    /// 인자로 만들면 잊을 수가 없다.
+    pub fn new(surface: &'s mut Surface<'b>, font: &'f Font, scale: f32) -> Self {
+        Self::with_font_set(surface, FontSet::single(font), scale)
     }
 
     /// 슬롯별 얼굴을 가진 컨텍스트(기본 슬롯 = Base).
-    pub fn with_font_set(surface: &'s mut Surface<'b>, fonts: FontSet<'f>) -> Self {
+    pub fn with_font_set(surface: &'s mut Surface<'b>, fonts: FontSet<'f>, scale: f32) -> Self {
         let prefs = FontPrefs::default();
         let font = fonts.base;
         Self {
@@ -91,7 +99,7 @@ impl<'s, 'b, 'f> RasterCtx<'s, 'b, 'f> {
             font,
             prefs,
             cur: prefs.base,
-            scale: 1.0,
+            scale: scale.max(0.5),
             mono_mult: 1.0,
             caret_on: true,
         }
@@ -112,11 +120,10 @@ impl<'s, 'b, 'f> RasterCtx<'s, 'b, 'f> {
         self
     }
 
-    /// 배율 지정(창의 scale factor — 텍스트 크기에 반영).
+    /// 지금 배율(호스트가 위젯과 같은 값을 쓰는지 확인할 때).
     #[must_use]
-    pub fn with_scale(mut self, scale: f32) -> Self {
-        self.scale = scale.max(0.5);
-        self
+    pub fn scale(&self) -> f32 {
+        self.scale
     }
 
     /// 현재 슬롯의 물리 픽셀 크기.

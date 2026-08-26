@@ -138,7 +138,9 @@ impl App {
         };
         {
             let mut gfx = Surface::new(&mut buf, size.width as usize, size.height as usize);
-            let mut dc = RasterCtx::new(&mut gfx, &self.font);
+            let mut dc = // ★ 배율은 위젯 레이아웃과 **같은 값**이어야 한다 — 다르면 Retina에서
+            //   글자만 작아진다(08-27 macOS 회귀).
+            RasterCtx::new(&mut gfx, &self.font, self.scale);
             dc.fill_rect(Rect::new(0, 0, iw, ih), self.theme.window_bg);
             self.widget.paint(&mut dc, &self.theme);
         }
