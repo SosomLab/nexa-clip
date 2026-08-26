@@ -485,6 +485,10 @@ pub struct SettingsWidget {
     split_drag: bool,
     /// ★ 스플리터 위에 커서가 있는가 — VS Code처럼 **하이라이트**로 조절 가능함을 알린다.
     split_hover: bool,
+    /// ★ 글로우 진행도 0.0~1.0 — hover하면 **서서히 밝아진다**(사용자 요청 08-26).
+    split_glow: f32,
+    /// 글로우 보간의 직전 시각(ms) — `tick`이 델타를 재는 기준.
+    split_glow_at: u64,
     /// 비활성 설정 키(호스트가 지정) — 흐리게 그리고 입력을 받지 않는다.
     disabled: std::collections::HashSet<&'static str>,
     /// 특정 설정 행 **바로 아래**에 붙는 한 줄 정보(자리 고정 — 호스트가 채운다).
@@ -537,6 +541,8 @@ impl SettingsWidget {
             sidebar_w: SIDEBAR_W,
             split_drag: false,
             split_hover: false,
+            split_glow: 0.0,
+            split_glow_at: 0,
             disabled: std::collections::HashSet::new(),
             notes: HashMap::new(),
         };
@@ -1034,10 +1040,52 @@ impl SettingsWidget {
             .map(|r| r.group)
     }
 
-    /// 스크롤바 자동숨김 틱 — 표시가 바뀌면 `true`(재그리기). `now_ms`는 호스트 시계.
+    /// 스크롤바 자동숨김 + ★ **스플리터 글로우** 틱 — 표시가 바뀌면 `true`(재그리기).
     pub fn tick(&mut self, now_ms: u64) -> bool {
         // `||`는 단축 평가라 트리 바가 안 돌 수 있다 — 둘 다 재워야 한다.
-        self.bars.tick(now_ms) | self.tree.tick(now_ms)
+        let bars = self.bars.tick(now_ms) | self.tree.tick(now_ms);
+        bars | self.tick_split_glow(now_ms)
+    }
+
+    /// 스플리터 글로우를 목표값으로 **선형 보간**한다.
+    ///
+    /// 들어올 때는 느리게(`SPLITTER_IN_MS` 1000ms), 나갈 때는 빠르게(`SPLITTER_OUT_MS`) —
+    /// *"서서히 밝아지되 잔상은 남기지 않는다"*.
+    fn tick_split_glow(&mut self, now_ms: u64) -> bool {
+        let target: f32 = if self.split_hover || self.split_drag {
+            1.0
+        } else {
+            0.0
+        };
+        // 첫 호출·시계 역행은 델타 0으로 보고 기준만 잡는다. 상한은 프레임 폭주 방어.
+        let dt = now_ms.saturating_sub(self.split_glow_at).min(200) as f32;
+        self.split_glow_at = now_ms;
+        if (self.split_glow - target).abs() < f32::EPSILON {
+            return false;
+        }
+        let dur = if target > self.split_glow {
+            nclip_ctl::tokens::motion::SPLITTER_IN_MS
+        } else {
+            nclip_ctl::tokens::motion::SPLITTER_OUT_MS
+        } as f32;
+        let step = if dur <= 0.0 { 1.0 } else { dt / dur };
+        let before = self.split_glow;
+        if target > self.split_glow {
+            self.split_glow = (self.split_glow + step).min(1.0);
+        } else {
+            self.split_glow = (self.split_glow - step).max(0.0);
+        }
+        // 눈에 안 보이는 변화로 매 프레임 깨우지 않는다 — 남은 거리가 작으면 목표로 붙인다.
+        if (self.split_glow - before).abs() < 0.002 {
+            self.split_glow = target;
+        }
+        true
+    }
+
+    /// 스플리터 무효화 사각형(글로우가 번지는 띠).
+    fn split_rect(&self) -> Rect {
+        let split_x = self.bounds.x + self.s(self.sidebar_w);
+        Rect::new(split_x - self.s(4), self.bounds.y, self.s(9), self.bounds.h)
     }
 
     /// 이 좌표에서 좌우 리사이즈 커서를 보여야 하는가 — 스플리터 hover/드래그
@@ -1483,12 +1531,8 @@ impl Widget for SettingsWidget {
                     let hot = self.wants_col_resize_cursor(x, y);
                     if hot != self.split_hover {
                         self.split_hover = hot;
-                        inv.push(Rect::new(
-                            split_x - self.s(4),
-                            self.bounds.y,
-                            self.s(9),
-                            self.bounds.h,
-                        ));
+                        // 실제 색은 tick의 글로우 보간이 **서서히** 올린다(즉시 점등이 아니다).
+                        inv.push(self.split_rect());
                     }
                 }
                 InputEvent::MouseMove { x, .. } if self.split_drag => {
@@ -1747,32 +1791,24 @@ impl Widget for SettingsWidget {
         );
         self.search.paint(ctx, theme);
         self.tree.paint(ctx, theme);
-        // ★ 스플리터 — 평소엔 1px 경계선, hover·드래그면 accent로 두껍게 + 손잡이(VS Code 방식).
-        let split_active = self.split_hover || self.split_drag;
-        if split_active {
-            let w = self.s(2).max(2);
-            ctx.fill_rect(
-                Rect::new(
-                    self.bounds.x + sw - w / 2 - 1,
-                    self.bounds.y,
-                    w,
-                    self.bounds.h,
-                ),
-                theme.accent,
-            );
-            // 가운데 손잡이 — "여기를 잡으면 된다"를 말해 준다.
-            let gh = self.s(28).max(16);
-            let gy = self.bounds.y + (self.bounds.h - gh) / 2;
-            ctx.fill_round_rect(
-                Rect::new(self.bounds.x + sw - w / 2 - 1, gy, w, gh),
-                w / 2,
-                theme.accent,
-            );
-        } else {
+        // ★ 스플리터 — 경계선에서 accent로 **서서히** 밝아진다(글로우 0.0~1.0).
+        //
+        // ⚠️ **밝기는 세로 전 구간이 균일하다**(사용자 확정 08-26 · [docs/25 §3-7]).
+        //   예전에는 가운데 손잡이가 글로우에 따라 **자라나서** 중심에서 번지는 그라데이션처럼
+        //   읽혔다. 스플리터는 **띠 전체가 하나의 대상**이라 부분이 먼저 밝아지면
+        //   "어디를 잡아야 하는가"가 흐려진다 — 한 값으로 **전체를 같이** 올린다.
+        let g = self.split_glow.clamp(0.0, 1.0);
+        if g <= 0.0 {
             ctx.fill_rect(
                 Rect::new(self.bounds.x + sw - 1, self.bounds.y, 1, self.bounds.h),
                 theme.border,
             );
+        } else {
+            // 색만 보간한다 — 두께는 진행도와 무관하게 한 번에 정해진다(세로 균일).
+            let col = theme.border.lerp(theme.accent, g);
+            let w = self.s(2).max(2);
+            let x = self.bounds.x + sw - w / 2 - 1;
+            ctx.fill_rect(Rect::new(x, self.bounds.y, w, self.bounds.h), col);
         }
 
         // 하위 섹션 제목(스크롤과 함께 올라간다 — 고정 밴드가 그 위를 덮는다).

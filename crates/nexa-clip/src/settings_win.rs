@@ -279,11 +279,18 @@ impl ApplicationHandler for App {
         }
     }
 
-    fn about_to_wait(&mut self, _el: &ActiveEventLoop) {
-        // 캐럿 깜빡임·툴팁 타이머 — 위젯이 다시 그려야 한다고 하면 그때만.
+    fn about_to_wait(&mut self, el: &ActiveEventLoop) {
+        // 캐럿 깜빡임·툴팁·★ 스플리터 글로우 — 위젯이 "다시 그려야 한다"고 할 때만.
         let now = self.now_ms();
         if self.widget.tick(now) {
             self.redraw();
+            // ★ 애니메이션 중에는 다음 프레임을 예약한다(Wait만 두면 이벤트가 없어 멈춘다).
+            el.set_control_flow(ControlFlow::WaitUntil(
+                std::time::Instant::now() + std::time::Duration::from_millis(16),
+            ));
+        } else {
+            // 조용해지면 다시 이벤트 대기로 — 상주 앱이 유휴에서 CPU를 쓰면 안 된다.
+            el.set_control_flow(ControlFlow::Wait);
         }
     }
 }

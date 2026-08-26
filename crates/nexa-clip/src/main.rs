@@ -149,14 +149,15 @@ fn spike_paste(args: &[String]) {
 
     // ③ 팝업이 포커스를 뺏는 순간을 흉내 낸다(실물에서는 창이 뜨면서 일어난다).
     let stolen = spike_steal_focus();
-    println!(
-        "[3] 포커스 탈취: {}",
-        if stolen {
-            "ok (우리에게 옴)"
-        } else {
-            "실패"
-        }
-    );
+    if stolen {
+        println!("[3] 포커스 탈취: ok (우리에게 옴)");
+    } else {
+        // ★ 탈취가 실패하면 대상이 계속 포그라운드라, 복원이 "성공"해도 아무것도 안 한 것이다.
+        println!("[3] 포커스 탈취: 실패");
+        println!("     ⚠️ 대상이 계속 포그라운드로 남습니다 — 이 실행에서는");
+        println!("        **복원 경로(AttachThreadInput)가 검증되지 않습니다.**");
+        println!("        주입만 확인되며, 복원은 실제 팝업 창이 생긴 뒤 확인해야 합니다.");
+    }
     std::thread::sleep(std::time::Duration::from_millis(600));
 
     // ⑤+⑥ 되돌리고 주입한다.
@@ -171,6 +172,9 @@ fn spike_paste(args: &[String]) {
             println!("[6] 키 주입    : ok ({as_:?})");
             println!();
             println!("✅ 대상 앱에 붙여넣기가 되었는지 확인하세요.");
+            if !stolen {
+                println!("   ⚠️ 단, [3]이 실패했으므로 **주입만 검증**된 것입니다(복원은 미검증).");
+            }
             println!(
                 "   되었으면 K-1 통과 · 안 되었으면 docs/21-manual-test.md 에 증상을 적으세요."
             );

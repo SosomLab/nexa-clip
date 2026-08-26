@@ -120,6 +120,31 @@ pub trait DrawCtx {
         let _ = (rect, radius, color);
     }
 
+    /// ★ **상태 레이어를 덮는다**(Material) — hover·press·selected를 **알파 오버레이**로.
+    ///
+    /// 색을 새로 만들지 않는 것이 요점이다([docs/25 §3-4]). `Rest`·`Disabled`면 아무것도 안 그린다.
+    fn state_layer(&mut self, rect: Rect, color: Color, state: crate::tokens::State) {
+        let a = state.overlay_alpha();
+        if a > 0.0 {
+            self.fill_rect_alpha(rect, color, a);
+        }
+    }
+
+    /// ★ **엘리베이션 그림자** — 두 겹으로 그린다(한 겹은 딱딱해 보인다).
+    ///
+    /// `rect` **아래**에 깔리는 것이므로 본체보다 **먼저** 부른다.
+    fn shadow(&mut self, rect: Rect, color: Color, level: crate::tokens::Elevation, radius: i32) {
+        for &(dy, spread, alpha) in level.layers() {
+            let r = Rect::new(
+                rect.x - spread,
+                rect.y - spread + dy,
+                rect.w + spread * 2,
+                rect.h + spread * 2,
+            );
+            self.fill_round_rect_alpha(r, radius + spread, color, alpha);
+        }
+    }
+
     /// ★ **반투명 사각형 채움**(`alpha` 0..=1) — 오버레이·시트 배경·그림자.
     ///
     /// 기본 구현은 **불투명 폴백**이라 백엔드가 미구현이어도 화면이 비지 않는다

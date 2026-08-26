@@ -194,8 +194,8 @@ mod imp {
         Ok(())
     }
 
-    /// 콘솔 창 핸들 — 스파이크가 "팝업이 포커스를 뺏는 순간"을 흉내 내는 데 쓴다.
-    pub(super) fn console_window() -> Option<isize> {
+    /// 콘솔 창 핸들 — 있으면 그걸 먼저 쓴다(가장 단순한 경로).
+    fn console_window() -> Option<isize> {
         #[link(name = "kernel32")]
         extern "system" {
             fn GetConsoleWindow() -> isize;
@@ -204,12 +204,80 @@ mod imp {
         (h != 0).then_some(h)
     }
 
-    /// 스파이크 전용 — 우리(콘솔)가 포커스를 가져간다.
+    /// ★ 스파이크 전용 — **포커스를 실제로 빼앗는다**.
+    ///
+    /// ⚠️ Windows Terminal 같은 최신 호스트에서는 `GetConsoleWindow`가 0이거나
+    /// 그 창을 포그라운드로 못 올린다. 그러면 **탈취가 실패해 대상이 계속 포그라운드로 남고,
+    /// 결과적으로 복원 경로(`AttachThreadInput`)가 검증되지 않는다** — 통과처럼 보이는데
+    /// 실은 아무것도 안 한 것이다.
+    ///
+    /// 그래서 콘솔이 안 되면 **임시 최상위 창을 잠깐 띄워** 진짜로 포커스를 가져온다.
     pub(super) fn steal_focus_to_self() -> bool {
-        let Some(h) = console_window() else {
-            return false;
+        if let Some(h) = console_window() {
+            if unsafe { SetForegroundWindow(h) } != 0 {
+                return true;
+            }
+        }
+        temp_window_steal()
+    }
+
+    /// 임시 최상위 창으로 포커스를 가져온다(만들고 → 올리고 → 지운다).
+    fn temp_window_steal() -> bool {
+        const WS_EX_TOPMOST: u32 = 0x0000_0008;
+        const WS_EX_TOOLWINDOW: u32 = 0x0000_0080;
+        const WS_POPUP: u32 = 0x8000_0000;
+        const SW_SHOW: i32 = 5;
+
+        #[link(name = "user32")]
+        extern "system" {
+            fn CreateWindowExW(
+                ex: u32,
+                class: *const u16,
+                name: *const u16,
+                style: u32,
+                x: i32,
+                y: i32,
+                w: i32,
+                h: i32,
+                parent: isize,
+                menu: isize,
+                inst: isize,
+                param: *const core::ffi::c_void,
+            ) -> isize;
+            fn ShowWindow(hwnd: isize, cmd: i32) -> i32;
+            fn DestroyWindow(hwnd: isize) -> i32;
+        }
+
+        // 미리 등록된 시스템 클래스 "STATIC"을 쓴다 — 클래스 등록·wndproc이 필요 없다.
+        let class: Vec<u16> = "STATIC ".encode_utf16().collect();
+        let title: Vec<u16> = "nexa-clip spike ".encode_utf16().collect();
+        let hwnd = unsafe {
+            CreateWindowExW(
+                WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
+                class.as_ptr(),
+                title.as_ptr(),
+                WS_POPUP,
+                0,
+                0,
+                1,
+                1,
+                0,
+                0,
+                0,
+                core::ptr::null(),
+            )
         };
-        unsafe { SetForegroundWindow(h) != 0 }
+        if hwnd == 0 {
+            return false;
+        }
+        unsafe {
+            ShowWindow(hwnd, SW_SHOW);
+            let r = SetForegroundWindow(hwnd);
+            // 짧게 붙잡았다가 지운다 — 남겨 두면 이 창이 포그라운드를 계속 쥔다.
+            std::thread::sleep(std::time::Duration::from_millis(150));
+            DestroyWindow(hwnd);
+            r != 0
+        }
     }
 
     // 미사용 경고 방지(다른 타깃과 시그니처를 맞추기 위한 항목).

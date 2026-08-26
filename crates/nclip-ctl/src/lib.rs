@@ -35,6 +35,7 @@ pub mod event;
 pub mod geom;
 pub mod raster;
 pub mod theme;
+pub mod tokens;
 pub mod view_mode;
 pub mod widget;
 
@@ -56,4 +57,5 @@ pub use raster::{FontSet, RasterCtx};
 pub use theme::{Color, FontPrefs, IconImage, SlotFont, Theme};
 pub use widget::{Invalidations, Widget};
 
+pub use tokens::{motion, radius, space, type_scale, Elevation, State};
 pub use view_mode::ViewMode;
