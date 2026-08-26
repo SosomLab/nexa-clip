@@ -4,6 +4,11 @@
 
 ## 2026-08-26
 
+- ★ **붙여넣기 모드 4개**([DR-35](10-decision-record.md)) — 원본/평문/**객체로**/**경로만**. **설정이 아니라 단축키**(붙여넣기 전에 앱을 예상해 설정을 바꾸는 건 순서가 거꾸로다). ★ 넷 다 *"고르는 게 아니라 빼는"* 같은 기계 · `PasteAs::applicable`이 단일 원천 → [journal 16차](journal/2026-08-26.md)
+- ★ **설정 영속**(T-12c2) — `nexa-conf` **이름 유지**([DR-32](10-decision-record.md) · 공용 크레이트 추출의 첫 후보). 지연 저장 · 종료 flush · **미지 키 보존** · 포터블 우선([DR-33](10-decision-record.md)) → [journal 16차](journal/2026-08-26.md)
+- ★ **hover 페이드**([DR-34](10-decision-record.md)) — 1000ms 인 / 220ms 아웃. ★ **설정 화면에 hover가 아예 없었다** → `Fade`·`HoverFade`·`hover_alpha` 공용 부품 신설, 트리·버튼·콤보 적용 → [journal 16차](journal/2026-08-26.md)
+- ★ **[27 케이스별 캡처·표시](27-capture-cases.md)** — ⚠️ **PPT 도형에도 CF_DIB가 있다**(종류 판정 순서가 전부) · ★ **미리보기는 Office가 넣어 준 비트맵으로**(GVML을 안 읽어도 된다) · `Preview` 분리로 정제를 한 지점에
+- ★ **[26 §4-4·4-5](26-file-content-sharing.md)** — 원격 파일 **상한은 제안할 때** 검사(실패할 약속을 안 한다) · 앱 탐지 없음
 - ★ **디자인 토큰**(T-12d3) — 간격·타입·**상태 레이어**·엘리베이션·모션을 `nclip-ctl::tokens`로. **팝업 120ms 상한을 컴파일 타임 assert**로 → [journal 15차](journal/2026-08-26.md)
 - ★ **스플리터 글로우** — 1000ms 인 / 220ms 아웃. **세로 균일** 정정(핸들 제거·색만 보간) · 규칙 M-1~M-3 → [25 §3-7](25-design-system.md)
 - ★ **[18 빌드·테스트](18-build-and-test.md)** — 기계가 하는 것(18) / 사람이 하는 것([21](21-manual-test.md)) 분리. ★ **테스트가 "왜" 있는가**를 적었다

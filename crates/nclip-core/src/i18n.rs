@@ -121,7 +121,15 @@ pub enum Msg {
     // ── 동작 ──────────────────────────────────
     /// 복사(클립보드에 올림).
     ActionCopy,
-    /// 평문으로 붙여넣기.
+    /// 붙여넣기 모드 — 원본 그대로.
+    PasteOriginal,
+    /// 붙여넣기 모드 — 평문으로.
+    PastePlain,
+    /// ★ 붙여넣기 모드 — **객체로**(파일·개체 표현만).
+    PasteObject,
+    /// ★ 붙여넣기 모드 — **경로만**(원격 내용을 끌어오지 않는다).
+    PastePathOnly,
+    /// 평문으로 붙여넣기(메뉴 항목 — 모드 라벨보다 길다).
     ActionPastePlain,
     /// 고정 토글.
     ActionPin,
@@ -331,6 +339,10 @@ impl Msg {
             Msg::ViewPlain => ["Plain", "한 줄 보기", "单行视图", "1行表示"],
 
             Msg::ActionCopy => ["Copy", "복사", "复制", "コピー"],
+            Msg::PasteOriginal => ["Original", "원본", "原始格式", "元の形式"],
+            Msg::PastePlain => ["Plain text", "평문", "纯文本", "書式なし"],
+            Msg::PasteObject => ["As object", "객체로", "作为对象", "オブジェクトとして"],
+            Msg::PastePathOnly => ["Path only", "경로만", "仅路径", "パスのみ"],
             Msg::ActionPastePlain => [
                 "Paste as plain text",
                 "평문으로 붙여넣기",
@@ -589,7 +601,7 @@ mod tests {
     use super::*;
 
     /// 카탈로그 전수 — 새 `Msg`를 더하면 여기도 더한다(빈칸 검사가 그걸 강제한다).
-    const ALL_MSG: [Msg; 96] = [
+    const ALL_MSG: [Msg; 100] = [
         Msg::AppName,
         Msg::SearchPlaceholder,
         Msg::EmptyHistory,
@@ -603,6 +615,10 @@ mod tests {
         Msg::ViewCompact,
         Msg::ViewPlain,
         Msg::ActionCopy,
+        Msg::PasteOriginal,
+        Msg::PastePlain,
+        Msg::PasteObject,
+        Msg::PastePathOnly,
         Msg::ActionPastePlain,
         Msg::ActionPin,
         Msg::ActionDelete,

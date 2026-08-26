@@ -79,15 +79,73 @@ pub enum PasteError {
     Os(String),
 }
 
-/// 붙여넣을 형식 — [docs/12 §5](../../../docs/12-clipboard-formats.md)의 4모드 중
-/// **주입 단계에서 갈리는 두 가지**만 여기 있다(나머지는 클립보드에 무엇을 올릴지의 문제다).
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+/// 붙여넣을 형식 — [docs/12 §5](../../../docs/12-clipboard-formats.md) ·
+/// [docs/26 §4-5](../../../docs/26-file-content-sharing.md).
+///
+/// ## ★ 네 모드가 전부 같은 기계다 — **고르는 게 아니라 "빼는" 것**
+///
+/// 우리는 대상 앱을 **탐지하지 않는다**. 붙여넣기 직전에 **클립보드에 올리는 표현을 좁혀서**
+/// 받는 앱이 고를 수밖에 없게 만든다. 앱 이름 목록을 유지할 필요가 없고,
+/// 원격 데스크톱·가상 머신·Electron 앱에서도 어긋나지 않는다.
+///
+/// | 모드 | 키 | 남기는 표현 |
+/// |---|---|---|
+/// | [`Original`](PasteAs::Original) | `Enter` | 전부 |
+/// | [`Plain`](PasteAs::Plain) | `⇧Enter` | 평문 하나 |
+/// | [`Object`](PasteAs::Object) | `⌘/Ctrl+Enter` | 파일·개체 표현만 |
+/// | [`PathOnly`](PasteAs::PathOnly) | `⌥/Alt+Enter` | 경로 텍스트만 |
+///
+/// ⚠️ **모드는 사용자의 요청이지 보증이 아니다** — 원격 파일이 용량 상한을 넘으면
+/// [`Object`](PasteAs::Object)를 요청해도 경로만 나간다([docs/26 §4-4]).
+/// ★ 사용자의 의사보다 *"실패할 약속을 하지 않는다"* 가 먼저다.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Hash)]
 pub enum PasteAs {
     /// 원본 그대로 — 클립보드에 올린 표현 전부를 그대로 둔다.
     #[default]
     Original,
     /// 평문으로 — 평문 표현 하나만 올린다(FR-P-3).
     Plain,
+    /// ★ **객체로** — 파일·개체 표현만 남긴다.
+    ///
+    /// 텍스트를 빼면 PowerPoint·Word가 **파일 개체로 받을 수밖에 없다**.
+    /// 둘 다 할 수 있는 앱에서 *"경로 글자로 붙었다"* 를 막는다.
+    Object,
+    /// ★ **경로만** — 경로 텍스트만 남긴다.
+    ///
+    /// 파일 표현을 빼므로 ★ **원격 파일 내용을 끌어오지 않는다**(회선이 느리거나 종량일 때).
+    PathOnly,
+}
+
+impl PasteAs {
+    /// 이 종류의 항목에서 **뜻이 있는 모드들** — 순서는 화면에 보여줄 순서.
+    ///
+    /// ★ **힌트 줄·우클릭 메뉴·키 처리가 전부 이 한 곳을 본다.**
+    /// 셋이 따로 판단하면 *"메뉴에는 있는데 키는 안 먹는"* 상태가 반드시 생긴다.
+    ///
+    /// ⚠️ 이미지 항목에 *"경로만"* 을 띄우는 것은 **거짓말**이다 — 해당 없는 모드는 빼야 한다.
+    #[must_use]
+    pub fn applicable(kind: crate::ClipKind) -> &'static [PasteAs] {
+        use crate::ClipKind as K;
+        match kind {
+            // 파일만 개체/경로 구분이 뜻을 가진다.
+            K::Files => &[PasteAs::Original, PasteAs::Object, PasteAs::PathOnly],
+            // 서식이 있는 것은 평문으로 낮출 수 있다.
+            K::RichText => &[PasteAs::Original, PasteAs::Plain],
+            // 평문·색은 이미 평문이라 낮출 곳이 없고, 이미지는 텍스트가 없다.
+            K::Text | K::Color | K::Image => &[PasteAs::Original],
+        }
+    }
+
+    /// i18n 라벨 키.
+    #[must_use]
+    pub fn label(self) -> crate::Msg {
+        match self {
+            PasteAs::Original => crate::Msg::PasteOriginal,
+            PasteAs::Plain => crate::Msg::PastePlain,
+            PasteAs::Object => crate::Msg::PasteObject,
+            PasteAs::PathOnly => crate::Msg::PastePathOnly,
+        }
+    }
 }
 
 /// ★ **붙여넣기 포트**.
@@ -132,5 +190,62 @@ mod tests {
     fn paste_as_defaults_to_original() {
         // 정보를 잃지 않는 쪽이 기본이다(D-31).
         assert_eq!(PasteAs::default(), PasteAs::Original);
+    }
+
+    /// ★ 어떤 종류든 **원본은 항상 첫 번째**다 — 기본 동작이 목록 맨 앞에 있어야 한다.
+    #[test]
+    fn original_is_always_first_and_present() {
+        for k in [
+            crate::ClipKind::Text,
+            crate::ClipKind::RichText,
+            crate::ClipKind::Image,
+            crate::ClipKind::Files,
+            crate::ClipKind::Color,
+        ] {
+            let modes = PasteAs::applicable(k);
+            assert_eq!(modes.first(), Some(&PasteAs::Original), "{k:?}");
+        }
+    }
+
+    /// ★ 해당 없는 모드를 띄우면 거짓말이다 — 이미지에 "경로만"이 뜨면 안 된다.
+    #[test]
+    fn modes_do_not_lie_about_the_item() {
+        let img = PasteAs::applicable(crate::ClipKind::Image);
+        assert!(!img.contains(&PasteAs::PathOnly), "이미지에 경로는 없다");
+        assert!(!img.contains(&PasteAs::Plain), "이미지에 평문은 없다");
+
+        let text = PasteAs::applicable(crate::ClipKind::Text);
+        assert!(!text.contains(&PasteAs::Object), "평문에 개체는 없다");
+
+        // 평문은 이미 평문이라 "평문으로 낮추기"가 뜻이 없다.
+        assert!(
+            !text.contains(&PasteAs::Plain),
+            "평문을 평문으로 낮출 수 없다"
+        );
+    }
+
+    /// 파일에서만 개체/경로 구분이 뜻을 가진다(이 기능이 있는 이유).
+    #[test]
+    fn files_offer_object_and_path() {
+        let f = PasteAs::applicable(crate::ClipKind::Files);
+        assert!(f.contains(&PasteAs::Object));
+        assert!(f.contains(&PasteAs::PathOnly));
+    }
+
+    /// 모드마다 라벨이 있고 서로 다르다(하나라도 겹치면 메뉴가 애매해진다).
+    #[test]
+    fn every_mode_has_a_distinct_label() {
+        let all = [
+            PasteAs::Original,
+            PasteAs::Plain,
+            PasteAs::Object,
+            PasteAs::PathOnly,
+        ];
+        let labels: Vec<_> = all.iter().map(|m| m.label()).collect();
+        for (i, a) in labels.iter().enumerate() {
+            for b in labels.iter().skip(i + 1) {
+                assert_ne!(a, b, "라벨이 겹친다");
+            }
+        }
     }
 }
