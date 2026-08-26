@@ -18,6 +18,26 @@ use nclip_core::capture::{capture, CapturePolicy};
 use nclip_core::{ClipSnapshot, ClipboardWatch as _, WatchCapability};
 use nclip_plat::watch::PlatformWatch;
 
+/// ★ **지금 클립보드만 한 번** 읽고 끝낸다(`peek`).
+///
+/// `watch`는 계속 떠 있어야 하는데, *"방금 복사한 게 뭐로 잡혔나"* 만 보고 싶을 때가 잦다.
+/// 감시를 걸지 않으므로 **다른 `watch` 세션과 함께 써도 된다**.
+pub(crate) fn peek() {
+    let watch = PlatformWatch::new();
+    match watch.capability() {
+        WatchCapability::Supported { backend } => println!("클립보드: ok ({backend})"),
+        WatchCapability::Unsupported { reason } => {
+            eprintln!("클립보드를 읽을 수 없습니다: {reason:?}");
+            std::process::exit(1);
+        }
+    }
+    match watch.read_now() {
+        Some(snap) => report(&snap),
+        // ⚠️ 빈 스냅숏으로 위장하지 않는다 — 못 연 것과 비어 있는 것은 다르다.
+        None => eprintln!("클립보드를 열지 못했습니다(다른 앱이 잡고 있을 수 있습니다)."),
+    }
+}
+
 /// 감시를 켜고 잡히는 것을 찍는다. `Ctrl+C`로 끝낸다.
 pub(crate) fn run() {
     let mut watch = PlatformWatch::new();

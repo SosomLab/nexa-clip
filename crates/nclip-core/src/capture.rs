@@ -18,10 +18,9 @@
 //! ① 파일 목록 표현이 있다                 → Files
 //! ② HTML 또는 RTF가 있다                  → RichText
 //! ③ 벤더(앱 고유) 포맷이 있다
-//!      ├ 평문이 함께 있다                 → RichText   (PPT 도형 · Excel 범위)
-//!      ├ 아니고 비트맵이 있다              → Image      (그림 전용 벤더)
-//!      └ 둘 다 없다                       → RichText   (순수 개체)
-//! ④ 비트맵/메타파일이 있다                → Image
+//!      ├ 평문이 함께 있다                 → RichText   (Excel 범위 · 글 있는 도형)
+//!      └ 아니면                           → Object     ★ PPT 도형 · 차트
+//! ④ 비트맵/메타파일이 있다                → Image      (벤더 없는 순수 그림)
 //! ⑤ 그 외                                → Text
 //! ```
 //!
@@ -31,7 +30,8 @@
 //! |---|---|
 //! | 비트맵을 벤더보다 먼저 | ★ **PPT 도형 복사에도 `CF_DIB`가 들어 있다** — 도형이 "이미지"로 분류되고 검색·필터·보관 정책이 전부 틀어진다 |
 //! | 파일을 나중에 | 탐색기 복사에도 파일 이름이 담긴 평문이 붙는다 → 파일 3개가 "텍스트"가 된다 |
-//! | 벤더면 무조건 리치 | ★ **글이 하나도 없는 그림도 "서식 있는 글"이 된다**(08-27 실기 — .NET `System.Drawing.Bitmap`) |
+//! | 벤더면 무조건 리치 | ★ **글이 하나도 없는 그림도 "서식 있는 글"이 된다**(08-27 실기) |
+//! | 글 없는 벤더를 그림으로 | ★ **PPT 도형이 "이미지"가 된다** — 붙여넣으면 편집 가능한 도형인데 그림이라고 말한다(08-27 2차) |
 //!
 //! ## 2. ★ 벤더 포맷을 **목록으로 알아보지 않는다**
 //!
@@ -126,6 +126,15 @@ pub fn is_bitmap_format(fmt: &str) -> bool {
             | "image/bmp"
             | "image/tiff"
             | "image/jpeg"
+            // ★ 08-27 실기 — PPT가 항상 함께 올리는 것들. 목록에 없어서 **벤더로 세어졌다**.
+            //   `JFIF` = JPEG, `GIF`·SVG도 그냥 그림 인코딩이다.
+            | "JFIF"
+            | "JPEG"
+            | "GIF"
+            | "image/gif"
+            | "image/svg+xml"
+            | "image/webp"
+            | "public.jpeg"
     )
 }
 
@@ -157,6 +166,14 @@ pub fn is_metadata_format(fmt: &str) -> bool {
             | "CanIncludeInClipboardHistory"
             | "CanUploadToCloudClipboard"
             | "ExcludeClipboardContentFromMonitorProcessing"
+            // Chromium 계열(Chrome·Edge)이 **스스로 붙이는 내부 표식** — 내용이 아니다.
+            // ⚠️ 브라우저 입력창에서 맨 텍스트를 복사하면 이것만 딸려 오므로,
+            //    빼지 않으면 **평문이 "서식 있는 글"로** 분류된다.
+            | "Chromium internal source URL"
+            | "Chromium internal source RFH token"
+            // 원격 데스크톱(rdpclip)·CopyQ가 붙이는 자기 표식 — 내용이 아니다(08-27 실기).
+            | "Terminal Services Private Data"
+            | "application/x-copyq-owner"
             | "msSourceUrl"
             | "com.apple.cocoa.pasteboard.source-app-id"
     )
@@ -202,26 +219,34 @@ pub fn classify<S: AsRef<str>>(formats: &[S]) -> ClipKind {
     if f(is_html_format) || f(is_rtf_format) {
         return ClipKind::RichText;
     }
-    let raster = f(is_bitmap_format) || f(is_metafile_format);
-    // ③ 벤더(앱 고유 개체) — ★ **글이 딸려 있는지**로 갈린다.
+    // ③ 벤더(앱 고유) — ★ **글이 딸려 있는지**로 갈린다.
     if f(is_vendor_format) {
         if f(is_plain_format) {
-            // PPT 도형·Excel 범위 — 글이 있으니 "서식 있는 글"이 맞다.
+            // Excel 범위 · 글 있는 PPT 도형 — 글이 있으니 "서식 있는 글"이 맞다.
             return ClipKind::RichText;
         }
-        if raster {
-            // ★ 08-27 실기 정정 — .NET `System.Drawing.Bitmap` 같은 **그림 전용 벤더**.
-            //   글이 하나도 없는데 "서식 있는 글"이라고 하면 **거짓말**이다.
-            return ClipKind::Image;
-        }
-        // 글도 그림도 없는 순수 개체 — 되돌려 주는 것 말고 할 게 없다.
-        return ClipKind::RichText;
+        // ★ 08-27 실기 정정 2차 — 글이 하나도 없는 앱 개체는 **`Object`** 다.
+        //   `Image`라고 하면 *"붙여넣으면 편집 가능한 도형"* 이라는 사실이 가려지고,
+        //   `RichText`라고 하면 글이 없는데 거짓말이 된다(PPT `Art::GVML ClipFormat`).
+        return ClipKind::Object;
     }
-    // ④ 그림.
-    if raster {
+    // ④ 그림 — 벤더가 없는 순수 래스터(스크린샷 도구 등).
+    if f(is_bitmap_format) || f(is_metafile_format) {
         return ClipKind::Image;
     }
     ClipKind::Text
+}
+
+/// ★ **내용을 담은 표현이 하나라도 있는가** — 없으면 **항목이 아니다**.
+///
+/// ⚠️ 08-27 실기에서 Excel이 지연 렌더링으로 클립보드를 다시 채우는 순간에 읽혀
+/// **표현 0개짜리 항목**이 만들어졌다. rdpclip의 `Terminal Services Private Data`처럼
+/// **곁다리만 있는** 경우도 마찬가지다.
+///
+/// 목록에 빈 줄이 쌓이면 사용자는 **제품이 고장 났다고 읽는다**.
+#[must_use]
+pub fn has_content<R: RepInfo>(reps: &[R]) -> bool {
+    reps.iter().any(|r| !is_metadata_format(r.format()))
 }
 
 /// [`classify`]와 같되 **평문 내용까지** 본다 — 색 코드 한 줄이면 [`ClipKind::Color`].
@@ -755,7 +780,8 @@ fn build_preview<R: RepInfo>(
                 Preview::Files(file_names.to_vec())
             }
         }
-        ClipKind::Image => image_preview(thumb, kept),
+        // 개체는 그림처럼 보여 준다 — 함께 온 비트맵이 곧 미리보기다.
+        ClipKind::Image | ClipKind::Object => image_preview(thumb, kept),
         // 리치는 정제된 HTML이 있으면 그걸, 없으면 평문으로 **강등**한다.
         // ★ 도형처럼 글자가 없는 리치는 썸네일이 미리보기다.
         ClipKind::RichText => match (rich_html, plain) {
@@ -931,6 +957,54 @@ mod tests {
             ClipKind::Text,
             "★ 곁다리 하나 때문에 맨 텍스트가 서식 글이 되면 안 된다"
         );
+    }
+
+    /// ★ 08-27 실기 — Edge 복사에서 나온 Chromium 내부 표식.
+    ///
+    /// 이 항목 자체는 `HTML Format`이 있어 리치가 맞았지만, **브라우저 입력창에서
+    /// 맨 텍스트를 복사하면** 이 표식만 딸려 온다 → 평문이 리치로 분류된다.
+    #[test]
+    fn chromium_internal_markers_are_metadata() {
+        for f in [
+            "Chromium internal source URL",
+            "Chromium internal source RFH token",
+        ] {
+            assert!(is_metadata_format(f), "{f}는 곁다리여야 한다");
+        }
+        // 브라우저 입력창 복사 = 평문 + 내부 표식뿐.
+        assert_eq!(
+            classify(&[
+                "Chromium internal source URL",
+                "Chromium internal source RFH token",
+                "CF_UNICODETEXT",
+                "CF_LOCALE",
+                "CF_TEXT",
+                "CF_OEMTEXT",
+            ]),
+            ClipKind::Text
+        );
+        // 웹 본문 복사는 여전히 리치(HTML이 있다).
+        assert_eq!(
+            classify(&[
+                "HTML Format",
+                "Chromium internal source URL",
+                "CF_UNICODETEXT"
+            ]),
+            ClipKind::RichText
+        );
+    }
+
+    /// ⚠️ 이름에 "Source"가 들어간다고 곁다리로 몰면 **진짜 내용을 버린다**.
+    ///
+    /// `Embed Source`는 OLE **개체 본문**이고 `Link Source`는 연결 정보다.
+    /// 그래서 규칙이 아니라 **명시 목록**으로만 거른다.
+    #[test]
+    fn source_in_name_is_not_a_rule() {
+        assert!(
+            !is_metadata_format("Embed Source"),
+            "★ 개체 본문을 버리면 안 된다"
+        );
+        assert!(is_vendor_format("Embed Source"));
     }
 
     /// 클립보드 기록 표식도 곁다리다 — 있다고 리치가 되면 안 된다.
@@ -1176,19 +1250,27 @@ mod tests {
         assert!(c.one_line_contains("세방전지"));
     }
 
-    /// ★ 글자가 하나도 없는 그림 전용 벤더는 **Image**다(08-27 실기 정정).
+    /// ★ **PPT 도형(글 없음)은 `Object`** 다 — 08-27 실기의 [1]·[4]·[6].
     ///
-    /// 예전에는 *"벤더면 무조건 리치"* 라서 .NET `System.Drawing.Bitmap`으로 복사한
-    /// 그림이 "서식 있는 글"로 분류됐다. **글이 없는데 리치라고 하면 거짓말이다.**
+    /// `Image`라고 하면 *"붙여넣으면 편집 가능한 도형"* 이라는 사실이 가려지고,
+    /// `RichText`라고 하면 글이 하나도 없는데 거짓말이다.
     #[test]
-    fn image_only_vendor_is_image_not_rich() {
+    fn ppt_shape_without_text_is_object() {
         let reps = [
-            rep("System.Drawing.Bitmap", 606),
-            rep("CF_DIB", 300_000),
-            rep("CF_DIBV5", 300_000),
+            rep("DataObject", 8),
+            rep("Object Descriptor", 352),
+            rep("PowerPoint 12.0 Internal Shapes", 8),
+            rep("Art::GVML ClipFormat", 4_300),
+            rep("image/svg+xml", 1_800),
+            rep("PNG", 6_700),
+            rep("JFIF", 19_600),
+            rep("GIF", 3_600),
+            rep("CF_DIB", 448_000),
+            rep("CF_DIBV5", 448_000),
         ];
         let c = capture(&reps, None, Some(([3; 32], 320, 240)), None, &[], P);
-        assert_eq!(c.kind, ClipKind::Image);
+        assert_eq!(c.kind, ClipKind::Object);
+        // 미리보기는 그림처럼 — 함께 온 비트맵이 곧 미리보기다.
         assert_eq!(
             c.preview,
             Preview::Thumb {
@@ -1197,6 +1279,94 @@ mod tests {
                 h: 240
             }
         );
+    }
+
+    /// ★ 반대로 **스크린샷 도구**는 진짜 `Image`다 — 08-27 실기의 [2](Greenshot).
+    ///
+    /// 진짜 벤더 포맷이 없고 그림 인코딩만 있다.
+    #[test]
+    fn screenshot_tool_copy_is_image() {
+        let reps = [
+            rep("DataObject", 8),
+            rep("PNG", 23_500),
+            rep("CF_DIB", 1_600_000),
+            rep("Ole Private Data", 216),
+            rep("CF_DIBV5", 1_600_000),
+        ];
+        assert_eq!(
+            capture(&reps, None, None, None, &[], P).kind,
+            ClipKind::Image
+        );
+    }
+
+    /// ★ `JFIF`·`GIF`·SVG는 **그림 인코딩**이지 벤더가 아니다(08-27 실기).
+    ///
+    /// 목록에 없으면 PPT 복사에서 벤더 수를 부풀려 판정이 흔들린다.
+    #[test]
+    fn common_image_encodings_are_not_vendor() {
+        for f in [
+            "JFIF",
+            "JPEG",
+            "GIF",
+            "image/gif",
+            "image/svg+xml",
+            "image/webp",
+        ] {
+            assert!(is_bitmap_format(f), "{f}는 그림 포맷이다");
+            assert!(!is_vendor_format(f), "{f}가 벤더로 세어졌다");
+        }
+    }
+
+    /// PPT **표**는 HTML이 있으므로 여전히 `RichText`다 — 실기의 [3].
+    #[test]
+    fn ppt_table_with_html_is_rich() {
+        let reps = [
+            rep("Art::Table ClipFormat", 7_100),
+            rep("HTML Format", 48_800),
+            rep("PNG", 34_000),
+            rep("CF_DIB", 2_100_000),
+        ];
+        assert_eq!(
+            capture(&reps, None, None, Some("<table>…</table>"), &[], P).kind,
+            ClipKind::RichText
+        );
+    }
+
+    /// Excel 범위는 글이 있으므로 `RichText` — 실기의 [13]·[15].
+    #[test]
+    fn excel_range_is_rich() {
+        let reps = [
+            rep("Biff12", 7_000),
+            rep("XML Spreadsheet", 4_200),
+            rep("HTML Format", 6_100),
+            rep("CF_UNICODETEXT", 1_010),
+            rep("Rich Text Format", 9_500),
+            rep("CF_DIB", 1_100_000),
+        ];
+        assert_eq!(
+            capture(&reps, Some("수요계획"), None, None, &[], P).kind,
+            ClipKind::RichText
+        );
+    }
+
+    /// ★ **내용 표현이 없으면 항목이 아니다** — 실기의 [14](Excel 0개)·[9](rdpclip).
+    #[test]
+    fn metadata_only_snapshot_has_no_content() {
+        let none: [Representation; 0] = [];
+        assert!(!has_content(&none), "빈 클립보드는 항목이 아니다");
+
+        let only_meta = [
+            rep("DataObject", 8),
+            rep("Terminal Services Private Data", 4),
+            rep("Ole Private Data", 168),
+        ];
+        assert!(
+            !has_content(&only_meta),
+            "★ 곁다리만 있는 것도 항목이 아니다 — 목록에 빈 줄이 쌓이면 고장으로 읽힌다"
+        );
+
+        let real = [rep("DataObject", 8), rep("CF_UNICODETEXT", 20)];
+        assert!(has_content(&real));
     }
 
     /// 반면 **글이 딸린** 벤더는 여전히 리치다 — PPT 도형이 그림으로 떨어지면 안 된다.
@@ -1211,10 +1381,10 @@ mod tests {
         assert_eq!(c.kind, ClipKind::RichText);
     }
 
-    /// 글도 그림도 없는 **순수 개체**는 리치로 둔다(되돌려 주는 것 말고 할 게 없다).
+    /// 글도 그림도 없는 **순수 개체**도 `Object`다(되돌려 주는 것 말고 할 게 없다).
     #[test]
-    fn bare_object_is_rich() {
-        assert_eq!(classify(&["Embed Source"]), ClipKind::RichText);
+    fn bare_object_is_object() {
+        assert_eq!(classify(&["Embed Source"]), ClipKind::Object);
     }
 
     /// ★ 래스터는 있는데 썸네일이 없으면 **"준비 중"** 이라고 말한다.

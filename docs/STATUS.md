@@ -4,6 +4,29 @@
 
 ---
 
+## 2026-08-27 (4차) — 실기 18건이 결함 셋을 더 잡았다 · `ClipKind::Object`
+
+사용자가 실제 업무 자료로 `watch`를 훑었다(PPT·Excel·Edge·VS Code·Greenshot·CopyQ).
+
+| # | 증상 | 조치 |
+|:--:|---|---|
+| ⑤ | ★ **PPT 도형이 `Image`** 로 분류 | ★ **`ClipKind::Object` 신설** — 그림도 글도 아닌 앱 개체 |
+| ⑥ | `JFIF`·`GIF`·SVG가 **벤더로 세어짐** | 그림 포맷 목록에 추가 |
+| ⑦ | ★ **표현 0개 항목**이 생김(Excel 지연 렌더링 · rdpclip 표식뿐) | `has_content` — **내용 없으면 항목이 아니다** |
+
+★ **경계가 실제로 갈린다** — PPT 도형 `Object` · PPT 표 `RichText` · PPT 글상자 `RichText` ·
+Greenshot `Image`. 같은 앱에서 온 셋을 뭉뚱그리면 **셋 다 틀린다**.
+
+✅ **예측 적중** — 3차에서 미리 고친 Chromium 표식 건이 실기 [16](Edge 평문)으로 확인됐다.
+
+- ★ **실기 18건을 회귀 테스트로 박제**([`tests/real_clipboard_captures.rs`](../crates/nclip-core/tests/real_clipboard_captures.rs)) — 포맷 이름 **그대로**.
+- ⚠️ 반대 방향도 박았다 — Excel `Embed Source`·`Native`는 **곁다리가 아니다**(버리면 개체 붙여넣기가 깨진다).
+- **`peek`** 신설 — 지금 클립보드만 한 번. `watch`와 함께 써도 된다.
+
+**실측**: **300 테스트** · clippy `-D warnings` 클린.
+
+---
+
 ## 2026-08-27 (3차) — ★ 제품이 처음으로 "동작"한다 (T-14b)
 
 ```

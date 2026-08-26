@@ -40,6 +40,13 @@ pub enum ClipKind {
     RichText,
     /// 이미지.
     Image,
+    /// ★ **앱 고유 개체** — 도형·차트처럼 **그림도 글도 아닌** 것(08-27 실기).
+    ///
+    /// PPT 도형을 복사하면 `Art::GVML ClipFormat` + 여러 이미지 인코딩이 함께 온다.
+    /// *"이미지"* 라고 하면 **붙여넣으면 편집 가능한 도형**이라는 사실이 가려지고,
+    /// *"서식 있는 글"* 이라고 하면 글이 하나도 없는데 거짓말이 된다.
+    /// 미리보기는 함께 온 비트맵을 쓰고, 붙여넣기는 원본 표현을 전부 되돌린다.
+    Object,
     /// 파일·폴더 경로 목록.
     Files,
     /// 색상 코드(자동 판별).
@@ -54,6 +61,7 @@ impl ClipKind {
             ClipKind::Text => crate::Msg::KindText,
             ClipKind::RichText => crate::Msg::KindRichText,
             ClipKind::Image => crate::Msg::KindImage,
+            ClipKind::Object => crate::Msg::KindObject,
             ClipKind::Files => crate::Msg::KindFiles,
             ClipKind::Color => crate::Msg::KindColor,
         }

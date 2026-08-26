@@ -121,6 +121,8 @@ pub enum Msg {
     // ── 동작 ──────────────────────────────────
     /// 복사(클립보드에 올림).
     ActionCopy,
+    /// 종류 — 앱 고유 개체(도형·차트).
+    KindObject,
     /// 보관 개수 입력 범위 경고.
     ValItemsRange,
     /// 트레이 최근 개수 입력 범위 경고.
@@ -343,6 +345,7 @@ impl Msg {
             Msg::ViewPlain => ["Plain", "한 줄 보기", "单行视图", "1行表示"],
 
             Msg::ActionCopy => ["Copy", "복사", "复制", "コピー"],
+            Msg::KindObject => ["Object", "개체", "对象", "オブジェクト"],
             Msg::ValItemsRange => [
                 "Enter 10-100000",
                 "10~100000 사이로 입력하세요",
@@ -617,7 +620,7 @@ mod tests {
     use super::*;
 
     /// 카탈로그 전수 — 새 `Msg`를 더하면 여기도 더한다(빈칸 검사가 그걸 강제한다).
-    const ALL_MSG: [Msg; 102] = [
+    const ALL_MSG: [Msg; 103] = [
         Msg::AppName,
         Msg::SearchPlaceholder,
         Msg::EmptyHistory,
@@ -631,6 +634,7 @@ mod tests {
         Msg::ViewCompact,
         Msg::ViewPlain,
         Msg::ActionCopy,
+        Msg::KindObject,
         Msg::ValItemsRange,
         Msg::ValTrayCountRange,
         Msg::PasteOriginal,

@@ -131,8 +131,9 @@ impl PasteAs {
             K::Files => &[PasteAs::Original, PasteAs::Object, PasteAs::PathOnly],
             // 서식이 있는 것은 평문으로 낮출 수 있다.
             K::RichText => &[PasteAs::Original, PasteAs::Plain],
-            // 평문·색은 이미 평문이라 낮출 곳이 없고, 이미지는 텍스트가 없다.
-            K::Text | K::Color | K::Image => &[PasteAs::Original],
+            // 평문·색은 이미 평문이라 낮출 곳이 없고, 이미지·개체는 텍스트가 없다.
+            // ★ 개체(PPT 도형)는 **원본으로만** 붙인다 — 평문으로 낮추면 아무것도 안 나온다.
+            K::Text | K::Color | K::Image | K::Object => &[PasteAs::Original],
         }
     }
 
@@ -199,6 +200,7 @@ mod tests {
             crate::ClipKind::Text,
             crate::ClipKind::RichText,
             crate::ClipKind::Image,
+            crate::ClipKind::Object,
             crate::ClipKind::Files,
             crate::ClipKind::Color,
         ] {

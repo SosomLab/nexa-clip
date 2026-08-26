@@ -4,6 +4,7 @@
 
 ## 2026-08-27
 
+- ★ **실기 18건이 결함 셋을 더** 잡았다 — ⑤ **PPT 도형이 `Image`** 로(→ ★ **`ClipKind::Object` 신설**) ⑥ `JFIF`·`GIF`·SVG가 **벤더로 세어짐** ⑦ ★ **표현 0개 항목**이 생김(`has_content`). ★ 18건을 **회귀 테스트로 박제** → [journal 4차](journal/2026-08-27.md)
 - ★ **Windows 클립보드 감시**(T-14b) — 메시지 전용 창 + 전용 스레드 · `nexa-clip watch` 신설. **제품이 처음으로 동작한다** → [journal 3차](journal/2026-08-27.md)
 - ★ **첫 실행에서 버그 넷** — ① `CF_UNICODETEXT`가 **UTF-16LE**(한글이 사라졌다) ② `DataObject`가 텍스트를 리치로 ③ **`CF_OEMTEXT` 누락** ④ *"벤더면 무조건 리치"* 가 그림까지 리치로. ★ **전부 오류를 안 내고 조용히 틀렸다** → [27 §8-1](27-capture-cases.md)
 - 설계 정정 — `ClipSnapshot`이 **`RawRep`**(감시는 `blob_id`를 만들 수 없다) · `capture`가 `RepInfo` 제네릭 · `Captured.keep` · `PreviewMissing::ThumbMissing`
