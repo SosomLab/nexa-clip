@@ -24,7 +24,7 @@
 
 | 상태 | 항목 |
 |:--:|---|
-| ✅ | **워크스페이스 8 크레이트** + vendor 무수정 복사 + `VENDOR.lock` + CI(3-OS) |
+| ✅ | **워크스페이스 8 크레이트**(`nclip-*` 통일 · DR-17 포크) + CI(3-OS) |
 | ✅ | `nclip-core` — i18n · **항목/다중 표현 모델** · 포트(`ClipboardWatch`·`WatchCapability`) |
 | ✅ | `nclip-plat::watch` 게이트(민감 표식 > 일시정지 > 다음 1건) · `ViewMode` |
 | 🚧 | 보관 정책 · 타입 판별 · 중복 승격 파이프라인 |

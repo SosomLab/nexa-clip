@@ -2,8 +2,3 @@
 # 리눅스 bash가 `\r: command not found`로 죽는다(beepd-cloud 킷이 Windows에서
 # vm-setup.sh를 scp로 올리는 경로가 정확히 이 지뢰를 밟는다).
 *.sh text eol=lf
-
-# ★ vendor(crates/vendor/*)는 nexa-beep 무수정 복사이고 sha256으로 잠겨 있다
-# (VENDOR.lock · tools/check-vendor.py). 줄바꿈이 변환되면 바이트가 달라져
-# **Windows 러너에서만 U-1 검사가 깨진다**(autocrlf=true). 변환을 아예 끈다.
-crates/vendor/** -text

@@ -4,6 +4,7 @@
 
 ## 2026-08-26
 
+- ★ **`nclip-*` 명칭 통일(포크)** — vendor 층위·U-1 규율 폐지. 기능 변경 0, **162 테스트 그대로**. DR-15 폐기 → **DR-17**(포크 흡수) · **DR-18**(다음 프로젝트는 라이브러리 선행) → [journal 7차](journal/2026-08-26.md)
 - ★ **코드 착수** — 워크스페이스 8 크레이트 · vendor 무수정 복사(`nbeep-gfx`·`nbeep-ctl`) · `nclip-core`(i18n·항목/표현 모델·포트) · `nclip-plat::watch` 게이트 · `ViewMode` · CI(3-OS + **vendor 무결성**). **162 테스트 통과** · clippy `-D warnings` 클린 → [journal 6차](journal/2026-08-26.md)
 - ★ **아이콘** — 계열 골격(라운드 스퀘어·그라디언트·흰 전경) 유지 + **클립보드 + 히스토리 스택** 모티프 · 청록 `#22C3D6→#0B7FA6`. SVG 정본 + 1024/256/64 PNG + ICO → [journal 6차](journal/2026-08-26.md)
 - **DR-15**(vendor 원본명 유지) · **DR-16**(i18n core 동형) 확정 · D-8/35/37 닫힘 → [journal 6차](journal/2026-08-26.md)

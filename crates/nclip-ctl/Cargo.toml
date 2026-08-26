@@ -1,6 +1,3 @@
-# nclip-ctl — vendor 컨트롤 재수출 + **우리 신규 컨트롤**.
-# ★ 규율 U-1(docs/13 §5): crates/vendor/* 는 고치지 않는다. 확장은 전부 여기에 둔다.
-# 앱 도메인 의존 0을 vendor와 동일하게 유지한다 — 문자열은 주입으로 받는다.
 [package]
 name = "nclip-ctl"
 version.workspace = true
@@ -9,11 +6,12 @@ rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
-description = "Nexa Clip 컨트롤 — nbeep-ctl 재수출 + ClipRow·RichTextView·ViewModeList·세로 Toolbar"
+description = "Nexa Clip 컨트롤 — 렌더 기반(draw·raster)·기하·이벤트·위젯 계약·컨트롤 (앱 도메인 의존 0)"
 
 [lints]
 workspace = true
 
+# ⚠️ 앱 도메인(nclip-core 등) 의존 금지 — 이 크레이트의 존재 이유다(docs/13 §2-2).
+# 문자열(i18n)·크기 배율 같은 앱 정책은 전부 **주입**으로 받는다(controls::set_ctl_labels 등).
 [dependencies]
-nbeep-ctl.workspace = true
-nbeep-gfx.workspace = true
+nclip-gfx.workspace = true

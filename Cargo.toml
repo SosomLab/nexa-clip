@@ -1,16 +1,15 @@
 # Nexa Clip — 크로스플랫폼 클립보드 매니저 (올 러스트 워크스페이스)
 # 아키텍처 = docs/20 §5 · 결정 = docs/10 · 재사용 계획 = docs/13.
+# 렌더·컨트롤(nclip-gfx·nclip-ctl)은 nexa-beep에서 가져와 **이 프로젝트 이름으로 흡수**했다
+# (DR-15 정정 08-26 — 포크. 복사본 불변 규율 U-1은 함께 폐지).
 # 크레이트 경계는 단방향(역참조 금지) — 어댑터가 nclip-core에 의존한다.
 # 외부 crate 기본 0 지향(DR-8) — 추가는 docs/10 §3 원장에 건별 기록.
 [workspace]
 resolver = "2"
 members = [
-  # ── vendor: nexa-beep에서 무수정 복사(docs/13 §5 U-1 — 이 안은 고치지 않는다)
-  "crates/vendor/nbeep-gfx",   # CPU 래스터라이저·텍스트 스택 (의존 0)
-  "crates/vendor/nbeep-ctl",   # 커스텀 컨트롤 한 벌 (앱 도메인 의존 0)
-  # ── 우리 크레이트
   "crates/nclip-core",         # 도메인 + 포트 + i18n (허브 — nclip 의존 0)
-  "crates/nclip-ctl",          # vendor 재수출 + 신규 컨트롤(ClipRow·RichTextView·ViewModeList·세로 Toolbar)
+  "crates/nclip-gfx",          # CPU 래스터라이저·텍스트 스택 (의존 0)
+  "crates/nclip-ctl",          # 커스텀 컨트롤 한 벌 (앱 도메인 의존 0)
   "crates/nclip-plat",         # 플랫폼 경계 — 클립보드 감시·전역 단축키·포커스/주입·트레이
   "crates/nclip-store",        # 영속 — 암호화 세그먼트·내용 주소 blob
   "crates/nclip-ui",           # 화면 S1~S8
@@ -38,11 +37,8 @@ inefficient_to_string = "warn"
 unwrap_used = "warn"
 
 [workspace.dependencies]
-# vendor (이름은 원본 그대로 — 복사본을 고치지 않기 위한 조건이다. docs/13 §5)
-nbeep-gfx = { path = "crates/vendor/nbeep-gfx" }
-nbeep-ctl = { path = "crates/vendor/nbeep-ctl" }
-# 우리 크레이트
 nclip-core = { path = "crates/nclip-core" }
+nclip-gfx = { path = "crates/nclip-gfx" }
 nclip-ctl = { path = "crates/nclip-ctl" }
 nclip-plat = { path = "crates/nclip-plat" }
 nclip-store = { path = "crates/nclip-store" }

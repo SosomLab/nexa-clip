@@ -23,4 +23,4 @@ nclip-ctl.workspace = true
 nclip-plat.workspace = true
 nclip-store.workspace = true
 nclip-ui.workspace = true
-nbeep-gfx.workspace = true
+nclip-gfx.workspace = true
