@@ -243,6 +243,8 @@ General 안내문 그대로:
 | `sync.remote_media` | Combo | 메타 우선 | 원격 이미지 정책 |
 | `sync.relay` | TextBox | — | 릴레이 서버 주소(선택) |
 | `sync.pause` | Switch | off | ★ 전파 일시 정지(회의·화면 공유) |
+| `sync.relay_received` | Checkbox | ★ **off** | ★ **받은 항목을 내 기기들에 재전파**(DR-29 F-2) |
+| (신뢰 목록 각 행) | 토글 | off | ★ **이 사람은 자동 승인**(DR-29 T-9 — 사람 단위) |
 
 ### 3-10. 고급 (Advanced)
 
