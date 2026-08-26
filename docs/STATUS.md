@@ -4,19 +4,7 @@
 
 ---
 
-## 2026-08-26 (15차) — macOS 빌드 복구 · 설정 읽기 mac 확인
-
-- ⚠️ **`nclip-plat`이 mac에서 한 번도 컴파일된 적이 없었다** — K-1 스파이크의 `appkit` 헬퍼 5개가
-  `forbid(unsafe_op_in_unsafe_fn)` 아래서 `unsafe {}` 없이 FFI를 불렀다(E0133 × 13). 본문을 감싸 복구.
-  ★ OS 분기 코드는 **그 OS에서 빌드되기 전까지 "됨"이 아니다.**
-- **T-12c 설정 읽기 macOS ✅** — 기본값 `Compact·system·1000·8` / 저장본 `Rich·dark·2500·15` 반영.
-  `nexa-clip settings` 창 뜸(Apple SD Gothic Neo · 21개). 창 조작이 필요한 항목은 ⏳.
-
-**실측**: **235 테스트** · clippy `-D warnings` 클린 — **mac에서**.
-
----
-
-## 2026-08-27 (15차) — ★ 제품이 처음으로 "동작"한다 (T-14b)
+## 2026-08-27 (3차) — ★ 제품이 처음으로 "동작"한다 (T-14b)
 
 ```
 $ nexa-clip watch
@@ -43,7 +31,7 @@ $ nexa-clip watch
 
 ---
 
-## 2026-08-27 (14차 이어서) — macOS Retina 배율 정정
+## 2026-08-27 (2차) — macOS Retina 배율 정정 · K-1 mac 통과
 
 - ⚠️ 설정 창에서 **레이아웃은 2배인데 글자만 1배**였다(사용자 스크린샷).
   `RasterCtx`에 배율을 안 넘겼다 — beep은 `.with_scale(entry.scale)`를 부르고 있었다.
@@ -51,6 +39,18 @@ $ nexa-clip watch
   Windows(배율 1.0)에서는 우연히 맞아 보여 **한쪽 OS에서만 조용히 틀리는** 버그였다.
 - ✅ **macOS K-1 통과**(사용자 실기) — 손쉬운 사용에 iTerm 추가 후 Sublime 붙여넣기.
   ⚠️ 권한 주체가 터미널이라 **배포본(.app) 통과를 뜻하지 않는다**(→ T-9d).
+
+---
+
+## 2026-08-27 (1차) — macOS 빌드 복구 · 설정 읽기 mac 확인
+
+- ⚠️ **`nclip-plat`이 mac에서 한 번도 컴파일된 적이 없었다** — K-1 스파이크의 `appkit` 헬퍼 5개가
+  `forbid(unsafe_op_in_unsafe_fn)` 아래서 `unsafe {}` 없이 FFI를 불렀다(E0133 × 13). 본문을 감싸 복구.
+  ★ OS 분기 코드는 **그 OS에서 빌드되기 전까지 "됨"이 아니다.**
+- **T-12c 설정 읽기 macOS ✅** — 기본값 `Compact·system·1000·8` / 저장본 `Rich·dark·2500·15` 반영.
+  `nexa-clip settings` 창 뜸(Apple SD Gothic Neo · 21개). 창 조작이 필요한 항목은 ⏳.
+
+**실측**: **235 테스트** · clippy `-D warnings` 클린 — **mac에서**.
 
 ---
 

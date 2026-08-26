@@ -4,14 +4,14 @@
 
 ## 2026-08-27
 
-- ★ **Windows 클립보드 감시**(T-14b) — 메시지 전용 창 + 전용 스레드 · `nexa-clip watch` 신설. **제품이 처음으로 동작한다** → [journal 19차](journal/2026-08-26.md)
+- ★ **Windows 클립보드 감시**(T-14b) — 메시지 전용 창 + 전용 스레드 · `nexa-clip watch` 신설. **제품이 처음으로 동작한다** → [journal 3차](journal/2026-08-27.md)
 - ★ **첫 실행에서 버그 넷** — ① `CF_UNICODETEXT`가 **UTF-16LE**(한글이 사라졌다) ② `DataObject`가 텍스트를 리치로 ③ **`CF_OEMTEXT` 누락** ④ *"벤더면 무조건 리치"* 가 그림까지 리치로. ★ **전부 오류를 안 내고 조용히 틀렸다** → [27 §8-1](27-capture-cases.md)
 - 설계 정정 — `ClipSnapshot`이 **`RawRep`**(감시는 `blob_id`를 만들 수 없다) · `capture`가 `RepInfo` 제네릭 · `Captured.keep` · `PreviewMissing::ThumbMissing`
-- ⚠️ **macOS Retina 배율** — 레이아웃은 2배인데 글자만 1배였다. `RasterCtx::new`에 **배율을 필수 인자로** 승격해 구조로 막았다 · ✅ macOS K-1 실기 통과(iTerm 권한)
+- ⚠️ **macOS Retina 배율** — 레이아웃은 2배인데 글자만 1배였다. `RasterCtx::new`에 **배율을 필수 인자로** 승격해 **구조로** 막았다 · ✅ macOS K-1 실기 통과(iTerm 권한) → [journal 2차](journal/2026-08-27.md)
+- ⚠️ **macOS 빌드 복구** — K-1 `appkit` 헬퍼가 `forbid(unsafe_op_in_unsafe_fn)` 아래서 **컴파일된 적이 없었다**(E0133 × 13). **T-12c 설정 읽기 mac ✅** → [journal 1차](journal/2026-08-27.md)
 
 ## 2026-08-26
 
-- ⚠️ **macOS 빌드 복구** — K-1 `appkit` 헬퍼가 `forbid(unsafe_op_in_unsafe_fn)` 아래서 컴파일된 적이 없었다(E0133 × 13). **T-12c 설정 읽기 mac ✅** · 설정 창 뜸 → [journal 19차](journal/2026-08-26.md)
 - ★ **캡처 파이프라인**(T-14a) — [27](27-capture-cases.md)의 규칙이 `nclip-core::capture`가 됐다(순수 함수 · 실제 클립보드 없이 전수 테스트). ★ **벤더를 목록으로 알아보지 않는다**(아는 표준이 아니면 벤더) · ⚠️ 그 함정은 **곁다리**(`CF_LOCALE` 하나로 텍스트가 리치가 된다) · `Preview::None`에 **사유**를 담는다 → [journal 18차](journal/2026-08-26.md)
 - ⚠️ **점검 화면이 거짓말을 하고 있었다** — `default view`가 저장값이 아니라 `ViewMode::default()`였다. 저장본을 읽도록 고치면서 **영속을 터미널에서 검증**할 수 있게 됐다 → [journal 17차](journal/2026-08-26.md)
 - ★ **개수 설정을 숫자로**(사용자 확정) — `SettingKind::Number` 신설. *"보통"* 이 몇 개인지 알려면 설명을 읽어야 하지만 **`1000`은 그 자체로 답**이다. `store.max_items`(10~100000) · `ui.tray_recent_n`(3~20) · 범위 밖은 경고+원복 → [14](14-settings-registry.md)
