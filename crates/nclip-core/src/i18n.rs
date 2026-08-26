@@ -161,6 +161,138 @@ pub enum Msg {
     SyncPendingApproval,
     /// 전송 구간은 종단 암호화된다.
     SyncEndToEnd,
+
+    // ── 설정 화면(registry) — docs/14 ──
+    /// 작게.
+    SizeSmall,
+    /// 보통(기본).
+    SizeNormal,
+    /// 크게.
+    SizeLarge,
+    /// 아주 크게.
+    SizeExtraLarge,
+    /// 가장 크게.
+    SizeXLarge,
+    /// 분 단위 입력 범위 오류.
+    ValMinutesRange,
+    /// 콤보의 직접 입력 항목.
+    CustomInput,
+    /// 시스템 기본 글꼴.
+    SystemDefaultFont,
+    /// 설정 카테고리: 일반.
+    CatGeneral,
+    /// 설정 카테고리: 단축키.
+    CatShortcuts,
+    /// 설정 카테고리: 캡처.
+    CatCapture,
+    /// 설정 카테고리: 보관.
+    CatStorage,
+    /// 설정 카테고리: 보안·개인정보.
+    CatPrivacy,
+    /// 설정 카테고리: 붙여넣기.
+    CatPaste,
+    /// 설정 카테고리: 모양.
+    CatAppearance,
+    /// 설정 카테고리: 검색.
+    CatSearch,
+    /// 설정 카테고리: 동기화.
+    CatSync,
+    /// 설정 카테고리: 고급.
+    CatAdvanced,
+    /// 로그인 시 자동 시작.
+    SetAutostart,
+    /// 자동 시작 설명.
+    SetAutostartDesc,
+    /// 언어.
+    SetLang,
+    /// 언어 설명.
+    SetLangDesc,
+    /// 팝업 위치.
+    SetPopupAt,
+    /// 팝업 위치 설명(커서 기본).
+    SetPopupAtDesc,
+    /// 값: 마우스 커서 위치.
+    ValCursor,
+    /// 값: 화면 중앙.
+    ValScreenCenter,
+    /// 값: 마지막 위치.
+    ValLastPos,
+    /// 목록 보기 모드.
+    SetViewMode,
+    /// 보기 모드 설명.
+    SetViewModeDesc,
+    /// 테마.
+    SetTheme,
+    /// 테마 설명.
+    SetThemeDesc,
+    /// 값: 시스템 설정을 따름.
+    ValSystem,
+    /// 값: 다크.
+    ValDark,
+    /// 값: 라이트.
+    ValLight,
+    /// 텍스트 저장.
+    SetCapText,
+    /// 이미지 저장.
+    SetCapImage,
+    /// 파일·폴더 저장.
+    SetCapFiles,
+    /// 서식 저장.
+    SetCapRich,
+    /// 원본 포맷 보존.
+    SetCapNative,
+    /// 원본 포맷 설명.
+    SetCapNativeDesc,
+    /// 최대 항목 수.
+    SetMaxItems,
+    /// 항목 수 설명.
+    SetMaxItemsDesc,
+    /// 정렬.
+    SetSortBy,
+    /// 값: 최근 복사순.
+    ValRecentCopy,
+    /// 값: 최초 복사순.
+    ValFirstCopy,
+    /// 값: 복사 횟수순.
+    ValCopyCount,
+    /// 민감 표식 존중.
+    SetRespectMarks,
+    /// 표식 설명.
+    SetRespectMarksDesc,
+    /// 종료 시 기록 비우기.
+    SetClearOnQuit,
+    /// 자동 붙여넣기.
+    SetPasteAuto,
+    /// 자동 붙여넣기 설명.
+    SetPasteAutoDesc,
+    /// 항상 평문으로.
+    SetPastePlainDefault,
+    /// 검색 방식.
+    SetSearchMode,
+    /// 값: 정확히 일치.
+    ValExact,
+    /// 값: 유사 검색.
+    ValFuzzy,
+    /// 값: 정규식.
+    ValRegex,
+    /// 한글 조합 중 검색.
+    SetHangulCompose,
+    /// 동기화 설명.
+    SetSyncEnabledDesc,
+    /// 트레이 최근 항목 수.
+    SetTrayRecent,
+    /// 진단 로그.
+    SetDiagLog,
+    /// 로그 설명.
+    SetDiagLogDesc,
+    /// 값: 영어.
+    ValLangEn,
+    /// 값: 한국어.
+    ValLangKo,
+    /// 값: 중국어(간체).
+    ValLangZh,
+    /// 값: 일본어.
+    ValLangJa,
 }
 
 impl Msg {
@@ -256,6 +388,186 @@ impl Msg {
                 "传输过程端到端加密",
                 "転送区間はエンドツーエンド暗号化",
             ],
+            Msg::SizeSmall => ["Small", "작게", "小", "小"],
+            Msg::SizeNormal => ["Normal", "보통", "中", "標準"],
+            Msg::SizeLarge => ["Large", "크게", "大", "大"],
+            Msg::SizeExtraLarge => ["Extra large", "아주 크게", "特大", "特大"],
+            Msg::SizeXLarge => ["XL", "가장 크게", "超大", "最大"],
+            Msg::ValMinutesRange => [
+                "Enter minutes in range",
+                "분 단위로 범위 안에서 입력하세요",
+                "请输入范围内的分钟数",
+                "範囲内の分数を入力してください",
+            ],
+            Msg::CustomInput => ["Custom…", "직접 입력…", "自定义…", "カスタム…"],
+            Msg::SystemDefaultFont => ["System default", "시스템 기본", "系统默认", "システム標準"],
+            Msg::CatGeneral => ["General", "일반", "常规", "一般"],
+            Msg::CatShortcuts => ["Shortcuts", "단축키", "快捷键", "ショートカット"],
+            Msg::CatCapture => ["Capture", "캡처", "采集", "取り込み"],
+            Msg::CatStorage => ["Storage", "보관", "存储", "保存"],
+            Msg::CatPrivacy => ["Privacy", "보안·개인정보", "隐私与安全", "プライバシー"],
+            Msg::CatPaste => ["Paste", "붙여넣기", "粘贴", "貼り付け"],
+            Msg::CatAppearance => ["Appearance", "모양", "外观", "外観"],
+            Msg::CatSearch => ["Search", "검색", "搜索", "検索"],
+            Msg::CatSync => ["Sync", "동기화", "同步", "同期"],
+            Msg::CatAdvanced => ["Advanced", "고급", "高级", "詳細"],
+            Msg::SetAutostart => [
+                "Launch at login",
+                "로그인 시 자동 시작",
+                "登录时启动",
+                "ログイン時に起動",
+            ],
+            Msg::SetAutostartDesc => [
+                "Start Nexa Clip when you log in",
+                "로그인하면 Nexa Clip을 자동으로 시작합니다",
+                "登录后自动启动 Nexa Clip",
+                "ログイン時に自動的に起動します",
+            ],
+            Msg::SetLang => ["Language", "언어", "语言", "言語"],
+            Msg::SetLangDesc => [
+                "Interface language",
+                "화면에 쓰이는 언어",
+                "界面语言",
+                "表示言語",
+            ],
+            Msg::SetPopupAt => ["Popup at", "팝업 위치", "弹出位置", "ポップアップ位置"],
+            Msg::SetPopupAtDesc => [
+                "Where the quick popup appears",
+                "퀵 팝업이 뜨는 위치입니다",
+                "快捷弹窗出现的位置",
+                "クイックポップアップが開く位置",
+            ],
+            Msg::ValCursor => ["At cursor", "마우스 위치", "鼠标位置", "カーソル位置"],
+            Msg::ValScreenCenter => ["Screen center", "화면 중앙", "屏幕中央", "画面中央"],
+            Msg::ValLastPos => ["Last position", "마지막 위치", "上次位置", "前回の位置"],
+            Msg::SetViewMode => ["List view", "목록 보기", "列表视图", "リスト表示"],
+            Msg::SetViewModeDesc => [
+                "How much of each item to show",
+                "항목을 얼마나 펼쳐 보일지",
+                "每项显示多少内容",
+                "各項目をどこまで表示するか",
+            ],
+            Msg::SetTheme => ["Theme", "테마", "主题", "テーマ"],
+            Msg::SetThemeDesc => [
+                "Follow the system or pick one",
+                "시스템을 따르거나 직접 고릅니다",
+                "跟随系统或手动选择",
+                "システムに従うか手動で選択",
+            ],
+            Msg::ValSystem => ["System", "시스템", "跟随系统", "システム"],
+            Msg::ValDark => ["Dark", "다크", "深色", "ダーク"],
+            Msg::ValLight => ["Light", "라이트", "浅色", "ライト"],
+            Msg::SetCapText => ["Save text", "텍스트 저장", "保存文本", "テキストを保存"],
+            Msg::SetCapImage => ["Save images", "이미지 저장", "保存图片", "画像を保存"],
+            Msg::SetCapFiles => ["Save files", "파일 저장", "保存文件", "ファイルを保存"],
+            Msg::SetCapRich => ["Save formatting", "서식 저장", "保存格式", "書式を保存"],
+            Msg::SetCapNative => [
+                "Keep original formats",
+                "원본 포맷 보존",
+                "保留原始格式",
+                "元の形式を保持",
+            ],
+            Msg::SetCapNativeDesc => [
+                "Keeps Word/PowerPoint objects pasteable as objects",
+                "Word·PPT 개체를 개체 그대로 붙여넣을 수 있게 합니다",
+                "让 Word/PPT 对象仍可作为对象粘贴",
+                "Word/PPT のオブジェクトをそのまま貼り付けられます",
+            ],
+            Msg::SetMaxItems => ["Maximum items", "최대 항목 수", "最大条目数", "最大項目数"],
+            Msg::SetMaxItemsDesc => [
+                "Older items are removed first; pinned items are kept",
+                "오래된 항목부터 지워집니다. 고정한 항목은 남습니다",
+                "优先删除旧条目，固定项会保留",
+                "古い項目から削除されます。ピン留めは残ります",
+            ],
+            Msg::SetSortBy => ["Sort by", "정렬", "排序方式", "並び順"],
+            Msg::ValRecentCopy => [
+                "Time of last copy",
+                "최근 복사순",
+                "最近复制时间",
+                "最終コピー順",
+            ],
+            Msg::ValFirstCopy => [
+                "Time of first copy",
+                "최초 복사순",
+                "首次复制时间",
+                "初回コピー順",
+            ],
+            Msg::ValCopyCount => [
+                "Number of copies",
+                "복사 횟수순",
+                "复制次数",
+                "コピー回数順",
+            ],
+            Msg::SetRespectMarks => [
+                "Respect password manager marks",
+                "비밀번호 관리자 표식 존중",
+                "遵循密码管理器标记",
+                "パスワード管理アプリの印を尊重",
+            ],
+            Msg::SetRespectMarksDesc => [
+                "Recommended. Skips anything marked as secret",
+                "권장. 비밀로 표시된 것은 저장하지 않습니다",
+                "推荐。跳过标记为机密的内容",
+                "推奨。機密と印が付いたものは保存しません",
+            ],
+            Msg::SetClearOnQuit => [
+                "Clear history on quit",
+                "종료 시 기록 비우기",
+                "退出时清空历史",
+                "終了時に履歴を消去",
+            ],
+            Msg::SetPasteAuto => [
+                "Paste automatically",
+                "자동 붙여넣기",
+                "自动粘贴",
+                "自動で貼り付け",
+            ],
+            Msg::SetPasteAutoDesc => [
+                "Selecting an item pastes it into the window you came from",
+                "항목을 고르면 원래 있던 창에 바로 붙여넣습니다",
+                "选择条目后直接粘贴到原窗口",
+                "項目を選ぶと元のウィンドウに貼り付けます",
+            ],
+            Msg::SetPastePlainDefault => [
+                "Always paste as plain text",
+                "항상 평문으로 붙여넣기",
+                "始终以纯文本粘贴",
+                "常に書式なしで貼り付け",
+            ],
+            Msg::SetSearchMode => ["Search mode", "검색 방식", "搜索方式", "検索方法"],
+            Msg::ValExact => ["Exact", "정확히", "精确", "完全一致"],
+            Msg::ValFuzzy => ["Fuzzy", "유사", "模糊", "あいまい"],
+            Msg::ValRegex => ["Regular expression", "정규식", "正则表达式", "正規表現"],
+            Msg::SetHangulCompose => [
+                "Search while composing Hangul",
+                "한글 조합 중에도 검색",
+                "输入韩文时即时搜索",
+                "ハングル入力中も検索",
+            ],
+            Msg::SetSyncEnabledDesc => [
+                "Devices you approved share clipboard items end-to-end encrypted",
+                "승인한 기기끼리 종단 암호화로 클립보드를 나눕니다",
+                "已批准的设备之间端到端加密共享剪贴板",
+                "承認したデバイス間でE2E暗号化して共有",
+            ],
+            Msg::SetTrayRecent => [
+                "Recent items in tray menu",
+                "트레이 메뉴의 최근 항목 수",
+                "托盘菜单中的最近条目数",
+                "トレイメニューの最近の項目数",
+            ],
+            Msg::SetDiagLog => ["Diagnostic log", "진단 로그", "诊断日志", "診断ログ"],
+            Msg::SetDiagLogDesc => [
+                "Local only. Never sent anywhere",
+                "로컬에만 남고 어디로도 보내지 않습니다",
+                "仅保存在本地，不会发送",
+                "ローカルのみ。外部へ送信しません",
+            ],
+            Msg::ValLangEn => ["English", "English", "English", "English"],
+            Msg::ValLangKo => ["Korean", "한국어", "韩语", "韓国語"],
+            Msg::ValLangZh => ["Chinese", "중국어", "简体中文", "中国語"],
+            Msg::ValLangJa => ["Japanese", "일본어", "日语", "日本語"],
         }
     }
 }
@@ -277,7 +589,7 @@ mod tests {
     use super::*;
 
     /// 카탈로그 전수 — 새 `Msg`를 더하면 여기도 더한다(빈칸 검사가 그걸 강제한다).
-    const ALL_MSG: [Msg; 31] = [
+    const ALL_MSG: [Msg; 96] = [
         Msg::AppName,
         Msg::SearchPlaceholder,
         Msg::EmptyHistory,
@@ -309,6 +621,71 @@ mod tests {
         Msg::SyncDevices,
         Msg::SyncPendingApproval,
         Msg::SyncEndToEnd,
+        Msg::SizeSmall,
+        Msg::SizeNormal,
+        Msg::SizeLarge,
+        Msg::SizeExtraLarge,
+        Msg::SizeXLarge,
+        Msg::ValMinutesRange,
+        Msg::CustomInput,
+        Msg::SystemDefaultFont,
+        Msg::CatGeneral,
+        Msg::CatShortcuts,
+        Msg::CatCapture,
+        Msg::CatStorage,
+        Msg::CatPrivacy,
+        Msg::CatPaste,
+        Msg::CatAppearance,
+        Msg::CatSearch,
+        Msg::CatSync,
+        Msg::CatAdvanced,
+        Msg::SetAutostart,
+        Msg::SetAutostartDesc,
+        Msg::SetLang,
+        Msg::SetLangDesc,
+        Msg::SetPopupAt,
+        Msg::SetPopupAtDesc,
+        Msg::ValCursor,
+        Msg::ValScreenCenter,
+        Msg::ValLastPos,
+        Msg::SetViewMode,
+        Msg::SetViewModeDesc,
+        Msg::SetTheme,
+        Msg::SetThemeDesc,
+        Msg::ValSystem,
+        Msg::ValDark,
+        Msg::ValLight,
+        Msg::SetCapText,
+        Msg::SetCapImage,
+        Msg::SetCapFiles,
+        Msg::SetCapRich,
+        Msg::SetCapNative,
+        Msg::SetCapNativeDesc,
+        Msg::SetMaxItems,
+        Msg::SetMaxItemsDesc,
+        Msg::SetSortBy,
+        Msg::ValRecentCopy,
+        Msg::ValFirstCopy,
+        Msg::ValCopyCount,
+        Msg::SetRespectMarks,
+        Msg::SetRespectMarksDesc,
+        Msg::SetClearOnQuit,
+        Msg::SetPasteAuto,
+        Msg::SetPasteAutoDesc,
+        Msg::SetPastePlainDefault,
+        Msg::SetSearchMode,
+        Msg::ValExact,
+        Msg::ValFuzzy,
+        Msg::ValRegex,
+        Msg::SetHangulCompose,
+        Msg::SetSyncEnabledDesc,
+        Msg::SetTrayRecent,
+        Msg::SetDiagLog,
+        Msg::SetDiagLogDesc,
+        Msg::ValLangEn,
+        Msg::ValLangKo,
+        Msg::ValLangZh,
+        Msg::ValLangJa,
     ];
 
     #[test]

@@ -179,6 +179,49 @@ impl<'a> Surface<'a> {
         }
     }
 
+    /// ★ **반투명 사각형 채우기**(`alpha` 0.0~1.0) — 뒤가 비치는 오버레이·시트·그림자.
+    ///
+    /// [`Self::fill_rect`]와 같은 클리핑 규약을 쓰되 **배경과 섞는다**. `alpha >= 1.0`이면
+    /// 불투명 경로([`Self::fill_rect`])로 넘겨 픽셀당 블렌드 비용을 아낀다.
+    ///
+    /// ⚠️ **창 자체의 투명도가 아니다** — 이건 **앱 안에서** 이미 그린 것 위에 섞는 것이다.
+    /// 뒤의 다른 창이 비치게 하려면 플랫폼 창 속성이 따로 필요하다([docs/23](../../../docs/23-alpha-rendering.md)).
+    pub fn fill_rect_alpha(&mut self, x: i32, y: i32, w: u32, h: u32, color: Color, alpha: f32) {
+        let a = alpha.clamp(0.0, 1.0);
+        if a <= 0.0 {
+            return;
+        }
+        if a >= 1.0 {
+            self.fill_rect(x, y, w, h, color);
+            return;
+        }
+        let x0 = (x.max(0) as usize).min(self.width);
+        let y0 = (y.max(0) as usize).min(self.height);
+        let x1 = usize::try_from(i64::from(x) + i64::from(w))
+            .unwrap_or(0)
+            .min(self.width);
+        let y1 = usize::try_from(i64::from(y) + i64::from(h))
+            .unwrap_or(0)
+            .min(self.height);
+        if x1 <= x0 || y1 <= y0 {
+            return;
+        }
+        // 전경은 고정이므로 한 번만 분해한다(픽셀마다 다시 쪼개지 않는다).
+        let (fr, fg_, fb) = color.rgb();
+        let (fr, fg_, fb) = (f32::from(fr) * a, f32::from(fg_) * a, f32::from(fb) * a);
+        let inv = 1.0 - a;
+        for row in y0..y1 {
+            let base = row * self.width;
+            for idx in base + x0..base + x1 {
+                let bg = Color(self.buf[idx]).rgb();
+                let r = (f32::from(bg.0) * inv + fr + 0.5) as u32;
+                let g = (f32::from(bg.1) * inv + fg_ + 0.5) as u32;
+                let b = (f32::from(bg.2) * inv + fb + 0.5) as u32;
+                self.buf[idx] = (r << 16) | (g << 8) | b;
+            }
+        }
+    }
+
     /// 픽셀 하나를 커버리지(0.0~1.0)로 배경과 블렌드 — 글리프 안티에일리어싱의 기초.
     pub fn blend_px(&mut self, x: i32, y: i32, color: Color, coverage: f32) {
         if x < 0 || y < 0 {
@@ -348,5 +391,42 @@ mod tests {
         assert_eq!(buf[3 * 8 + 7], red.0);
         assert_eq!(buf[8 + 5], 0, "왼쪽은 건드리지 않는다");
         assert_eq!(buf[6], 0, "위쪽은 건드리지 않는다");
+    }
+
+    /// 반투명 채우기는 배경과 섞인다 — 0.5면 정확히 중간.
+    #[test]
+    fn fill_rect_alpha_blends_with_background() {
+        let mut buf = [0x0000_0000u32; 4];
+        let mut s = Surface::new(&mut buf, 2, 2);
+        s.fill(Color(0x0000_0000)); // 검정 배경
+        s.fill_rect_alpha(0, 0, 2, 2, Color(0x00FF_FFFF), 0.5);
+        // 255 * 0.5 = 127.5 → 반올림 128
+        assert_eq!(buf[0] & 0xFF, 128);
+    }
+
+    /// alpha 0 은 아무것도 안 그리고, 1 은 불투명 경로와 같아야 한다.
+    #[test]
+    fn fill_rect_alpha_endpoints() {
+        let mut buf = [0x0011_2233u32; 1];
+        {
+            let mut s = Surface::new(&mut buf, 1, 1);
+            s.fill_rect_alpha(0, 0, 1, 1, Color(0x00FF_FFFF), 0.0);
+        }
+        assert_eq!(buf[0], 0x0011_2233, "alpha 0 은 배경을 건드리지 않는다");
+        {
+            let mut s = Surface::new(&mut buf, 1, 1);
+            s.fill_rect_alpha(0, 0, 1, 1, Color(0x00AA_BBCC), 1.0);
+        }
+        assert_eq!(buf[0], 0x00AA_BBCC, "alpha 1 은 불투명 채우기와 같다");
+    }
+
+    /// ★ 표면 밖에서 시작해도 패닉하지 않는다(fill_rect와 같은 클리핑 규약).
+    #[test]
+    fn fill_rect_alpha_outside_never_panics() {
+        let mut buf = [0u32; 4];
+        let mut s = Surface::new(&mut buf, 2, 2);
+        s.fill_rect_alpha(5, 5, 3, 3, Color(0x00FF_FFFF), 0.5);
+        s.fill_rect_alpha(-9, -9, 3, 3, Color(0x00FF_FFFF), 0.5);
+        assert!(buf.iter().all(|&p| p == 0), "밖은 그려지지 않는다");
     }
 }

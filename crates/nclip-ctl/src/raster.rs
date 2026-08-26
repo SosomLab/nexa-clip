@@ -492,6 +492,14 @@ impl DrawCtx for RasterCtx<'_, '_, '_> {
         });
     }
 
+    fn fill_rect_alpha(&mut self, rect: Rect, color: Color, alpha: f32) {
+        if rect.w <= 0 || rect.h <= 0 {
+            return;
+        }
+        self.surface
+            .fill_rect_alpha(rect.x, rect.y, rect.w as u32, rect.h as u32, color, alpha);
+    }
+
     fn fill_round_rect_alpha(&mut self, rect: Rect, radius: i32, color: Color, alpha: f32) {
         if rect.is_empty() {
             return;

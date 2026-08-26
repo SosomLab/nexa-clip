@@ -120,6 +120,15 @@ pub trait DrawCtx {
         let _ = (rect, radius, color);
     }
 
+    /// ★ **반투명 사각형 채움**(`alpha` 0..=1) — 오버레이·시트 배경·그림자.
+    ///
+    /// 기본 구현은 **불투명 폴백**이라 백엔드가 미구현이어도 화면이 비지 않는다
+    /// (테스트 백엔드·단순 백엔드 배려). 실제 블렌드는 [`crate::raster::RasterCtx`]가 한다.
+    fn fill_rect_alpha(&mut self, rect: Rect, color: Color, alpha: f32) {
+        let _ = alpha;
+        self.fill_rect(rect, color);
+    }
+
     /// 라운드 사각형 AA 채움 + **불투명도**(`alpha` 0..=1 — 반투명 스크롤바 등).
     /// 기본 = 알파 무시하고 [`Self::fill_round_rect`] 위임(테스트 백엔드).
     fn fill_round_rect_alpha(&mut self, rect: Rect, radius: i32, color: Color, alpha: f32) {

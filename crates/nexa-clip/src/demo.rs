@@ -11,6 +11,7 @@
 //! | ★ **보기 3모드** | `1`·`2`·`3` 키로 전환 — 행 높이가 실제로 달라지는가 |
 //! | ★ **세로 밀도**(DR-14) | 크롬 1~2줄 · 같은 높이에서 항목이 몇 개 보이는가 |
 //! | 테마 | `T` 키로 다크/라이트 — 색 하드코딩이 없는가 |
+//! | ★ **알파 합성** | `P` 키로 **반투명 미리보기 패널** — 뒤 목록이 비치는가([docs/23](../../../docs/23-alpha-rendering.md)) |
 
 use nclip_ctl::draw::{DrawCtx, FontSlot};
 use nclip_ctl::geom::Rect;
@@ -119,6 +120,8 @@ struct App {
     theme: Theme,
     mode: ViewMode,
     scale: f32,
+    /// ★ 반투명 미리보기 패널(알파 합성 실증).
+    preview: bool,
 }
 
 impl ApplicationHandler for App {
@@ -127,7 +130,7 @@ impl ApplicationHandler for App {
             return;
         }
         let attrs = Window::default_attributes()
-            .with_title("Nexa Clip — 렌더 데모 (1/2/3 보기 · T 테마 · Esc 종료)")
+            .with_title("Nexa Clip — 렌더 데모 (1/2/3 보기 · P 미리보기 · T 테마 · Esc)")
             .with_inner_size(winit::dpi::LogicalSize::new(560.0, 620.0));
         let Ok(win) = el.create_window(attrs) else {
             eprintln!("창 생성 실패");
@@ -162,6 +165,10 @@ impl ApplicationHandler for App {
                     Key::Character("1") => self.set_mode(ViewMode::Rich),
                     Key::Character("2") => self.set_mode(ViewMode::Compact),
                     Key::Character("3") => self.set_mode(ViewMode::Plain),
+                    Key::Character("p" | "P") => {
+                        self.preview = !self.preview;
+                        self.request_redraw();
+                    }
                     Key::Character("t" | "T") => {
                         self.theme = if self.theme.is_dark {
                             Theme::light()
@@ -218,6 +225,7 @@ impl App {
                 self.scale,
                 size.width as i32,
                 size.height as i32,
+                self.preview,
             );
         }
 
@@ -226,7 +234,16 @@ impl App {
 }
 
 /// S1 퀵 팝업을 그린다 — [docs/04 §2-1](../../../docs/04-feature-scope-and-screens.md) 레이아웃.
-fn draw_popup(dc: &mut RasterCtx<'_, '_, '_>, th: Theme, mode: ViewMode, s: f32, w: i32, h: i32) {
+#[allow(clippy::too_many_arguments)]
+fn draw_popup(
+    dc: &mut RasterCtx<'_, '_, '_>,
+    th: Theme,
+    mode: ViewMode,
+    s: f32,
+    w: i32,
+    h: i32,
+    preview: bool,
+) {
     let px = |v: f32| (v * s).round() as i32;
     let full = Rect::new(0, 0, w, h);
     dc.select_font(FontSlot::Base, false);
@@ -323,6 +340,53 @@ fn draw_popup(dc: &mut RasterCtx<'_, '_, '_>, th: Theme, mode: ViewMode, s: f32,
         y += row_h;
     }
 
+    // ── ★ 반투명 미리보기 패널(알파 합성 실증 — docs/23 L1) ──
+    if preview {
+        let pw = (w * 45 / 100).max(px(180.0));
+        let panel = Rect::new(
+            w - pw - pad,
+            list_top + pad,
+            pw,
+            list_bot - list_top - pad * 2,
+        );
+        // 그림자 — 낮은 알파로 두 겹(가장자리가 부드러워진다)
+        for (off, a) in [(px(6.0), 0.10), (px(3.0), 0.16)] {
+            dc.fill_rect_alpha(
+                Rect::new(panel.x + off, panel.y + off, panel.w, panel.h),
+                th.window_bg,
+                a,
+            );
+        }
+        // ★ 패널 본체 — 0.92 라 뒤 목록이 살짝 비친다
+        dc.fill_rect_alpha(panel, th.panel_bg, 0.92);
+        dc.fill_rect(Rect::new(panel.x, panel.y, panel.w, 1), th.border);
+        dc.text(
+            panel.x + px(10.0),
+            panel.y + px(8.0),
+            panel,
+            "미리보기 (반투명 0.92)",
+            th.text,
+        );
+        dc.text(
+            panel.x + px(10.0),
+            panel.y + px(28.0),
+            panel,
+            "뒤 목록이 비칩니다",
+            th.text_dim,
+        );
+        // 구분선 — 색을 새로 만들지 않고 불투명도로(docs/23 A-5)
+        dc.fill_rect_alpha(
+            Rect::new(
+                panel.x + px(10.0),
+                panel.y + px(48.0),
+                panel.w - px(20.0),
+                1,
+            ),
+            th.text,
+            0.25,
+        );
+    }
+
     // ── ③ 푸터 1줄 ── (Maccy는 4줄 · 우리는 1줄 — 세로 밀도 DR-14)
     let fy = h - footer_h;
     dc.fill_rect(Rect::new(0, fy, w, footer_h), th.chrome_bg);
@@ -339,7 +403,7 @@ fn draw_popup(dc: &mut RasterCtx<'_, '_, '_>, th: Theme, mode: ViewMode, s: f32,
         &format!("{}개 · 🔒 · 보기: {mode_label}", ROWS.len()),
         th.text_dim,
     );
-    let hint = "1/2/3 보기 · T 테마 · Esc 종료";
+    let hint = "1/2/3 보기 · P 미리보기 · T 테마 · Esc";
     let hw = dc.text_width(hint);
     dc.text(w - pad - hw, fy + px(6.0), full, hint, th.text_dim);
 }
@@ -361,7 +425,7 @@ pub(crate) fn run() {
         "폰트: {}",
         nclip_plat::font::system_ui_font_name().unwrap_or("(이름 미상)")
     );
-    println!("창을 엽니다 — 1/2/3 보기 전환 · T 테마 · Esc 종료");
+    println!("창을 엽니다 — 1/2/3 보기 · P 반투명 미리보기 · T 테마 · Esc 종료");
 
     let Ok(el) = EventLoop::new() else {
         eprintln!("이벤트 루프 생성 실패");
@@ -376,6 +440,7 @@ pub(crate) fn run() {
         theme: Theme::dark(),
         mode: ViewMode::default(),
         scale: 1.0,
+        preview: false,
     };
     if let Err(e) = el.run_app(&mut app) {
         eprintln!("이벤트 루프 오류: {e}");

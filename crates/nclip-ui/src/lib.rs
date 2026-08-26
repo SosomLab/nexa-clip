@@ -12,3 +12,8 @@
 //! | S6 트레이 메뉴 | 최근 N개 + 현재 클립보드 + 평문 붙여넣기 |
 #![forbid(unsafe_code)]
 #![cfg_attr(test, allow(clippy::unwrap_used))]
+
+pub mod settings;
+mod settings_registry;
+
+pub use settings::{registry, Entry, NoteTone, SettingKind, SettingsState, SettingsWidget};
