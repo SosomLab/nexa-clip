@@ -337,33 +337,40 @@ mod imp {
             fn objc_msgSend();
         }
 
+        // ⚠️ 크레이트가 `forbid(unsafe_op_in_unsafe_fn)` — `unsafe fn` 안에서도 블록이 필요하다.
         unsafe fn cls(name: &[u8]) -> CFTypeRef {
-            objc_getClass(name.as_ptr())
+            unsafe { objc_getClass(name.as_ptr()) }
         }
         unsafe fn sel(name: &[u8]) -> CFTypeRef {
-            sel_registerName(name.as_ptr())
+            unsafe { sel_registerName(name.as_ptr()) }
         }
 
         unsafe fn send0(recv: CFTypeRef, s: &[u8]) -> CFTypeRef {
-            let f: unsafe extern "C" fn(CFTypeRef, CFTypeRef) -> CFTypeRef =
-                core::mem::transmute(objc_msgSend as *const ());
-            f(recv, sel(s))
+            unsafe {
+                let f: unsafe extern "C" fn(CFTypeRef, CFTypeRef) -> CFTypeRef =
+                    core::mem::transmute(objc_msgSend as *const ());
+                f(recv, sel(s))
+            }
         }
 
         unsafe fn send0_i32(recv: CFTypeRef, s: &[u8]) -> i32 {
-            let f: unsafe extern "C" fn(CFTypeRef, CFTypeRef) -> i32 =
-                core::mem::transmute(objc_msgSend as *const ());
-            f(recv, sel(s))
+            unsafe {
+                let f: unsafe extern "C" fn(CFTypeRef, CFTypeRef) -> i32 =
+                    core::mem::transmute(objc_msgSend as *const ());
+                f(recv, sel(s))
+            }
         }
 
         unsafe fn send1_bool(recv: CFTypeRef, s: &[u8], arg: u64) -> bool {
-            let f: unsafe extern "C" fn(CFTypeRef, CFTypeRef, u64) -> bool =
-                core::mem::transmute(objc_msgSend as *const ());
-            f(recv, sel(s), arg)
+            unsafe {
+                let f: unsafe extern "C" fn(CFTypeRef, CFTypeRef, u64) -> bool =
+                    core::mem::transmute(objc_msgSend as *const ());
+                f(recv, sel(s), arg)
+            }
         }
 
         /// 지금 프런트모스트 앱의 PID.
-        pub fn frontmost_pid() -> Option<i32> {
+        pub(super) fn frontmost_pid() -> Option<i32> {
             unsafe {
                 let ws = send0(cls(b"NSWorkspace\0"), b"sharedWorkspace\0");
                 if ws.is_null() {
@@ -379,7 +386,7 @@ mod imp {
         }
 
         /// PID로 앱을 활성화한다(`NSRunningApplication` · `activateAllWindows`).
-        pub fn activate_pid(pid: i32) -> bool {
+        pub(super) fn activate_pid(pid: i32) -> bool {
             unsafe {
                 let f: unsafe extern "C" fn(CFTypeRef, CFTypeRef, i32) -> CFTypeRef =
                     core::mem::transmute(objc_msgSend as *const ());
