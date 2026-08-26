@@ -121,6 +121,10 @@ pub enum Msg {
     // ── 동작 ──────────────────────────────────
     /// 복사(클립보드에 올림).
     ActionCopy,
+    /// 보관 개수 입력 범위 경고.
+    ValItemsRange,
+    /// 트레이 최근 개수 입력 범위 경고.
+    ValTrayCountRange,
     /// 붙여넣기 모드 — 원본 그대로.
     PasteOriginal,
     /// 붙여넣기 모드 — 평문으로.
@@ -339,6 +343,18 @@ impl Msg {
             Msg::ViewPlain => ["Plain", "한 줄 보기", "单行视图", "1行表示"],
 
             Msg::ActionCopy => ["Copy", "복사", "复制", "コピー"],
+            Msg::ValItemsRange => [
+                "Enter 10-100000",
+                "10~100000 사이로 입력하세요",
+                "请输入 10~100000",
+                "10~100000 で入力してください",
+            ],
+            Msg::ValTrayCountRange => [
+                "Enter 3-20",
+                "3~20 사이로 입력하세요",
+                "请输入 3~20",
+                "3~20 で入力してください",
+            ],
             Msg::PasteOriginal => ["Original", "원본", "原始格式", "元の形式"],
             Msg::PastePlain => ["Plain text", "평문", "纯文本", "書式なし"],
             Msg::PasteObject => ["As object", "객체로", "作为对象", "オブジェクトとして"],
@@ -601,7 +617,7 @@ mod tests {
     use super::*;
 
     /// 카탈로그 전수 — 새 `Msg`를 더하면 여기도 더한다(빈칸 검사가 그걸 강제한다).
-    const ALL_MSG: [Msg; 100] = [
+    const ALL_MSG: [Msg; 102] = [
         Msg::AppName,
         Msg::SearchPlaceholder,
         Msg::EmptyHistory,
@@ -615,6 +631,8 @@ mod tests {
         Msg::ViewCompact,
         Msg::ViewPlain,
         Msg::ActionCopy,
+        Msg::ValItemsRange,
+        Msg::ValTrayCountRange,
         Msg::PasteOriginal,
         Msg::PastePlain,
         Msg::PasteObject,

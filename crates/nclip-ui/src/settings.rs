@@ -103,6 +103,19 @@ pub enum SettingKind {
     Radio(&'static [(&'static str, Msg)]),
     /// 택일 + **직접 입력** — 후보에 없는 값을 인라인 편집으로 넣는다(값, 표시 접미).
     RadioInput(&'static [(&'static str, Msg)], &'static str),
+    /// ★ **숫자 항목** — 후보도 값도 **숫자 그대로 보인다**(사용자 확정 08-26).
+    ///
+    /// [`Radio`](SettingKind::Radio)와 달리 라벨을 [`Msg`]로 번역하지 않는다 —
+    /// *"보통"* 이 몇 개인지 알려면 설명을 읽어야 하지만 **`1000`은 그 자체로 답**이다.
+    /// 후보에 없는 값은 인라인 편집으로 직접 넣는다(숫자 필터 · 범위 검사는 [`validate`]).
+    ///
+    /// `presets`는 **적은 순서 그대로** 뜬다(오름차순으로 적을 것).
+    Number {
+        /// 빠른 선택용 값들 — 문자열이 **그대로 라벨**이 된다.
+        presets: &'static [&'static str],
+        /// 값 뒤에 붙는 단위(없으면 `""`).
+        suffix: &'static str,
+    },
     /// 3×3 위치 그리드 — 미니 화면(4:3) 셀로 직관 선택([`PositionPicker`]).
     PositionGrid,
     /// 글꼴 **얼굴만** — 크기는 Base UI를 따른다(고정폭 슬롯).
@@ -155,6 +168,15 @@ impl Entry {
     /// 새므로, 기본값을 다루는 쪽은 반드시 이 목록을 쓴다(08-15 초기화 점검).
     pub fn default_values(&self) -> Vec<(&'static str, String)> {
         match self.kind {
+            // 숫자 항목 — 예외 표에 있으면 그 값, 없으면 첫 후보.
+            SettingKind::Number { presets, .. } => RADIO_DEFAULTS
+                .iter()
+                .find(|(k, _)| *k == self.key)
+                .map(|(_, v)| *v)
+                .or_else(|| presets.first().copied())
+                .map(|v| (self.key, v.to_string()))
+                .into_iter()
+                .collect(),
             SettingKind::Radio(opts) | SettingKind::RadioInput(opts, _) => RADIO_DEFAULTS
                 .iter()
                 .find(|(k, _)| *k == self.key)
@@ -197,7 +219,21 @@ impl Entry {
 /// 호스트가 경고를 띄우고 컨트롤은 **직전 확정값으로 원복**([`Control::last_value`]).
 /// 새 규칙은 여기 한 곳에만 추가한다(검증·경고·원복 배선은 공용).
 fn validate(key: &str, value: &str) -> Result<(), Msg> {
+    /// 숫자 + 범위 — 어긋나면 호스트가 경고하고 **직전 확정값으로 원복**한다.
+    fn range(value: &str, lo: u64, hi: u64, err: Msg) -> Result<(), Msg> {
+        if value.parse::<u64>().is_ok_and(|v| (lo..=hi).contains(&v)) {
+            Ok(())
+        } else {
+            Err(err)
+        }
+    }
     match key {
+        // ★ 보관 개수(사용자 확정 08-26 — 숫자 직접 입력).
+        //   하한 10 = 그보다 적으면 히스토리라고 할 게 없다.
+        //   상한 100000 = 24시간 상주 앱의 메모리·검색 예산([docs/00 §2] 검색 ≤16ms).
+        "store.max_items" => range(value, 10, 100_000, Msg::ValItemsRange),
+        // 트레이 최근 개수 — 메뉴가 화면 밖으로 넘지 않는 선.
+        "ui.tray_recent_n" => range(value, 3, 20, Msg::ValTrayCountRange),
         // 정지 방치 자동 취소 — 1~10분 범위(사용자 확정 08-20).
         "xfer.auto_cancel_min" => {
             if value.parse::<u64>().is_ok_and(|v| (1..=10).contains(&v)) {
@@ -288,6 +324,8 @@ impl SettingsState {
             SettingKind::Radio(opts) => opts.iter().any(|(v, _)| *v == value),
             // 직접 입력 허용 — 빈 값만 거른다(빈 문자열은 기본값 의미가 아니다).
             SettingKind::RadioInput(..) => !value.is_empty(),
+            // ★ 숫자 항목 — 파일에서 온 값도 **숫자여야** 받는다. 범위는 validate가 본다.
+            SettingKind::Number { .. } => value.parse::<u64>().is_ok(),
             SettingKind::Toggle => value == "on" || value == "off",
             SettingKind::Color { .. } => nclip_ctl::theme::color_from_hex(value).is_some(),
             // 위치 코드·글꼴명(빈 값 = 시스템 기본)·크기 코드는 소비처가 관용 파싱한다.
@@ -825,6 +863,19 @@ impl SettingsWidget {
         for idx in self.visible_indices() {
             let e = &registry()[idx];
             let ctl = match e.kind {
+                // ★ 숫자 항목 — 라벨이 곧 값이다(번역하지 않는다).
+                SettingKind::Number { presets, suffix } => {
+                    let items: Vec<ComboItem> =
+                        presets.iter().map(|v| ComboItem::new(*v, *v)).collect();
+                    let mut c = Combo::new(items, 0);
+                    // 후보에 없는 수를 직접 넣는다 — 숫자 필터는 기본값(텍스트 모드 아님).
+                    c.set_custom_entry(tr(lang, Msg::CustomInput), suffix);
+                    let cur = self.values.get(e.key).map_or("", String::as_str);
+                    c.select_value(cur);
+                    c.note_value(cur); // 직전 확정값 시드(검증 원복 기준점)
+                    c.set_scale(self.scale);
+                    RowCtl::Combo(c)
+                }
                 SettingKind::Radio(opts) | SettingKind::RadioInput(opts, _) => {
                     let items: Vec<ComboItem> = opts
                         .iter()
@@ -2021,5 +2072,66 @@ impl Widget for SettingsWidget {
                 _ => {}
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod validate_tests {
+    use super::{validate, SettingsState};
+    use nclip_core::Msg;
+
+    /// ★ 숫자 직접 입력의 **범위**를 지킨다 — 0이나 10억을 받으면 상주 앱이 무너진다.
+    #[test]
+    fn max_items_range_is_enforced() {
+        assert!(validate("store.max_items", "1000").is_ok());
+        assert!(validate("store.max_items", "10").is_ok(), "하한 포함");
+        assert!(validate("store.max_items", "100000").is_ok(), "상한 포함");
+
+        assert_eq!(validate("store.max_items", "9"), Err(Msg::ValItemsRange));
+        assert_eq!(
+            validate("store.max_items", "100001"),
+            Err(Msg::ValItemsRange)
+        );
+        assert_eq!(validate("store.max_items", "0"), Err(Msg::ValItemsRange));
+        // ★ 숫자가 아닌 입력도 같은 경고로 막는다(파일이 손상된 경우 포함).
+        assert_eq!(validate("store.max_items", "많이"), Err(Msg::ValItemsRange));
+        assert_eq!(validate("store.max_items", ""), Err(Msg::ValItemsRange));
+        assert_eq!(validate("store.max_items", "-5"), Err(Msg::ValItemsRange));
+    }
+
+    #[test]
+    fn tray_count_range_is_enforced() {
+        assert!(validate("ui.tray_recent_n", "8").is_ok());
+        assert_eq!(
+            validate("ui.tray_recent_n", "2"),
+            Err(Msg::ValTrayCountRange)
+        );
+        assert_eq!(
+            validate("ui.tray_recent_n", "21"),
+            Err(Msg::ValTrayCountRange)
+        );
+    }
+
+    /// 규칙이 없는 키는 통과한다(검증은 **등록된 키에만** 건다).
+    #[test]
+    fn unregistered_keys_pass() {
+        assert!(validate("ui.theme", "dark").is_ok());
+        assert!(validate("아무거나", "아무값").is_ok());
+    }
+
+    /// ★ 숫자 항목도 **파일에서 되읽힌다** — 문자열 왕복이 깨지면 재시작 때 값이 증발한다.
+    #[test]
+    fn number_value_round_trips_through_state() {
+        let mut st = SettingsState::with_defaults();
+        assert_eq!(st.get("store.max_items"), "1000", "기본값");
+        assert!(
+            st.set_by_name("store.max_items", "5000"),
+            "아는 키여야 한다"
+        );
+        assert_eq!(st.get("store.max_items"), "5000");
+        // 후보에 없는 직접 입력값도 그대로 실린다.
+        assert!(st.set_by_name("store.max_items", "2500"));
+        assert_eq!(st.get("store.max_items"), "2500");
+        assert!(st.known_pairs().contains(&("store.max_items", "2500")));
     }
 }

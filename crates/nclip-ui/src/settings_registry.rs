@@ -60,20 +60,18 @@ const SEARCH_OPTS: &[(&str, Msg)] = &[
     ("regex", Msg::ValRegex),
 ];
 
-/// 보관 개수 후보 — 직접 입력 허용(Maccy는 200, 우리 기본 1000).
-const MAX_ITEMS_OPTS: &[(&str, Msg)] = &[
-    ("200", Msg::SizeSmall),
-    ("1000", Msg::SizeNormal),
-    ("5000", Msg::SizeLarge),
-    ("10000", Msg::SizeExtraLarge),
-];
+/// 보관 개수 후보 — ★ **숫자를 그대로 보여 준다**(사용자 확정 08-26).
+///
+/// *"보통"* 이 몇 개인지는 설명을 읽어야 알지만 **`1000`은 그 자체로 답**이다.
+/// 후보에 없는 수는 직접 입력한다(범위 10~100000 — [`crate::settings`] `validate`).
+/// Maccy 기본이 200, 우리 기본은 1000.
+const MAX_ITEMS_PRESETS: &[&str] = &["200", "500", "1000", "5000", "10000"];
 
-/// 트레이 최근 항목 수(5~10 — [docs/04 TR-1](../../../docs/04-feature-scope-and-screens.md)).
-const TRAY_N_OPTS: &[(&str, Msg)] = &[
-    ("5", Msg::SizeSmall),
-    ("8", Msg::SizeNormal),
-    ("10", Msg::SizeLarge),
-];
+/// 트레이 최근 항목 수 — 권장 5~10([docs/04 TR-1](../../../docs/04-feature-scope-and-screens.md)).
+///
+/// 보관 개수와 **같은 이유로 숫자를 그대로** 보여 준다 — 한 화면에서 하나는 *"보통"*,
+/// 다른 하나는 `1000`이면 읽는 사람이 두 번 생각해야 한다.
+const TRAY_N_PRESETS: &[&str] = &["5", "8", "10", "15", "20"];
 
 /// 항목 하나 — 반복을 줄인다(`sub`는 아직 안 쓴다).
 const fn e(cat: Msg, label: Msg, desc: Msg, kind: SettingKind, key: &'static str) -> Entry {
@@ -145,7 +143,10 @@ pub(crate) const REGISTRY: &[Entry] = &[
         Msg::CatStorage,
         Msg::SetMaxItems,
         Msg::SetMaxItemsDesc,
-        SettingKind::RadioInput(MAX_ITEMS_OPTS, ""),
+        SettingKind::Number {
+            presets: MAX_ITEMS_PRESETS,
+            suffix: "",
+        },
         "store.max_items",
     ),
     e(
@@ -211,7 +212,10 @@ pub(crate) const REGISTRY: &[Entry] = &[
         Msg::CatAppearance,
         Msg::SetTrayRecent,
         Msg::SetTrayRecent,
-        SettingKind::Radio(TRAY_N_OPTS),
+        SettingKind::Number {
+            presets: TRAY_N_PRESETS,
+            suffix: "",
+        },
         "ui.tray_recent_n",
     ),
     // ── 검색 ────────────────────────────────────────────────
@@ -291,5 +295,78 @@ mod tests {
     #[test]
     fn plain_paste_setting_exists() {
         assert!(REGISTRY.iter().any(|e| e.key == "paste.plain_default"));
+    }
+
+    /// ★ 개수 설정은 **숫자 그대로** 보여야 한다(사용자 확정 08-26).
+    ///
+    /// `Radio`로 되돌아가면 화면에 다시 *"보통"* 이 뜨는데, 그게 몇 개인지는
+    /// 아무도 모른다. 종류를 못 박아 회귀를 막는다.
+    #[test]
+    fn count_settings_show_numbers() {
+        for key in ["store.max_items", "ui.tray_recent_n"] {
+            let e = REGISTRY
+                .iter()
+                .find(|e| e.key == key)
+                .unwrap_or_else(|| panic!("{key} 항목이 있어야 한다"));
+            assert!(
+                matches!(e.kind, SettingKind::Number { .. }),
+                "★ {key}는 숫자로 보여야 한다(라벨 번역 금지)"
+            );
+        }
+    }
+
+    /// 후보는 **오름차순**이고 전부 숫자다 — 목록이 뒤섞이면 고르기가 어렵다.
+    #[test]
+    fn number_presets_are_sorted_numbers() {
+        for e in REGISTRY {
+            let SettingKind::Number { presets, .. } = e.kind else {
+                continue;
+            };
+            let nums: Vec<u64> = presets
+                .iter()
+                .map(|v| {
+                    v.parse()
+                        .unwrap_or_else(|_| panic!("{}: 숫자가 아닌 후보 {v}", e.key))
+                })
+                .collect();
+            assert!(!nums.is_empty(), "{}: 후보가 비었다", e.key);
+            assert!(
+                nums.windows(2).all(|w| w[0] < w[1]),
+                "{}: 후보가 오름차순이 아니다 {nums:?}",
+                e.key
+            );
+        }
+    }
+
+    /// ★ 기본값이 후보 목록 안에 있다 — 없으면 콤보가 **빈 칸으로** 뜬다.
+    #[test]
+    fn number_default_is_one_of_the_presets() {
+        for e in REGISTRY {
+            let SettingKind::Number { presets, .. } = e.kind else {
+                continue;
+            };
+            let def = e.default_values();
+            let (_, v) = def
+                .first()
+                .unwrap_or_else(|| panic!("{}: 기본값 없음", e.key));
+            assert!(
+                presets.contains(&v.as_str()),
+                "{}: 기본값 {v}가 후보에 없다 {presets:?}",
+                e.key
+            );
+        }
+    }
+
+    /// 보관 개수 기본은 1000(Maccy 200보다 넉넉하게 — 우리 차별점).
+    #[test]
+    fn max_items_defaults_to_1000() {
+        let e = REGISTRY
+            .iter()
+            .find(|e| e.key == "store.max_items")
+            .expect("store.max_items");
+        assert_eq!(
+            e.default_values().first().map(|(_, v)| v.as_str()),
+            Some("1000")
+        );
     }
 }
