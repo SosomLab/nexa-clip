@@ -8,11 +8,13 @@
 #![forbid(unsafe_code)]
 #![cfg_attr(test, allow(clippy::unwrap_used))]
 
+pub mod diag;
 pub mod i18n;
 pub mod item;
 pub mod paste;
 pub mod ports;
 
+pub use diag::{DiagLog, Level, Record};
 pub use i18n::{current_lang, set_lang, tr, Lang, Msg};
 pub use item::{is_plain_format, ClipItem, ClipKind, ItemId, Representation};
 pub use paste::{PasteAs, PasteCapability, PasteError, PasteInjector, PasteUnsupported};
