@@ -42,6 +42,7 @@
 | 08 | [클립보드 자동 전파](08-clipboard-propagation.md) | 타입별 전파 · **함정 3개**(파일 목록·자동 덮어쓰기·에코 루프) · **모바일 수신(§9)** |
 | 09 | [신원과 페어링](09-identity-and-pairing.md) | 핸들 vs 키 분리 · **핸들+패스프레이즈 랑데부** · 승인 UX |
 | 12 | [클립보드 포맷](12-clipboard-formats.md) | **Rich Text(Word·PPT)** · 원본 형식 보존 · **평문 붙여넣기** · 크로스 OS 정규화 |
+| 26 | 📐 [파일 내용 공유](26-file-content-sharing.md) | **확장 설계** — 붙여넣는 순간 원본에서 지연 수신(OS 가상 파일 규약) · 같은 `UserId` 한정 |
 | 25 | ★ [디자인 시스템](25-design-system.md) | **Material 골격 + macOS 마감** — 간격·타입·**상태 레이어**·엘리베이션·모션·아이콘 파이프라인 |
 | 24 | [참조 설정 화면 연구](24-reference-settings-study.md) | **CopyQ 10장 + Maccy + Paste** 심층 비교 → 우리 설정 화면 방향 |
 | 23 | [알파 렌더링](23-alpha-rendering.md) | **반투명** — 앱 안 알파 합성(구현) vs 창 자체 투명(플랫폼 작업·미구현) |
