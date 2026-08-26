@@ -3,37 +3,175 @@
 //! 여기서만 어댑터를 실체화해 [`nclip_core`]의 포트에 주입한다(의존성 역전).
 //! 도메인 판단은 하지 않는다.
 //!
-//! ## 지금 상태 — 골격 점검 CLI
+//! ## 지금 상태 — 골격 점검 + K-1 스파이크
 //!
-//! 창·렌더는 T-12b 이후에 붙는다([docs/13 §6](../../docs/13-ui-reuse-from-beep.md)).
-//! 지금은 **조립이 실제로 되는지**와 **환경이 무엇을 지원하는지**를 눈으로 확인한다.
+//! 창·렌더는 T-12b2에서 붙는다. 지금 있는 것은 **환경 점검**과
+//! ★ **K-1 스파이크**(포커스 복원 + 키 주입)다 — 이 왕복이 안 되면 제품이 성립하지 않으므로
+//! 창보다 먼저 검증한다([docs/02 §7](../../docs/02-roadmap.md) · [docs/21](../../docs/21-manual-test.md)).
 
-use nclip_core::{current_lang, tr, ClipboardWatch as _, Msg, WatchCapability};
+use nclip_core::{
+    current_lang, tr, ClipboardWatch as _, Msg, PasteAs, PasteCapability, PasteInjector as _,
+    WatchCapability,
+};
 use nclip_ctl::ViewMode;
+use nclip_plat::paste::{spike_steal_focus, PlatformPaste};
 use nclip_plat::watch::PlatformWatch;
 
 fn main() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    match args.first().map(String::as_str) {
+        Some("spike-paste") => spike_paste(&args[1..]),
+        Some("--help" | "-h" | "help") => usage(),
+        Some(other) => {
+            eprintln!("알 수 없는 명령: {other}\n");
+            usage();
+            std::process::exit(2);
+        }
+        None => status(),
+    }
+}
+
+fn usage() {
+    println!(
+        "\
+nexa-clip [명령]
+
+  (없음)         환경 점검 — 이 PC에서 무엇이 되고 무엇이 안 되는지
+  spike-paste    K-1 스파이크 — 포커스 복원 + 붙여넣기 키 주입 검증
+      --plain        평문 붙여넣기 경로로 시도
+      --wait <초>    대상 앱을 고를 시간(기본 5)
+  --help         이 도움말
+
+점검 절차는 docs/21-manual-test.md 를 따른다."
+    );
+}
+
+/// 환경 점검 — **되는 것과 안 되는 것을 정직하게** 보여준다.
+fn status() {
     let lang = current_lang();
     println!("{} v{}", tr(lang, Msg::AppName), env!("CARGO_PKG_VERSION"));
+    println!("target          : {}", std::env::consts::OS);
 
-    // 어댑터 조립 — 본체만이 실체를 안다.
     let watch = PlatformWatch::new();
     match watch.capability() {
-        WatchCapability::Supported { backend } => {
-            println!("clipboard watch : ok ({backend})");
-        }
-        // ★ 미지원을 조용히 넘기지 않는다(docs/02 R-4).
+        WatchCapability::Supported { backend } => println!("clipboard watch : ok ({backend})"),
         WatchCapability::Unsupported { reason } => {
             println!("clipboard watch : unavailable ({reason:?})");
-            println!("  → {}", tr(lang, Msg::StatusWatchUnsupported));
+            println!(
+                "                  → {}",
+                tr(lang, Msg::StatusWatchUnsupported)
+            );
         }
     }
 
-    let mode = ViewMode::default();
+    let paste = PlatformPaste::new();
+    match paste.capability() {
+        PasteCapability::Full { backend } => println!("paste inject    : ok ({backend})"),
+        // ★ 권한 대기는 "안 됨"이 아니라 "켜면 됨"이다 — 구분해서 알린다.
+        PasteCapability::NeedsPermission { backend, hint } => {
+            println!("paste inject    : needs permission ({backend})");
+            println!("                  → {hint}");
+        }
+        PasteCapability::ClipboardOnly { reason } => {
+            println!("paste inject    : clipboard only ({reason:?})");
+            println!("                  → 붙여넣기 키는 못 넣는다. 클립보드 적재까지만 한다");
+        }
+    }
+
     println!(
         "default view    : {} ({})",
         tr(lang, Msg::ViewCompact),
-        mode.code()
+        ViewMode::default().code()
     );
+    println!("sync            : {}", tr(lang, Msg::SyncEndToEnd));
     println!("status          : {}", tr(lang, Msg::StatusLocalOnly));
+}
+
+/// ★ K-1 스파이크 — 창 없이 **포커스 왕복**을 끝까지 검증한다.
+///
+/// 실물 흐름(단축키 → 팝업이 포커스 획득 → 선택 → 원래 창 복귀 → 주입)에서
+/// 창만 빼고 그대로 재현한다. 창을 만들기 전에 이 왕복이 되는지 알아야
+/// 나머지 설계가 의미를 갖는다.
+fn spike_paste(args: &[String]) {
+    let plain = args.iter().any(|a| a == "--plain");
+    let wait_s: u64 = args
+        .iter()
+        .position(|a| a == "--wait")
+        .and_then(|i| args.get(i + 1))
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(5);
+
+    let mut paste = PlatformPaste::new();
+
+    println!("── K-1 스파이크: 포커스 복원 + 키 주입 ──");
+    match paste.capability() {
+        PasteCapability::Full { backend } => println!("[0] 능력      : ok ({backend})"),
+        PasteCapability::NeedsPermission { backend, hint } => {
+            println!("[0] 능력      : 권한 필요 ({backend})");
+            println!("               → {hint}");
+            println!("               권한을 켠 뒤 다시 실행하세요. 계속 진행하면 실패합니다.");
+        }
+        PasteCapability::ClipboardOnly { reason } => {
+            println!("[0] 능력      : 주입 불가 ({reason:?}) — 이 타깃은 스파이크 대상이 아닙니다");
+            std::process::exit(1);
+        }
+    }
+
+    println!();
+    println!("준비:");
+    println!("  1) 아무 텍스트나 복사해 두세요(Ctrl+C / ⌘C).");
+    println!("  2) 붙여넣을 앱(메모장·TextEdit 등)을 열고 커서를 두세요.");
+    println!("  3) {wait_s}초 안에 그 앱을 클릭해 **포그라운드로** 두세요.");
+    println!();
+    for left in (1..=wait_s).rev() {
+        print!("\r  대상 확정까지 {left}초… ");
+        use std::io::Write as _;
+        let _ = std::io::stdout().flush();
+        std::thread::sleep(std::time::Duration::from_secs(1));
+    }
+    println!("\r  대상 확정              ");
+
+    // ② 팝업을 띄우기 "전"에 기억한다.
+    if !paste.capture_focus() {
+        println!("[2] 대상 기억 : 실패 — 포그라운드 창을 못 찾았습니다");
+        std::process::exit(1);
+    }
+    let label = paste.target_label().unwrap_or_default();
+    println!("[2] 대상 기억 : {label}");
+
+    // ③ 팝업이 포커스를 뺏는 순간을 흉내 낸다(실물에서는 창이 뜨면서 일어난다).
+    let stolen = spike_steal_focus();
+    println!(
+        "[3] 포커스 탈취: {}",
+        if stolen {
+            "ok (우리에게 옴)"
+        } else {
+            "실패"
+        }
+    );
+    std::thread::sleep(std::time::Duration::from_millis(600));
+
+    // ⑤+⑥ 되돌리고 주입한다.
+    let as_ = if plain {
+        PasteAs::Plain
+    } else {
+        PasteAs::Original
+    };
+    match paste.restore_and_paste(as_) {
+        Ok(()) => {
+            println!("[5] 포커스 복원: ok");
+            println!("[6] 키 주입    : ok ({as_:?})");
+            println!();
+            println!("✅ 대상 앱에 붙여넣기가 되었는지 확인하세요.");
+            println!(
+                "   되었으면 K-1 통과 · 안 되었으면 docs/21-manual-test.md 에 증상을 적으세요."
+            );
+        }
+        Err(e) => {
+            println!("[5/6] 실패     : {e:?}");
+            println!();
+            println!("❌ K-1 미통과. docs/21-manual-test.md 에 증상과 함께 기록하세요.");
+            std::process::exit(1);
+        }
+    }
 }

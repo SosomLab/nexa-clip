@@ -10,8 +10,10 @@
 
 pub mod i18n;
 pub mod item;
+pub mod paste;
 pub mod ports;
 
 pub use i18n::{current_lang, set_lang, tr, Lang, Msg};
 pub use item::{is_plain_format, ClipItem, ClipKind, ItemId, Representation};
+pub use paste::{PasteAs, PasteCapability, PasteError, PasteInjector, PasteUnsupported};
 pub use ports::{ClipSnapshot, ClipboardWatch, UnsupportedReason, WatchCapability, WatchError};

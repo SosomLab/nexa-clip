@@ -13,4 +13,5 @@
 #![forbid(unsafe_op_in_unsafe_fn)]
 #![cfg_attr(test, allow(clippy::unwrap_used))]
 
+pub mod paste;
 pub mod watch;
