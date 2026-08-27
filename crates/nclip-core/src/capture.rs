@@ -79,6 +79,10 @@ impl RepInfo for crate::ports::RawRep {
 // ─────────────────────────────────────────────── 포맷 분류(3-OS 한 곳)
 
 /// 파일·폴더 목록 표현인가.
+///
+/// ★ **`Shell IDList Array`는 파일 목록의 본체다**(PIDL 묶음 · 08-27 실기 2차).
+/// 탐색기 **잘라내기**는 `CF_HDROP`을 지연 렌더링으로 미루기 때문에
+/// 열거 시점에는 이것만 온다 — 곁다리로 치면 잘라낸 파일이 `Object`가 된다.
 #[must_use]
 pub fn is_files_format(fmt: &str) -> bool {
     matches!(
@@ -86,6 +90,7 @@ pub fn is_files_format(fmt: &str) -> bool {
         "CF_HDROP"
             | "FileGroupDescriptor"
             | "FileGroupDescriptorW"
+            | "Shell IDList Array"
             | "public.file-url"
             | "NSFilenamesPboardType"
             | "text/uri-list"
@@ -162,7 +167,6 @@ pub fn is_metadata_format(fmt: &str) -> bool {
             | "Ole Private Data"
             // ★ 08-27 `watch` 실기에서 만난 것들 — 이게 없으면 **맨 텍스트가 리치로** 분류됐다.
             | "DataObject"
-            | "Shell IDList Array"
             | "CanIncludeInClipboardHistory"
             | "CanUploadToCloudClipboard"
             | "ExcludeClipboardContentFromMonitorProcessing"
@@ -1013,12 +1017,22 @@ mod tests {
         for f in [
             "CanIncludeInClipboardHistory",
             "CanUploadToCloudClipboard",
-            "Shell IDList Array",
             "DataObject",
         ] {
             assert!(is_metadata_format(f), "{f}는 곁다리여야 한다");
             assert!(!is_vendor_format(f), "{f}가 벤더로 세어졌다");
         }
+    }
+
+    /// ★ 08-27 실기 2차 — 탐색기 **잘라내기**는 `CF_HDROP` 없이 온다(지연 렌더링).
+    ///
+    /// `Shell IDList Array`가 파일 목록의 본체다 — 곁다리로 치면
+    /// 미지 셸 포맷(`DataObjectAttributes` 등)이 벤더로 세어져 **`Object`가 된다**.
+    #[test]
+    fn shell_idlist_is_the_file_list_itself() {
+        assert!(is_files_format("Shell IDList Array"));
+        assert!(!is_metadata_format("Shell IDList Array"));
+        assert!(!is_vendor_format("Shell IDList Array"));
     }
 
     /// ★ 곁다리를 벤더로 세면 **맨 텍스트가 서식 글이 된다**.

@@ -1,6 +1,7 @@
-//! ★ **실기 회귀 박제** — 2026-08-27 `nexa-clip watch` 로 실제 잡은 18건.
+//! ★ **실기 회귀 박제** — 2026-08-27 `nexa-clip watch` 로 실제 잡은 18건 + 2차 훑기 3건.
 //!
-//! 설계만으로는 안 보이던 것이 첫 실행에서 넷, 두 번째 훑기에서 셋 더 나왔다
+//! 설계만으로는 안 보이던 것이 첫 실행에서 넷, 두 번째 훑기에서 셋,
+//! 세 번째 훑기(Word · 탐색기 잘라내기)에서 하나 더 나왔다
 //! ([docs/27 §8-1](../../../docs/27-capture-cases.md)). 그 판정을 **여기 고정한다**.
 //!
 //! ## 이 파일이 있는 이유
@@ -279,6 +280,51 @@ const CASES: &[Case] = &[
         ],
         plain: Some("cargo run -p nexa-clip -- watch"),
         expect: ClipKind::RichText,
+    },
+    // ── 2차 [19] Word 서식 문단 — 표현 18개(OLE 개체 포함) ─────────────
+    Case {
+        id: "[19] Word 서식 문단",
+        app: "WINWORD",
+        formats: &[
+            "DataObject",
+            "Object Descriptor",
+            "Rich Text Format",
+            "HTML Format",
+            "CF_TEXT",
+            "CF_UNICODETEXT",
+            "CF_ENHMETAFILE",
+            "CF_METAFILEPICT",
+            "Embed Source",
+            "Native",
+            "OwnerLink",
+            "Link Source",
+            "Link Source Descriptor",
+            "ObjectLink",
+            "Hyperlink",
+            "Ole Private Data",
+            "CF_LOCALE",
+            "CF_OEMTEXT",
+        ],
+        plain: Some("회의 주제  S&OP 시스템 구축 TF"),
+        expect: ClipKind::RichText,
+    },
+    // ── 2차 [20] 탐색기 **잘라내기** — ★ `CF_HDROP`이 없다(지연 렌더링) ──
+    Case {
+        id: "[20] 탐색기 잘라내기",
+        app: "explorer",
+        formats: &[
+            "DataObject",
+            "Shell IDList Array",
+            "DataObjectAttributes",
+            "DataObjectAttributesRequiringElevation",
+            "Shell Object Offsets",
+            "Preferred DropEffect",
+            "AsyncFlag",
+        ],
+        plain: None,
+        // ★ `Shell IDList Array`(PIDL 묶음)가 파일 목록의 본체 — `Object`가 아니다.
+        //   실기에서 `Object`로 찍혀 결함으로 잡혔다(08-27 2차).
+        expect: ClipKind::Files,
     },
 ];
 
