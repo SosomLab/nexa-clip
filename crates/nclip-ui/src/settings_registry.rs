@@ -173,6 +173,23 @@ pub(crate) const REGISTRY: &[Entry] = &[
         SettingKind::Toggle,
         "sec.conceal_browser_pw",
     ),
+    // ★ 차단 목록을 사용자가 직접 편집한다(08-28 사용자 요청) — `;` 구분 자유 텍스트.
+    //   기본값 = 코어의 기본 접두 목록(아래 테스트가 동기화를 강제한다).
+    e(
+        Msg::CatPrivacy,
+        Msg::SetConcealUrls,
+        Msg::SetConcealUrlsDesc,
+        SettingKind::RadioInput(&[], ""),
+        "sec.conceal_urls",
+    ),
+    // ★ FR-S-2 제외 앱 — 여기 적힌 앱의 복사는 (토글과 무관하게) 기록하지 않는다. 기본 비어 있음.
+    e(
+        Msg::CatPrivacy,
+        Msg::SetExcludeApps,
+        Msg::SetExcludeAppsDesc,
+        SettingKind::RadioInput(&[], ""),
+        "sec.exclude_apps",
+    ),
     e(
         Msg::CatPrivacy,
         Msg::SetClearOnQuit,
@@ -304,6 +321,34 @@ mod tests {
     #[test]
     fn plain_paste_setting_exists() {
         assert!(REGISTRY.iter().any(|e| e.key == "paste.plain_default"));
+    }
+
+    /// ★ 차단 URL 기본값이 **코어의 기본 접두 목록과 동일**해야 한다(08-28).
+    ///
+    /// 코어에 접두를 추가하고 여기 기본값을 잊으면, 새 설치는 옛 목록으로 뜬다.
+    #[test]
+    fn conceal_urls_default_mirrors_core_list() {
+        let e = REGISTRY
+            .iter()
+            .find(|e| e.key == "sec.conceal_urls")
+            .expect("sec.conceal_urls 항목이 있어야 한다");
+        let def = e.default_values();
+        let (_, v) = def.first().expect("기본값이 있어야 한다");
+        assert_eq!(
+            nclip_core::capture::parse_block_list(v),
+            nclip_core::capture::PASSWORD_MANAGER_URL_PREFIXES
+                .iter()
+                .map(|s| (*s).to_string())
+                .collect::<Vec<_>>(),
+            "★ 기본값과 코어 목록이 어긋났다 — RADIO_DEFAULTS를 갱신하라"
+        );
+        // 제외 앱은 기본 비어 있다(FR-S-2 — 목록의 존재가 곧 의사).
+        let apps = REGISTRY
+            .iter()
+            .find(|e| e.key == "sec.exclude_apps")
+            .expect("sec.exclude_apps 항목이 있어야 한다");
+        let d = apps.default_values();
+        assert_eq!(d.first().map(|(_, v)| v.as_str()), Some(""));
     }
 
     /// ★ 개수 설정은 **숫자 그대로** 보여야 한다(사용자 확정 08-26).

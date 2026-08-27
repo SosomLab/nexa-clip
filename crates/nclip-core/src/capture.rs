@@ -192,22 +192,56 @@ pub fn is_metadata_format(fmt: &str) -> bool {
 ///
 /// ⚠️ 이 목록은 브라우저 내부 URL이라 **버전에 따라 늙을 수 있다** — 실기에서 새 경로를
 /// 만나면 추가한다(곁다리 목록과 같은 운영 방식 · D-75).
+/// 기본 차단 접두 목록 — ★ **설정(`sec.conceal_urls`)의 기본값이 이걸 그대로 실은다**.
+/// 사용자는 설정에서 자유로이 추가/삭제/수정한다(08-28 사용자 요청).
+pub const PASSWORD_MANAGER_URL_PREFIXES: &[&str] = &[
+    // ★ 08-28 실기(Edge 139대) — 실제 경로는 wallet이 아니라 settings/autofill이었다.
+    //   복사 시 출처가 `edge://settings/autofill/passwords/details?domain=…`으로 온다.
+    "edge://settings/autofill/passwords",
+    "edge://wallet/",            // 다른 Edge 버전(Microsoft 암호 관리자 단독 페이지)
+    "edge://settings/passwords", // Edge 구형 경로
+    "chrome://password-manager/", // Chrome — 08-28 실기로 차단 확인
+    "chrome://settings/passwords", // Chrome 구형 경로
+    "brave://password-manager/", // Chromium 파생 — 같은 UI를 쓴다
+    "vivaldi://password-manager/",
+];
+
 #[must_use]
 pub fn is_password_manager_url(url: &str) -> bool {
+    url_in_prefixes(url, PASSWORD_MANAGER_URL_PREFIXES.iter().copied())
+}
+
+/// URL이 접두 목록 중 하나로 시작하는가(대소문자·앞뒤 공백 무시).
+///
+/// [`is_password_manager_url`]의 일반형 — 설정에서 온 **사용자 목록**으로도 판정한다.
+pub fn url_in_prefixes<'a>(url: &str, prefixes: impl IntoIterator<Item = &'a str>) -> bool {
     let u = url.trim().to_ascii_lowercase();
-    [
-        // ★ 08-28 실기(Edge 139대) — 실제 경로는 wallet이 아니라 settings/autofill이었다.
-        //   복사 시 출처가 `edge://settings/autofill/passwords/details?domain=…`으로 온다.
-        "edge://settings/autofill/passwords",
-        "edge://wallet/", // 다른 Edge 버전(Microsoft 암호 관리자 단독 페이지)
-        "edge://settings/passwords", // Edge 구형 경로
-        "chrome://password-manager/", // Chrome — 08-28 실기로 차단 확인
-        "chrome://settings/passwords", // Chrome 구형 경로
-        "brave://password-manager/", // Chromium 파생 — 같은 UI를 쓴다
-        "vivaldi://password-manager/",
-    ]
-    .iter()
-    .any(|p| u.starts_with(p))
+    prefixes.into_iter().any(|p| {
+        let p = p.trim().to_ascii_lowercase();
+        !p.is_empty() && u.starts_with(&p)
+    })
+}
+
+/// 설정 문자열(`;` 구분) → 목록. 빈 조각은 버린다.
+///
+/// ★ 구분자가 `;`인 이유 — URL에 `,`는 나올 수 있어도 `;`는 사실상 없고,
+/// 앱 이름에도 없다. 한 줄 편집에서 항목 경계가 눈에 보이는 문자다.
+#[must_use]
+pub fn parse_block_list(s: &str) -> Vec<String> {
+    s.split(';')
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+/// 앱 이름이 제외 목록에 있는가 — **대소문자 무시 완전 일치**(FR-S-2).
+///
+/// ⚠️ 부분 일치로 하면 `Edge`가 `EdgeUpdater`까지 잡는다 — 일치만 받는다.
+#[must_use]
+pub fn app_in_list(app: &str, list: &[String]) -> bool {
+    let a = app.trim().to_lowercase();
+    list.iter().any(|x| x.trim().to_lowercase() == a)
 }
 
 /// 메타파일(벡터 그림) — 보관은 하지만 ★ **우리가 그리지 못한다**([docs/27 §2-3]).
@@ -1150,6 +1184,46 @@ mod tests {
             "",
         ] {
             assert!(!is_password_manager_url(u), "{u}는 아니어야 한다");
+        }
+    }
+
+    /// ★ 08-28 사용자 요청 — 차단 목록을 설정으로 직접 편집한다.
+    #[test]
+    fn block_lists_parse_and_match() {
+        // 파싱 — `;` 구분, 공백·빈 조각 정리.
+        let l = parse_block_list("edge://wallet/ ; myapp://secret;; KeePass ;");
+        assert_eq!(l, ["edge://wallet/", "myapp://secret", "KeePass"]);
+        assert!(parse_block_list("  ;  ; ").is_empty());
+
+        // 사용자 목록으로 URL 판정 — 기본 목록과 독립이다.
+        let urls = parse_block_list("myapp://secret");
+        assert!(url_in_prefixes(
+            "MyApp://Secret/page",
+            urls.iter().map(String::as_str)
+        ));
+        assert!(
+            !url_in_prefixes(
+                "edge://settings/autofill/passwords/x",
+                urls.iter().map(String::as_str)
+            ),
+            "★ 목록을 수정하면 기본 항목도 빠진다 — 사용자가 주인이다"
+        );
+
+        // 앱 제외 — 대소문자 무시 **완전 일치**만.
+        let apps = parse_block_list("KeePass; pwsh");
+        assert!(app_in_list("keepass", &apps));
+        assert!(app_in_list("PWSH", &apps));
+        assert!(
+            !app_in_list("KeePassXC", &apps),
+            "부분 일치는 사고를 만든다"
+        );
+    }
+
+    /// 기본 접두 상수와 `is_password_manager_url`이 같은 것을 본다.
+    #[test]
+    fn default_prefixes_back_the_default_checker() {
+        for p in PASSWORD_MANAGER_URL_PREFIXES {
+            assert!(is_password_manager_url(&format!("{p}rest")), "{p}");
         }
     }
 

@@ -277,6 +277,14 @@ pub enum Msg {
     SetConcealBrowserPw,
     /// 위 설명.
     SetConcealBrowserPwDesc,
+    /// 차단할 출처 URL 목록(직접 편집).
+    SetConcealUrls,
+    /// 위 설명.
+    SetConcealUrlsDesc,
+    /// 제외 앱 목록(FR-S-2).
+    SetExcludeApps,
+    /// 위 설명.
+    SetExcludeAppsDesc,
     /// 종료 시 기록 비우기.
     SetClearOnQuit,
     /// 자동 붙여넣기.
@@ -558,6 +566,30 @@ impl Msg {
                 "Edge/Chrome 密码管理器不会标记机密。按复制来源页面识别",
                 "Edge/Chrome のパスワード管理は機密印を付けません。コピー元ページで検出します",
             ],
+            Msg::SetConcealUrls => [
+                "Blocked source pages",
+                "차단할 출처 페이지",
+                "屏蔽的来源页面",
+                "ブロックするコピー元ページ",
+            ],
+            Msg::SetConcealUrlsDesc => [
+                "URL prefixes separated by ; — copies from these pages are not recorded. Empty restores defaults",
+                "; 로 구분한 URL 접두 — 이 페이지에서 복사한 것은 기록하지 않습니다. 비우면 기본 목록으로 돌아갑니다",
+                "以 ; 分隔的 URL 前缀 — 来自这些页面的复制不记录。清空则恢复默认",
+                "; 区切りの URL 接頭辞 — これらのページからのコピーは記録しません。空にすると既定に戻ります",
+            ],
+            Msg::SetExcludeApps => [
+                "Excluded apps",
+                "제외할 앱",
+                "排除的应用",
+                "除外するアプリ",
+            ],
+            Msg::SetExcludeAppsDesc => [
+                "App names separated by ; (e.g. KeePass) — copies from these apps are never recorded",
+                "; 로 구분한 앱 이름(예: KeePass) — 이 앱에서 복사한 것은 기록하지 않습니다",
+                "以 ; 分隔的应用名（如 KeePass）— 来自这些应用的复制不记录",
+                "; 区切りのアプリ名（例: KeePass）— これらのアプリからのコピーは記録しません",
+            ],
             Msg::SetClearOnQuit => [
                 "Clear history on quit",
                 "종료 시 기록 비우기",
@@ -636,7 +668,7 @@ mod tests {
     use super::*;
 
     /// 카탈로그 전수 — 새 `Msg`를 더하면 여기도 더한다(빈칸 검사가 그걸 강제한다).
-    const ALL_MSG: [Msg; 105] = [
+    const ALL_MSG: [Msg; 109] = [
         Msg::AppName,
         Msg::SearchPlaceholder,
         Msg::EmptyHistory,
@@ -725,6 +757,10 @@ mod tests {
         Msg::SetRespectMarksDesc,
         Msg::SetConcealBrowserPw,
         Msg::SetConcealBrowserPwDesc,
+        Msg::SetConcealUrls,
+        Msg::SetConcealUrlsDesc,
+        Msg::SetExcludeApps,
+        Msg::SetExcludeAppsDesc,
         Msg::SetClearOnQuit,
         Msg::SetPasteAuto,
         Msg::SetPasteAutoDesc,

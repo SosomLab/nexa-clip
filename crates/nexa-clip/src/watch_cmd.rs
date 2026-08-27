@@ -14,7 +14,9 @@
 //! | 출처 앱 | 복사한 앱 이름이 붙는가 |
 //! | 용량 규칙 | 큰 항목에서 `버림 N KB`가 찍히는가 |
 
-use nclip_core::capture::{capture, coalesces, is_password_manager_url, CapturePolicy};
+use nclip_core::capture::{
+    app_in_list, capture, coalesces, parse_block_list, url_in_prefixes, CapturePolicy,
+};
 use nclip_core::{ClipSnapshot, ClipboardWatch as _, WatchCapability};
 use nclip_plat::watch::PlatformWatch;
 
@@ -26,10 +28,13 @@ use nclip_plat::watch::PlatformWatch;
 const COALESCE_MS: u64 = 500;
 
 /// 표시 정책 — 설정에서 한 번 읽어 온다(감시 도는 동안 고정).
-#[derive(Clone, Copy)]
 struct Gate {
     /// ★ D-79 — 브라우저 암호 관리자 복사를 출처 URL로 차단(기본 꺼짐 · 옵트인).
     conceal_browser_pw: bool,
+    /// 차단할 출처 URL 접두 — ★ **사용자가 설정에서 직접 편집한다**(08-28 · 기본 = 코어 목록).
+    conceal_urls: Vec<String>,
+    /// 제외 앱(FR-S-2) — 여기 적힌 앱의 복사는 **토글과 무관하게** 기록하지 않는다(기본 없음).
+    exclude_apps: Vec<String>,
 }
 
 impl Gate {
@@ -37,6 +42,8 @@ impl Gate {
         let s = crate::conf::Settings::load();
         Self {
             conceal_browser_pw: s.state.get("sec.conceal_browser_pw") == "on",
+            conceal_urls: parse_block_list(s.state.get("sec.conceal_urls")),
+            exclude_apps: parse_block_list(s.state.get("sec.exclude_apps")),
         }
     }
 }
@@ -56,7 +63,7 @@ pub(crate) fn peek() {
     }
     let gate = Gate::load();
     match watch.read_now() {
-        Some(snap) => report(&snap, gate),
+        Some(snap) => report(&snap, &gate),
         // ⚠️ 빈 스냅숏으로 위장하지 않는다 — 못 연 것과 비어 있는 것은 다르다.
         None => eprintln!("클립보드를 열지 못했습니다(다른 앱이 잡고 있을 수 있습니다)."),
     }
@@ -84,7 +91,7 @@ pub(crate) fn run() {
     // ★ 켜자마자 지금 클립보드를 한 번 본다 — "복사해야만 뭔가 보이는" 상태를 피한다.
     if let Some(snap) = watch.read_now() {
         println!("\n[지금 클립보드]");
-        report(&snap, gate);
+        report(&snap, &gate);
     }
 
     println!("\n복사해 보세요. Ctrl+C 로 종료합니다.\n");
@@ -102,7 +109,7 @@ pub(crate) fn run() {
     let mut emit = |snap: &ClipSnapshot| {
         n += 1;
         println!("[{n}]");
-        report(snap, gate);
+        report(snap, &gate);
         println!();
     };
 
@@ -153,7 +160,7 @@ pub(crate) fn run() {
 ///
 /// ★ 진단용으로 따로 판정하지 않는다 — 실제 저장 경로와 **같은 함수**를 쓴다.
 /// 그래야 여기서 맞게 보이면 제품에서도 맞다.
-fn report(snap: &ClipSnapshot, gate: Gate) {
+fn report(snap: &ClipSnapshot, gate: &Gate) {
     // ★ 민감 표식(FR-S-1) — **내용을 읽지도 찍지도 않는다**. 다만 줄 자체는 남긴다:
     //   "막혀서 안 보인다"와 "이벤트를 놓쳤다"를 점검자가 구분할 수 있어야 한다.
     if snap.concealed {
@@ -164,11 +171,19 @@ fn report(snap: &ClipSnapshot, gate: Gate) {
         }
         return;
     }
-    // ★ D-79 — 브라우저 암호 관리자는 표식을 안 붙인다(08-27 실기). 옵트인 시 출처 URL로 차단.
+    // ★ 제외 앱(FR-S-2) — 목록에 적은 앱은 **토글과 무관하게** 기록하지 않는다.
+    if let Some(app) = &snap.source_app {
+        if app_in_list(app, &gate.exclude_apps) {
+            println!("  (제외 앱 — {app} 의 복사를 기록하지 않습니다)");
+            return;
+        }
+    }
+    // ★ D-79 — 브라우저 암호 관리자는 표식을 안 붙인다(08-27 실기). 옵트인 시
+    //   **사용자가 편집한 출처 URL 목록**으로 차단한다(기본 = 코어 목록).
     if gate.conceal_browser_pw
         && snap
             .source_url()
-            .is_some_and(|u| is_password_manager_url(&u))
+            .is_some_and(|u| url_in_prefixes(&u, gate.conceal_urls.iter().map(String::as_str)))
     {
         println!("  (브라우저 암호 관리자 복사 — 기록하지 않습니다)");
         return;

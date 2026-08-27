@@ -69,7 +69,12 @@ const HIDDEN_KEYS: &[&str] = &[
 
 /// 직접 입력이 **텍스트**인 RadioInput 키(08-22) — 기본은 숫자 전용(포트·ms·MiB).
 /// 서버 주소는 도메인·IP를 받아야 해서 숫자 필터가 입력 자체를 막았다(실기).
-const FREE_TEXT_KEYS: &[&str] = &["sync.relay"];
+const FREE_TEXT_KEYS: &[&str] = &[
+    "sync.relay",
+    // 차단 목록 — URL 접두·앱 이름을 `;` 구분으로 편집한다(08-28).
+    "sec.conceal_urls",
+    "sec.exclude_apps",
+];
 
 /// 기본 off 토글 — 프로필 공개(DR-22 **기본 전부 비노출** · 옵트인). 미등록 토글은 on.
 // ★ M3-2d ① 확정(08-15 **사용자 확정 = 3-OS 공통 off**): `ui.close_to_tray`
@@ -88,6 +93,11 @@ const TOGGLE_DEFAULT_OFF: &[&str] = &[
 /// 미등록 키의 기본은 첫 옵션(기존 규약).
 const RADIO_DEFAULTS: &[(&str, &str)] = &[
     ("app.lang", "en"),
+    // ★ 차단 출처 기본값 = 코어 기본 접두 목록(레지스트리 테스트가 동기화를 강제).
+    (
+        "sec.conceal_urls",
+        "edge://settings/autofill/passwords; edge://wallet/; edge://settings/passwords; chrome://password-manager/; chrome://settings/passwords; brave://password-manager/; vivaldi://password-manager/",
+    ),
     // ★ 팝업은 마우스 위치에서 열린다(DR-24 — 사용자 확정 필수).
     ("ui.popup_at", "cursor"),
     ("ui.view_mode", "compact"),
