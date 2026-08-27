@@ -11,6 +11,7 @@
 pub mod capture;
 pub mod diag;
 pub mod i18n;
+pub mod img;
 pub mod item;
 pub mod paste;
 pub mod ports;

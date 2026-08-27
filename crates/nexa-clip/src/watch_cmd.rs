@@ -191,8 +191,14 @@ fn report(snap: &ClipSnapshot, gate: &Gate) {
     let plain = snap.plain_text();
     let policy = CapturePolicy::default();
     let names = snap.file_names();
-    // 썸네일·정제 HTML은 아직 없다(T-14c·T-14d) — 없는 것을 있다고 하지 않는다.
-    let c = capture(&snap.reps, plain.as_deref(), None, None, &names, policy);
+    // ★ 이미지 치수(T-14c 1단) — 썸네일 원본 표현의 **머리글만** 읽는다(압축 해제 없음).
+    //   blob_id는 저장소(T-16)가 생기기 전까지 0 — 목록 표시는 치수만 쓴다.
+    let thumb = nclip_core::capture::thumbnail_source(&snap.reps).and_then(|i| {
+        let r = &snap.reps[i];
+        nclip_core::img::image_dimensions(&r.format, &r.data).map(|(w, h)| ([0u8; 32], w, h))
+    });
+    // 정제 HTML은 아직 없다(T-14d) — 없는 것을 있다고 하지 않는다.
+    let c = capture(&snap.reps, plain.as_deref(), thumb, None, &names, policy);
 
     println!("  종류   : {:?}", c.kind);
     if let Some(app) = &snap.source_app {
