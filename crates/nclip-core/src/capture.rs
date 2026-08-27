@@ -199,11 +199,11 @@ pub fn is_password_manager_url(url: &str) -> bool {
         // ★ 08-28 실기(Edge 139대) — 실제 경로는 wallet이 아니라 settings/autofill이었다.
         //   복사 시 출처가 `edge://settings/autofill/passwords/details?domain=…`으로 온다.
         "edge://settings/autofill/passwords",
-        "edge://wallet/",              // 다른 Edge 버전(Microsoft 암호 관리자 단독 페이지)
-        "edge://settings/passwords",   // Edge 구형 경로
-        "chrome://password-manager/",  // Chrome — 08-28 실기로 차단 확인
+        "edge://wallet/", // 다른 Edge 버전(Microsoft 암호 관리자 단독 페이지)
+        "edge://settings/passwords", // Edge 구형 경로
+        "chrome://password-manager/", // Chrome — 08-28 실기로 차단 확인
         "chrome://settings/passwords", // Chrome 구형 경로
-        "brave://password-manager/",   // Chromium 파생 — 같은 UI를 쓴다
+        "brave://password-manager/", // Chromium 파생 — 같은 UI를 쓴다
         "vivaldi://password-manager/",
     ]
     .iter()
