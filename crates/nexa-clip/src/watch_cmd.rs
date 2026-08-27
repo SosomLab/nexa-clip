@@ -14,9 +14,16 @@
 //! | 출처 앱 | 복사한 앱 이름이 붙는가 |
 //! | 용량 규칙 | 큰 항목에서 `버림 N KB`가 찍히는가 |
 
-use nclip_core::capture::{capture, is_password_manager_url, CapturePolicy};
+use nclip_core::capture::{capture, coalesces, is_password_manager_url, CapturePolicy};
 use nclip_core::{ClipSnapshot, ClipboardWatch as _, WatchCapability};
 use nclip_plat::watch::PlatformWatch;
+
+/// ★ **연속 변화 합치기 창**(T-14g · D-80) — 이 시간 안에 "같은 복사의 다음 장면"
+/// (동일 재게시 · 부분→완본)이 오면 이전 것을 버리고 나중 것으로 바꾼다.
+///
+/// 탐색기 복사 한 번이 2~4개 항목으로 쌓이던 것을 하나로 만든다(08-27 실기).
+/// 값은 실측에서 왔다 — 재게시는 수십 ms, 부분→완본은 재시도(200ms) 직후에 온다.
+const COALESCE_MS: u64 = 500;
 
 /// 표시 정책 — 설정에서 한 번 읽어 온다(감시 도는 동안 고정).
 #[derive(Clone, Copy)]
@@ -92,12 +99,53 @@ pub(crate) fn run() {
     }
 
     let mut n = 0u32;
-    // 감시 스레드가 살아 있는 한 계속 받는다.
-    while let Ok(snap) = rx.recv() {
+    let mut emit = |snap: &ClipSnapshot| {
         n += 1;
         println!("[{n}]");
-        report(&snap, gate);
+        report(snap, gate);
         println!();
+    };
+
+    // ★ 디바운스 수신 루프(D-80) — 스냅숏을 바로 찍지 않고 잠깐 들고 있다가,
+    //   합칠 다음 장면이 오면 바꿔치우고, 조용해지면 그때 찍는다.
+    //   ⚠️ 합쳐지지 **않는** 새 복사가 오면 들고 있던 것을 먼저 찍는다 — 순서는 지킨다.
+    let window = std::time::Duration::from_millis(COALESCE_MS);
+    let mut pending: Option<ClipSnapshot> = None;
+    loop {
+        let received = match &pending {
+            // 들고 있는 게 있으면 창이 닫힐 때까지만 기다린다.
+            Some(_) => match rx.recv_timeout(window) {
+                Ok(s) => Some(s),
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => None,
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+            },
+            // 없으면 다음 변화까지 그냥 잔다(유휴 CPU 0).
+            None => match rx.recv() {
+                Ok(s) => Some(s),
+                Err(_) => break,
+            },
+        };
+        match received {
+            Some(next) => {
+                if let Some(prev) = pending.take() {
+                    if !coalesces(&prev, &next) {
+                        emit(&prev);
+                    }
+                    // 합쳐지면 prev는 버려진다 — 나중 것이 정본.
+                }
+                pending = Some(next);
+            }
+            // 창이 조용히 닫혔다 — 들고 있던 것을 찍는다.
+            None => {
+                if let Some(prev) = pending.take() {
+                    emit(&prev);
+                }
+            }
+        }
+    }
+    // 감시 스레드가 끊겨도 들고 있던 것은 잃지 않는다.
+    if let Some(prev) = pending.take() {
+        emit(&prev);
     }
 }
 

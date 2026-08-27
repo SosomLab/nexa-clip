@@ -229,6 +229,49 @@ pub fn is_vendor_format(fmt: &str) -> bool {
         && !is_plain_format(fmt)
 }
 
+// ─────────────────────────────────────────────── ⓪ 연속 변화 합치기 (D-80)
+
+/// ★ **짧은 간격의 두 스냅숏이 "같은 복사의 두 장면"인가**(T-14g · [DR 색인 D-80]).
+///
+/// 08-27 실기에서 탐색기 복사 한 번이 **여러 항목**으로 잡혔다:
+///
+/// | 장면 | 무엇 |
+/// |---|---|
+/// | 동일 재게시 | 같은 내용을 seq만 올려 다시 게시 — 항목이 **쌍**으로 쌓인다 |
+/// | 부분 → 완본 | 플러시 중간(표현 3개)을 읽은 직후 완본(16개)이 온다 |
+///
+/// 둘 다 **나중 것이 정본**이다. 이 함수가 `true`면 호출자는 이전 것을 버리고
+/// 나중 것으로 바꾼다(시간 창은 호출자가 잰다 — 이 함수는 순수하게 내용만 본다).
+///
+/// ⚠️ **좁게 판정한다** — 같은 앱에서 온 **다른 내용**(연속 복사 자동화 등)을 합치면
+/// 항목이 사라진다. 표현 집합이 같으면 **바이트까지 같아야** 하고, 다르면
+/// **이전이 나중의 부분집합**일 때만(중간 장면) 합친다.
+#[must_use]
+pub fn coalesces(prev: &crate::ClipSnapshot, next: &crate::ClipSnapshot) -> bool {
+    if prev.source_app != next.source_app {
+        return false;
+    }
+    let names = |s: &crate::ClipSnapshot| -> std::collections::BTreeSet<String> {
+        s.reps.iter().map(|r| r.format.clone()).collect()
+    };
+    let (p, n) = (names(prev), names(next));
+    if p == n {
+        // 동일 재게시 — 이름이 같으면 **내용까지** 같아야 한다(다른 텍스트 연속 복사 보호).
+        fn sorted(s: &crate::ClipSnapshot) -> Vec<(&str, &[u8])> {
+            let mut v: Vec<(&str, &[u8])> = s
+                .reps
+                .iter()
+                .map(|r| (r.format.as_str(), r.data.as_slice()))
+                .collect();
+            v.sort();
+            v
+        }
+        return sorted(prev) == sorted(next);
+    }
+    // 부분 → 완본 — 이전 표현이 전부 나중에도 있다(플러시 중간 장면).
+    p.is_subset(&n)
+}
+
 // ─────────────────────────────────────────────── ① 종류 판정
 
 /// 표현 이름들로 항목 종류를 정한다 — ★ **순서가 규칙 전체**다([§1](#1-종류-판정)).
@@ -1020,6 +1063,63 @@ mod tests {
             ]),
             ClipKind::RichText
         );
+    }
+
+    /// ★ D-80 — 탐색기 복사 한 번이 여러 항목이 되지 않게(08-27 실기).
+    #[test]
+    fn explorer_double_post_and_partial_flush_coalesce() {
+        use crate::{ClipSnapshot, RawRep};
+        let snap = |app: &str, reps: &[(&str, &[u8])]| ClipSnapshot {
+            reps: reps
+                .iter()
+                .map(|(f, d)| RawRep {
+                    format: (*f).to_string(),
+                    data: d.to_vec(),
+                })
+                .collect(),
+            source_app: Some(app.into()),
+            ..Default::default()
+        };
+        // ① 동일 재게시(내용까지 같다) — 합친다.
+        let a = snap(
+            "explorer",
+            &[("CF_HDROP", b"x"), ("Shell IDList Array", b"y")],
+        );
+        assert!(coalesces(&a, &a.clone()));
+        // ② 부분 → 완본 — 합친다.
+        let partial = snap(
+            "explorer",
+            &[("DataObject", b"a"), ("Shell IDList Array", b"b")],
+        );
+        let full = snap(
+            "explorer",
+            &[
+                ("DataObject", b"a"),
+                ("Shell IDList Array", b"b"),
+                ("CF_HDROP", b"c"),
+                ("FileNameW", b"d"),
+            ],
+        );
+        assert!(
+            coalesces(&partial, &full),
+            "플러시 중간 → 완본은 한 항목이다"
+        );
+        // ⚠️ 반대 방향(완본 → 부분)은 아니다 — 줄어드는 건 새 복사다.
+        assert!(!coalesces(&full, &partial));
+        // ③ 같은 앱·같은 표현·**다른 내용** — 합치면 항목이 사라진다. 안 합친다.
+        let t1 = snap("Code", &[("CF_UNICODETEXT", b"first")]);
+        let t2 = snap("Code", &[("CF_UNICODETEXT", b"second")]);
+        assert!(!coalesces(&t1, &t2), "★ 다른 내용을 합치면 복사가 사라진다");
+        // ④ 다른 앱 — 안 합친다.
+        let other = snap(
+            "EXCEL",
+            &[
+                ("DataObject", b"a"),
+                ("Shell IDList Array", b"b"),
+                ("CF_HDROP", b"c"),
+            ],
+        );
+        assert!(!coalesces(&partial, &other));
     }
 
     /// ★ D-79 — 브라우저 암호 관리자 페이지 출처 판정(옵트인 차단의 재료).
