@@ -24,6 +24,10 @@ pub enum TrayEvent {
     OpenTarget(String),
     /// ★ 최근 항목 선택(T-18e) — 값 = [`TrayContent::recent`]의 인덱스(0 = 최신).
     Recent(usize),
+    /// ★ 전역 단축키(T-15 · `key.open`) — 팝업 토글.
+    Hotkey,
+    /// 전역 단축키 등록 결과(시작 직후 한 번) — 실패 = 다른 앱이 선점(충돌 표시용).
+    HotkeyStatus(bool),
     /// 앱 종료(메뉴 "종료").
     Quit,
 }
@@ -55,7 +59,14 @@ pub struct TrayHandle {
 }
 
 #[cfg(windows)]
-pub use win::spawn;
+pub use win::{cursor_pos, spawn};
+
+#[cfg(not(windows))]
+/// 커서 위치(스텁) — 팝업 위치 계산용.
+#[must_use]
+pub fn cursor_pos() -> Option<(i32, i32)> {
+    None
+}
 
 #[cfg(not(windows))]
 /// 스텁(미이식 타깃) — 트레이 없음. 호스트는 `None`을 보고 정직하게 알린다.
@@ -124,6 +135,7 @@ mod win {
 
     #[link(name = "user32")]
     extern "system" {
+        fn RegisterHotKey(hwnd: HWND, id: i32, modifiers: u32, vk: u32) -> i32;
         fn CreatePopupMenu() -> HANDLE;
         fn AppendMenuW(menu: HANDLE, flags: u32, id: usize, label: *const u16) -> i32;
         fn TrackPopupMenu(
@@ -165,6 +177,15 @@ mod win {
     const WM_LBUTTONUP: u32 = 0x0202;
     const WM_RBUTTONUP: u32 = 0x0205;
     const WM_DESTROY: u32 = 0x0002;
+    const WM_HOTKEY: u32 = 0x0312;
+    /// ★ 팝업 열기 전역 단축키(`key.open` 기본 = **Ctrl+Shift+V** — [docs/14 §3-2]).
+    ///   설정 배선(키 변경)은 후속 — 지금은 명세 기본값 고정.
+    const HOTKEY_ID: i32 = 1;
+    const MOD_CONTROL: u32 = 0x0002;
+    const MOD_SHIFT: u32 = 0x0004;
+    /// 재등록 방지(Windows 10 1607+) — 키 반복으로 이벤트가 쏟아지지 않게.
+    const MOD_NOREPEAT: u32 = 0x4000;
+    const VK_V: u32 = 0x56;
     const NIM_ADD: u32 = 0;
     const NIM_MODIFY: u32 = 1;
     const NIM_DELETE: u32 = 2;
@@ -197,6 +218,14 @@ mod win {
     static BALLOON: Mutex<Option<(String, String, bool, String)>> = Mutex::new(None);
     /// 마지막 표시 풍선의 대상(클릭 복귀용 — 풍선은 아이콘당 1개라 마지막이 곧 화면).
     static LAST_TARGET: Mutex<String> = Mutex::new(String::new());
+
+    /// 현재 커서의 화면 좌표 — 팝업을 커서 위치에 띄운다(DR-24 `ui.popup_at` 기본).
+    #[must_use]
+    pub fn cursor_pos() -> Option<(i32, i32)> {
+        let mut pt = Point { x: 0, y: 0 };
+        // SAFETY: 출력 구조체 포인터만 넘기는 조회 호출.
+        (unsafe { GetCursorPos(&mut pt) } != 0).then_some((pt.x, pt.y))
+    }
 
     fn wide(s: &str) -> Vec<u16> {
         s.encode_utf16().chain(std::iter::once(0)).collect()
@@ -406,6 +435,12 @@ mod win {
                 }
                 0
             }
+            WM_HOTKEY => {
+                if w == HOTKEY_ID as usize {
+                    emit(TrayEvent::Hotkey);
+                }
+                0
+            }
             WM_APP_UPDATE => {
                 apply_state(hwnd, NIM_MODIFY);
                 0
@@ -503,6 +538,15 @@ mod win {
                     }
                     HWND.store(hwnd, Ordering::Release);
                     apply_state(hwnd, NIM_ADD);
+                    // ★ 전역 단축키(T-15) — 이 스레드의 메시지 루프가 WM_HOTKEY를 받는다.
+                    //   실패 = 다른 앱이 선점(CopyQ 등) — 조용히 넘기지 않고 알린다.
+                    let hot = RegisterHotKey(
+                        hwnd,
+                        HOTKEY_ID,
+                        MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT,
+                        VK_V,
+                    ) != 0;
+                    emit(TrayEvent::HotkeyStatus(hot));
                     let mut msg = MSG {
                         hwnd: 0,
                         message: 0,

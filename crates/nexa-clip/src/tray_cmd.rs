@@ -17,15 +17,18 @@
 //! (설정을 끔으로 내려 화면과 실제를 일치시킨다).
 
 use crate::conf::Settings;
+use crate::popup_win::{Popup, PopupAction};
 use crate::settings_win::App;
 use crate::watch_cmd::Gate;
 use nclip_core::capture::{clip_text, summarize};
 use nclip_core::history::{History, Pushed};
 use nclip_core::{
-    current_lang, has_content, tr, ClipSnapshot, ClipboardWatch as _, Msg, WatchCapability,
+    current_lang, has_content, is_plain_format, tr, ClipSnapshot, ClipboardWatch as _, Msg,
+    PasteAs, PasteInjector as _, RawRep, WatchCapability,
 };
 use nclip_gfx::Font;
 use nclip_plat::autostart::{apply, boot_sync, is_registered, BootSync};
+use nclip_plat::paste::PlatformPaste;
 use nclip_plat::tray::{spawn, TrayContent, TrayEvent, TrayHandle};
 use nclip_plat::watch::PlatformWatch;
 use std::time::Instant;
@@ -51,6 +54,10 @@ enum ShellEvent {
     Captured(Box<ClipSnapshot>),
     /// ★ 최근 항목 선택(T-18e) — 그 항목의 표현 전부를 클립보드로 되돌린다.
     Recent(usize),
+    /// ★ 전역 단축키(`Ctrl+Shift+V`) — 퀵 팝업 토글.
+    Hotkey,
+    /// 전역 단축키 등록 결과 — 실패 = 다른 앱이 선점(충돌을 화면에 알린다).
+    HotkeyStatus(bool),
 }
 
 /// ★ 계열 아이콘을 코드로 그린다 — 라운드 스퀘어 + 청록 세로 그라디언트(`#22C3D6→#0B7FA6`)
@@ -155,16 +162,21 @@ fn sync_autostart(conf: &mut Settings) {
     }
 }
 
-/// 상주 셸 — 창·트레이·감시·이력을 winit 한 루프로.
+/// 상주 셸 — 창·트레이·감시·이력·팝업을 winit 한 루프로.
 struct Shell {
     app: App,
+    popup: Popup,
     tray: TrayHandle,
-    /// ★ 세션 이력(T-13 1단) — 트레이 최근 메뉴와 재적재의 원천.
+    /// ★ 세션 이력(T-13 1단) — 팝업·트레이 메뉴와 재적재의 원천.
     history: History,
     /// 수집 게이트 — `watch` 진단과 같은 정책(민감·제외 앱·브라우저 암호).
     gate: Gate,
     /// 트레이 메뉴에 보일 최근 개수(`ui.tray_recent_n`).
     tray_n: usize,
+    /// ★ K-1 왕복 — 팝업을 열기 **전**의 포그라운드를 기억했다가 되돌린다.
+    paste: PlatformPaste,
+    /// `paste.auto` — 꺼져 있으면 재적재까지만(주입 없음).
+    paste_auto: bool,
 }
 
 impl Shell {
@@ -175,14 +187,91 @@ impl Shell {
             self.history.recent_labels(self.tray_n),
         ));
     }
+
+    /// 항목을 클립보드로 되돌린다(트레이 메뉴 — 주입 없음).
+    fn repost(&self, i: usize) {
+        let Some(item) = self.history.get(i) else {
+            return;
+        };
+        match nclip_plat::clipboard::set_reps(&item.reps) {
+            Ok(n) => println!("재적재: \"{}\" — 표현 {n}개 게시", item.label),
+            Err(e) => eprintln!("재적재 실패: {e}"),
+        }
+    }
+
+    /// ★ 팝업 선택 — 재적재 후 **기억해 둔 창으로 복원 + `Ctrl+V` 주입**(K-1 실물 경로).
+    fn pick(&mut self, index: usize, plain: bool) {
+        let Some(item) = self.history.get(index) else {
+            return;
+        };
+        let reps: Vec<RawRep> = if plain {
+            item.reps
+                .iter()
+                .filter(|r| is_plain_format(&r.format))
+                .cloned()
+                .collect()
+        } else {
+            item.reps.clone()
+        };
+        if reps.is_empty() {
+            // 평문이 없는 항목(이미지·개체)에 ⇧Enter — 있는 척하지 않는다(DR-31).
+            eprintln!("평문 표현이 없는 항목입니다 — 원본(Enter)으로 붙여넣으세요");
+            return;
+        }
+        let label = item.label.clone();
+        self.popup.close();
+        match nclip_plat::clipboard::set_reps(&reps) {
+            Ok(n) => println!("재적재: \"{label}\" — 표현 {n}개 게시"),
+            Err(e) => {
+                eprintln!("재적재 실패: {e}");
+                return;
+            }
+        }
+        if self.paste_auto {
+            let as_ = if plain {
+                PasteAs::Plain
+            } else {
+                PasteAs::Original
+            };
+            match self.paste.restore_and_paste(as_) {
+                Ok(()) => println!("붙여넣기: 포커스 복원 + 키 주입 ok"),
+                Err(e) => eprintln!("붙여넣기 실패: {e:?} — 클립보드에는 실려 있습니다(Ctrl+V)"),
+            }
+        }
+    }
+
+    /// 팝업 토글(전역 단축키) — 열 때 **먼저** 대상 포커스를 기억한다.
+    fn toggle_popup(&mut self, el: &ActiveEventLoop) {
+        if self.popup.is_open() {
+            println!("팝업: 닫기(토글)");
+            self.popup.close();
+            return;
+        }
+        println!("팝업: 열기 — 이력 {}개", self.history.len());
+        // ★ 팝업이 뜨기 전의 포그라운드가 붙여넣기 대상이다(K-1 — 순서가 전부).
+        if !self.paste.capture_focus() {
+            eprintln!("대상 창을 기억하지 못했습니다 — 선택해도 주입은 생략됩니다");
+        }
+        self.popup
+            .open(el, nclip_plat::tray::cursor_pos(), &self.history);
+    }
 }
 
 impl ApplicationHandler<ShellEvent> for Shell {
     fn resumed(&mut self, _el: &ActiveEventLoop) {
-        // ★ 시작은 트레이만 — 창은 트레이 "열기"에서 연다(상주 앱의 조용한 출발).
+        // ★ 시작은 트레이만 — 창은 트레이 "열기"/단축키에서 연다(상주 앱의 조용한 출발).
     }
 
     fn window_event(&mut self, el: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
+        // 팝업 창의 이벤트는 팝업으로 — 나머지(설정 창)는 App으로.
+        if self.popup.window_id() == Some(id) {
+            match self.popup.handle_event(&event, &self.history) {
+                PopupAction::None => {}
+                PopupAction::Close => self.popup.close(),
+                PopupAction::Pick { index, plain } => self.pick(index, plain),
+            }
+            return;
+        }
         ApplicationHandler::window_event(&mut self.app, el, id, event);
     }
 
@@ -190,6 +279,17 @@ impl ApplicationHandler<ShellEvent> for Shell {
         match ev {
             ShellEvent::Open => self.app.ensure_window(el),
             ShellEvent::Quit => el.exit(),
+            ShellEvent::Hotkey => self.toggle_popup(el),
+            ShellEvent::HotkeyStatus(ok) => {
+                if ok {
+                    println!("전역 단축키: Ctrl+Shift+V — 퀵 팝업");
+                } else {
+                    eprintln!(
+                        "⚠️ 전역 단축키(Ctrl+Shift+V) 등록 실패 — 다른 앱(CopyQ 등)이 \
+                         쓰고 있습니다. 트레이 좌클릭으로 여세요"
+                    );
+                }
+            }
             ShellEvent::Captured(snap) => {
                 // 게이트 — `watch`와 같은 정책. 막힌 것은 이력에도 안 들어간다.
                 if self.gate.blocks(&snap).is_some() {
@@ -201,16 +301,11 @@ impl ApplicationHandler<ShellEvent> for Shell {
                 //   곧 에코 처리다(항목이 늘지 않는다).
                 let _pushed: Pushed = self.history.push(&snap, kind, label);
                 self.refresh_tray();
-            }
-            ShellEvent::Recent(i) => {
-                let Some(item) = self.history.get(i) else {
-                    return;
-                };
-                match nclip_plat::clipboard::set_reps(&item.reps) {
-                    Ok(n) => println!("재적재: \"{}\" — 표현 {n}개 게시", item.label),
-                    Err(e) => eprintln!("재적재 실패: {e}"),
+                if self.popup.is_open() {
+                    self.popup.refresh(&self.history);
                 }
             }
+            ShellEvent::Recent(i) => self.repost(i),
         }
     }
 
@@ -248,6 +343,8 @@ pub(crate) fn run() {
         let _ = proxy.send_event(match ev {
             TrayEvent::Quit => ShellEvent::Quit,
             TrayEvent::Recent(i) => ShellEvent::Recent(i),
+            TrayEvent::Hotkey => ShellEvent::Hotkey,
+            TrayEvent::HotkeyStatus(ok) => ShellEvent::HotkeyStatus(ok),
             TrayEvent::Open | TrayEvent::OpenTarget(_) => ShellEvent::Open,
         });
     }) else {
@@ -284,14 +381,28 @@ pub(crate) fn run() {
     // 이력 상한·메뉴 개수는 설정에서 — 세션 동안 고정(설정 즉시 반영은 후속).
     let cap: usize = conf.state.get("store.max_items").parse().unwrap_or(1000);
     let tray_n: usize = conf.state.get("ui.tray_recent_n").parse().unwrap_or(8);
+    let paste_auto = conf.state.get("paste.auto") == "on";
     let gate = Gate::from_state(&conf);
+
+    // 팝업은 자기 폰트를 따로 든다(mmap 정적 데이터라 값싸다 — App이 font를 소유해서).
+    let popup_font =
+        match nclip_plat::font::system_ui_font().and_then(|(d, i)| Font::from_static(d, i).ok()) {
+            Some(f) => f,
+            None => {
+                eprintln!("팝업 폰트 로드 실패");
+                std::process::exit(1);
+            }
+        };
 
     let mut shell = Shell {
         app: App::new(font, conf, true),
+        popup: Popup::new(popup_font),
         tray,
         history: History::new(cap),
         gate,
         tray_n,
+        paste: PlatformPaste::new(),
+        paste_auto,
     };
     if let Err(e) = el.run_app(&mut shell) {
         eprintln!("이벤트 루프 오류: {e}");
