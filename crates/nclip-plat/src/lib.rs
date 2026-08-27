@@ -16,6 +16,7 @@
 pub mod autostart;
 pub mod clipboard;
 pub mod font;
+pub mod imgdec;
 pub mod paste;
 pub mod paths;
 pub mod tray;

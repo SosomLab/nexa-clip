@@ -291,6 +291,25 @@ impl ApplicationHandler<ShellEvent> for Shell {
                 }
             }
             ShellEvent::Captured(snap) => {
+                // ★ 설정 즉시 반영 — 설정 창에서 바꾼 값이 다음 캡처부터 산다
+                //   (게이트·상한·메뉴 개수·자동 붙여넣기 — 재시작 불요).
+                self.gate = Gate::from_state(&self.app.conf);
+                self.history.set_cap(
+                    self.app
+                        .conf
+                        .state
+                        .get("store.max_items")
+                        .parse()
+                        .unwrap_or(1000),
+                );
+                self.tray_n = self
+                    .app
+                    .conf
+                    .state
+                    .get("ui.tray_recent_n")
+                    .parse()
+                    .unwrap_or(8);
+                self.paste_auto = self.app.conf.state.get("paste.auto") == "on";
                 // 게이트 — `watch`와 같은 정책. 막힌 것은 이력에도 안 들어간다.
                 if self.gate.blocks(&snap).is_some() {
                     return;

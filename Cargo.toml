@@ -13,6 +13,7 @@ members = [
   "crates/nclip-plat",         # 플랫폼 경계 — 클립보드 감시·전역 단축키·포커스/주입·트레이
   "crates/nclip-store",        # 영속 — 암호화 세그먼트·내용 주소 blob
   "crates/nclip-ui",           # 화면 S1~S8
+  "crates/nclip-imgdec",       # (bin) 이미지 격리 디코드 워커 — 파서는 여기에만(beep R-5)
   "crates/nexa-conf",          # 설정 영속 — ★ nexa 계열 공용(nclip 의존 0 · DR-32)
   "crates/nexa-clip",          # (bin) 진입·조립·생명주기
 ]
