@@ -4,8 +4,7 @@
 
 ## 2026-08-28
 
-- ★ **제품 루프 1차** — 
-clip-core::history(재복사 = 승격 · D-80 교체 · 상한) + 트레이 우클릭 **최근 N개 메뉴** + 클릭 = **재적재**(clipboard::set_reps · beep ClipGuard 힙 오염 예방 이식 · 왕복 테스트). 게이트 공용화 — 막힌 건 이력에도 없음 → [journal 6차](journal/2026-08-28.md)
+- ★ **제품 루프 1차** — `nclip-core::history`(재복사 = 승격 · D-80 교체 · 상한) + 트레이 우클릭 **최근 N개 메뉴** + 클릭 = **재적재**(`clipboard::set_reps` · beep ClipGuard 힙 오염 예방 이식 · 왕복 테스트). 게이트 공용화 — 막힌 건 이력에도 없음 → [journal 6차](journal/2026-08-28.md)
 - ★ **자동 시작 + 닫을 때 트레이로**(사용자 요청) — beep `autostart.rs` 3-OS 이식(토글 즉시 적용 · 시작마다 경로 재동기화 · ★ 외부 삭제 존중) + `ui.close_to_tray`(기본 꺼짐 · beep 확정 준용). `tray`가 **상주 셸**로 승격(winit 한 루프 + 프록시 · 열기 = 설정 창 · 닫기 = 종료/숨기). E2E: HKCU Run 등록/해제 실측 → [journal 5차](journal/2026-08-28.md)
 - ★ **T-12e 트레이 상주(Windows)** — beep `tray.rs` 이식 · `nexa-clip tray`(아이콘은 코드로 · 감시 통합 = 수집 수 툴팁 반영). ★ 이식이 `clashing_extern_declarations` 7건을 드러내 **`win32` 공용 선언 모듈로 통합**(paste·watch_win·tray). mac/Linux는 의존 결정과 실기 환경에서 후속 → [journal 4차](journal/2026-08-28.md)
 - ★ **T-14c 1단 — `nclip-core::img`** — 치수(PNG IHDR·DIB 머리글) · `dib_to_rgba`(beep 이식) · **박스 평균 축소**. ★ 압축 디코드는 본체에 안 둔다(beep `imgdec` 격리 워커 선례 → T-19). watch가 `[이미지] W×H`를 보여 준다 → [journal 3차](journal/2026-08-28.md)
