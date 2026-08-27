@@ -285,6 +285,10 @@ pub enum Msg {
     SetExcludeApps,
     /// 위 설명.
     SetExcludeAppsDesc,
+    /// 트레이 메뉴 — 열기.
+    TrayOpen,
+    /// 트레이 메뉴 — 종료.
+    TrayQuit,
     /// 종료 시 기록 비우기.
     SetClearOnQuit,
     /// 자동 붙여넣기.
@@ -590,6 +594,8 @@ impl Msg {
                 "以 ; 分隔的应用名（如 KeePass）— 来自这些应用的复制不记录",
                 "; 区切りのアプリ名（例: KeePass）— これらのアプリからのコピーは記録しません",
             ],
+            Msg::TrayOpen => ["Open", "열기", "打开", "開く"],
+            Msg::TrayQuit => ["Quit", "종료", "退出", "終了"],
             Msg::SetClearOnQuit => [
                 "Clear history on quit",
                 "종료 시 기록 비우기",
@@ -668,7 +674,7 @@ mod tests {
     use super::*;
 
     /// 카탈로그 전수 — 새 `Msg`를 더하면 여기도 더한다(빈칸 검사가 그걸 강제한다).
-    const ALL_MSG: [Msg; 109] = [
+    const ALL_MSG: [Msg; 111] = [
         Msg::AppName,
         Msg::SearchPlaceholder,
         Msg::EmptyHistory,
@@ -761,6 +767,8 @@ mod tests {
         Msg::SetConcealUrlsDesc,
         Msg::SetExcludeApps,
         Msg::SetExcludeAppsDesc,
+        Msg::TrayOpen,
+        Msg::TrayQuit,
         Msg::SetClearOnQuit,
         Msg::SetPasteAuto,
         Msg::SetPasteAutoDesc,

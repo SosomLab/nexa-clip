@@ -31,21 +31,17 @@
 use nclip_core::{ClipSnapshot, RawRep, WatchError};
 use std::sync::mpsc;
 
+// ★ 겹치는 Win32 선언은 [`crate::win32`] **한 곳에만** 둔다 — 다른 시그니처로
+// 두 번 선언하면 `clashing_extern_declarations`(우리 설정에서 오류)다.
+use crate::win32::{
+    CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, GetModuleHandleW,
+    RegisterClassW, HANDLE, HWND, LPARAM, LRESULT, MSG, WNDCLASSW, WPARAM,
+};
+
 /// 변화가 있을 때 부를 것 — 스레드를 건너가므로 `Send`.
 pub type Sink = Box<dyn Fn(ClipSnapshot) + Send>;
 
-// ───────────────────────────── Win32 선언
-
-// ★ 핸들은 `isize`다 — `paste.rs`와 **같은 선언**이어야 한다.
-// 같은 crate에서 같은 Win32 함수를 다른 시그니처로 두 번 선언하면 재선언 경고가 나고,
-// 경고를 넘어 **호출 규약이 어긋날 수 있다**.
-#[allow(non_camel_case_types)]
-type HWND = isize;
-#[allow(non_camel_case_types)]
-type HANDLE = isize;
-type LRESULT = isize;
-type WPARAM = usize;
-type LPARAM = isize;
+// ───────────────────────────── Win32 선언(이 모듈 전용)
 
 const WM_CLIPBOARDUPDATE: u32 = 0x031D;
 const WM_TIMER: u32 = 0x0113;
@@ -69,54 +65,11 @@ const POLL_TIMER_ID: usize = 2;
 /// 하트비트 간격.
 const POLL_MS: u32 = 2000;
 
-#[repr(C)]
-struct WNDCLASSW {
-    style: u32,
-    lpfn_wnd_proc: Option<unsafe extern "system" fn(HWND, u32, WPARAM, LPARAM) -> LRESULT>,
-    cb_cls_extra: i32,
-    cb_wnd_extra: i32,
-    h_instance: HANDLE,
-    h_icon: HANDLE,
-    h_cursor: HANDLE,
-    hbr_background: HANDLE,
-    lpsz_menu_name: *const u16,
-    lpsz_class_name: *const u16,
-}
-
 /// 창 없음 / 실패를 뜻하는 핸들 값.
 const NULL_HANDLE: HANDLE = 0;
 
-#[repr(C)]
-struct MSG {
-    hwnd: HWND,
-    message: u32,
-    w_param: WPARAM,
-    l_param: LPARAM,
-    time: u32,
-    pt_x: i32,
-    pt_y: i32,
-}
-
 #[link(name = "user32")]
 extern "system" {
-    fn RegisterClassW(cls: *const WNDCLASSW) -> u16;
-    fn CreateWindowExW(
-        ex: u32,
-        class: *const u16,
-        name: *const u16,
-        style: u32,
-        x: i32,
-        y: i32,
-        w: i32,
-        h: i32,
-        parent: isize,
-        menu: isize,
-        inst: isize,
-        param: *const core::ffi::c_void,
-    ) -> isize;
-    fn DefWindowProcW(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) -> LRESULT;
-    fn GetMessageW(msg: *mut MSG, hwnd: HWND, min: u32, max: u32) -> i32;
-    fn DispatchMessageW(msg: *const MSG) -> LRESULT;
     fn AddClipboardFormatListener(hwnd: HWND) -> i32;
     fn OpenClipboard(hwnd: HWND) -> i32;
     fn CloseClipboard() -> i32;
@@ -134,7 +87,6 @@ extern "system" {
 
 #[link(name = "kernel32")]
 extern "system" {
-    fn GetModuleHandleW(name: *const u16) -> HANDLE;
     fn GlobalLock(h: HANDLE) -> *mut core::ffi::c_void;
     fn GlobalUnlock(h: HANDLE) -> i32;
     fn GlobalSize(h: HANDLE) -> usize;

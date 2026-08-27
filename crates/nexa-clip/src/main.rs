@@ -12,6 +12,7 @@
 mod conf;
 mod demo;
 mod settings_win;
+mod tray_cmd;
 mod watch_cmd;
 
 use nclip_core::{
@@ -30,6 +31,7 @@ fn main() {
         Some("settings") => settings_win::run(),
         Some("watch") => watch_cmd::run(),
         Some("peek") => watch_cmd::peek(),
+        Some("tray") => tray_cmd::run(),
         Some("--help" | "-h" | "help") => usage(),
         Some(other) => {
             eprintln!("알 수 없는 명령: {other}\n");
@@ -52,6 +54,8 @@ nexa-clip [명령]
   watch          ★ 클립보드 감시 — 복사할 때마다 무엇이 잡히는지 찍는다
                  (종류 판정 · 표현 목록 · 용량 규칙 · Ctrl+C 종료)
   peek           지금 클립보드만 한 번 읽고 끝낸다(watch와 함께 써도 된다)
+  tray           ★ 트레이 상주 — 아이콘 + 우클릭 메뉴(열기/종료) + 감시 통합
+                 (수집 수가 툴팁에 반영 · 종료는 메뉴에서)
   spike-paste    K-1 스파이크 — 포커스 복원 + 붙여넣기 키 주입 검증
       --plain        평문 붙여넣기 경로로 시도
       --wait <초>    대상 앱을 고를 시간(기본 5)

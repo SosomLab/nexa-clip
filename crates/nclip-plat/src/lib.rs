@@ -16,6 +16,9 @@
 pub mod font;
 pub mod paste;
 pub mod paths;
+pub mod tray;
 pub mod watch;
 #[cfg(windows)]
 pub mod watch_win;
+#[cfg(windows)]
+pub(crate) mod win32;

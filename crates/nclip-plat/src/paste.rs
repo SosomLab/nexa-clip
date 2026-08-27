@@ -91,10 +91,12 @@ mod imp {
     #[cfg(target_pointer_width = "64")]
     const _: () = assert!(core::mem::size_of::<Input>() == 40);
 
+    // ★ 겹치는 선언(SetForegroundWindow·CreateWindowExW)은 crate::win32 한 곳에만.
+    use crate::win32::{CreateWindowExW, SetForegroundWindow};
+
     #[link(name = "user32")]
     extern "system" {
         fn GetForegroundWindow() -> isize;
-        fn SetForegroundWindow(hwnd: isize) -> i32;
         fn IsWindow(hwnd: isize) -> i32;
         fn GetWindowThreadProcessId(hwnd: isize, pid: *mut u32) -> u32;
         fn AttachThreadInput(attach: u32, attach_to: u32, do_attach: i32) -> i32;
@@ -230,20 +232,6 @@ mod imp {
 
         #[link(name = "user32")]
         extern "system" {
-            fn CreateWindowExW(
-                ex: u32,
-                class: *const u16,
-                name: *const u16,
-                style: u32,
-                x: i32,
-                y: i32,
-                w: i32,
-                h: i32,
-                parent: isize,
-                menu: isize,
-                inst: isize,
-                param: *const core::ffi::c_void,
-            ) -> isize;
             fn ShowWindow(hwnd: isize, cmd: i32) -> i32;
             fn DestroyWindow(hwnd: isize) -> i32;
         }
