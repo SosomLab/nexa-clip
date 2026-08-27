@@ -4,6 +4,7 @@
 
 ## 2026-08-28
 
+- ★ **T-12e 트레이 상주(Windows)** — beep `tray.rs` 이식 · `nexa-clip tray`(아이콘은 코드로 · 감시 통합 = 수집 수 툴팁 반영). ★ 이식이 `clashing_extern_declarations` 7건을 드러내 **`win32` 공용 선언 모듈로 통합**(paste·watch_win·tray). mac/Linux는 의존 결정과 실기 환경에서 후속 → [journal 4차](journal/2026-08-28.md)
 - ★ **T-14c 1단 — `nclip-core::img`** — 치수(PNG IHDR·DIB 머리글) · `dib_to_rgba`(beep 이식) · **박스 평균 축소**. ★ 압축 디코드는 본체에 안 둔다(beep `imgdec` 격리 워커 선례 → T-19). watch가 `[이미지] W×H`를 보여 준다 → [journal 3차](journal/2026-08-28.md)
 - ★ **차단 목록을 설정으로**(사용자 요청) — `sec.conceal_urls`(URL 접두 · 기본=코어 목록 · 테스트가 동기화 강제) · `sec.exclude_apps`(FR-S-2 제외 앱 첫 구현 · 완전 일치). ★ **사용자가 목록의 주인** — 뺀 기본 항목은 통과(E2E 박제) → [journal 2차](journal/2026-08-28.md)
 - **DR-36 실기 종결** — Chrome ✅(3건 마스킹) · ⚠️ **Edge는 실경로가 `edge://settings/autofill/passwords`**(wallet 아님 — 주소창으로 확정) → 목록 추가 후 ✅ **Edge도 차단 확인** — T-21b 통과 → [journal](journal/2026-08-28.md)
