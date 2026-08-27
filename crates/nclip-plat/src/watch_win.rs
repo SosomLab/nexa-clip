@@ -387,6 +387,16 @@ fn try_deliver() -> bool {
         diag("클립보드 열기 실패");
         return false;
     };
+    // ★ **전이 중간의 빈 스냅숏은 "처리했다"고 치면 안 된다**(08-27 실기 ⑫).
+    //
+    // 탐색기는 비우기와 채우기를 별개 트랜잭션으로 한다. 그 틈을 읽으면 표현 0개인데
+    // 일련번호는 이미 최종값이고, **이후 채우기는 번호를 더 올리지 않는다**(지연 렌더링 경로).
+    // 여기서 `LAST_SEQ`를 갱신해 버리면 하트비트도 이벤트도 그 복사를 **영영 못 본다** —
+    // 실패로 돌려 재시도 타이머(200ms)가 채워진 뒤를 다시 읽게 한다.
+    if !nclip_core::capture::has_content(&snap.reps) {
+        diag(&format!("내용 없는 스냅숏(seq {}) — 재시도", snap.seq));
+        return false;
+    }
     // ⚠️ 같은 일련번호가 두 번 오는 일이 있다(리스너 중복 등록·앱의 재게시).
     //    걸러 내지 않으면 목록에 같은 항목이 쌍으로 쌓인다.
     let dup = LAST_SEQ.with(|c| {
@@ -446,7 +456,7 @@ unsafe extern "system" fn wnd_proc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) -
         let seq = u64::from(unsafe { GetClipboardSequenceNumber() });
         if seq != 0 && LAST_SEQ.with(|c| c.get()) != seq {
             diag(&format!("하트비트 — 놓친 변화 감지(seq {seq})"));
-            // 열기 실패면 그냥 둔다 — 다음 하트비트가 다시 본다.
+            // 열기 실패·빈 스냅숏이면 그냥 둔다 — 다음 하트비트가 다시 본다.
             let _ = try_deliver();
         }
         return 0;
