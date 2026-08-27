@@ -4,6 +4,24 @@
 
 ---
 
+## 2026-08-28 (8차) — T-19: 이미지 격리 디코더 (`nclip-imgdec` 이식)
+
+beep `nbeep-imgdec`(권한 강등 격리 워커)를 크레이트째 이식 + 본체 어댑터.
+
+- ★ **본체는 이미지 파서를 링크하지 않는다**(beep R-5) — `png`·`jpeg-decoder`는 워커에만
+  (원장 기록). 워커는 입력을 다 읽은 뒤 **파싱 전에 자신을 잠근다**(Windows 완화 정책 ·
+  seccomp · Seatbelt) — 파서가 뚫려도 열 수 있는 것이 없다.
+- 어댑터([`nclip-plat::imgdec`](../crates/nclip-plat/src/imgdec.rs)) — 시간 상한은 부모가
+  kill로 강제(3s/10s) · `NIMG` 응답을 **본체가 재검증**(오염된 자식의 크기 주장 차단).
+- 셸에서도 설정 즉시 반영(게이트·상한·메뉴 개수 — 재시작 불요) 함께.
+- ✅ E2E: raw 8×4 → `--encode-raw` PNG → 디코드 → **픽셀 비트 동일** ·
+  ★ **lockdown 실기 확인**: `windows-mitigation(dynamic-code·image-load·win32k-lockout)`.
+- 소비처(썸네일 표시)는 저장소·목록 UI(T-16·T-18 본편)에서 잇는다.
+
+**실측**: **332 테스트** · clippy `-D warnings` 클린.
+
+---
+
 ## 2026-08-28 (7차) — ★ S1 퀵 팝업 1단: 단축키 → 팝업 → 골라서 붙는다
 
 **제품의 존재 이유(K-1 왕복)가 실데이터와 처음 이어졌다** — `Ctrl+Shift+V`(전역 단축키 ·

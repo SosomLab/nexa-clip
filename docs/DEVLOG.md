@@ -4,6 +4,7 @@
 
 ## 2026-08-28
 
+- ★ **T-19 이미지 격리 디코더** — `nclip-imgdec` 크레이트째 이식(파서는 워커에만 · 파싱 전 권한 강등 — ★ **lockdown 실기 확인**) + `plat::imgdec` 어댑터(부모 kill 시간 상한 · NIMG 재검증). E2E 픽셀 왕복 비트 동일. 셸 설정 즉시 반영도 → [journal 8차](journal/2026-08-28.md)
 - ★ **S1 퀵 팝업 1단(T-18) + 전역 단축키(T-15 Win)** — `Ctrl+Shift+V` → 포커스 기억 → 커서 팝업(실데이터·검색) → Enter 원본/⇧Enter 평문 → 재적재 + **복원·주입**. ⚠️ 생성 직후 `Focused(false)` 레이스 발견 → `was_focused` 가드. 잠금 화면 한계로 열림/닫힘까지 자동 검증 → [journal 7차](journal/2026-08-28.md)
 - ★ **제품 루프 1차** — `nclip-core::history`(재복사 = 승격 · D-80 교체 · 상한) + 트레이 우클릭 **최근 N개 메뉴** + 클릭 = **재적재**(`clipboard::set_reps` · beep ClipGuard 힙 오염 예방 이식 · 왕복 테스트). 게이트 공용화 — 막힌 건 이력에도 없음 → [journal 6차](journal/2026-08-28.md)
 - ★ **자동 시작 + 닫을 때 트레이로**(사용자 요청) — beep `autostart.rs` 3-OS 이식(토글 즉시 적용 · 시작마다 경로 재동기화 · ★ 외부 삭제 존중) + `ui.close_to_tray`(기본 꺼짐 · beep 확정 준용). `tray`가 **상주 셸**로 승격(winit 한 루프 + 프록시 · 열기 = 설정 창 · 닫기 = 종료/숨기). E2E: HKCU Run 등록/해제 실측 → [journal 5차](journal/2026-08-28.md)
