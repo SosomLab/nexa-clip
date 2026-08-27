@@ -4,6 +4,7 @@
 
 ## 2026-08-28
 
+- ★ **차단 목록을 설정으로**(사용자 요청) — `sec.conceal_urls`(URL 접두 · 기본=코어 목록 · 테스트가 동기화 강제) · `sec.exclude_apps`(FR-S-2 제외 앱 첫 구현 · 완전 일치). ★ **사용자가 목록의 주인** — 뺀 기본 항목은 통과(E2E 박제) → [journal 2차](journal/2026-08-28.md)
 - **DR-36 실기 종결** — Chrome ✅(3건 마스킹) · ⚠️ **Edge는 실경로가 `edge://settings/autofill/passwords`**(wallet 아님 — 주소창으로 확정) → 목록 추가 후 ✅ **Edge도 차단 확인** — T-21b 통과 → [journal](journal/2026-08-28.md)
 
 ## 2026-08-27
