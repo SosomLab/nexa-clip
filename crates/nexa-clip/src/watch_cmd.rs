@@ -27,8 +27,11 @@ use nclip_plat::watch::PlatformWatch;
 /// 값은 실측에서 왔다 — 재게시는 수십 ms, 부분→완본은 재시도(200ms) 직후에 온다.
 const COALESCE_MS: u64 = 500;
 
-/// 표시 정책 — 설정에서 한 번 읽어 온다(감시 도는 동안 고정).
-struct Gate {
+/// 표시·수집 정책 — 설정에서 한 번 읽어 온다(감시 도는 동안 고정).
+///
+/// `watch`(진단)와 상주 셸([`crate::tray_cmd`])이 **같은 게이트**를 쓴다 —
+/// 여기서 막힌 것은 이력에도 들어가지 않는다.
+pub(crate) struct Gate {
     /// ★ D-79 — 브라우저 암호 관리자 복사를 출처 URL로 차단(기본 꺼짐 · 옵트인).
     conceal_browser_pw: bool,
     /// 차단할 출처 URL 접두 — ★ **사용자가 설정에서 직접 편집한다**(08-28 · 기본 = 코어 목록).
@@ -38,13 +41,44 @@ struct Gate {
 }
 
 impl Gate {
-    fn load() -> Self {
-        let s = crate::conf::Settings::load();
+    pub(crate) fn load() -> Self {
+        Self::from_state(&crate::conf::Settings::load())
+    }
+
+    /// 이미 열어 둔 설정에서 만든다(셸 — 설정을 두 번 열지 않는다).
+    pub(crate) fn from_state(s: &crate::conf::Settings) -> Self {
         Self {
             conceal_browser_pw: s.state.get("sec.conceal_browser_pw") == "on",
             conceal_urls: parse_block_list(s.state.get("sec.conceal_urls")),
             exclude_apps: parse_block_list(s.state.get("sec.exclude_apps")),
         }
+    }
+
+    /// 이 스냅숏을 기록하면 안 되는가 — 막히면 **사유 한 줄**(내용 없음)을 준다.
+    pub(crate) fn blocks(&self, snap: &ClipSnapshot) -> Option<String> {
+        // ★ 민감 표식(FR-S-1) — 내용을 읽지도 남기지도 않는다.
+        if snap.concealed {
+            return Some(match &snap.source_app {
+                Some(app) => format!("민감 표식 — {app} 의 복사를 기록하지 않습니다"),
+                None => "민감 표식 — 기록하지 않습니다".into(),
+            });
+        }
+        // ★ 제외 앱(FR-S-2) — 목록에 적은 앱은 토글과 무관하게 기록하지 않는다.
+        if let Some(app) = &snap.source_app {
+            if app_in_list(app, &self.exclude_apps) {
+                return Some(format!("제외 앱 — {app} 의 복사를 기록하지 않습니다"));
+            }
+        }
+        // ★ D-79 — 브라우저 암호 관리자는 표식을 안 붙인다(08-27 실기). 옵트인 시
+        //   사용자가 편집한 출처 URL 목록으로 차단한다.
+        if self.conceal_browser_pw
+            && snap
+                .source_url()
+                .is_some_and(|u| url_in_prefixes(&u, self.conceal_urls.iter().map(String::as_str)))
+        {
+            return Some("브라우저 암호 관리자 복사 — 기록하지 않습니다".into());
+        }
+        None
     }
 }
 
@@ -161,31 +195,10 @@ pub(crate) fn run() {
 /// ★ 진단용으로 따로 판정하지 않는다 — 실제 저장 경로와 **같은 함수**를 쓴다.
 /// 그래야 여기서 맞게 보이면 제품에서도 맞다.
 fn report(snap: &ClipSnapshot, gate: &Gate) {
-    // ★ 민감 표식(FR-S-1) — **내용을 읽지도 찍지도 않는다**. 다만 줄 자체는 남긴다:
+    // ★ 게이트(민감 표식·제외 앱·브라우저 암호) — 막힌 것도 **줄은 남긴다**:
     //   "막혀서 안 보인다"와 "이벤트를 놓쳤다"를 점검자가 구분할 수 있어야 한다.
-    if snap.concealed {
-        if let Some(app) = &snap.source_app {
-            println!("  (민감 표식 — {app} 의 복사를 기록하지 않습니다)");
-        } else {
-            println!("  (민감 표식 — 기록하지 않습니다)");
-        }
-        return;
-    }
-    // ★ 제외 앱(FR-S-2) — 목록에 적은 앱은 **토글과 무관하게** 기록하지 않는다.
-    if let Some(app) = &snap.source_app {
-        if app_in_list(app, &gate.exclude_apps) {
-            println!("  (제외 앱 — {app} 의 복사를 기록하지 않습니다)");
-            return;
-        }
-    }
-    // ★ D-79 — 브라우저 암호 관리자는 표식을 안 붙인다(08-27 실기). 옵트인 시
-    //   **사용자가 편집한 출처 URL 목록**으로 차단한다(기본 = 코어 목록).
-    if gate.conceal_browser_pw
-        && snap
-            .source_url()
-            .is_some_and(|u| url_in_prefixes(&u, gate.conceal_urls.iter().map(String::as_str)))
-    {
-        println!("  (브라우저 암호 관리자 복사 — 기록하지 않습니다)");
+    if let Some(reason) = gate.blocks(snap) {
+        println!("  ({reason})");
         return;
     }
     let plain = snap.plain_text();

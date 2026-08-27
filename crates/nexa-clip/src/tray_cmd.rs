@@ -18,7 +18,12 @@
 
 use crate::conf::Settings;
 use crate::settings_win::App;
-use nclip_core::{current_lang, has_content, tr, ClipboardWatch as _, Msg, WatchCapability};
+use crate::watch_cmd::Gate;
+use nclip_core::capture::{clip_text, summarize};
+use nclip_core::history::{History, Pushed};
+use nclip_core::{
+    current_lang, has_content, tr, ClipSnapshot, ClipboardWatch as _, Msg, WatchCapability,
+};
 use nclip_gfx::Font;
 use nclip_plat::autostart::{apply, boot_sync, is_registered, BootSync};
 use nclip_plat::tray::{spawn, TrayContent, TrayEvent, TrayHandle};
@@ -32,6 +37,9 @@ use winit::window::WindowId;
 /// 아이콘 한 변(px) — 트레이 표준.
 const ICON_SIDE: u32 = 32;
 
+/// 트레이 메뉴 라벨 최대 글자 수 — 길면 메뉴가 화면을 덮는다(문자 경계 절단).
+const MENU_LABEL_CHARS: usize = 44;
+
 /// 다른 스레드(트레이·감시)에서 메인 루프로 쏘는 사건.
 #[derive(Debug)]
 enum ShellEvent {
@@ -39,8 +47,10 @@ enum ShellEvent {
     Open,
     /// 트레이 메뉴 "종료".
     Quit,
-    /// 감시가 항목을 잡았다 — 툴팁 카운트 갱신.
-    Captured,
+    /// 감시가 항목을 잡았다 — 게이트를 지나면 이력에 넣는다.
+    Captured(Box<ClipSnapshot>),
+    /// ★ 최근 항목 선택(T-18e) — 그 항목의 표현 전부를 클립보드로 되돌린다.
+    Recent(usize),
 }
 
 /// ★ 계열 아이콘을 코드로 그린다 — 라운드 스퀘어 + 청록 세로 그라디언트(`#22C3D6→#0B7FA6`)
@@ -93,24 +103,25 @@ fn icon_rgba() -> Vec<u8> {
     out
 }
 
-/// 툴팁 문자열 — 수집 수를 함께 보여 준다(감시가 실제로 도는 것이 보인다).
-fn tooltip(count: u32) -> String {
-    if count == 0 {
+/// 툴팁 문자열 — 보관 수를 함께 보여 준다(감시가 실제로 도는 것이 보인다).
+fn tooltip(held: usize) -> String {
+    if held == 0 {
         "Nexa Clip".to_string()
     } else {
-        format!("Nexa Clip — {count}개 수집")
+        format!("Nexa Clip — {held}개 보관")
     }
 }
 
-fn content(count: u32) -> TrayContent {
+fn content(held: usize, recent: Vec<String>) -> TrayContent {
     let lang = current_lang();
     TrayContent {
         rgba: icon_rgba(),
         side: ICON_SIDE,
-        tooltip: tooltip(count),
+        tooltip: tooltip(held),
         name: tr(lang, Msg::AppName).to_string(),
         open_label: tr(lang, Msg::TrayOpen).to_string(),
         quit_label: tr(lang, Msg::TrayQuit).to_string(),
+        recent,
     }
 }
 
@@ -144,11 +155,26 @@ fn sync_autostart(conf: &mut Settings) {
     }
 }
 
-/// 상주 셸 — 창·트레이·감시를 winit 한 루프로.
+/// 상주 셸 — 창·트레이·감시·이력을 winit 한 루프로.
 struct Shell {
     app: App,
     tray: TrayHandle,
-    count: u32,
+    /// ★ 세션 이력(T-13 1단) — 트레이 최근 메뉴와 재적재의 원천.
+    history: History,
+    /// 수집 게이트 — `watch` 진단과 같은 정책(민감·제외 앱·브라우저 암호).
+    gate: Gate,
+    /// 트레이 메뉴에 보일 최근 개수(`ui.tray_recent_n`).
+    tray_n: usize,
+}
+
+impl Shell {
+    /// 이력이 변했다 — 트레이 메뉴·툴팁을 새 내용으로.
+    fn refresh_tray(&self) {
+        self.tray.update(content(
+            self.history.len(),
+            self.history.recent_labels(self.tray_n),
+        ));
+    }
 }
 
 impl ApplicationHandler<ShellEvent> for Shell {
@@ -164,9 +190,26 @@ impl ApplicationHandler<ShellEvent> for Shell {
         match ev {
             ShellEvent::Open => self.app.ensure_window(el),
             ShellEvent::Quit => el.exit(),
-            ShellEvent::Captured => {
-                self.count += 1;
-                self.tray.update(content(self.count));
+            ShellEvent::Captured(snap) => {
+                // 게이트 — `watch`와 같은 정책. 막힌 것은 이력에도 안 들어간다.
+                if self.gate.blocks(&snap).is_some() {
+                    return;
+                }
+                let (kind, line) = summarize(&snap);
+                let label = clip_text(&line, MENU_LABEL_CHARS);
+                // ★ 재적재로 되돌아온 우리 게시도 여기로 온다 — 승격(맨 위로)이
+                //   곧 에코 처리다(항목이 늘지 않는다).
+                let _pushed: Pushed = self.history.push(&snap, kind, label);
+                self.refresh_tray();
+            }
+            ShellEvent::Recent(i) => {
+                let Some(item) = self.history.get(i) else {
+                    return;
+                };
+                match nclip_plat::clipboard::set_reps(&item.reps) {
+                    Ok(n) => println!("재적재: \"{}\" — 표현 {n}개 게시", item.label),
+                    Err(e) => eprintln!("재적재 실패: {e}"),
+                }
             }
         }
     }
@@ -201,9 +244,10 @@ pub(crate) fn run() {
 
     // 트레이 — 이벤트는 프록시로 메인 루프에 되돌린다(beep 호스트 문법).
     let proxy = el.create_proxy();
-    let Some(tray) = spawn(content(0), move |ev| {
+    let Some(tray) = spawn(content(0, Vec::new()), move |ev| {
         let _ = proxy.send_event(match ev {
             TrayEvent::Quit => ShellEvent::Quit,
+            TrayEvent::Recent(i) => ShellEvent::Recent(i),
             TrayEvent::Open | TrayEvent::OpenTarget(_) => ShellEvent::Open,
         });
     }) else {
@@ -211,23 +255,23 @@ pub(crate) fn run() {
         std::process::exit(1);
     };
 
-    // 감시 — 잡힌 개수만 센다(저장·목록은 T-16·T-18에서 이 자리에 붙는다).
+    // 감시 — 스냅숏을 통째로 셸에 넘긴다(게이트·이력은 메인 루프가).
     let mut watch = PlatformWatch::new();
     if matches!(watch.capability(), WatchCapability::Supported { .. }) {
         let proxy = el.create_proxy();
         match watch.start(Box::new(move |snap| {
             if has_content(&snap.reps) {
-                let _ = proxy.send_event(ShellEvent::Captured);
+                let _ = proxy.send_event(ShellEvent::Captured(Box::new(snap)));
             }
         })) {
-            Ok(()) => println!("클립보드 감시: ok — 수집 수가 트레이 툴팁에 반영됩니다"),
+            Ok(()) => println!("클립보드 감시: ok — 잡힌 항목이 트레이 메뉴에 쌓입니다"),
             Err(e) => eprintln!("클립보드 감시 시작 실패: {e:?} — 트레이만 동작합니다"),
         }
     } else {
         println!("클립보드 감시: 이 OS는 미구현 — 트레이만 동작합니다");
     }
 
-    println!("트레이 상주: ok — 좌클릭/열기 = 설정 창 · 우클릭 메뉴 · 종료는 메뉴에서");
+    println!("트레이 상주: ok — 좌클릭/열기 = 설정 창 · 우클릭 = 최근 항목 메뉴(클릭 = 재적재)");
     println!(
         "창 닫기: {}",
         if conf.state.get("ui.close_to_tray") == "on" {
@@ -237,10 +281,17 @@ pub(crate) fn run() {
         }
     );
 
+    // 이력 상한·메뉴 개수는 설정에서 — 세션 동안 고정(설정 즉시 반영은 후속).
+    let cap: usize = conf.state.get("store.max_items").parse().unwrap_or(1000);
+    let tray_n: usize = conf.state.get("ui.tray_recent_n").parse().unwrap_or(8);
+    let gate = Gate::from_state(&conf);
+
     let mut shell = Shell {
         app: App::new(font, conf, true),
         tray,
-        count: 0,
+        history: History::new(cap),
+        gate,
+        tray_n,
     };
     if let Err(e) = el.run_app(&mut shell) {
         eprintln!("이벤트 루프 오류: {e}");
@@ -249,5 +300,5 @@ pub(crate) fn run() {
     if shell.app.conf.flush() {
         println!("설정 저장: {}", shell.app.conf.path().display());
     }
-    println!("종료합니다 — 이번 상주에서 {}개 수집.", shell.count);
+    println!("종료합니다 — 이번 상주에서 {}개 보관.", shell.history.len());
 }

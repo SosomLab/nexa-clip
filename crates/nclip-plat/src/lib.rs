@@ -14,6 +14,7 @@
 #![cfg_attr(test, allow(clippy::unwrap_used))]
 
 pub mod autostart;
+pub mod clipboard;
 pub mod font;
 pub mod paste;
 pub mod paths;

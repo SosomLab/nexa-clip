@@ -10,6 +10,7 @@
 
 pub mod capture;
 pub mod diag;
+pub mod history;
 pub mod i18n;
 pub mod img;
 pub mod item;

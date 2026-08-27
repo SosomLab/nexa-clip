@@ -285,28 +285,66 @@ pub fn is_vendor_format(fmt: &str) -> bool {
 /// **이전이 나중의 부분집합**일 때만(중간 장면) 합친다.
 #[must_use]
 pub fn coalesces(prev: &crate::ClipSnapshot, next: &crate::ClipSnapshot) -> bool {
-    if prev.source_app != next.source_app {
+    coalesces_parts(
+        prev.source_app.as_deref(),
+        &prev.reps,
+        next.source_app.as_deref(),
+        &next.reps,
+    )
+}
+
+/// [`coalesces`]의 부품형 — 스냅숏이 아니라 저장된 조각(이력 항목 등)으로도 판정한다.
+#[must_use]
+pub fn coalesces_parts(
+    prev_app: Option<&str>,
+    prev_reps: &[crate::RawRep],
+    next_app: Option<&str>,
+    next_reps: &[crate::RawRep],
+) -> bool {
+    if prev_app != next_app {
         return false;
     }
-    let names = |s: &crate::ClipSnapshot| -> std::collections::BTreeSet<String> {
-        s.reps.iter().map(|r| r.format.clone()).collect()
+    let names = |reps: &[crate::RawRep]| -> std::collections::BTreeSet<String> {
+        reps.iter().map(|r| r.format.clone()).collect()
     };
-    let (p, n) = (names(prev), names(next));
+    let (p, n) = (names(prev_reps), names(next_reps));
     if p == n {
         // 동일 재게시 — 이름이 같으면 **내용까지** 같아야 한다(다른 텍스트 연속 복사 보호).
-        fn sorted(s: &crate::ClipSnapshot) -> Vec<(&str, &[u8])> {
-            let mut v: Vec<(&str, &[u8])> = s
-                .reps
+        fn sorted(reps: &[crate::RawRep]) -> Vec<(&str, &[u8])> {
+            let mut v: Vec<(&str, &[u8])> = reps
                 .iter()
                 .map(|r| (r.format.as_str(), r.data.as_slice()))
                 .collect();
             v.sort();
             v
         }
-        return sorted(prev) == sorted(next);
+        return sorted(prev_reps) == sorted(next_reps);
     }
     // 부분 → 완본 — 이전 표현이 전부 나중에도 있다(플러시 중간 장면).
     p.is_subset(&n)
+}
+
+/// ★ **스냅숏 한 줄 요약** — 종류 + 목록·메뉴에 보일 한 줄(트레이·이력 공용).
+///
+/// [`capture`]를 기본 정책으로 통과시키고 [`Preview::one_line`]을 돌려준다.
+/// 이미지 치수는 [`crate::img::image_dimensions`]로 머리글만 읽는다(압축 해제 없음).
+#[must_use]
+pub fn summarize(snap: &crate::ClipSnapshot) -> (crate::ClipKind, String) {
+    let plain = snap.plain_text();
+    let names = snap.file_names();
+    let thumb = thumbnail_source(&snap.reps).and_then(|i| {
+        let r = &snap.reps[i];
+        crate::img::image_dimensions(&r.format, &r.data).map(|(w, h)| ([0u8; 32], w, h))
+    });
+    let c = capture(
+        &snap.reps,
+        plain.as_deref(),
+        thumb,
+        None,
+        &names,
+        CapturePolicy::default(),
+    );
+    (c.kind, c.preview.one_line())
 }
 
 // ─────────────────────────────────────────────── ① 종류 판정

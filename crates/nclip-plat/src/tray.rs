@@ -22,6 +22,8 @@ pub enum TrayEvent {
     Open,
     /// **대상이 있는 열기**(알림 클릭) — 값 = 호스트가 알림에 실어 보낸 불투명 토큰.
     OpenTarget(String),
+    /// ★ 최근 항목 선택(T-18e) — 값 = [`TrayContent::recent`]의 인덱스(0 = 최신).
+    Recent(usize),
     /// 앱 종료(메뉴 "종료").
     Quit,
 }
@@ -41,6 +43,9 @@ pub struct TrayContent {
     pub open_label: String,
     /// "종료" 라벨(i18n — 호스트 주입).
     pub quit_label: String,
+    /// ★ 최근 항목 라벨(0 = 최신 · T-18e) — 클릭 시 [`TrayEvent::Recent`]로 돌아온다.
+    ///   개수·글자수 절단은 호스트 몫(이 모듈은 목록 정책을 모른다).
+    pub recent: Vec<String>,
 }
 
 /// 살아 있는 트레이 핸들 — 갱신 요청만 보낸다(실행은 트레이 스레드).
@@ -178,6 +183,8 @@ mod win {
     const TPM_RIGHTBUTTON: u32 = 0x0002;
     const CMD_OPEN: usize = 1;
     const CMD_QUIT: usize = 2;
+    /// 최근 항목 명령 id 시작(개수는 호스트가 준 목록 길이).
+    const CMD_RECENT_BASE: usize = 100;
 
     /// 공유 상태 — wndproc(정적 fn)과 핸들이 같은 내용을 본다. 트레이는 프로세스당
     /// 1개(앱 창 하나의 부속)라 전역이 곧 인스턴스다.
@@ -279,16 +286,22 @@ mod win {
         }
     }
 
-    /// 우클릭 메뉴 — 이름 헤더(비활성) · 열기 · 종료. 네이티브 TrackPopupMenu.
+    /// 우클릭 메뉴 — 이름 헤더(비활성) · ★ **최근 항목**(T-18e) · 열기 · 종료.
     fn show_menu(hwnd: HWND) {
         let Some(state) = STATE.get() else { return };
-        let (name, open_label, quit_label) = match state.lock() {
-            Ok(g) => (g.name.clone(), g.open_label.clone(), g.quit_label.clone()),
+        let (name, open_label, quit_label, recent) = match state.lock() {
+            Ok(g) => (
+                g.name.clone(),
+                g.open_label.clone(),
+                g.quit_label.clone(),
+                g.recent.clone(),
+            ),
             Err(_) => return,
         };
         let name_w = wide(&name);
         let open_w = wide(&open_label);
         let quit_w = wide(&quit_label);
+        let recent_w: Vec<Vec<u16>> = recent.iter().map(|s| wide(s)).collect();
         // SAFETY: 메뉴는 이 함수 안에서 만들고 파괴한다. SetForegroundWindow 선행은
         // TrackPopupMenu 관례(안 하면 바깥 클릭에 메뉴가 닫히지 않는다 — MSDN).
         unsafe {
@@ -299,6 +312,13 @@ mod win {
             }
             if !name.is_empty() {
                 AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, name_w.as_ptr());
+                AppendMenuW(menu, MF_SEPARATOR, 0, core::ptr::null());
+            }
+            // ★ 최근 항목 — 최신이 위(0). 클릭 = 그 항목을 클립보드로.
+            if !recent_w.is_empty() {
+                for (i, w) in recent_w.iter().enumerate() {
+                    AppendMenuW(menu, MF_STRING, CMD_RECENT_BASE + i, w.as_ptr());
+                }
                 AppendMenuW(menu, MF_SEPARATOR, 0, core::ptr::null());
             }
             AppendMenuW(menu, MF_STRING, CMD_OPEN, open_w.as_ptr());
@@ -318,6 +338,9 @@ mod win {
             match cmd as usize {
                 CMD_OPEN => emit(TrayEvent::Open),
                 CMD_QUIT => emit(TrayEvent::Quit),
+                c if c >= CMD_RECENT_BASE && c < CMD_RECENT_BASE + recent_w.len() => {
+                    emit(TrayEvent::Recent(c - CMD_RECENT_BASE));
+                }
                 _ => {}
             }
         }
