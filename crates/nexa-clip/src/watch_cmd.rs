@@ -14,9 +14,25 @@
 //! | 출처 앱 | 복사한 앱 이름이 붙는가 |
 //! | 용량 규칙 | 큰 항목에서 `버림 N KB`가 찍히는가 |
 
-use nclip_core::capture::{capture, CapturePolicy};
+use nclip_core::capture::{capture, is_password_manager_url, CapturePolicy};
 use nclip_core::{ClipSnapshot, ClipboardWatch as _, WatchCapability};
 use nclip_plat::watch::PlatformWatch;
+
+/// 표시 정책 — 설정에서 한 번 읽어 온다(감시 도는 동안 고정).
+#[derive(Clone, Copy)]
+struct Gate {
+    /// ★ D-79 — 브라우저 암호 관리자 복사를 출처 URL로 차단(기본 꺼짐 · 옵트인).
+    conceal_browser_pw: bool,
+}
+
+impl Gate {
+    fn load() -> Self {
+        let s = crate::conf::Settings::load();
+        Self {
+            conceal_browser_pw: s.state.get("sec.conceal_browser_pw") == "on",
+        }
+    }
+}
 
 /// ★ **지금 클립보드만 한 번** 읽고 끝낸다(`peek`).
 ///
@@ -31,8 +47,9 @@ pub(crate) fn peek() {
             std::process::exit(1);
         }
     }
+    let gate = Gate::load();
     match watch.read_now() {
-        Some(snap) => report(&snap),
+        Some(snap) => report(&snap, gate),
         // ⚠️ 빈 스냅숏으로 위장하지 않는다 — 못 연 것과 비어 있는 것은 다르다.
         None => eprintln!("클립보드를 열지 못했습니다(다른 앱이 잡고 있을 수 있습니다)."),
     }
@@ -52,10 +69,15 @@ pub(crate) fn run() {
         }
     }
 
+    let gate = Gate::load();
+    if gate.conceal_browser_pw {
+        println!("브라우저 암호 차단: 켜짐 (sec.conceal_browser_pw)");
+    }
+
     // ★ 켜자마자 지금 클립보드를 한 번 본다 — "복사해야만 뭔가 보이는" 상태를 피한다.
     if let Some(snap) = watch.read_now() {
         println!("\n[지금 클립보드]");
-        report(&snap);
+        report(&snap, gate);
     }
 
     println!("\n복사해 보세요. Ctrl+C 로 종료합니다.\n");
@@ -74,7 +96,7 @@ pub(crate) fn run() {
     while let Ok(snap) = rx.recv() {
         n += 1;
         println!("[{n}]");
-        report(&snap);
+        report(&snap, gate);
         println!();
     }
 }
@@ -83,7 +105,7 @@ pub(crate) fn run() {
 ///
 /// ★ 진단용으로 따로 판정하지 않는다 — 실제 저장 경로와 **같은 함수**를 쓴다.
 /// 그래야 여기서 맞게 보이면 제품에서도 맞다.
-fn report(snap: &ClipSnapshot) {
+fn report(snap: &ClipSnapshot, gate: Gate) {
     // ★ 민감 표식(FR-S-1) — **내용을 읽지도 찍지도 않는다**. 다만 줄 자체는 남긴다:
     //   "막혀서 안 보인다"와 "이벤트를 놓쳤다"를 점검자가 구분할 수 있어야 한다.
     if snap.concealed {
@@ -92,6 +114,15 @@ fn report(snap: &ClipSnapshot) {
         } else {
             println!("  (민감 표식 — 기록하지 않습니다)");
         }
+        return;
+    }
+    // ★ D-79 — 브라우저 암호 관리자는 표식을 안 붙인다(08-27 실기). 옵트인 시 출처 URL로 차단.
+    if gate.conceal_browser_pw
+        && snap
+            .source_url()
+            .is_some_and(|u| is_password_manager_url(&u))
+    {
+        println!("  (브라우저 암호 관리자 복사 — 기록하지 않습니다)");
         return;
     }
     let plain = snap.plain_text();

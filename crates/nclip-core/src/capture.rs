@@ -183,6 +183,30 @@ pub fn is_metadata_format(fmt: &str) -> bool {
     )
 }
 
+/// ★ **브라우저 암호 관리자 페이지에서 온 복사인가**(D-79 · 옵트인 `sec.conceal_browser_pw`).
+///
+/// 08-27 실기: **Edge 암호 관리자는 민감 표식을 붙이지 않는다** — 표식 존중(FR-S-1)만으로는
+/// 비밀번호가 평문으로 기록된다. 다행히 Chromium 계열은 복사 **출처 페이지 URL**을
+/// `Chromium internal source URL` 표현에 담아 보낸다 — 그 내용이 내장 암호 관리자 페이지면
+/// 민감으로 판정한다.
+///
+/// ⚠️ 이 목록은 브라우저 내부 URL이라 **버전에 따라 늙을 수 있다** — 실기에서 새 경로를
+/// 만나면 추가한다(곁다리 목록과 같은 운영 방식 · D-75).
+#[must_use]
+pub fn is_password_manager_url(url: &str) -> bool {
+    let u = url.trim().to_ascii_lowercase();
+    [
+        "edge://wallet/",              // Edge 신형(Microsoft 암호 관리자 · 08-27 실기)
+        "edge://settings/passwords",   // Edge 구형 경로
+        "chrome://password-manager/",  // Chrome 신형
+        "chrome://settings/passwords", // Chrome 구형 경로
+        "brave://password-manager/",   // Chromium 파생 — 같은 UI를 쓴다
+        "vivaldi://password-manager/",
+    ]
+    .iter()
+    .any(|p| u.starts_with(p))
+}
+
 /// 메타파일(벡터 그림) — 보관은 하지만 ★ **우리가 그리지 못한다**([docs/27 §2-3]).
 #[must_use]
 pub fn is_metafile_format(fmt: &str) -> bool {
@@ -996,6 +1020,31 @@ mod tests {
             ]),
             ClipKind::RichText
         );
+    }
+
+    /// ★ D-79 — 브라우저 암호 관리자 페이지 출처 판정(옵트인 차단의 재료).
+    ///
+    /// 08-27 실기: Edge 암호 복사에 민감 표식이 없어 평문으로 잡혔다.
+    #[test]
+    fn password_manager_urls_are_detected() {
+        for u in [
+            "edge://wallet/passwordsDetail?id=3",
+            "EDGE://WALLET/passwords", // 대소문자 무관
+            "chrome://password-manager/passwords",
+            "chrome://settings/passwords/check",
+            "  edge://wallet/x  ", // 앞뒤 공백
+        ] {
+            assert!(is_password_manager_url(u), "{u}는 암호 관리자 출처다");
+        }
+        for u in [
+            "https://edge.example.com/wallet", // 진짜 웹사이트가 흉내 못 낸다(스킴이 다르다)
+            "edge://settings/appearance",
+            "chrome://newtab/",
+            "https://www.400gb.com/login",
+            "",
+        ] {
+            assert!(!is_password_manager_url(u), "{u}는 아니어야 한다");
+        }
     }
 
     /// ⚠️ 이름에 "Source"가 들어간다고 곁다리로 몰면 **진짜 내용을 버린다**.

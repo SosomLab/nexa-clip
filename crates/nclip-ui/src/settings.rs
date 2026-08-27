@@ -78,6 +78,8 @@ const FREE_TEXT_KEYS: &[&str] = &["sync.relay"];
 const TOGGLE_DEFAULT_OFF: &[&str] = &[
     "paste.plain_default",
     "sec.clear_on_quit",
+    // ★ D-79 브라우저 암호 차단 — 기본 꺼짐(사용자 확정 08-27 · 켜는 것은 옵트인).
+    "sec.conceal_browser_pw",
     "adv.log",
     "sync.enabled",
 ];

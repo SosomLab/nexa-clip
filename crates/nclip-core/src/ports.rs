@@ -71,6 +71,21 @@ impl ClipSnapshot {
             .collect()
     }
 
+    /// 복사가 일어난 **출처 페이지 URL**(Chromium 계열이 실어 보낸다). 없으면 `None`.
+    ///
+    /// ★ D-79의 재료 — 브라우저 암호 관리자 복사는 민감 표식이 없어서(08-27 실기)
+    /// 이 URL로만 알아볼 수 있다([`crate::capture::is_password_manager_url`]).
+    #[must_use]
+    pub fn source_url(&self) -> Option<String> {
+        let r = self
+            .reps
+            .iter()
+            .find(|r| r.format == "Chromium internal source URL")?;
+        let text = String::from_utf8_lossy(&r.data);
+        let trimmed = text.trim_end_matches('\0').trim();
+        (!trimmed.is_empty()).then(|| trimmed.to_string())
+    }
+
     /// 평문 표현의 내용.
     ///
     /// ★ **가장 정확히 풀 수 있는 표현부터** 본다([`plain_rank`](crate::capture::plain_rank)) —
@@ -169,6 +184,38 @@ mod tests {
             }
             WatchCapability::Supported { .. } => panic!("지원으로 잘못 읽혔다"),
         }
+    }
+
+    /// ★ D-79 — 출처 URL이 표현에서 나온다(널 종단·공백 정리 포함).
+    #[test]
+    fn source_url_comes_from_chromium_rep() {
+        let s = ClipSnapshot {
+            reps: vec![
+                RawRep {
+                    format: "CF_UNICODETEXT".into(),
+                    data: vec![0x70, 0x00],
+                },
+                RawRep {
+                    format: "Chromium internal source URL".into(),
+                    data: b"edge://wallet/passwordsDetail\0".to_vec(),
+                },
+            ],
+            ..Default::default()
+        };
+        assert_eq!(
+            s.source_url().as_deref(),
+            Some("edge://wallet/passwordsDetail")
+        );
+        assert!(ClipSnapshot::default().source_url().is_none());
+        // 빈 내용은 None — 있는 척하지 않는다.
+        let empty = ClipSnapshot {
+            reps: vec![RawRep {
+                format: "Chromium internal source URL".into(),
+                data: b"\0".to_vec(),
+            }],
+            ..Default::default()
+        };
+        assert!(empty.source_url().is_none());
     }
 
     /// 민감 표식이 붙은 스냅숏은 **기본이 저장 금지**임을 모델이 드러낸다.

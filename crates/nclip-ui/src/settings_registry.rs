@@ -164,6 +164,15 @@ pub(crate) const REGISTRY: &[Entry] = &[
         SettingKind::Toggle,
         "sec.respect_marks",
     ),
+    // ★ D-79 — Edge/Chrome 암호 관리자는 표식을 안 붙인다(08-27 실기). 출처 URL로 차단.
+    //   기본 **꺼짐**(사용자 확정 08-27) — 켜는 것은 옵트인.
+    e(
+        Msg::CatPrivacy,
+        Msg::SetConcealBrowserPw,
+        Msg::SetConcealBrowserPwDesc,
+        SettingKind::Toggle,
+        "sec.conceal_browser_pw",
+    ),
     e(
         Msg::CatPrivacy,
         Msg::SetClearOnQuit,

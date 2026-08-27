@@ -273,6 +273,10 @@ pub enum Msg {
     SetRespectMarks,
     /// 표식 설명.
     SetRespectMarksDesc,
+    /// 브라우저 암호 관리자 복사 차단(D-79).
+    SetConcealBrowserPw,
+    /// 위 설명.
+    SetConcealBrowserPwDesc,
     /// 종료 시 기록 비우기.
     SetClearOnQuit,
     /// 자동 붙여넣기.
@@ -542,6 +546,18 @@ impl Msg {
                 "推荐。跳过标记为机密的内容",
                 "推奨。機密と印が付いたものは保存しません",
             ],
+            Msg::SetConcealBrowserPw => [
+                "Block browser password copies",
+                "브라우저 암호 관리자 복사 차단",
+                "阻止浏览器密码管理器复制",
+                "ブラウザのパスワードコピーをブロック",
+            ],
+            Msg::SetConcealBrowserPwDesc => [
+                "Edge/Chrome password managers don't mark copies as secret. Detects them by source page",
+                "Edge/Chrome 암호 관리자는 비밀 표식을 붙이지 않습니다. 복사 출처 페이지로 알아냅니다",
+                "Edge/Chrome 密码管理器不会标记机密。按复制来源页面识别",
+                "Edge/Chrome のパスワード管理は機密印を付けません。コピー元ページで検出します",
+            ],
             Msg::SetClearOnQuit => [
                 "Clear history on quit",
                 "종료 시 기록 비우기",
@@ -620,7 +636,7 @@ mod tests {
     use super::*;
 
     /// 카탈로그 전수 — 새 `Msg`를 더하면 여기도 더한다(빈칸 검사가 그걸 강제한다).
-    const ALL_MSG: [Msg; 103] = [
+    const ALL_MSG: [Msg; 105] = [
         Msg::AppName,
         Msg::SearchPlaceholder,
         Msg::EmptyHistory,
@@ -707,6 +723,8 @@ mod tests {
         Msg::ValCopyCount,
         Msg::SetRespectMarks,
         Msg::SetRespectMarksDesc,
+        Msg::SetConcealBrowserPw,
+        Msg::SetConcealBrowserPwDesc,
         Msg::SetClearOnQuit,
         Msg::SetPasteAuto,
         Msg::SetPasteAutoDesc,
