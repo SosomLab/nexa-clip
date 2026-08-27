@@ -30,6 +30,10 @@ use winit::keyboard::{Key, NamedKey};
 use winit::window::{Window, WindowId};
 
 /// 데모 목록 행 — 실제 [`nclip_core::ClipItem`]을 흉내 낸다.
+///
+/// ⚠️ **아이콘은 이모지가 아니다** — 래스터라이저는 시스템 폰트 **한 벌**만 쓰고
+/// 폴백이 없어서, 맑은 고딕에 없는 글자(`📄`·`↵`)는 **두부(□)로 그려진다**(08-27 실기).
+/// KS X 1001에 있는 도형 문자만 쓴다. 제품 아이콘은 글리프가 아니라 직접 그린다(T-18b).
 struct Row {
     icon: &'static str,
     text: &'static str,
@@ -45,49 +49,49 @@ const ROWS: &[Row] = &[
         lines: 4,
     },
     Row {
-        icon: "📄",
-        text: "CREATE INDEX BISCM.IX_M4…ITEMOP');↵",
+        icon: "▤",
+        text: "CREATE INDEX BISCM.IX_M4…ITEMOP');¶",
         app: "DBeaver",
         lines: 1,
     },
     Row {
-        icon: "📄",
+        icon: "▤",
         text: "내용 정리 후 진행사항 최신화…main 병합한 뒤",
         app: "Claude",
         lines: 2,
     },
     Row {
-        icon: "📁",
+        icon: "▦",
         text: "3개 파일 — 보고서.xlsx 외 2",
         app: "탐색기",
         lines: 3,
     },
     Row {
-        icon: "🎨",
+        icon: "◆",
         text: "#2D6A4F",
         app: "Figma",
         lines: 1,
     },
     Row {
-        icon: "📄",
+        icon: "▤",
         text: "https://github.com/SosomLab",
         app: "Chrome",
         lines: 1,
     },
     Row {
-        icon: "📄",
+        icon: "▤",
         text: "nexa-beep 클립보드 \"왕복\" 시험",
         app: "Terminal",
         lines: 1,
     },
     Row {
-        icon: "📄",
+        icon: "▤",
         text: "M4S_I003081",
         app: "DBeaver",
         lines: 1,
     },
     Row {
-        icon: "📄",
+        icon: "▤",
         text: "START_YYMMDD",
         app: "DBeaver",
         lines: 1,
@@ -99,13 +103,13 @@ const ROWS: &[Row] = &[
         lines: 4,
     },
     Row {
-        icon: "📄",
+        icon: "▤",
         text: "0.2.6 버전에서 0.2.8 버전으로 brew…",
         app: "Terminal",
         lines: 1,
     },
     Row {
-        icon: "📄",
+        icon: "▤",
         text: "$mp = \"$env:ProgramFiles\\Wind…xe\"",
         app: "PowerShell",
         lines: 1,
@@ -402,7 +406,7 @@ fn draw_popup(
         pad,
         fy + px(6.0),
         full,
-        &format!("{}개 · 🔒 · 보기: {mode_label}", ROWS.len()),
+        &format!("{}개 · 보기: {mode_label}", ROWS.len()),
         th.text_dim,
     );
     let hint = "1/2/3 보기 · P 미리보기 · T 테마 · Esc";
