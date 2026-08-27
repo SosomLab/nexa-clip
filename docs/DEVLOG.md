@@ -2,6 +2,10 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-08-28
+
+- **DR-36 실기** — Chrome ✅(3건 마스킹) · ⚠️ **Edge는 실경로가 `edge://settings/autofill/passwords`**(wallet 아님 — 주소창으로 확정) → 목록 추가 · 실기 URL 박제 · 모의 E2E ✅ → [journal](journal/2026-08-28.md)
+
 ## 2026-08-27
 
 - ★ **T-14g 캡처 디바운스**(D-80 닫힘) — `coalesces`(같은 앱 + 동일 재게시 ‖ 부분⊂완본만) + 500ms 수신 창. ⚠️ 다른 내용은 절대 안 합침. 실기 E9: 탐색기 복사 1회 = 1항목 → [journal 11차](journal/2026-08-27.md)

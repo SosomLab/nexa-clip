@@ -196,9 +196,12 @@ pub fn is_metadata_format(fmt: &str) -> bool {
 pub fn is_password_manager_url(url: &str) -> bool {
     let u = url.trim().to_ascii_lowercase();
     [
-        "edge://wallet/",              // Edge 신형(Microsoft 암호 관리자 · 08-27 실기)
+        // ★ 08-28 실기(Edge 139대) — 실제 경로는 wallet이 아니라 settings/autofill이었다.
+        //   복사 시 출처가 `edge://settings/autofill/passwords/details?domain=…`으로 온다.
+        "edge://settings/autofill/passwords",
+        "edge://wallet/",              // 다른 Edge 버전(Microsoft 암호 관리자 단독 페이지)
         "edge://settings/passwords",   // Edge 구형 경로
-        "chrome://password-manager/",  // Chrome 신형
+        "chrome://password-manager/",  // Chrome — 08-28 실기로 차단 확인
         "chrome://settings/passwords", // Chrome 구형 경로
         "brave://password-manager/",   // Chromium 파생 — 같은 UI를 쓴다
         "vivaldi://password-manager/",
@@ -1128,6 +1131,8 @@ mod tests {
     #[test]
     fn password_manager_urls_are_detected() {
         for u in [
+            // ★ 08-28 실기 그대로 — Edge는 settings/autofill 아래에 있었다.
+            "edge://settings/autofill/passwords/details?domain=0daydown.com",
             "edge://wallet/passwordsDetail?id=3",
             "EDGE://WALLET/passwords", // 대소문자 무관
             "chrome://password-manager/passwords",
@@ -1139,6 +1144,7 @@ mod tests {
         for u in [
             "https://edge.example.com/wallet", // 진짜 웹사이트가 흉내 못 낸다(스킴이 다르다)
             "edge://settings/appearance",
+            "edge://settings/autofill", // 자동 채우기 일반(주소 등) — 암호 하위만 민감
             "chrome://newtab/",
             "https://www.400gb.com/login",
             "",
