@@ -37,7 +37,7 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{Key, ModifiersState, NamedKey};
 use winit::window::{CursorIcon, Window, WindowId};
 
-struct App {
+pub(crate) struct App {
     window: Option<Rc<Window>>,
     ctx: Option<softbuffer::Context<Rc<Window>>>,
     surface: Option<softbuffer::Surface<Rc<Window>, Rc<Window>>>,
@@ -45,7 +45,7 @@ struct App {
     theme: Theme,
     scale: f32,
     /// 값 + 파일 — ★ 즉시 적용이 **디스크까지** 간다([`crate::conf`]).
-    conf: Settings,
+    pub(crate) conf: Settings,
     widget: SettingsWidget,
     mods: ModifiersState,
     started: Instant,
@@ -55,10 +55,13 @@ struct App {
     cursor: (i32, i32),
     /// ★ 지금 좌우 리사이즈 커서를 보이고 있는가 — 바뀔 때만 OS에 전달한다.
     col_resize: bool,
+    /// ★ 상주 모드(트레이 셸 안 — T-12e2) — 닫기가 `ui.close_to_tray`를 따른다.
+    ///   단독 `settings` 명령에서는 거짓 — 닫기 = 종료(설정과 무관).
+    resident: bool,
 }
 
 impl App {
-    fn new(font: Font, conf: Settings) -> Self {
+    pub(crate) fn new(font: Font, conf: Settings, resident: bool) -> Self {
         let widget = SettingsWidget::new(&conf.state);
         Self {
             window: None,
@@ -74,7 +77,66 @@ impl App {
             laid_out: (0, 0),
             cursor: (0, 0),
             col_resize: false,
+            resident,
         }
+    }
+
+    /// 창이 없으면 만들고, 있으면 앞으로 가져온다(트레이 "열기"의 재진입 경로).
+    pub(crate) fn ensure_window(&mut self, el: &ActiveEventLoop) {
+        if let Some(w) = &self.window {
+            w.set_visible(true);
+            w.focus_window();
+            return;
+        }
+        let attrs = Window::default_attributes()
+            .with_title("Nexa Clip — 설정 (검색 · 사이드바 경계 드래그 · Esc 종료)")
+            .with_inner_size(winit::dpi::LogicalSize::new(760.0, 560.0));
+        let Ok(win) = el.create_window(attrs) else {
+            eprintln!("창 생성 실패");
+            if !self.resident {
+                el.exit();
+            }
+            return;
+        };
+        let win = Rc::new(win);
+        self.scale = win.scale_factor() as f32;
+        let mut inv = Invalidations::default();
+        self.widget.set_scale(self.scale, &mut inv);
+        match softbuffer::Context::new(win.clone()) {
+            Ok(ctx) => {
+                match softbuffer::Surface::new(&ctx, win.clone()) {
+                    Ok(s) => self.surface = Some(s),
+                    Err(e) => eprintln!("softbuffer surface 실패: {e}"),
+                }
+                self.ctx = Some(ctx);
+            }
+            Err(e) => eprintln!("softbuffer context 실패: {e}"),
+        }
+        self.laid_out = (0, 0);
+        self.window = Some(win);
+    }
+
+    /// 닫기 요청 — ★ 상주 모드에서 `ui.close_to_tray`가 켜져 있으면 **종료 대신 숨는다**
+    /// (08-28 사용자 요청 · beep과 동일 · 기본 꺼짐 = X는 종료).
+    fn request_close(&mut self, el: &ActiveEventLoop) {
+        if self.resident && self.conf.state.get("ui.close_to_tray") == "on" {
+            self.hide_window();
+        } else {
+            el.exit();
+        }
+    }
+
+    /// 창을 걷는다(상주는 유지) — ★ 미저장 변경은 여기서 강제 수거한다.
+    fn hide_window(&mut self) {
+        self.surface = None;
+        self.ctx = None;
+        self.window = None;
+        self.laid_out = (0, 0);
+        self.col_resize = false;
+        if self.conf.flush() {
+            println!("설정 저장: {}", self.conf.path().display());
+        }
+        println!("창을 트레이로 숨겼습니다 — 트레이 좌클릭·열기로 다시 엽니다.");
     }
 
     /// OS 주 수식키 — mac은 ⌘, 나머지는 Ctrl([docs/14 §6] 관례).
@@ -113,6 +175,29 @@ impl App {
             //   (조용해진 뒤 1초 · 늦어도 10초 — [`crate::conf`]).
             self.conf.set(key, val.clone(), now);
             println!("설정 변경: {key} = {val}");
+            // ★ 자동 시작은 값만 저장하면 아무 일도 안 일어난다 — **OS 등록까지 즉시**.
+            //   실패해도 값은 유지된다(다음 부팅 동기화·재토글에서 재시도 — beep 규약).
+            if key == "app.autostart" {
+                let on = val == "on";
+                match nclip_plat::autostart::apply(on) {
+                    Ok(()) => {
+                        self.conf.set(
+                            "app.autostart_reg",
+                            if on { "on" } else { "off" }.into(),
+                            now,
+                        );
+                        println!(
+                            "자동 시작: {}",
+                            if on {
+                                "등록됨 (로그인 시 실행)"
+                            } else {
+                                "해제됨"
+                            }
+                        );
+                    }
+                    Err(e) => eprintln!("자동 시작 등록 실패: {e} — 값은 유지됩니다(재시도 가능)"),
+                }
+            }
         }
     }
 
@@ -150,37 +235,16 @@ impl App {
 
 impl ApplicationHandler for App {
     fn resumed(&mut self, el: &ActiveEventLoop) {
-        if self.window.is_some() {
-            return;
+        // ★ 단독 `settings` 명령의 진입 — 상주 셸은 resumed를 위임하지 않고
+        //   트레이 "열기"에서 [`Self::ensure_window`]를 부른다(시작은 트레이만).
+        if !self.resident {
+            self.ensure_window(el);
         }
-        let attrs = Window::default_attributes()
-            .with_title("Nexa Clip — 설정 (검색 · 사이드바 경계 드래그 · Esc 종료)")
-            .with_inner_size(winit::dpi::LogicalSize::new(760.0, 560.0));
-        let Ok(win) = el.create_window(attrs) else {
-            eprintln!("창 생성 실패");
-            el.exit();
-            return;
-        };
-        let win = Rc::new(win);
-        self.scale = win.scale_factor() as f32;
-        let mut inv = Invalidations::default();
-        self.widget.set_scale(self.scale, &mut inv);
-        match softbuffer::Context::new(win.clone()) {
-            Ok(ctx) => {
-                match softbuffer::Surface::new(&ctx, win.clone()) {
-                    Ok(s) => self.surface = Some(s),
-                    Err(e) => eprintln!("softbuffer surface 실패: {e}"),
-                }
-                self.ctx = Some(ctx);
-            }
-            Err(e) => eprintln!("softbuffer context 실패: {e}"),
-        }
-        self.window = Some(win);
     }
 
     fn window_event(&mut self, el: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         match event {
-            WindowEvent::CloseRequested => el.exit(),
+            WindowEvent::CloseRequested => self.request_close(el),
             WindowEvent::ModifiersChanged(m) => self.mods = m.state(),
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 self.scale = scale_factor as f32;
@@ -249,7 +313,7 @@ impl ApplicationHandler for App {
                     primary,
                 };
                 match event.logical_key.as_ref() {
-                    Key::Named(NamedKey::Escape) => el.exit(),
+                    Key::Named(NamedKey::Escape) => self.request_close(el),
                     Key::Named(NamedKey::ArrowUp) => self.feed(named(CtlKey::Up)),
                     Key::Named(NamedKey::ArrowDown) => self.feed(named(CtlKey::Down)),
                     Key::Named(NamedKey::ArrowLeft) => self.feed(named(CtlKey::Left)),
@@ -344,7 +408,7 @@ pub(crate) fn run() {
         std::process::exit(1);
     };
     el.set_control_flow(ControlFlow::Wait);
-    let mut app = App::new(font, conf);
+    let mut app = App::new(font, conf, false);
     if let Err(e) = el.run_app(&mut app) {
         eprintln!("이벤트 루프 오류: {e}");
         std::process::exit(1);

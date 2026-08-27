@@ -82,6 +82,8 @@ const FREE_TEXT_KEYS: &[&str] = &[
 // 권고했으나 사용자가 공통 off로 확정했다. 켜는 것은 설정 고급에서 옵트인.
 const TOGGLE_DEFAULT_OFF: &[&str] = &[
     "paste.plain_default",
+    // 닫을 때 트레이로 — beep 사용자 확정(08-15 3-OS 공통 off · X = 종료)과 동일.
+    "ui.close_to_tray",
     "sec.clear_on_quit",
     // ★ D-79 브라우저 암호 차단 — 기본 꺼짐(사용자 확정 08-27 · 켜는 것은 옵트인).
     "sec.conceal_browser_pw",

@@ -13,6 +13,7 @@
 #![forbid(unsafe_op_in_unsafe_fn)]
 #![cfg_attr(test, allow(clippy::unwrap_used))]
 
+pub mod autostart;
 pub mod font;
 pub mod paste;
 pub mod paths;

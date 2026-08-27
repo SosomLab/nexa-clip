@@ -289,6 +289,10 @@ pub enum Msg {
     TrayOpen,
     /// 트레이 메뉴 — 종료.
     TrayQuit,
+    /// 닫을 때 트레이로.
+    SetCloseToTray,
+    /// 위 설명.
+    SetCloseToTrayDesc,
     /// 종료 시 기록 비우기.
     SetClearOnQuit,
     /// 자동 붙여넣기.
@@ -596,6 +600,18 @@ impl Msg {
             ],
             Msg::TrayOpen => ["Open", "열기", "打开", "開く"],
             Msg::TrayQuit => ["Quit", "종료", "退出", "終了"],
+            Msg::SetCloseToTray => [
+                "Keep running in tray when closed",
+                "창을 닫아도 트레이에 남기",
+                "关闭窗口后保留在托盘",
+                "閉じてもトレイに常駐",
+            ],
+            Msg::SetCloseToTrayDesc => [
+                "Closing the window hides it to the tray instead of quitting",
+                "창을 닫으면 종료 대신 트레이로 숨습니다",
+                "关闭窗口时隐藏到托盘而不是退出",
+                "ウィンドウを閉じると終了せずトレイに隠れます",
+            ],
             Msg::SetClearOnQuit => [
                 "Clear history on quit",
                 "종료 시 기록 비우기",
@@ -674,7 +690,7 @@ mod tests {
     use super::*;
 
     /// 카탈로그 전수 — 새 `Msg`를 더하면 여기도 더한다(빈칸 검사가 그걸 강제한다).
-    const ALL_MSG: [Msg; 111] = [
+    const ALL_MSG: [Msg; 113] = [
         Msg::AppName,
         Msg::SearchPlaceholder,
         Msg::EmptyHistory,
@@ -769,6 +785,8 @@ mod tests {
         Msg::SetExcludeAppsDesc,
         Msg::TrayOpen,
         Msg::TrayQuit,
+        Msg::SetCloseToTray,
+        Msg::SetCloseToTrayDesc,
         Msg::SetClearOnQuit,
         Msg::SetPasteAuto,
         Msg::SetPasteAutoDesc,

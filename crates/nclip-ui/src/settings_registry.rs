@@ -95,6 +95,15 @@ pub(crate) const REGISTRY: &[Entry] = &[
         SettingKind::Toggle,
         "app.autostart",
     ),
+    // ★ 닫을 때 트레이로(08-28 사용자 요청) — beep 확정(08-15)과 같은 기본 **꺼짐**:
+    //   X = 종료(예측 가능성 우선). 켜는 것은 옵트인.
+    e(
+        Msg::CatGeneral,
+        Msg::SetCloseToTray,
+        Msg::SetCloseToTrayDesc,
+        SettingKind::Toggle,
+        "ui.close_to_tray",
+    ),
     e(
         Msg::CatGeneral,
         Msg::SetLang,
