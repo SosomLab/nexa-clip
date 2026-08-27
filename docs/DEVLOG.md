@@ -4,7 +4,7 @@
 
 ## 2026-08-28
 
-- **DR-36 실기** — Chrome ✅(3건 마스킹) · ⚠️ **Edge는 실경로가 `edge://settings/autofill/passwords`**(wallet 아님 — 주소창으로 확정) → 목록 추가 · 실기 URL 박제 · 모의 E2E ✅ → [journal](journal/2026-08-28.md)
+- **DR-36 실기 종결** — Chrome ✅(3건 마스킹) · ⚠️ **Edge는 실경로가 `edge://settings/autofill/passwords`**(wallet 아님 — 주소창으로 확정) → 목록 추가 후 ✅ **Edge도 차단 확인** — T-21b 통과 → [journal](journal/2026-08-28.md)
 
 ## 2026-08-27
 
