@@ -60,6 +60,15 @@ const RETRY_MS: u32 = 200;
 /// ★ 재시도 횟수 상한 — 합쳐 약 3초. 그 뒤에도 못 열면 그 변화는 포기한다.
 const RETRY_MAX: u32 = 15;
 
+/// ★ **유실 안전망 하트비트** — `WM_CLIPBOARDUPDATE`가 **안 오는 일이 실제로 있다**
+/// (08-27 실기: 탐색기 복사가 간헐적으로 유실 — 같은 절차가 잡히기도 안 잡히기도 했다).
+///
+/// 2초마다 `GetClipboardSequenceNumber`(클립보드를 **열지 않는** 시스템 호출 하나)만 비교하고,
+/// 마지막으로 처리한 번호와 다를 때만 실제로 읽는다 — 유휴 비용은 2초당 호출 1회다(DR-9).
+const POLL_TIMER_ID: usize = 2;
+/// 하트비트 간격.
+const POLL_MS: u32 = 2000;
+
 #[repr(C)]
 struct WNDCLASSW {
     style: u32,
@@ -362,11 +371,20 @@ thread_local! {
     static RETRIES_LEFT: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
 }
 
+/// `NEXA_CLIP_DIAG=1`일 때만 stderr로 진단을 찍는다 — 실기에서 *"이벤트가 안 온다"* 와
+/// *"와서 버려진다"* 를 구분하는 용도(08-27 탐색기 복사 유실 조사).
+fn diag(msg: &str) {
+    if std::env::var_os("NEXA_CLIP_DIAG").is_some() {
+        eprintln!("[diag] {msg}");
+    }
+}
+
 /// 스냅숏을 읽어 콜백에 넘긴다. **클립보드를 열지 못했으면 `false`**.
 ///
 /// 읽기는 됐지만 중복 일련번호라 건너뛴 경우는 `true`다 — 재시도할 일이 아니다.
 fn try_deliver() -> bool {
     let Some(snap) = read_snapshot() else {
+        diag("클립보드 열기 실패");
         return false;
     };
     // ⚠️ 같은 일련번호가 두 번 오는 일이 있다(리스너 중복 등록·앱의 재게시).
@@ -376,7 +394,10 @@ fn try_deliver() -> bool {
         c.set(snap.seq);
         same
     });
-    if !dup {
+    if dup {
+        diag(&format!("seq 중복({}) — 건너뜀", snap.seq));
+    } else {
+        diag(&format!("전달 seq={} 표현 {}개", snap.seq, snap.reps.len()));
         SINK.with(|s| {
             if let Some(f) = s.borrow().as_ref() {
                 f(snap);
@@ -388,6 +409,7 @@ fn try_deliver() -> bool {
 
 unsafe extern "system" fn wnd_proc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) -> LRESULT {
     if msg == WM_CLIPBOARDUPDATE {
+        diag("WM_CLIPBOARDUPDATE 수신");
         // ⚠️ **실패를 조용히 버리면 안 된다** — 탐색기 복사는 비동기 플러시(`AsyncFlag`)
         //    동안 클립보드를 계속 쥐고 있어 [`open_with_retry`]의 275ms를 넘기기도 한다.
         //    그리고 `WM_CLIPBOARDUPDATE`는 **병합**되므로 다시 오지 않는다 —
@@ -414,6 +436,18 @@ unsafe extern "system" fn wnd_proc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) -
             } else {
                 RETRIES_LEFT.with(|c| c.set(left - 1));
             }
+        }
+        return 0;
+    }
+    if msg == WM_TIMER && w == POLL_TIMER_ID {
+        // ★ 안전망 — 일련번호가 움직였는데 이벤트를 못 받았으면 여기서 잡는다.
+        //   이벤트 경로가 이미 처리했으면 번호가 같아서 아무 일도 안 한다(중복 없음).
+        // SAFETY: 인자 없는 조회 호출.
+        let seq = u64::from(unsafe { GetClipboardSequenceNumber() });
+        if seq != 0 && LAST_SEQ.with(|c| c.get()) != seq {
+            diag(&format!("하트비트 — 놓친 변화 감지(seq {seq})"));
+            // 열기 실패면 그냥 둔다 — 다음 하트비트가 다시 본다.
+            let _ = try_deliver();
         }
         return 0;
     }
@@ -477,6 +511,14 @@ pub fn start(on_change: Sink) -> Result<(), WatchError> {
             if unsafe { AddClipboardFormatListener(hwnd) } == 0 {
                 let _ = tx.send(Err("AddClipboardFormatListener 실패".into()));
                 return;
+            }
+            // ★ 하트비트 기준점 — 지금 있는 내용을 "이미 본 것"으로 친다.
+            //   안 하면 첫 하트비트가 기존 클립보드를 새 항목처럼 배달한다
+            //   (`read_now`가 이미 보여 준 것의 중복).
+            // SAFETY: 조회 + 타이머 등록.
+            unsafe {
+                LAST_SEQ.with(|c| c.set(u64::from(GetClipboardSequenceNumber())));
+                SetTimer(hwnd, POLL_TIMER_ID, POLL_MS, 0);
             }
             SINK.with(|s| *s.borrow_mut() = Some(on_change));
             let _ = tx.send(Ok(()));
