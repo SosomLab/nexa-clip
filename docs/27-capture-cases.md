@@ -350,6 +350,7 @@ Word 서식 문단 2건은 **맞게 잡혔다**(`RichText` · 표현 18개 · `E
 | **⑧** | ★ 탐색기 **잘라내기**가 `Object` | **`CF_HDROP`이 아예 열거되지 않는다**(지연 렌더링으로 미뤄짐). 파일 목록의 본체인 `Shell IDList Array`(PIDL 묶음)를 곁다리로 쳐서, 남은 미지 셸 포맷(`DataObjectAttributes` 등)이 벤더로 세어졌다 | `Shell IDList Array`를 **파일 포맷**으로 이동([`is_files_format`]) |
 | **⑨** | ★ 탐색기 **복사가 아예 안 잡힘** | 탐색기는 비동기 플러시(`AsyncFlag`) 동안 클립보드를 계속 쥔다 → [`open_with_retry`]의 275ms를 넘김 → `wnd_proc`가 실패를 **조용히 버렸고**, `WM_CLIPBOARDUPDATE`는 **병합**되어 다시 오지 않는다 | 읽기 실패 시 **타이머 재시도**(200ms × 15회 ≈ 3초 · [`watch_win.rs`](../crates/nclip-plat/src/watch_win.rs)) |
 | **⑩** | `watch`/`peek`가 **민감 표식을 무시** | `read_concealed`가 값을 채우는데 **아무 데서도 읽지 않았다** — 비밀번호가 그대로 찍혔을 상태 | `report`가 `concealed`면 **내용 없이 `(민감 표식 …)` 한 줄만** 찍는다 — "막힘"과 "놓침"을 점검자가 구분해야 하므로 아예 침묵하지 않는다 |
+| **⑪** | ⑨ 수정 후에도 탐색기 복사가 **간헐 유실**(첫 회만 성공) | ★ **`WM_CLIPBOARDUPDATE` 자체가 안 오는 일이 있다** — 직접 재현으로 확인(클립보드는 바뀌었는데 이벤트 없음 · 같은 절차가 다음엔 잡히기도 함). 원인 미상(CopyQ 등 동거 리스너 관련 가능성만 기록) | ★ **일련번호 하트비트**(2초 · `GetClipboardSequenceNumber` 비교 — 클립보드를 열지 않음) + `NEXA_CLIP_DIAG=1` 진단 |
 
 ### ⑧ — 잘라내기의 미리보기는 아직 "미리보기 없음"이다
 
