@@ -48,9 +48,17 @@ type WPARAM = usize;
 type LPARAM = isize;
 
 const WM_CLIPBOARDUPDATE: u32 = 0x031D;
+const WM_TIMER: u32 = 0x0113;
 const WM_DESTROY: u32 = 0x0002;
 /// 메시지 전용 창의 부모 — 화면에 뜨지 않는다.
 const HWND_MESSAGE: HWND = -3;
+
+/// 읽기 실패 재시도 타이머(§감시 루프). id는 이 창에서만 유일하면 된다.
+const RETRY_TIMER_ID: usize = 1;
+/// 재시도 간격 — 복사한 앱이 클립보드를 놓기를 기다리는 시간.
+const RETRY_MS: u32 = 200;
+/// ★ 재시도 횟수 상한 — 합쳐 약 3초. 그 뒤에도 못 열면 그 변화는 포기한다.
+const RETRY_MAX: u32 = 15;
 
 #[repr(C)]
 struct WNDCLASSW {
@@ -111,6 +119,8 @@ extern "system" {
     fn GetClipboardOwner() -> HWND;
     fn GetWindowThreadProcessId(hwnd: HWND, pid: *mut u32) -> u32;
     fn IsClipboardFormatAvailable(format: u32) -> i32;
+    fn SetTimer(hwnd: HWND, id: usize, elapse_ms: u32, callback: isize) -> usize;
+    fn KillTimer(hwnd: HWND, id: usize) -> i32;
 }
 
 #[link(name = "kernel32")]
@@ -348,24 +358,61 @@ thread_local! {
     static SINK: std::cell::RefCell<Option<Sink>> = const { std::cell::RefCell::new(None) };
     /// 직전에 처리한 일련번호 — ★ **같은 변화를 두 번 받는 것을 막는다**.
     static LAST_SEQ: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    /// 남은 재시도 횟수([`RETRY_MAX`]부터 줄어든다).
+    static RETRIES_LEFT: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
+/// 스냅숏을 읽어 콜백에 넘긴다. **클립보드를 열지 못했으면 `false`**.
+///
+/// 읽기는 됐지만 중복 일련번호라 건너뛴 경우는 `true`다 — 재시도할 일이 아니다.
+fn try_deliver() -> bool {
+    let Some(snap) = read_snapshot() else {
+        return false;
+    };
+    // ⚠️ 같은 일련번호가 두 번 오는 일이 있다(리스너 중복 등록·앱의 재게시).
+    //    걸러 내지 않으면 목록에 같은 항목이 쌍으로 쌓인다.
+    let dup = LAST_SEQ.with(|c| {
+        let same = snap.seq != 0 && c.get() == snap.seq;
+        c.set(snap.seq);
+        same
+    });
+    if !dup {
+        SINK.with(|s| {
+            if let Some(f) = s.borrow().as_ref() {
+                f(snap);
+            }
+        });
+    }
+    true
 }
 
 unsafe extern "system" fn wnd_proc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) -> LRESULT {
     if msg == WM_CLIPBOARDUPDATE {
-        if let Some(snap) = read_snapshot() {
-            // ⚠️ 같은 일련번호가 두 번 오는 일이 있다(리스너 중복 등록·앱의 재게시).
-            //    걸러 내지 않으면 목록에 같은 항목이 쌍으로 쌓인다.
-            let dup = LAST_SEQ.with(|c| {
-                let same = snap.seq != 0 && c.get() == snap.seq;
-                c.set(snap.seq);
-                same
-            });
-            if !dup {
-                SINK.with(|s| {
-                    if let Some(f) = s.borrow().as_ref() {
-                        f(snap);
-                    }
-                });
+        // ⚠️ **실패를 조용히 버리면 안 된다** — 탐색기 복사는 비동기 플러시(`AsyncFlag`)
+        //    동안 클립보드를 계속 쥐고 있어 [`open_with_retry`]의 275ms를 넘기기도 한다.
+        //    그리고 `WM_CLIPBOARDUPDATE`는 **병합**되므로 다시 오지 않는다 —
+        //    여기서 놓치면 *"복사가 안 잡혔다"* 로 끝난다(08-27 실기 2차).
+        // SAFETY: 방금 받은 창 핸들로 타이머를 걸고 끈다.
+        unsafe {
+            if try_deliver() {
+                KillTimer(hwnd, RETRY_TIMER_ID);
+                RETRIES_LEFT.with(|c| c.set(0));
+            } else {
+                RETRIES_LEFT.with(|c| c.set(RETRY_MAX));
+                SetTimer(hwnd, RETRY_TIMER_ID, RETRY_MS, 0);
+            }
+        }
+        return 0;
+    }
+    if msg == WM_TIMER && w == RETRY_TIMER_ID {
+        let left = RETRIES_LEFT.with(|c| c.get());
+        // SAFETY: 위와 같은 창 핸들.
+        unsafe {
+            if try_deliver() || left <= 1 {
+                KillTimer(hwnd, RETRY_TIMER_ID);
+                RETRIES_LEFT.with(|c| c.set(0));
+            } else {
+                RETRIES_LEFT.with(|c| c.set(left - 1));
             }
         }
         return 0;
