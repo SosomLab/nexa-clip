@@ -25,7 +25,7 @@
 | [MILESTONES.md](MILESTONES.md) | 기능·목적 관점 현황 | 목표순 |
 | [TODO.md](TODO.md) | 순차 백로그 | 목표순 |
 | [DEVLOG.md](DEVLOG.md) | 날짜별 **요약** | 시간 역순 |
-| [journal/](journal/) | 날짜별 **상세** — 기록의 원본 | 시간 역순 |
+| [journal/](journal/) | 날짜별 **상세** — 기록의 원본([08-27](journal/2026-08-27.md) · [08-26](journal/2026-08-26.md) · [08-25](journal/2026-08-25.md)) | 시간 역순 |
 | [BRANCHES.md](BRANCHES.md) | 브랜치 이력 | 시간 역순 |
 
 ### 지식 (번호 불변 — 재번호 금지, 신규는 뒤에 append)

@@ -140,6 +140,13 @@
 
 **beep에는 읽기/쓰기만 있고 감시가 없다.** 이 프로젝트에서 새로 만드는 가장 중요한 부분.
 
+> ★ **Windows는 구현됐다**(08-27 · T-14b) → [`nclip-plat/src/watch_win.rs`](../crates/nclip-plat/src/watch_win.rs).
+> 아래 설계대로 **메시지 전용 창 + 전용 스레드 + 백오프 재시도**로 갔다.
+> ⚠️ 설계에 없던 두 가지가 실기에서 나왔다 —
+> **핸들 포맷(`CF_BITMAP`·`CF_ENHMETAFILE`)은 `GlobalLock` 금지** ·
+> **`CF_UNICODETEXT`는 UTF-16LE**([27 §8-1](27-capture-cases.md)).
+> mac·Linux는 아직 [`capability`]가 정직하게 미구현을 돌려준다.
+
 | OS | 방식 | 요점 |
 |---|---|---|
 | **Windows** | `AddClipboardFormatListener(hwnd)` → **`WM_CLIPBOARDUPDATE`** | **숨은 메시지 창**이 필요(beep `tray.rs`가 이미 전용 스레드 + 숨은 창 패턴을 갖고 있다 — 같은 구조 재사용). `GetClipboardSequenceNumber()`로 중복 확인 · `OpenClipboard` 실패는 **정상**(다른 앱이 잠금) → **짧은 백오프 재시도** |
