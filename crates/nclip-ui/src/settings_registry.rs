@@ -253,6 +253,14 @@ pub(crate) const REGISTRY: &[Entry] = &[
         },
         "ui.tray_recent_n",
     ),
+    // ★ 이미지 썸네일(08-28 사용자 요청) — 기본 켜짐. 끄면 "[이미지] W×H"만.
+    e(
+        Msg::CatAppearance,
+        Msg::SetImagePreview,
+        Msg::SetImagePreviewDesc,
+        SettingKind::Toggle,
+        "ui.image_preview",
+    ),
     // ── 검색 ────────────────────────────────────────────────
     e(
         Msg::CatSearch,

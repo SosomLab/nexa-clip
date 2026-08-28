@@ -43,6 +43,34 @@ const ICON_SIDE: u32 = 32;
 /// 트레이 메뉴 라벨 최대 글자 수 — 길면 메뉴가 화면을 덮는다(문자 경계 절단).
 const MENU_LABEL_CHARS: usize = 44;
 
+/// 목록 썸네일 긴 변(px) — 팝업 행(30px)에 들어가는 크기의 2배(고DPI 여유).
+const THUMB_SIDE: u32 = 48;
+
+/// 이미지 항목의 목록 썸네일 — `ui.image_preview`가 켜졌을 때만 호출된다.
+///
+/// DIB는 순수 변환([`nclip_core::img`] — 프로세스 없음), PNG는 **격리 워커**
+/// ([`nclip_plat::imgdec`] — 파서는 본체에 없다). 실패는 `None` = 글리프 폴백.
+fn make_thumb(reps: &[RawRep]) -> Option<(u32, u32, Vec<u8>)> {
+    use nclip_core::capture::thumbnail_source;
+    use nclip_core::img::{dib_to_rgba, downscale_rgba};
+    let i = thumbnail_source(reps)?;
+    let r = &reps[i];
+    match r.format.as_str() {
+        "CF_DIB" | "CF_DIBV5" => {
+            let (w, h, rgba) = dib_to_rgba(&r.data)?;
+            downscale_rgba(w, h, &rgba, THUMB_SIDE)
+        }
+        "image/bmp" if r.data.len() > 14 => {
+            let (w, h, rgba) = dib_to_rgba(&r.data[14..])?;
+            downscale_rgba(w, h, &rgba, THUMB_SIDE)
+        }
+        "PNG" | "public.png" | "image/png" => {
+            nclip_plat::imgdec::decode_isolated(&r.data, THUMB_SIDE)
+        }
+        _ => None,
+    }
+}
+
 /// 다른 스레드(트레이·감시)에서 메인 루프로 쏘는 사건.
 #[derive(Debug)]
 enum ShellEvent {
@@ -316,12 +344,21 @@ impl ApplicationHandler<ShellEvent> for Shell {
                 }
                 let (kind, line) = summarize(&snap);
                 let label = clip_text(&line, MENU_LABEL_CHARS);
+                // ★ 이미지 썸네일(08-28 사용자 요청) — 설정이 켜졌을 때만 만든다.
+                let thumb = (matches!(
+                    kind,
+                    nclip_core::ClipKind::Image | nclip_core::ClipKind::Object
+                ) && self.app.conf.state.get("ui.image_preview") == "on")
+                    .then(|| make_thumb(&snap.reps))
+                    .flatten();
                 // ★ 재적재로 되돌아온 우리 게시도 여기로 온다 — 승격(맨 위로)이
                 //   곧 에코 처리다(항목이 늘지 않는다).
-                let _pushed: Pushed = self.history.push(&snap, kind, label);
+                let _pushed: Pushed = self.history.push(&snap, kind, label, thumb);
                 self.refresh_tray();
                 if self.popup.is_open() {
-                    self.popup.refresh(&self.history);
+                    // ★ 복사(중복 포함)가 들어오면 커서를 맨 위로 — 방금 것이
+                    //   항상 첫 줄이고 선택도 그걸 가리킨다(08-28 사용자 요청).
+                    self.popup.on_history_changed(&self.history);
                 }
             }
             ShellEvent::Recent(i) => self.repost(i),

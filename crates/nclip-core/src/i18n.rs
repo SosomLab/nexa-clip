@@ -293,6 +293,10 @@ pub enum Msg {
     SetCloseToTray,
     /// 위 설명.
     SetCloseToTrayDesc,
+    /// 이미지 미리보기(썸네일).
+    SetImagePreview,
+    /// 위 설명.
+    SetImagePreviewDesc,
     /// 종료 시 기록 비우기.
     SetClearOnQuit,
     /// 자동 붙여넣기.
@@ -612,6 +616,18 @@ impl Msg {
                 "关闭窗口时隐藏到托盘而不是退出",
                 "ウィンドウを閉じると終了せずトレイに隠れます",
             ],
+            Msg::SetImagePreview => [
+                "Image previews",
+                "이미지 미리보기",
+                "图片预览",
+                "画像プレビュー",
+            ],
+            Msg::SetImagePreviewDesc => [
+                "Show thumbnails for image items in the list. Off shows size only",
+                "목록의 이미지 항목에 썸네일을 보여 줍니다. 끄면 크기만 표시합니다",
+                "在列表中为图片项显示缩略图。关闭则只显示尺寸",
+                "リストの画像項目にサムネイルを表示します。オフはサイズのみ",
+            ],
             Msg::SetClearOnQuit => [
                 "Clear history on quit",
                 "종료 시 기록 비우기",
@@ -690,7 +706,7 @@ mod tests {
     use super::*;
 
     /// 카탈로그 전수 — 새 `Msg`를 더하면 여기도 더한다(빈칸 검사가 그걸 강제한다).
-    const ALL_MSG: [Msg; 113] = [
+    const ALL_MSG: [Msg; 115] = [
         Msg::AppName,
         Msg::SearchPlaceholder,
         Msg::EmptyHistory,
@@ -787,6 +803,8 @@ mod tests {
         Msg::TrayQuit,
         Msg::SetCloseToTray,
         Msg::SetCloseToTrayDesc,
+        Msg::SetImagePreview,
+        Msg::SetImagePreviewDesc,
         Msg::SetClearOnQuit,
         Msg::SetPasteAuto,
         Msg::SetPasteAutoDesc,

@@ -29,6 +29,9 @@ pub struct HistoryItem {
     pub source_app: Option<String>,
     /// 복사된 횟수(승격마다 +1).
     pub copies: u32,
+    /// ★ 목록용 썸네일(w, h, RGBA) — 호출자가 만든다(이력은 디코더를 모른다).
+    ///   `None` = 이미지 아님·미리보기 꺼짐·디코드 실패(목록은 글리프 폴백).
+    pub thumb: Option<(u32, u32, Vec<u8>)>,
     /// 내용 지문(빠른 동일성 후보 판정).
     fingerprint: u64,
 }
@@ -106,9 +109,15 @@ impl History {
         self.items.truncate(self.cap);
     }
 
-    /// 스냅숏 하나를 이력에 반영한다. 내용 없음 걸러내기(민감·제외 앱 포함)는
-    /// **호출자 몫**이다 — 이력은 정책을 모른다.
-    pub fn push(&mut self, snap: &ClipSnapshot, kind: ClipKind, label: String) -> Pushed {
+    /// 스냅숏 하나를 이력에 반영한다. 내용 없음 걸러내기(민감·제외 앱 포함)와
+    /// 썸네일 생성은 **호출자 몫**이다 — 이력은 정책도 디코더도 모른다.
+    pub fn push(
+        &mut self,
+        snap: &ClipSnapshot,
+        kind: ClipKind,
+        label: String,
+        thumb: Option<(u32, u32, Vec<u8>)>,
+    ) -> Pushed {
         // ① 맨 위의 다음 장면인가(재게시 · 부분→완본) — 교체.
         if let Some(front) = self.items.front() {
             if coalesces_parts(
@@ -125,6 +134,7 @@ impl History {
                     reps: snap.reps.clone(),
                     source_app: snap.source_app.clone(),
                     copies,
+                    thumb,
                 };
                 return Pushed::Replaced;
             }
@@ -138,6 +148,10 @@ impl History {
         {
             let mut it = self.items.remove(i).unwrap_or_else(|| unreachable!());
             it.copies += 1;
+            // 승격은 기존 썸네일 유지 — 새로 왔으면(설정을 켠 뒤 재복사 등) 채운다.
+            if thumb.is_some() {
+                it.thumb = thumb;
+            }
             self.items.push_front(it);
             return Pushed::Promoted;
         }
@@ -149,6 +163,7 @@ impl History {
             reps: snap.reps.clone(),
             source_app: snap.source_app.clone(),
             copies: 1,
+            thumb,
         });
         self.items.truncate(self.cap);
         Pushed::New
@@ -198,7 +213,7 @@ mod tests {
     }
 
     fn push(h: &mut History, s: &ClipSnapshot, label: &str) -> Pushed {
-        h.push(s, ClipKind::Text, label.into())
+        h.push(s, ClipKind::Text, label.into(), None)
     }
 
     /// ★ 같은 내용 재복사 = 승격(횟수 +1) — 목록이 도배되지 않는다.

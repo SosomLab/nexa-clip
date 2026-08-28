@@ -59,6 +59,8 @@ struct Row {
     kind: ClipKind,
     label: String,
     copies: u32,
+    /// 이미지 썸네일(설정이 켜져 있고 디코드가 됐을 때) — 없으면 글리프.
+    thumb: Option<nclip_ctl::theme::IconImage>,
 }
 
 pub(crate) struct Popup {
@@ -76,10 +78,20 @@ pub(crate) struct Popup {
     /// 스크롤 시작 행(선택을 따라간다).
     top: usize,
     shift: bool,
+    ctrl: bool,
     /// ★ 한 번이라도 포커스를 받았는가 — **생성 직후의 `Focused(false)`로 닫히지 않게**.
     ///   (잠금 화면·창 관리자에 따라 초기 이벤트 순서가 다르다 — 08-28 실기.)
     was_focused: bool,
+    /// 연 시각 — ★ **단축키의 `v`가 검색창으로 새는 것**을 막는 유예 기준(08-28 실기).
+    opened_at: std::time::Instant,
+    /// 마지막 커서 위치(winit은 클릭 이벤트에 좌표를 싣지 않는다).
+    cursor: (i32, i32),
 }
+
+/// 열림 직후 문자 입력 유예 — 단축키(Ctrl+Shift+V)를 누른 손이 떨어지기 전의
+/// 오토리피트·해제 순서 차이로 `v`가 새 창에 배달된다. 사람이 검색을 시작하는
+/// 속도보다 짧고, 키 해제보다 길게.
+const TYPE_GRACE: std::time::Duration = std::time::Duration::from_millis(150);
 
 /// 종류 배지 글리프 — ⚠️ 전부 KS X 1001(맑은 고딕 커버) — 이모지는 두부가 된다(08-27).
 fn kind_glyph(kind: ClipKind) -> &'static str {
@@ -107,8 +119,25 @@ impl Popup {
             sel: 0,
             top: 0,
             shift: false,
+            ctrl: false,
             was_focused: false,
+            opened_at: std::time::Instant::now(),
+            cursor: (0, 0),
         }
+    }
+
+    /// 좌표 → 목록 행(rows 인덱스) — 그리기와 같은 자(scale 기반)를 쓴다.
+    fn row_at(&self, x: i32, y: i32) -> Option<usize> {
+        let Some(win) = &self.window else { return None };
+        let size = win.inner_size();
+        let px = |v: f32| (v * self.scale).round() as i32;
+        let (header_h, footer_h, row_h) = (px(38.0), px(24.0), px(30.0).max(1));
+        let list_bot = size.height as i32 - footer_h;
+        if x < 0 || x >= size.width as i32 || y < header_h || y >= list_bot {
+            return None;
+        }
+        let vi = self.top + ((y - header_h) / row_h) as usize;
+        (vi < self.rows.len()).then_some(vi)
     }
 
     pub(crate) fn is_open(&self) -> bool {
@@ -128,6 +157,7 @@ impl Popup {
         self.sel = 0;
         self.top = 0;
         self.was_focused = false;
+        self.opened_at = std::time::Instant::now();
         self.refresh(hist);
         let mut attrs = Window::default_attributes()
             .with_title("Nexa Clip")
@@ -176,6 +206,9 @@ impl Popup {
                     kind: item.kind,
                     label: item.label.clone(),
                     copies: item.copies,
+                    thumb: item.thumb.as_ref().map(|(w, h, rgba)| {
+                        nclip_ctl::theme::IconImage::from_rgba(*w, *h, rgba.clone())
+                    }),
                 });
             }
             i += 1;
@@ -184,6 +217,15 @@ impl Popup {
             self.sel = self.rows.len().saturating_sub(1);
         }
         self.top = self.top.min(self.sel);
+    }
+
+    /// ★ 이력이 바뀌었다(새 복사·승격) — **커서를 맨 위로**(방금 것이 첫 줄이고
+    /// 선택도 그걸 가리킨다 — 08-28 사용자 요청) + 다시 그린다.
+    pub(crate) fn on_history_changed(&mut self, hist: &History) {
+        self.sel = 0;
+        self.top = 0;
+        self.refresh(hist);
+        self.redraw();
     }
 
     fn redraw(&self) {
@@ -207,7 +249,42 @@ impl Popup {
                 self.redraw();
             }
             WindowEvent::RedrawRequested => self.paint(),
-            WindowEvent::ModifiersChanged(m) => self.shift = m.state().shift_key(),
+            WindowEvent::ModifiersChanged(m) => {
+                self.shift = m.state().shift_key();
+                self.ctrl = m.state().control_key();
+            }
+            WindowEvent::CursorMoved { position, .. } => {
+                self.cursor = (position.x as i32, position.y as i32);
+            }
+            // ★ 클릭 = 선택 + 붙여넣기(Maccy 관례 — 08-28 사용자 실기 "클릭 선택 안 됨").
+            //   `⇧` 클릭 = 평문. 목록 밖 클릭은 무시(닫기는 Esc·바깥 포커스가 담당).
+            WindowEvent::MouseInput { state, button, .. } => {
+                if *state == ElementState::Pressed && *button == winit::event::MouseButton::Left {
+                    let (x, y) = self.cursor;
+                    if let Some(vi) = self.row_at(x, y) {
+                        self.sel = vi;
+                        self.redraw();
+                        if let Some(row) = self.rows.get(vi) {
+                            return PopupAction::Pick {
+                                index: row.hist_index,
+                                plain: self.shift,
+                            };
+                        }
+                    }
+                }
+            }
+            // 휠 스크롤 — 3행 단위(목록 관례). 선택은 그대로 두고 화면만 움직인다.
+            WindowEvent::MouseWheel { delta, .. } => {
+                let step = match delta {
+                    winit::event::MouseScrollDelta::LineDelta(_, y) => -*y as i32 * 3,
+                    winit::event::MouseScrollDelta::PixelDelta(p) => -(p.y as i32) / 20,
+                };
+                if step != 0 {
+                    let max_top = self.rows.len().saturating_sub(1);
+                    self.top = self.top.saturating_add_signed(step as isize).min(max_top);
+                    self.redraw();
+                }
+            }
             WindowEvent::KeyboardInput { event, .. } => {
                 if event.state != ElementState::Pressed {
                     return PopupAction::None;
@@ -242,6 +319,11 @@ impl Popup {
                         self.redraw();
                     }
                     _ => {
+                        // ★ 단축키 잔향 차단(08-28 실기) — 열림 직후 유예 동안과
+                        //   Ctrl이 눌린 동안의 문자는 검색어가 아니다(`v` 유출).
+                        if self.ctrl || self.opened_at.elapsed() < TYPE_GRACE {
+                            return PopupAction::None;
+                        }
                         if let Some(txt) = event.text.as_ref() {
                             let mut changed = false;
                             for c in txt.chars().filter(|c| !c.is_control()) {
@@ -369,8 +451,21 @@ fn draw(
         } else if vi % 2 == 1 {
             dc.fill_rect(clip, th.panel_bg_alt);
         }
-        dc.text(pad, y + px(7.0), clip, kind_glyph(row.kind), th.accent);
-        dc.text(pad + px(20.0), y + px(7.0), clip, &row.label, th.text);
+        // ★ 이미지 썸네일(설정 켜짐 · 디코드 성공 시) — 비율 유지로 24px 상자에.
+        if let Some(img) = &row.thumb {
+            let box_side = px(24.0);
+            let (iw, ih) = (img.w.max(1) as i32, img.h.max(1) as i32);
+            let (dw, dh) = if iw >= ih {
+                (box_side, (box_side * ih / iw).max(1))
+            } else {
+                ((box_side * iw / ih).max(1), box_side)
+            };
+            let dst = Rect::new(pad + (box_side - dw) / 2, y + (row_h - dh) / 2, dw, dh);
+            dc.image_scaled(dst, img, clip);
+        } else {
+            dc.text(pad, y + px(7.0), clip, kind_glyph(row.kind), th.accent);
+        }
+        dc.text(pad + px(30.0), y + px(7.0), clip, &row.label, th.text);
         if row.copies > 1 {
             let tag = format!("×{}", row.copies);
             let tw = dc.text_width(&tag);
