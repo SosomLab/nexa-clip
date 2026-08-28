@@ -424,6 +424,15 @@ pub(crate) fn run() {
         println!("클립보드 감시: 이 OS는 미구현 — 트레이만 동작합니다");
     }
 
+    // ★ Ctrl+C = 정상 종료(트레이 메뉴 "종료"와 같은 경로) — 안 걸면 프로세스가
+    //   STATUS_CONTROL_C_EXIT로 죽어 cargo가 오류처럼 찍는다(08-28 실기 오인).
+    {
+        let proxy = el.create_proxy();
+        nclip_plat::console::on_console_quit(move || {
+            let _ = proxy.send_event(ShellEvent::Quit);
+        });
+    }
+
     println!("트레이 상주: ok — 좌클릭/열기 = 설정 창 · 우클릭 = 최근 항목 메뉴(클릭 = 재적재)");
     println!(
         "창 닫기: {}",
@@ -433,6 +442,7 @@ pub(crate) fn run() {
             "앱 종료 (설정 '창을 닫아도 트레이에 남기'를 켜면 숨김)"
         }
     );
+    println!("종료: 트레이 메뉴 \"종료\" 또는 Ctrl+C — 둘 다 정상 종료(설정 저장 포함)");
 
     // 이력 상한·메뉴 개수는 설정에서 — 세션 동안 고정(설정 즉시 반영은 후속).
     let cap: usize = conf.state.get("store.max_items").parse().unwrap_or(1000);

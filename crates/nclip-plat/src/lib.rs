@@ -15,6 +15,7 @@
 
 pub mod autostart;
 pub mod clipboard;
+pub mod console;
 pub mod font;
 pub mod imgdec;
 pub mod paste;

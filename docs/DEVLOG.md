@@ -4,6 +4,7 @@
 
 ## 2026-08-28
 
+- **Ctrl+C = 정상 종료** — `STATUS_CONTROL_C_EXIT` 오류 오인 해소(`SetConsoleCtrlHandler` → 셸 종료 경로 · 설정 flush · exit 0) → [journal 10차](journal/2026-08-28.md)
 - ★ **아침 실기 피드백 4건 반영** — ① 단축키 `v` 유출(150ms 유예+Ctrl 가드) ② **이미지 썸네일 + `ui.image_preview` 설정**(DIB 순수 · PNG는 격리 워커 첫 소비) ③ 중복 복사 시 팝업 커서 맨 위로 ④ **마우스 배선**(클릭=선택+붙여넣기 · 휠 스크롤). 트레이·설정·숨기기·팝업 실기 정상 확인 → [journal 9차](journal/2026-08-28.md)
 - ★ **T-19 이미지 격리 디코더** — `nclip-imgdec` 크레이트째 이식(파서는 워커에만 · 파싱 전 권한 강등 — ★ **lockdown 실기 확인**) + `plat::imgdec` 어댑터(부모 kill 시간 상한 · NIMG 재검증). E2E 픽셀 왕복 비트 동일. 셸 설정 즉시 반영도 → [journal 8차](journal/2026-08-28.md)
 - ★ **S1 퀵 팝업 1단(T-18) + 전역 단축키(T-15 Win)** — `Ctrl+Shift+V` → 포커스 기억 → 커서 팝업(실데이터·검색) → Enter 원본/⇧Enter 평문 → 재적재 + **복원·주입**. ⚠️ 생성 직후 `Focused(false)` 레이스 발견 → `was_focused` 가드. 잠금 화면 한계로 열림/닫힘까지 자동 검증 → [journal 7차](journal/2026-08-28.md)
