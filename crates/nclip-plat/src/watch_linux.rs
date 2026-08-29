@@ -43,7 +43,18 @@ const IDLE_STEP_MS: u64 = 250;
 
 /// 한 표현에서 읽는 상한 — 지문 폴링이 초대형 항목으로 상주 예산을 깨지 않게(DR-9).
 /// 캡처 정책의 용량 규칙과 별개로, **읽기 자체**의 안전판이다.
+///
+/// ⚠️ 이 상한은 **읽으면서** 건다([`run_bytes`]) — 다 읽고 나서 버리면 이미 늦다.
+/// 지문 폴링은 틱마다 전량을 읽으므로 이 값이 곧 순간 상주 메모리 상한이다.
 const MAX_REP_BYTES: usize = 64 * 1024 * 1024;
+
+/// 타깃 **목록**의 상한 — 이름 몇 줄이 이보다 클 이유가 없다(폭주 방어).
+const MAX_TARGETS_BYTES: usize = 64 * 1024;
+
+/// 변화를 본 뒤 **자리 잡았는지** 다시 보기까지의 간격.
+const SETTLE_MS: u64 = 120;
+/// 자리 잡기 재확인 상한 — 최악 지연 `SETTLE_MS × SETTLE_MAX`.
+const SETTLE_MAX: u32 = 4;
 
 /// KDE/Klipper 민감 표식 타깃.
 const KDE_PW_HINT: &str = "x-kde-passwordManagerHint";
@@ -106,22 +117,54 @@ pub fn capability() -> WatchCapability {
 
 // ───────────────────────────── 도구 실행
 
-/// 명령을 실행해 표준 출력을 바이트로 받는다. 실패·비정상 종료는 `None`.
-fn run_bytes(cmd: &str, args: &[&str]) -> Option<Vec<u8>> {
-    let out = Command::new(cmd)
+/// 명령을 실행해 표준 출력을 바이트로 받는다 — ★ **`cap`까지만 읽는다**.
+///
+/// 실패·비정상 종료·**상한 초과**는 전부 `None`이다. 상한을 넘긴 표현은 호출자가
+/// **이름만** 담는다(Windows 핸들 포맷과 같은 취급).
+///
+/// ⚠️ `Command::output()`을 쓰지 않는 이유 — 그건 전량을 메모리에 담은 **뒤에야**
+/// 크기를 알 수 있다. 1 GB 이미지가 클립보드에 있으면 틱마다 1 GB를 담게 된다(DR-9).
+fn run_bytes(cmd: &str, args: &[&str], cap: usize) -> Option<Vec<u8>> {
+    use std::io::Read as _;
+    let mut child = Command::new(cmd)
         .args(args)
         .stdin(Stdio::null())
+        .stdout(Stdio::piped())
         .stderr(Stdio::null())
-        .output()
+        .spawn()
         .ok()?;
-    out.status.success().then_some(out.stdout)
+    let mut buf = Vec::new();
+    let read_ok = {
+        let Some(stdout) = child.stdout.take() else {
+            let _ = child.kill();
+            let _ = child.wait();
+            return None;
+        };
+        // cap + 1 — 넘겼다는 **사실**은 알아야 하되 전량을 담지는 않는다.
+        // 블록이 끝나며 파이프가 닫힌다(열어 둔 채 wait 하면 교착이다).
+        stdout.take(cap as u64 + 1).read_to_end(&mut buf).is_ok()
+    };
+    if !read_ok || buf.len() > cap {
+        if read_ok {
+            diag(&format!("{cmd}: 상한 {cap}B 초과 — 이름만 담는다"));
+        }
+        // 남은 출력을 계속 받아 줄 이유가 없다.
+        let _ = child.kill();
+        let _ = child.wait();
+        return None;
+    }
+    child.wait().ok()?.success().then_some(buf)
 }
 
 /// 지금 클립보드가 내놓는 타깃(MIME/atom) 목록.
 fn list_targets(backend: Backend) -> Option<Vec<String>> {
     let raw = match backend {
-        Backend::Wayland => run_bytes("wl-paste", &["--list-types"])?,
-        Backend::X11 => run_bytes("xclip", &["-selection", "clipboard", "-t", "TARGETS", "-o"])?,
+        Backend::Wayland => run_bytes("wl-paste", &["--list-types"], MAX_TARGETS_BYTES)?,
+        Backend::X11 => run_bytes(
+            "xclip",
+            &["-selection", "clipboard", "-t", "TARGETS", "-o"],
+            MAX_TARGETS_BYTES,
+        )?,
     };
     Some(
         String::from_utf8_lossy(&raw)
@@ -136,8 +179,16 @@ fn list_targets(backend: Backend) -> Option<Vec<String>> {
 /// 타깃 하나의 날바이트.
 fn read_target(backend: Backend, target: &str) -> Option<Vec<u8>> {
     match backend {
-        Backend::Wayland => run_bytes("wl-paste", &["--no-newline", "--type", target]),
-        Backend::X11 => run_bytes("xclip", &["-selection", "clipboard", "-t", target, "-o"]),
+        Backend::Wayland => run_bytes(
+            "wl-paste",
+            &["--no-newline", "--type", target],
+            MAX_REP_BYTES,
+        ),
+        Backend::X11 => run_bytes(
+            "xclip",
+            &["-selection", "clipboard", "-t", target, "-o"],
+            MAX_REP_BYTES,
+        ),
     }
 }
 
@@ -229,10 +280,9 @@ fn read_snapshot_with(backend: Backend) -> Option<ClipSnapshot> {
         let data = if concealed {
             Vec::new()
         } else {
-            // 못 읽은 타깃은 이름만 담는다(Windows 핸들 포맷과 같은 취급 — 분류는 이름만 본다).
-            read_target(backend, t)
-                .filter(|d| d.len() <= MAX_REP_BYTES)
-                .unwrap_or_default()
+            // 못 읽은 타깃(지연 제공·상한 초과)은 이름만 담는다
+            // — Windows 핸들 포맷과 같은 취급이다(분류는 이름만 본다).
+            read_target(backend, t).unwrap_or_default()
         };
         reps.push(RawRep { format: name, data });
     }
@@ -249,9 +299,17 @@ fn read_snapshot_with(backend: Backend) -> Option<ClipSnapshot> {
 
 // ───────────────────────────── 감시 루프
 
+/// `NEXA_CLIP_DIAG=1`일 때만 stderr로 진단을 찍는다(watch_win·watch_mac과 동일 규약).
+fn diag(msg: &str) {
+    if std::env::var_os("NEXA_CLIP_DIAG").is_some() {
+        eprintln!("[diag] {msg}");
+    }
+}
+
 /// 감시를 켠다 — 전용 스레드에서 내용 지문을 적응형 주기로 폴링한다.
 pub fn start(sink: Sink) -> Result<(), WatchError> {
     let backend = pick_backend().map_err(WatchError::Unsupported)?;
+    diag(&format!("Linux 감시 시작 — 백엔드 {backend:?}"));
     std::thread::Builder::new()
         .name("nclip-watch-linux".into())
         .spawn(move || poll_loop(backend, &sink))
@@ -263,28 +321,105 @@ fn poll_loop(backend: Backend, sink: &Sink) {
     // 시작 시점의 내용은 "새 복사"가 아니다 — 지금 지문을 기준선으로 삼는다.
     let mut last = read_snapshot_with(backend).map(|s| fingerprint(&s));
     let mut idle_ticks: u32 = 0;
+    // 읽기 실패가 이어질 때 진단을 도배하지 않기 위한 상태(전이에서만 찍는다).
+    let mut was_unreadable = false;
     loop {
         std::thread::sleep(std::time::Duration::from_millis(interval_ms(idle_ticks)));
         let Some(snap) = read_snapshot_with(backend) else {
-            // 도구가 순간 실패했다(셀렉션 주인 교체 중 등) — 다음 틱에 다시.
-            idle_ticks = 0;
+            // 도구가 순간 실패했다(셀렉션 주인 교체 중) **또는 클립보드가 비었다**
+            // — `wl-paste --list-types`는 빈 클립보드에서 비정상 종료한다.
+            //
+            // ⚠️ 여기서 `idle_ticks = 0`으로 되돌리면 **빈 클립보드가 영구히 활동
+            //    주기로 돈다**(500ms마다 프로세스 생성 — 로그인 직후처럼 오래 가는
+            //    정상 상태다). 변화가 없었으니 유휴로 물러나는 것이 맞다(DR-9).
+            if !was_unreadable {
+                diag("클립보드를 읽지 못했다(비었거나 주인 교체 중) — 유휴로 물러난다");
+                was_unreadable = true;
+            }
+            idle_ticks = next_idle_ticks(idle_ticks, false);
             continue;
         };
+        was_unreadable = false;
         // ★ 결함 ⑫의 교훈(Windows 08-27): **내용 없는 스냅숏은 미처리** —
         //   비우고→채우는 틈을 읽었을 수 있다. 기준선을 건드리지 않고 다시 읽는다.
         //   표식(concealed)이 선 것은 이름만이어도 처리 대상이다 — 게이트가 버린다.
+        //
+        //   ⚠️ 주기는 위와 같은 이유로 **늘린다** — 활동 중 한 틱이 비어도
+        //   `IDLE_AFTER_TICKS`(10틱)까지는 활동 주기 그대로라 놓치지 않는다.
         if snap.reps.is_empty() && !snap.concealed {
-            idle_ticks = 0;
+            idle_ticks = next_idle_ticks(idle_ticks, false);
             continue;
         }
         let fp = fingerprint(&snap);
         if last == Some(fp) {
-            idle_ticks = idle_ticks.saturating_add(1);
+            idle_ticks = next_idle_ticks(idle_ticks, false);
             continue;
         }
+        // ★ 부분 스냅숏을 내보내지 않는다 — 자리 잡은 뒤에 넘긴다(아래 [`settle`]).
+        let (snap, fp) = settle(backend, snap, fp);
         last = Some(fp);
-        idle_ticks = 0;
+        idle_ticks = next_idle_ticks(idle_ticks, true);
+        diag(&format!(
+            "변화 감지 — 표현 {}개 · 표식 {}",
+            snap.reps.len(),
+            snap.concealed
+        ));
         sink(snap);
+    }
+}
+
+/// 변화를 본 직후 **자리 잡을 때까지** 짧게 다시 읽는다.
+///
+/// ⚠️ **08-29 Linux 실기가 잡은 결함** — `text/html` 복사가 `text/plain` 하나만 보이는
+/// 순간에 잡혀 **같은 복사가 두 항목**이 됐다. 게다가 먼저 것은 표현이 모자라
+/// `Text`로 **오분류**됐다. 여러 표현을 올리는 앱이면 일반적으로 이렇게 갈라진다.
+///
+/// 수신 루프의 디바운스(D-80 · `COALESCE_MS` 500ms)가 원래 이걸 합치는 자리인데,
+/// **Linux 폴링 주기가 500ms라 완본이 창 밖에 떨어진다**. 그래서 백엔드가 먼저 다잡는다.
+///
+/// 규칙은 하나다 — **두 번 같게 읽힐 때까지** 기다리고, 늦게 읽힌 것이 정본이다.
+///
+/// ⚠️ [`nclip_core::capture::coalesces`]를 쓰지 않는다. 그건 표현이 **늘어나는**
+/// 방향(부분 ⊆ 완본)만 합치는데, 실기에서는 **줄어드는** 전이도 나왔다 — 앞 복사의
+/// 표현이 잠깐 남아 `{text/plain, gnome-copied-files}` → `{gnome-copied-files}` 로
+/// 갔다(08-29 케이스 7). 전이 방향을 가리면 절반만 막힌다.
+///
+/// ★ **480ms 안의 두 번째 복사를 잃지 않느냐** — 잃지 않는다. 폴링 주기가 이미
+/// 500ms라 그보다 짧게 스쳐 간 복사는 **애초에 보이지 않는다**. 자리 잡기는
+/// 폴링이 줄 수 있는 것을 깎지 않는다.
+///
+/// Windows는 재시도(`watch_win` `RETRY_MAX`)로, macOS는 `changeCount`가 원자적이라
+/// 겪지 않는다. **변화가 있을 때만 돌므로 유휴 비용은 0이다**(DR-9).
+fn settle(backend: Backend, snap: ClipSnapshot, fp: u64) -> (ClipSnapshot, u64) {
+    let mut cur = (snap, fp);
+    for _ in 0..SETTLE_MAX {
+        std::thread::sleep(std::time::Duration::from_millis(SETTLE_MS));
+        let Some(next) = read_snapshot_with(backend) else {
+            break;
+        };
+        if next.reps.is_empty() && !next.concealed {
+            break;
+        }
+        let nfp = fingerprint(&next);
+        if nfp == cur.1 {
+            // 두 번 같게 읽혔다 — 자리 잡았다.
+            return cur;
+        }
+        diag("아직 자리 잡는 중 — 다시 읽는다");
+        cur = (next, nfp);
+    }
+    cur
+}
+
+/// 이번 틱 뒤의 유휴 카운터 — **변화가 있었을 때만 0으로 돌아간다**(순수 · 테스트 대상).
+///
+/// ★ 못 읽음 · 빈 스냅숏 · 같은 지문은 전부 "변화 없음"이다 — 셋 다 물러나야 한다.
+/// ⚠️ 빈 클립보드에서 0으로 되돌리던 것이 08-29 결함이었다(영구 활동 주기 · DR-9).
+fn next_idle_ticks(idle: u32, changed: bool) -> u32 {
+    if changed {
+        0
+    } else {
+        idle.saturating_add(1)
     }
 }
 
@@ -347,6 +482,42 @@ mod tests {
         assert_ne!(a, fingerprint(&snap("text/plain", b"hellp", false)), "내용");
         assert_ne!(a, fingerprint(&snap("text/html", b"hello", false)), "이름");
         assert_ne!(a, fingerprint(&snap("text/plain", b"hello", true)), "표식");
+    }
+
+    /// ★ 08-29 결함 — **빈 클립보드가 영구히 활동 주기로 돌던 것**.
+    ///
+    /// 못 읽음·빈 스냅숏·같은 지문은 전부 "변화 없음"이라 물러나야 한다. 로그인 직후처럼
+    /// 클립보드가 오래 비어 있는 것은 정상 상태인데, 예전 규칙은 그동안 500ms마다
+    /// 프로세스를 띄웠다(DR-9 위반).
+    #[test]
+    fn idle_ticks_back_off_unless_changed() {
+        assert_eq!(next_idle_ticks(0, false), 1, "못 읽음/빈 것도 물러난다");
+        assert_eq!(next_idle_ticks(9, false), 10);
+        assert_eq!(next_idle_ticks(9, true), 0, "변화만 활동으로 되돌린다");
+        assert_eq!(next_idle_ticks(u32::MAX, false), u32::MAX, "넘치지 않는다");
+        // 변화 없이 굴리면 유휴 상한까지 실제로 올라간다.
+        let mut t = 0;
+        for _ in 0..IDLE_AFTER_TICKS + 20 {
+            t = next_idle_ticks(t, false);
+        }
+        assert_eq!(interval_ms(t), IDLE_MAX_MS);
+    }
+
+    /// ★ 상한은 **읽으면서** 걸린다 — 끝없이 쏟아져도 돌아온다.
+    ///
+    /// 예전에는 `Command::output()`으로 전량을 담은 **뒤에** 크기를 봤다 —
+    /// 이 테스트는 그 구현에서 메모리를 먹으며 끝나지 않는다.
+    #[test]
+    #[cfg(unix)]
+    fn run_bytes_caps_unbounded_output() {
+        assert_eq!(
+            run_bytes("yes", &[], 4096),
+            None,
+            "무한 출력은 상한에 걸린다"
+        );
+        let out = run_bytes("echo", &["hi"], 4096).expect("echo 는 성공한다");
+        assert_eq!(out, b"hi\n");
+        assert_eq!(run_bytes("nclip-존재하지-않는-명령", &[], 16), None);
     }
 
     /// 적응형 주기는 활동 500ms → 유휴 2s 사이만 오간다(DR-9 — 틱마다 실제 읽기가 있다).
