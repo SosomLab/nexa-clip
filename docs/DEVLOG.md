@@ -2,6 +2,10 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-08-29
+
+- ★ **T-14e macOS 감시 + Linux 감시 1단** — 3-OS가 처음으로 다 잡는다. mac = `changeCount` 적응형 폴링(objc 직접 호출 · 결함 ⑫ 교훈 선반영 · nspasteboard 표식 3종 · ★ **Finder 참조 URL을 경로로**) — **유형별 실기 통과**(한글 텍스트·RTF·PNG 치수·Finder ⌘C 파일). Linux = `wl-paste`/`xclip` 파이프 + 내용 지문(`MissingTool` 사유 신설 · 실기는 환경 대기). 334 테스트 · 3-타깃 클린 → [journal 1차](journal/2026-08-29.md)
+
 ## 2026-08-28
 
 - **Ctrl+C = 정상 종료** — `STATUS_CONTROL_C_EXIT` 오류 오인 해소(`SetConsoleCtrlHandler` → 셸 종료 경로 · 설정 flush · exit 0) → [journal 10차](journal/2026-08-28.md)

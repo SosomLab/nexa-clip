@@ -4,6 +4,27 @@
 
 ---
 
+## 2026-08-29 (1차) — ★ T-14e macOS 감시 + Linux 1단: 3-OS가 다 잡는다
+
+사용자 요청("윈도우처럼 유형별 복사 테스트 · 파일 포함" + "리눅스도") — 감시 백엔드 둘 추가.
+`watch`/`peek`/게이트/디바운스는 OS 중립이라 무수정으로 돈다.
+
+- ★ **macOS**([`watch_mac`](../crates/nclip-plat/src/watch_mac.rs) · `mac-changecount-poll`) —
+  `changeCount` 적응형 폴링(200ms→1s) · objc 직접 호출(DR-8) · 결함 ⑫(빈 스냅숏 미처리)
+  선반영 · nspasteboard 표식 3종 fail-closed · ★ Finder **참조 URL → 경로 해석**.
+  **유형별 실기 ✅**: 한글 텍스트 · RTF · PNG(치수 256×256) · **Finder ⌘C 파일**(표현 4개 ·
+  파일명 미리보기) · 다중 파일.
+- **Linux 1단**([`watch_linux`](../crates/nclip-plat/src/watch_linux.rs)) — `wl-paste`/`xclip`
+  파이프(beep 선례 · 링크 0) + 내용 지문 폴링(500ms→2s) · `x-kde-passwordManagerHint` ·
+  환경 사유(`NoDisplayServer`/**`MissingTool` 신설**) 정직 보고. ⚠️ 실기는 Linux 환경에서(⏳).
+- ⚠️ 발견: AppleScript 인공 작성기는 changeCount 없이 내용을 늦게 채워 그 세대가 빈
+  것으로 캐시될 수 있다(실제 앱 무관 · pb-level 폴백 배선) · `NEXA_CLIP_DIAG=1` mac 배선.
+
+**실측**: **334 테스트** · clippy `-D warnings` 클린(호스트 + linux-gnu 크로스) ·
+win-msvc check 클린. ⏳ 재점검: mac `watch` 실사용(Maccy와 병행) · Linux 실기.
+
+---
+
 ## 2026-08-28 (10차) — Ctrl+C = 정상 종료 (오류 오인 해소)
 
 사용자가 "자꾸 오류"로 보고한 것의 정체 = **Ctrl+C 종료를 cargo가 오류처럼 표시**

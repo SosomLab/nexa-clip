@@ -57,7 +57,7 @@
 | **T-14g** | P1 | 소 | ★ **D-80 캡처 디바운스** — `coalesces` 판정(core) + 500ms 수신 루프. 실기 E9: 복사 1회 = 1항목 | T-13 | ✅ **완료**(08-27) |
 | **T-21b** | **P1** | 소 | ★ **DR-36** — 브라우저 암호 차단: `sec.conceal_browser_pw` 옵션(**기본 꺼짐**) + 출처 URL 판정. 제외 앱 목록은 T-21 본체로 | T-21 | ✅ **완료**(08-27 · 모의 E2E 검증) |
 | **T-14f** | P1 | 소 | ★ `ClipKind::Object` **표시 설계** — 배지·필터·라벨(**D-78**) | T-14b' | ☐ |
-| **T-14e** | P1 | 중 | macOS 감시(`NSPasteboard.changeCount` 적응형 폴링) | T-14b | ☐ |
+| **T-14e** | P1 | 중 | macOS 감시(`NSPasteboard.changeCount` 적응형 폴링) | T-14b | ✅ **완료**(08-29 · 유형별 실기: 한글 텍스트·RTF·PNG 치수·**Finder ⌘C 파일**·다중 파일. Finder 참조 URL → 경로 해석) |
 | **T-9d** | P1 | 소 | ⚠️ macOS **배포본(.app) 권한** 재확인 — 개발 중 통과는 배포본 통과가 아니다 | — | ☐ |
 | **T-14c** | P1 | 중 | 썸네일 생성 — PNG·BMP·DIB 디코드 + 축소(★ **인코더가 없다** → raw 보관 · D-70) | T-14b | 🚧 **1단 완료**(08-28 · `img` 치수·`dib_to_rgba`·박스 축소 — `[이미지] W×H` 표시). 압축 디코드는 격리 워커(T-19) |
 | **T-14d** | P1 | 중 | `CF_HTML` 정제 — 화이트리스트(**D-62**) · ★ 캡처 때 **한 번**만 | T-14b | ☐ |
@@ -67,7 +67,7 @@
 | **T-12e2** | **P0** | 소 | ★ **자동 시작**(beep `autostart.rs` 3-OS 이식 · 토글 즉시 적용 · 부팅 재동기화 · 외부 삭제 존중) | T-12e | ✅ **완료**(08-28 · Win 레지스트리 실측) |
 | **T-12e3** | **P0** | 소 | ★ **닫을 때 트레이로**(`ui.close_to_tray` 기본 꺼짐) — `tray` 상주 셸 승격(열기 = 설정 창 · 닫기 = 종료/숨기) | T-12e | ✅ **통과**(08-28 사용자 실기) |
 | **T-13** | P0 | 중 | `nclip-core` — 타입 판별 · **보관 정책**(개수/기간/용량) · 중복 승격 파이프라인 | T-12c | 🚧 **이력·승격 완료**(08-28 `history` — 메모리 · 개수 상한). 기간/용량·영속은 T-16 |
-| **T-14** | **P0** | **대** | ★ `nclip-plat` **클립보드 감시 3-OS** — Win 이벤트 / mac 폴링 / X11 XFIXES / Wayland data-control. **미지원 환경은 정직하게 표시** | T-13 | ☐ |
+| **T-14** | **P0** | **대** | ★ `nclip-plat` **클립보드 감시 3-OS** — Win 이벤트 / mac 폴링 / X11 XFIXES / Wayland data-control. **미지원 환경은 정직하게 표시** | T-13 | 🚧 **Win ✅ · mac ✅(08-29)** · Linux **1단**(`wl-paste`/`xclip` 파이프 + 지문 폴링 — 실기 ⏳ · XFIXES/data-control은 본편) |
 | **T-15** | **P0** | **대** | ★ `nclip-plat` **전역 단축키 + 직전 포커스 창 복원 + 키 주입** — 실패 시 FR-P-1로 정직 강등 | T-14 | 🚧 **Win 1단**(08-28 · `RegisterHotKey` `Ctrl+Shift+V` + 충돌 안내 · 복원/주입은 K-1 재사용) |
 | **T-16** | P0 | 중 | `nclip-store` — 암호화 세그먼트 + 내용 주소 blob(beep `nbeep-store` 이식) | T-3, T-13 | ☐ |
 | **T-17** | P0 | 소 | 중립 UI 모듈 이식 — `hangul`·`typeahead`·`alert`·`prompt`·`about`·`filter_bar` + **IME 게이트**(app.rs) | T-12b | ☐ |
