@@ -6,7 +6,7 @@
 //! |---|---|---|
 //! | **Windows** | ✅ 구현 | `GetForegroundWindow` → `AttachThreadInput` + `SetForegroundWindow` → `SendInput` |
 //! | **macOS** | 🚧 구현(실기 미검증) | `CGEventPost`(⌘V) + `AXIsProcessTrusted` 권한 확인 |
-//! | **Linux** | ✕ 미구현 | X11 `XTestFakeKeyEvent` 예정 · **Wayland는 표준 없음** |
+//! | **Linux** | ✅ 구현(08-30) | **X11 `XTest`**(x11rb 순수 Rust) — X11 세션은 `GetInputFocus`→`_NET_ACTIVE_WINDOW`+주입 · **Wayland 세션은 XWayland의 XTest**(Mutter가 가상 입력 장치로 넘긴다) + 포커스 복원은 **컴포지터가 팝업을 닫을 때 돌려준다**(클라이언트는 남의 창을 활성화할 수 없다 — 그래서 **팝업을 먼저 닫는 순서**가 전부다) · `DISPLAY` 없으면 정직히 `WaylandNoInjection` |
 //!
 //! ## ⚠️ Windows에서 포커스를 되돌리는 건 그냥 안 된다
 //!
@@ -467,14 +467,311 @@ mod imp {
 }
 
 // ───────────────────────────── 그 외(Linux 등) ─────────────────────────────
-#[cfg(not(any(windows, target_os = "macos")))]
+// ───────────────────────────── Linux ─────────────────────────────
+/// Linux — X11 `XTest` 키 주입(x11rb · 순수 Rust · 원장 docs/10 §3).
+///
+/// 두 세션이 갈린다:
+/// - **X11 세션**: `GetInputFocus`로 대상 창을 기억 → 팝업이 닫힌 뒤 `_NET_ACTIVE_WINDOW`
+///   클라이언트 메시지(EWMH — WM이 포커스·스택 정리) + `SetInputFocus` → XTest `Ctrl+V`.
+/// - **Wayland 세션**: 클라이언트는 남의 창을 활성화할 수 없다(xdg-shell 한계). 대신
+///   **팝업이 닫히면 컴포지터가 직전 창에 포커스를 돌려준다** — `restore`는 그 정착만
+///   기다린다. 주입은 **XWayland의 XTest**(`DISPLAY=:0`) — Mutter는 XTest를 가상 입력
+///   장치로 받아 Wayland 네이티브 앱에도 배달한다. `DISPLAY`가 없으면(순수 Wayland) 표준이
+///   없으므로 `WaylandNoInjection`.
+///
+/// 평문(`PasteAs::Plain`)도 `Ctrl+V` — 호스트가 클립보드에 평문 표현만 올린다(Windows
+/// 어댑터의 `Ctrl+Shift+V` 관례는 Linux에선 우리 전역 단축키와 겹쳐 쓰지 않는다).
+#[cfg(target_os = "linux")]
+mod imp {
+    use super::{PasteAs, PasteCapability, PasteError, PasteUnsupported};
+    use x11rb::connection::Connection as _;
+    use x11rb::protocol::xproto::{
+        self, ClientMessageEvent, ConnectionExt as _, EventMask, InputFocus,
+    };
+    use x11rb::protocol::xtest::ConnectionExt as _;
+    use x11rb::rust_connection::RustConnection;
+
+    /// 붙여넣기 대상.
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub(super) enum Target {
+        /// X11 세션 — 포커스 창 id.
+        X11 { window: u32 },
+        /// Wayland 세션 — 컴포지터가 포커스를 돌려준다(창 id를 알 수 없다).
+        Wayland,
+    }
+
+    const KEYSYM_V: u32 = 0x76;
+    const KEYSYM_CONTROL_L: u32 = 0xffe3;
+    const KEY_PRESS: u8 = xproto::KEY_PRESS_EVENT;
+    const KEY_RELEASE: u8 = xproto::KEY_RELEASE_EVENT;
+    /// Wayland 컴포지터의 포커스 반환·X11 WM의 활성화가 정착할 시간.
+    const SETTLE: std::time::Duration = std::time::Duration::from_millis(120);
+
+    fn is_wayland() -> bool {
+        std::env::var_os("WAYLAND_DISPLAY").is_some()
+    }
+
+    fn has_display() -> bool {
+        std::env::var_os("DISPLAY").is_some_and(|d| !d.is_empty())
+    }
+
+    fn connect() -> Result<(RustConnection, usize), PasteError> {
+        RustConnection::connect(None).map_err(|e| PasteError::Os(format!("X 연결 실패: {e}")))
+    }
+
+    pub(super) fn capability() -> PasteCapability {
+        if !has_display() {
+            return PasteCapability::ClipboardOnly {
+                reason: if is_wayland() {
+                    PasteUnsupported::WaylandNoInjection
+                } else {
+                    PasteUnsupported::NoDisplayServer
+                },
+            };
+        }
+        let Ok((conn, _)) = connect() else {
+            return PasteCapability::ClipboardOnly {
+                reason: PasteUnsupported::NoDisplayServer,
+            };
+        };
+        let has_xtest = conn
+            .xtest_get_version(2, 2)
+            .ok()
+            .and_then(|c| c.reply().ok())
+            .is_some();
+        if !has_xtest {
+            return PasteCapability::ClipboardOnly {
+                reason: PasteUnsupported::NotImplemented,
+            };
+        }
+        PasteCapability::Full {
+            backend: if is_wayland() {
+                "xwayland-xtest"
+            } else {
+                "x11-xtest"
+            },
+        }
+    }
+
+    pub(super) fn foreground() -> Option<Target> {
+        if !has_display() {
+            return None;
+        }
+        if is_wayland() {
+            return Some(Target::Wayland);
+        }
+        let (conn, _) = connect().ok()?;
+        let focus = conn.get_input_focus().ok()?.reply().ok()?.focus;
+        // None(0)·PointerRoot(1)은 창이 아니다.
+        (focus > 1).then_some(Target::X11 { window: focus })
+    }
+
+    pub(super) fn label(t: &Target) -> String {
+        match t {
+            Target::X11 { window } => format!("X11 창 0x{window:x}"),
+            Target::Wayland => "(Wayland — 컴포지터가 직전 창으로 되돌림)".into(),
+        }
+    }
+
+    pub(super) fn restore(t: &Target) -> Result<(), PasteError> {
+        match t {
+            Target::Wayland => {
+                std::thread::sleep(SETTLE);
+                Ok(())
+            }
+            Target::X11 { window } => {
+                let (conn, screen) = connect()?;
+                let root = conn
+                    .setup()
+                    .roots
+                    .get(screen)
+                    .ok_or_else(|| PasteError::Os("X 화면 없음".into()))?
+                    .root;
+                // 창이 아직 있는가.
+                if conn
+                    .get_window_attributes(*window)
+                    .ok()
+                    .and_then(|c| c.reply().ok())
+                    .is_none()
+                {
+                    return Err(PasteError::TargetGone);
+                }
+                // EWMH `_NET_ACTIVE_WINDOW`(source = 2: 페이저/도구) — WM이 있으면 이것이 정식.
+                let atom = conn
+                    .intern_atom(false, b"_NET_ACTIVE_WINDOW")
+                    .ok()
+                    .and_then(|c| c.reply().ok())
+                    .map(|r| r.atom);
+                if let Some(atom) = atom {
+                    let ev = ClientMessageEvent::new(32, *window, atom, [2, 0, 0, 0, 0]);
+                    let _ = conn.send_event(
+                        false,
+                        root,
+                        EventMask::SUBSTRUCTURE_REDIRECT | EventMask::SUBSTRUCTURE_NOTIFY,
+                        ev,
+                    );
+                }
+                // WM이 없을 때의 폴백(둘 다 보내도 무해).
+                let _ =
+                    conn.set_input_focus(InputFocus::POINTER_ROOT, *window, x11rb::CURRENT_TIME);
+                conn.flush()
+                    .map_err(|e| PasteError::Os(format!("X flush 실패: {e}")))?;
+                std::thread::sleep(SETTLE);
+                Ok(())
+            }
+        }
+    }
+
+    pub(super) fn send_paste(_as: PasteAs) -> Result<(), PasteError> {
+        if !has_display() {
+            return Err(PasteError::Unsupported(if is_wayland() {
+                PasteUnsupported::WaylandNoInjection
+            } else {
+                PasteUnsupported::NoDisplayServer
+            }));
+        }
+        let (conn, screen) = connect()?;
+        let setup = conn.setup();
+        let root = setup
+            .roots
+            .get(screen)
+            .ok_or_else(|| PasteError::Os("X 화면 없음".into()))?
+            .root;
+        let (min, max) = (setup.min_keycode, setup.max_keycode);
+        let map = conn
+            .get_keyboard_mapping(min, max - min + 1)
+            .map(|c| c.reply())
+            .map_err(|e| PasteError::Os(format!("키맵 조회 실패: {e}")))?
+            .map_err(|e| PasteError::Os(format!("키맵 응답 실패: {e}")))?;
+        let per = usize::from(map.keysyms_per_keycode);
+        let kc = |sym: u32| {
+            find_keycode(&map.keysyms, per, min, sym)
+                .ok_or_else(|| PasteError::Os(format!("keysym 0x{sym:x}의 keycode 없음")))
+        };
+        let ctrl = kc(KEYSYM_CONTROL_L)?;
+        let v = kc(KEYSYM_V)?;
+        let fake = |ty: u8, code: u8| {
+            conn.xtest_fake_input(ty, code, x11rb::CURRENT_TIME, root, 0, 0, 0)
+                .map_err(|e| PasteError::Os(format!("XTest 실패: {e}")))
+                .map(|_| ())
+        };
+        fake(KEY_PRESS, ctrl)?;
+        fake(KEY_PRESS, v)?;
+        fake(KEY_RELEASE, v)?;
+        fake(KEY_RELEASE, ctrl)?;
+        conn.flush()
+            .map_err(|e| PasteError::Os(format!("X flush 실패: {e}")))?;
+        // 서버가 처리했는지 왕복 한 번(에러 이벤트는 여기서 드러난다).
+        conn.get_input_focus()
+            .map(|c| c.reply())
+            .map_err(|e| PasteError::Os(format!("X 왕복 실패: {e}")))?
+            .map_err(|e| PasteError::Os(format!("X 왕복 응답 실패: {e}")))?;
+        Ok(())
+    }
+
+    /// keysym → keycode — `GetKeyboardMapping` 표(keycode마다 `per`개 keysym)에서 첫 일치.
+    pub(super) fn find_keycode(keysyms: &[u32], per: usize, min: u8, sym: u32) -> Option<u8> {
+        if per == 0 {
+            return None;
+        }
+        keysyms
+            .chunks(per)
+            .position(|row| row.contains(&sym))
+            .and_then(|i| u8::try_from(i).ok())
+            .and_then(|i| min.checked_add(i))
+    }
+
+    pub(super) fn steal_focus_to_self() -> bool {
+        false // 창 없는 스파이크에서 흉내 낼 방법이 없다(Wayland) — 실물 팝업으로 검증.
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        /// ★ X11 경로 실기(자동) — **자기 창을 만들어 포커스를 잡고** XTest로 `Ctrl+V`를
+        /// 넣은 뒤 그 창이 KeyPress(Control_L · v)를 받는지 본다. Xvfb에서 사람 없이 돈다:
+        /// `Xvfb :99 & DISPLAY=:99 cargo test -p nclip-plat -- --ignored x11_xtest`
+        /// (XWayland `:0`에서는 컴포지터가 포커스를 주지 않아 KeyPress가 안 온다 — 그건
+        /// 사람이 실제 앱으로 본다 · docs/21 §2-5).
+        #[test]
+        #[ignore = "X 서버가 필요(Xvfb 수동 실행 전용)"]
+        fn x11_xtest_roundtrip_into_own_window() {
+            use x11rb::protocol::xproto::{CreateWindowAux, WindowClass};
+            use x11rb::protocol::Event;
+            let (conn, screen) = connect().expect("X 연결");
+            let root_info = conn.setup().roots[screen].clone();
+            let win = conn.generate_id().expect("id");
+            conn.create_window(
+                0,
+                win,
+                root_info.root,
+                0,
+                0,
+                100,
+                100,
+                0,
+                WindowClass::INPUT_OUTPUT,
+                0,
+                &CreateWindowAux::new().event_mask(EventMask::KEY_PRESS | EventMask::KEY_RELEASE),
+            )
+            .expect("create")
+            .check()
+            .expect("create ok");
+            conn.map_window(win).expect("map");
+            conn.set_input_focus(InputFocus::POINTER_ROOT, win, x11rb::CURRENT_TIME)
+                .expect("focus");
+            conn.flush().expect("flush");
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            // 대상 기억 → 복원 → 주입(어댑터 공개 경로 그대로).
+            let target = foreground().expect("포커스 창");
+            assert_eq!(target, Target::X11 { window: win });
+            restore(&target).expect("복원");
+            send_paste(PasteAs::Original).expect("주입");
+            // 우리 창에 Control_L·v KeyPress가 도착해야 한다.
+            let mut got = Vec::new();
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+            while std::time::Instant::now() < deadline && got.len() < 2 {
+                if let Ok(Some(Event::KeyPress(k))) = conn.poll_for_event() {
+                    got.push(k.detail);
+                } else {
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                }
+            }
+            let setup = conn.setup();
+            let (min, max) = (setup.min_keycode, setup.max_keycode);
+            let map = conn
+                .get_keyboard_mapping(min, max - min + 1)
+                .expect("map")
+                .reply()
+                .expect("map reply");
+            let per = usize::from(map.keysyms_per_keycode);
+            let ctrl = find_keycode(&map.keysyms, per, min, KEYSYM_CONTROL_L).expect("ctrl");
+            let v = find_keycode(&map.keysyms, per, min, KEYSYM_V).expect("v");
+            assert_eq!(got, vec![ctrl, v], "Ctrl 다음 V 순서로 눌려야 한다");
+        }
+
+        /// keycode 표 해석 — 행 폭 `per`, 첫 일치 행의 keycode = min + 행 번호.
+        #[test]
+        fn keycode_lookup_reads_rows() {
+            // min=8 · per=2 · keycode 8=[a,A] 9=[v,V] 10=[Control_L,0]
+            let syms = [0x61, 0x41, 0x76, 0x56, 0xffe3, 0];
+            assert_eq!(find_keycode(&syms, 2, 8, 0x76), Some(9));
+            assert_eq!(find_keycode(&syms, 2, 8, 0xffe3), Some(10));
+            assert_eq!(find_keycode(&syms, 2, 8, 0x7a), None);
+            assert_eq!(find_keycode(&syms, 0, 8, 0x76), None);
+        }
+    }
+}
+
+// ───────────────────────────── 기타 ─────────────────────────────
+#[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
 mod imp {
     use super::{PasteAs, PasteCapability, PasteError, PasteUnsupported};
 
     pub(super) type Target = ();
 
     pub(super) fn capability() -> PasteCapability {
-        // X11 XTest는 T-15b, Wayland는 구조적으로 표준이 없다.
         PasteCapability::ClipboardOnly {
             reason: PasteUnsupported::NotImplemented,
         }
