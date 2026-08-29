@@ -90,6 +90,8 @@ enum ShellEvent {
     ///   winit은 루프로 돌아가야 창 파괴 요청을 flush한다 — 핸들러 안에서 기다리면 팝업이
     ///   아직 떠서 포커스를 쥔 채 `Ctrl+V`를 삼킨다. 값 = 붙여넣기 방식.
     PasteAfterClose(PasteAs),
+    /// OS 테마 선호가 바뀌었다(Linux 포털 `SettingChanged`) — `ui.theme = system`이면 따라간다.
+    SystemTheme,
 }
 
 /// ★ 계열 아이콘을 코드로 그린다 — 라운드 스퀘어 + 청록 세로 그라디언트(`#22C3D6→#0B7FA6`)
@@ -296,6 +298,7 @@ impl Shell {
             return;
         }
         println!("팝업: 열기 — 이력 {}개", self.history.len());
+        self.popup.set_theme(self.app.theme());
         // ★ 팝업이 뜨기 전의 포그라운드가 붙여넣기 대상이다(K-1 — 순서가 전부).
         if !self.paste.capture_focus() {
             eprintln!("대상 창을 기억하지 못했습니다 — 선택해도 주입은 생략됩니다");
@@ -329,6 +332,19 @@ impl ApplicationHandler<ShellEvent> for Shell {
             ShellEvent::Quit => el.exit(),
             ShellEvent::Hotkey => self.toggle_popup(el),
             ShellEvent::PasteAfterClose(as_) => self.paste_now(as_),
+            ShellEvent::SystemTheme => {
+                self.app.apply_theme();
+                self.popup.set_theme(self.app.theme());
+                println!(
+                    "테마: OS 선호 변경 → {}(ui.theme = {})",
+                    if self.app.theme().is_dark {
+                        "dark"
+                    } else {
+                        "light"
+                    },
+                    self.app.conf.state.get("ui.theme")
+                );
+            }
             ShellEvent::HotkeyStatus(ok) => {
                 if ok {
                     println!(
@@ -470,6 +486,14 @@ pub(crate) fn run() {
         }
     } else {
         println!("클립보드 감시: 이 OS는 미구현 — 트레이만 동작합니다");
+    }
+
+    // ★ OS 테마 변경 감시(Linux 포털 · 다른 OS는 창 이벤트) — `ui.theme = system` 추종.
+    {
+        let proxy = el.create_proxy();
+        nclip_plat::theme::watch(move |_| {
+            let _ = proxy.send_event(ShellEvent::SystemTheme);
+        });
     }
 
     // ★ Ctrl+C = 정상 종료(트레이 메뉴 "종료"와 같은 경로) — 안 걸면 프로세스가
