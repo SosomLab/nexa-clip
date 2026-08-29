@@ -94,6 +94,13 @@ pub fn is_files_format(fmt: &str) -> bool {
             | "public.file-url"
             | "NSFilenamesPboardType"
             | "text/uri-list"
+            // ★ Linux 파일 관리자의 **잘라내기/복사** 표현(08-29) — 첫 줄이 `cut`/`copy`고
+            //   그 뒤가 uri-list다. 이 이름이 없으면 잘라낸 파일이 **벤더 표현으로 새어**
+            //   `Object`가 된다(Windows에서 `Preferred DropEffect`를 곁다리로 거르는 것과
+            //   같은 자리). Nautilus·Thunar·Nemo·Caja·PCManFM이 gnome 이름을 함께 쓴다.
+            | "x-special/gnome-copied-files"
+            | "x-special/KDE-copied-files"
+            | "x-special/nautilus-clipboard"
     )
 }
 
@@ -180,6 +187,15 @@ pub fn is_metadata_format(fmt: &str) -> bool {
             | "application/x-copyq-owner"
             | "msSourceUrl"
             | "com.apple.cocoa.pasteboard.source-app-id"
+            // KDE(Dolphin)는 잘라내기 여부를 **별도 표식**으로 붙인다(값 `1`) — 내용이 아니다.
+            // ⚠️ GNOME `x-special/gnome-copied-files`는 **경로를 담고 있어** 곁다리가 아니다
+            //    — 그쪽은 [`is_files_format`]가 파일 표현으로 받는다(08-29).
+            | "application/x-kde-cutselection"
+            // ★ xdg-desktop-portal **파일 전송 세션 키**(GNOME Nautilus 실기 08-29 — 사용자 확인).
+            //   39B짜리 휘발 토큰이라 이력에 보관할 값이 없고, 복사마다 달라 동일성 판정도 흐린다.
+            //   경로는 `text/uri-list`·`gnome-copied-files`가 따로 담는다.
+            | "application/vnd.portal.files"
+            | "application/vnd.portal.filetransfer"
     )
 }
 
@@ -1324,6 +1340,20 @@ mod tests {
             "★ 개체 본문을 버리면 안 된다"
         );
         assert!(is_vendor_format("Embed Source"));
+    }
+
+    /// Nautilus 실기(08-29)가 내놓은 표현 5개 — 포털 키 둘은 곁다리, 나머지는 파일.
+    #[test]
+    fn nautilus_portal_keys_are_metadata() {
+        for f in [
+            "application/vnd.portal.files",
+            "application/vnd.portal.filetransfer",
+        ] {
+            assert!(is_metadata_format(f), "{f}는 곁다리여야 한다");
+            assert!(!is_vendor_format(f), "{f}가 벤더로 세어졌다");
+        }
+        assert!(is_files_format("text/uri-list"));
+        assert!(is_files_format("x-special/gnome-copied-files"));
     }
 
     /// 클립보드 기록 표식도 곁다리다 — 있다고 리치가 되면 안 된다.

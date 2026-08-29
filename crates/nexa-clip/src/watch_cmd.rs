@@ -17,7 +17,7 @@
 use nclip_core::capture::{
     app_in_list, capture, coalesces, parse_block_list, url_in_prefixes, CapturePolicy,
 };
-use nclip_core::{ClipSnapshot, ClipboardWatch as _, WatchCapability};
+use nclip_core::{ClipSnapshot, ClipboardWatch as _, UnsupportedReason, WatchCapability};
 use nclip_plat::watch::PlatformWatch;
 
 /// ★ **연속 변화 합치기 창**(T-14g · D-80) — 이 시간 안에 "같은 복사의 다음 장면"
@@ -82,6 +82,30 @@ impl Gate {
     }
 }
 
+/// 못 쓰는 이유마다 **지금 할 수 있는 일**을 알려준다.
+///
+/// ⚠️ 예전에는 사유와 무관하게 *"이 OS의 감시 구현이 아직 없습니다"* 한 줄이었다 —
+/// 도구만 설치하면 되는 Linux(`MissingTool`)를 **미구현으로 오인**하게 만든다(08-29).
+/// 포트가 정직하게 사유를 돌려주는데 안내가 그걸 버리면 정직함이 사용자에게 닿지 않는다.
+fn unsupported_hint(reason: &UnsupportedReason) -> String {
+    match reason {
+        UnsupportedReason::MissingTool(tool) => format!(
+            "{tool} 이(가) 없습니다. 설치하세요 — Ubuntu/Debian `sudo apt install wl-clipboard xclip` · \
+             Fedora/RHEL `sudo dnf install wl-clipboard xclip` · Arch `sudo pacman -S wl-clipboard xclip` · \
+             openSUSE `sudo zypper install wl-clipboard xclip` · Alpine `doas apk add wl-clipboard xclip`."
+        ),
+        UnsupportedReason::NoDisplayServer => "표시 서버가 없습니다(헤드리스 · SSH 등). \
+             데스크톱 세션에서 실행하거나 WAYLAND_DISPLAY/DISPLAY 를 넘겨 주세요."
+            .into(),
+        UnsupportedReason::WaylandNoDataControl => "이 Wayland 컴포지터에 data-control 프로토콜이 없습니다(GNOME 등). \
+             wl-clipboard 폴백을 쓰거나 X11 세션으로 로그인하세요."
+            .into(),
+        UnsupportedReason::NotImplemented => {
+            "이 OS의 감시 구현이 아직 없습니다. 진행 상황은 docs/21 참조.".into()
+        }
+    }
+}
+
 /// ★ **지금 클립보드만 한 번** 읽고 끝낸다(`peek`).
 ///
 /// `watch`는 계속 떠 있어야 하는데, *"방금 복사한 게 뭐로 잡혔나"* 만 보고 싶을 때가 잦다.
@@ -92,6 +116,7 @@ pub(crate) fn peek() {
         WatchCapability::Supported { backend } => println!("클립보드: ok ({backend})"),
         WatchCapability::Unsupported { reason } => {
             eprintln!("클립보드를 읽을 수 없습니다: {reason:?}");
+            eprintln!("  조치: {}", unsupported_hint(&reason));
             std::process::exit(1);
         }
     }
@@ -99,7 +124,10 @@ pub(crate) fn peek() {
     match watch.read_now() {
         Some(snap) => report(&snap, &gate),
         // ⚠️ 빈 스냅숏으로 위장하지 않는다 — 못 연 것과 비어 있는 것은 다르다.
-        None => eprintln!("클립보드를 열지 못했습니다(다른 앱이 잡고 있을 수 있습니다)."),
+        // ★ Linux 도구 파이프(`wl-paste`·`xclip`)는 **비어 있음과 못 읽음을 구분해 주지 않는다**
+        //   (둘 다 비정상 종료 — 08-29 Linux 실기). "다른 앱이 잡고 있다"는 Windows
+        //   `OpenClipboard` 사정이라 Linux에서는 거짓 안내다 — 사실대로 둘 다 말한다.
+        None => eprintln!("{}", read_failed_hint()),
     }
 }
 
@@ -112,7 +140,7 @@ pub(crate) fn run() {
         }
         WatchCapability::Unsupported { reason } => {
             eprintln!("클립보드 감시를 쓸 수 없습니다: {reason:?}");
-            eprintln!("  조치: 이 OS의 감시 구현이 아직 없습니다. 진행 상황은 docs/21 참조.");
+            eprintln!("  조치: {}", unsupported_hint(&reason));
             std::process::exit(1);
         }
     }
@@ -247,6 +275,15 @@ fn human(bytes: u64) -> String {
         format!("{:.1} KB", bytes as f64 / KB as f64)
     } else {
         format!("{bytes} B")
+    }
+}
+
+/// `read_now`가 `None`일 때의 안내 — OS별로 **그 OS에서 참인 말**만 한다.
+fn read_failed_hint() -> &'static str {
+    if cfg!(target_os = "linux") {
+        "클립보드가 비어 있거나 읽지 못했습니다(도구 파이프는 둘을 구분하지 못합니다)."
+    } else {
+        "클립보드를 열지 못했습니다(다른 앱이 잡고 있을 수 있습니다)."
     }
 }
 

@@ -45,18 +45,32 @@ impl ClipSnapshot {
     ///
     /// `CF_HDROP` → `text/uri-list` 순으로 본다. macOS `public.file-url`은 한 항목당
     /// 표현이 하나씩 오므로 **모아서** 돌려준다.
+    ///
+    /// ★ Linux 파일 관리자 표현(`x-special/…-copied-files`)은 **첫 줄이 `cut`/`copy`** 다 —
+    /// [`crate::capture::parse_uri_list`]가 `file://` 줄만 받으므로 표식 줄은 저절로 걸러진다.
+    ///
+    /// ⚠️ **같은 경로를 두 번 담지 않는다** — GNOME은 `text/uri-list`와
+    /// `x-special/gnome-copied-files`를 **함께** 내놓아서, 그대로 두면 파일 하나를
+    /// 복사해도 목록에 둘로 보인다(08-29).
     #[must_use]
     pub fn file_paths(&self) -> Vec<String> {
-        let mut out = Vec::new();
+        let mut out: Vec<String> = Vec::new();
         for r in &self.reps {
-            match r.format.as_str() {
-                "CF_HDROP" => out.extend(crate::capture::parse_hdrop(&r.data)),
-                "text/uri-list" | "public.file-url" => {
-                    if let Ok(t) = std::str::from_utf8(&r.data) {
-                        out.extend(crate::capture::parse_uri_list(t));
-                    }
+            let found = match r.format.as_str() {
+                "CF_HDROP" => crate::capture::parse_hdrop(&r.data),
+                "text/uri-list"
+                | "public.file-url"
+                | "x-special/gnome-copied-files"
+                | "x-special/KDE-copied-files"
+                | "x-special/nautilus-clipboard" => std::str::from_utf8(&r.data)
+                    .map(crate::capture::parse_uri_list)
+                    .unwrap_or_default(),
+                _ => continue,
+            };
+            for p in found {
+                if !out.contains(&p) {
+                    out.push(p);
                 }
-                _ => {}
             }
         }
         out
@@ -233,5 +247,74 @@ mod tests {
             ..Default::default()
         };
         assert!(c.concealed);
+    }
+}
+
+#[cfg(test)]
+mod linux_file_manager_tests {
+    use crate::{ClipSnapshot, RawRep};
+
+    fn snap(reps: &[(&str, &[u8])]) -> ClipSnapshot {
+        ClipSnapshot {
+            reps: reps
+                .iter()
+                .map(|(f, d)| RawRep {
+                    format: (*f).to_string(),
+                    data: d.to_vec(),
+                })
+                .collect(),
+            ..Default::default()
+        }
+    }
+
+    /// ★ 08-29 — GNOME/Nautilus **잘라내기**는 `text/uri-list` 없이 이것만 올 수 있다.
+    /// 첫 줄 `cut`은 표식이라 경로가 아니다.
+    #[test]
+    fn gnome_copied_files_yields_paths_without_marker_line() {
+        let s = snap(&[(
+            "x-special/gnome-copied-files",
+            b"cut\nfile:///home/u/%ED%95%9C%EA%B8%80.txt\nfile:///home/u/b.txt",
+        )]);
+        assert_eq!(
+            s.file_paths(),
+            vec!["/home/u/한글.txt".to_string(), "/home/u/b.txt".to_string()]
+        );
+        assert_eq!(
+            s.file_names(),
+            vec!["한글.txt".to_string(), "b.txt".to_string()]
+        );
+    }
+
+    /// `copy` 표식도 같은 자리다 — 잘라내기만 되는 게 아니다.
+    #[test]
+    fn gnome_copy_marker_is_also_skipped() {
+        let s = snap(&[("x-special/gnome-copied-files", b"copy\nfile:///tmp/a.txt")]);
+        assert_eq!(s.file_paths(), vec!["/tmp/a.txt".to_string()]);
+    }
+
+    /// ★ GNOME은 두 표현을 **함께** 내놓는다 — 그대로 두면 파일 하나가 둘로 보인다.
+    #[test]
+    fn duplicate_paths_across_representations_collapse() {
+        let s = snap(&[
+            ("text/uri-list", b"file:///tmp/a.txt\r\n"),
+            ("x-special/gnome-copied-files", b"cut\nfile:///tmp/a.txt"),
+        ]);
+        assert_eq!(s.file_paths(), vec!["/tmp/a.txt".to_string()], "한 번만");
+    }
+
+    /// KDE(Dolphin) 이름도 같은 취급 — 잘라내기 표식은 **곁다리**로 따로 걸러진다.
+    #[test]
+    fn kde_copied_files_and_cutselection() {
+        let s = snap(&[
+            ("x-special/KDE-copied-files", b"cut\nfile:///tmp/k.txt"),
+            ("application/x-kde-cutselection", b"1"),
+        ]);
+        assert_eq!(s.file_paths(), vec!["/tmp/k.txt".to_string()]);
+        assert!(crate::capture::is_metadata_format(
+            "application/x-kde-cutselection"
+        ));
+        assert!(crate::capture::is_files_format(
+            "x-special/KDE-copied-files"
+        ));
     }
 }

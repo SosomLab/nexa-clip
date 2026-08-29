@@ -2,6 +2,18 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-08-29 (4차) — Linux 남은 확인 사항: X11 · Weston · 프로토콜 실측
+
+- ★ **X11(`xclip`) 경로 실기 통과** — X11 세션 없이 **XWayland**(`WAYLAND_DISPLAY` 제거)와 **순수 Xvfb**(루트 없이) 둘 다 7/7. 하네스 `NCLIP_E2E_X11=1`/`NCLIP_E2E_XVFB=1` 모드.
+- ★ **Weston 14.0.2 nested**에서 `wayland-wl-paste` 정판정 · `wayland-info` 실측: **Mutter 50.1·Weston 모두 data-control(wlr·ext) 없음** — 1단이 도구 파이프인 근거가 측정값이 됐다.
+- 결함 하나 — 빈 클립보드에서 `peek`의 *"다른 앱이 잡고 있다"* 는 Linux에서 거짓(Windows 사정) → OS별 사실 안내. 남은 것: Nautilus 실제 표현(사람 `Ctrl+C`) · KWin/Sway. 상세 → [journal 4차](journal/2026-08-29.md)
+
+## 2026-08-29 (3차) — Linux 실기 환경 + 결함 여섯
+
+- ★ **sudo 없이 Linux 개발환경 구축**(rustup + 로컬 deb 프리픽스) — `cc` 없이는 크로스 check도 안 된다는 것을 실측. [docs/18 §1](18-build-and-test.md) 정정.
+- ★ **Linux 자동 실기 하네스**(8유형) — `watch.rs` git 바이너리 · 빈 클립보드 영구 활동 주기 · 상한 사후 적용 · **파일 잘라내기 유실** · `MissingTool` 오안내 · ★ **부분 스냅숏**(같은 복사 두 항목 + 오분류) 여섯 수정.
+- 📄 [docs/18 §9](18-build-and-test.md) — Linux 환경 **배포판별 차이 포함**. 상세 → [journal](journal/2026-08-29.md).
+
 ## 2026-08-29
 
 - ★ **mac 실기 결함 둘 수정** — ① **한글 파일명 자모 분해**(macOS NFD) → `compose_hangul_nfd`(한글 한정 NFC · 표시만 · 3-OS 멱등) ② **출처 앱 박제**(`NSWorkspace`는 런루프 없이 안 갱신 — 제외 앱 게이트가 오판) → `CGWindowListCopyWindowInfo`. 실기 ✅ `출처: Finder`·`한글검증_v1.0.pdf`. 관찰: PPT ole.source 토큰이 복사마다 달라 이력 승격 판정 저해 소지(T-13 후속) → [journal 2차](journal/2026-08-29.md)
