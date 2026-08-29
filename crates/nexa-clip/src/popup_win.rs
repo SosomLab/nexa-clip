@@ -159,11 +159,13 @@ impl Popup {
         self.was_focused = false;
         self.opened_at = std::time::Instant::now();
         self.refresh(hist);
-        let mut attrs = Window::default_attributes()
-            .with_title("Nexa Clip")
-            .with_decorations(false)
-            .with_window_level(WindowLevel::AlwaysOnTop)
-            .with_inner_size(LogicalSize::new(POPUP_W, POPUP_H));
+        let mut attrs = crate::settings_win::win_name(
+            Window::default_attributes()
+                .with_title("Nexa Clip")
+                .with_decorations(false)
+                .with_window_level(WindowLevel::AlwaysOnTop)
+                .with_inner_size(LogicalSize::new(POPUP_W, POPUP_H)),
+        );
         if let Some((x, y)) = at {
             // 커서 위치(DR-24 기본) — 물리 좌표 그대로(커서가 곧 물리 좌표다).
             attrs = attrs.with_position(PhysicalPosition::new(x, y));

@@ -85,12 +85,37 @@ impl App {
     pub(crate) fn ensure_window(&mut self, el: &ActiveEventLoop) {
         if let Some(w) = &self.window {
             w.set_visible(true);
+            // ★ Wayland는 `set_visible`/`focus_window`가 no-op(xdg-shell — 클라이언트는 창을
+            //   되살릴 수 없다). 셸이 트레이 클릭 때 준 활성화 토큰이 있으면 **진짜 포커스**,
+            //   없으면 주의 요청(Dock 강조 → 사용자가 한 번 클릭). beep 08-29 실기 그대로.
+            #[cfg(target_os = "linux")]
+            {
+                w.set_minimized(false);
+                let activated = nclip_plat::tray::take_activation_token()
+                    .is_some_and(|tok| wayland_activate(w, &tok));
+                if !activated {
+                    w.request_user_attention(Some(winit::window::UserAttentionType::Critical));
+                }
+            }
             w.focus_window();
             return;
         }
-        let attrs = Window::default_attributes()
-            .with_title("Nexa Clip — 설정 (검색 · 사이드바 경계 드래그 · Esc 종료)")
-            .with_inner_size(winit::dpi::LogicalSize::new(760.0, 560.0));
+        let attrs = win_name(
+            Window::default_attributes()
+                .with_title("Nexa Clip — 설정 (검색 · 사이드바 경계 드래그 · Esc 종료)")
+                .with_inner_size(winit::dpi::LogicalSize::new(760.0, 560.0)),
+        );
+        // 새 창도 토큰이 있으면 그것으로 활성화한다(트레이 → 첫 열기).
+        #[cfg(target_os = "linux")]
+        let attrs = {
+            use winit::platform::startup_notify::WindowAttributesExtStartupNotify as _;
+            match nclip_plat::tray::take_activation_token() {
+                Some(tok) => {
+                    attrs.with_activation_token(winit::window::ActivationToken::from_raw(tok))
+                }
+                None => attrs,
+            }
+        };
         let Ok(win) = el.create_window(attrs) else {
             eprintln!("창 생성 실패");
             if !self.resident {
@@ -416,5 +441,45 @@ pub(crate) fn run() {
     // ★ 종료 직전 강제 수거 — 이게 없으면 "바꾸고 바로 닫으면 안 저장됨"이 된다.
     if app.conf.flush() {
         println!("설정 저장: {}", app.conf.path().display());
+    }
+}
+
+/// 창에 앱 식별자를 싣는다 — Wayland `app_id` · X11 `WM_CLASS`(beep 08-29 실기 ③: 없으면
+/// GNOME Dock이 `.desktop`과 못 맞춰 톱니바퀴 + "알 수 없음"). 다른 OS는 무해한 no-op.
+pub(crate) fn win_name(attrs: winit::window::WindowAttributes) -> winit::window::WindowAttributes {
+    #[cfg(target_os = "linux")]
+    {
+        use winit::platform::wayland::WindowAttributesExtWayland;
+        use winit::platform::x11::WindowAttributesExtX11;
+        WindowAttributesExtWayland::with_name(
+            WindowAttributesExtX11::with_name(attrs, "nexa-clip", "nexa-clip"),
+            "nexa-clip",
+            "nexa-clip",
+        )
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        attrs
+    }
+}
+
+/// Wayland 정식 활성화 — winit 창의 raw 핸들(wl_display·wl_surface)로
+/// `nclip_plat::wlactivate::activate`. X11·핸들 부재 = false.
+#[cfg(target_os = "linux")]
+fn wayland_activate(w: &Window, token: &str) -> bool {
+    use winit::raw_window_handle::{
+        HasDisplayHandle as _, HasWindowHandle as _, RawDisplayHandle, RawWindowHandle,
+    };
+    let (Ok(d), Ok(s)) = (w.display_handle(), w.window_handle()) else {
+        return false;
+    };
+    match (d.as_raw(), s.as_raw()) {
+        (RawDisplayHandle::Wayland(d), RawWindowHandle::Wayland(s)) => {
+            // SAFETY: 살아 있는 winit 창의 핸들 · 메인(이벤트 루프) 스레드에서 호출.
+            unsafe {
+                nclip_plat::wlactivate::activate(d.display.as_ptr(), s.surface.as_ptr(), token)
+            }
+        }
+        _ => false,
     }
 }
