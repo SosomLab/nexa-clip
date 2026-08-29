@@ -162,6 +162,28 @@ pub fn tap_ctrl_v() -> Result<(), String> {
     run().map_err(|e| format!("NotifyKeyboardKeycode 실패: {e}"))
 }
 
+/// 임의 키 한 번(누름+뗌) — 진단·실기 전용(evdev 키코드).
+///
+/// # Errors
+/// 세션 실패 · 전송 실패.
+pub fn tap_key(code: i32, with_ctrl: bool) -> Result<(), String> {
+    ensure_session()?;
+    let g = SESSION.lock().map_err(|_| "세션 잠금 오염".to_string())?;
+    let s = g.as_ref().ok_or_else(|| "세션 없음".to_string())?;
+    let run = || -> zbus::Result<()> {
+        if with_ctrl {
+            key(s, KEY_LEFTCTRL, true)?;
+        }
+        key(s, code, true)?;
+        key(s, code, false)?;
+        if with_ctrl {
+            key(s, KEY_LEFTCTRL, false)?;
+        }
+        Ok(())
+    };
+    run().map_err(|e| format!("NotifyKeyboardKeycode 실패: {e}"))
+}
+
 /// 세션이 살아 있는지(호스트 진단용).
 #[must_use]
 pub fn has_session() -> bool {
@@ -177,6 +199,55 @@ fn get_str(r: &Results, k: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// ★ 실기 재현(사람 없이) — gnome-text-editor를 띄워 xclip으로 클립보드를 바꿔 가며
+    /// 포털 Ctrl+V → Ctrl+S를 **두 번** 넣고 파일을 읽는다(08-30 "첫 번만 붙는다" 재현용).
+    /// `NCLIP_RD_TOKEN=<token path> cargo test -p nclip-plat -- --ignored portal_paste_twice --nocapture`
+    #[test]
+    #[ignore = "데스크톱 세션·gnome-text-editor 필요(수동)"]
+    fn portal_paste_twice_into_text_editor() {
+        use std::process::{Command, Stdio};
+        if let Some(t) = std::env::var_os("NCLIP_RD_TOKEN") {
+            configure_token_path(t.into());
+        }
+        let dir = std::env::temp_dir().join(format!("nclip-rd-exp-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("t.txt");
+        std::fs::write(&file, "").unwrap();
+        let mut ed = Command::new("gnome-text-editor")
+            .arg(&file)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("editor");
+        std::thread::sleep(std::time::Duration::from_millis(2500));
+        for text in ["ONE", "TWO"] {
+            let mut c = Command::new("xclip")
+                .args([
+                    "-selection",
+                    "clipboard",
+                    "-t",
+                    "text/plain;charset=utf-8",
+                    "-i",
+                ])
+                .stdin(Stdio::piped())
+                .spawn()
+                .expect("xclip");
+            use std::io::Write as _;
+            c.stdin.take().unwrap().write_all(text.as_bytes()).unwrap();
+            c.wait().unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(400));
+            tap_ctrl_v().expect("ctrl+v");
+            std::thread::sleep(std::time::Duration::from_millis(400));
+            tap_key(31, true).expect("ctrl+s"); // KEY_S
+            std::thread::sleep(std::time::Duration::from_millis(800));
+            let got = std::fs::read_to_string(&file).unwrap_or_default();
+            eprintln!("after {text}: file = {got:?}");
+        }
+        let _ = ed.kill();
+        let _ = ed.wait();
+        let _ = std::fs::remove_dir_all(dir);
+    }
 
     /// 토큰 파일 왕복 — 공백은 걷어내고, 비어 있으면 None.
     #[test]

@@ -1,7 +1,7 @@
 //! `tray` — ★ **상주 셸**(T-12e·T-12e2). 트레이 + 감시 + **설정 창 열고 닫기**.
 //!
 //! 24시간 상주 제품의 셸이다. 시작은 **트레이만**(창 없음), 트레이 좌클릭/"열기"로
-//! 설정 창이 열리고, 닫으면 `ui.close_to_tray`(기본 꺼짐)에 따라 **종료** 또는
+//! 설정 창이 열리고, 닫으면 `ui.close_to_tray`(기본 켜짐 · 08-30 정정)에 따라 **종료** 또는
 //! **트레이로 숨기**(08-28 사용자 요청 · beep 동일). 종료는 트레이 메뉴에서.
 //!
 //! ## 구조 — winit 한 루프에 전부
@@ -86,6 +86,10 @@ enum ShellEvent {
     Hotkey,
     /// 전역 단축키 등록 결과 — 실패 = 다른 앱이 선점(충돌을 화면에 알린다).
     HotkeyStatus(bool),
+    /// ★ 팝업을 닫은 **다음 루프 바퀴**에 주입한다(08-30 Linux 실기 "첫 번만 붙는다").
+    ///   winit은 루프로 돌아가야 창 파괴 요청을 flush한다 — 핸들러 안에서 기다리면 팝업이
+    ///   아직 떠서 포커스를 쥔 채 `Ctrl+V`를 삼킨다. 값 = 붙여넣기 방식.
+    PasteAfterClose(PasteAs),
 }
 
 /// ★ 계열 아이콘을 코드로 그린다 — 라운드 스퀘어 + 청록 세로 그라디언트(`#22C3D6→#0B7FA6`)
@@ -205,6 +209,8 @@ struct Shell {
     paste: PlatformPaste,
     /// `paste.auto` — 꺼져 있으면 재적재까지만(주입 없음).
     paste_auto: bool,
+    /// 루프에 되돌려 보내는 통로(`PasteAfterClose`).
+    proxy: winit::event_loop::EventLoopProxy<ShellEvent>,
 }
 
 impl Shell {
@@ -217,12 +223,16 @@ impl Shell {
     }
 
     /// 항목을 클립보드로 되돌린다(트레이 메뉴 — 주입 없음).
-    fn repost(&self, i: usize) {
+    fn repost(&mut self, i: usize) {
         let Some(item) = self.history.get(i) else {
             return;
         };
         match nclip_plat::clipboard::set_reps(&item.reps) {
-            Ok(n) => println!("재적재: \"{}\" — 표현 {n}개 게시", item.label),
+            Ok(n) => {
+                println!("재적재: \"{}\" — 표현 {n}개 게시", item.label);
+                // ★ 부분 게시의 에코는 원본 승격으로(08-30 Linux 실기 "같은 항목 둘").
+                self.history.expect_echo(i);
+            }
             Err(e) => eprintln!("재적재 실패: {e}"),
         }
     }
@@ -249,7 +259,11 @@ impl Shell {
         let label = item.label.clone();
         self.popup.close();
         match nclip_plat::clipboard::set_reps(&reps) {
-            Ok(n) => println!("재적재: \"{label}\" — 표현 {n}개 게시"),
+            Ok(n) => {
+                println!("재적재: \"{label}\" — 표현 {n}개 게시");
+                // ★ 부분 게시(평문만 · Linux 1단 한 표현)의 에코 = 원본 승격.
+                self.history.expect_echo(index);
+            }
             Err(e) => {
                 eprintln!("재적재 실패: {e}");
                 return;
@@ -261,10 +275,16 @@ impl Shell {
             } else {
                 PasteAs::Original
             };
-            match self.paste.restore_and_paste(as_) {
-                Ok(()) => println!("붙여넣기: 포커스 복원 + 키 주입 ok"),
-                Err(e) => eprintln!("붙여넣기 실패: {e:?} — 클립보드에는 실려 있습니다(Ctrl+V)"),
-            }
+            // 지금 주입하지 않는다 — 팝업 파괴가 컴포지터에 닿은 뒤(다음 바퀴)에.
+            let _ = self.proxy.send_event(ShellEvent::PasteAfterClose(as_));
+        }
+    }
+
+    /// 팝업이 닫힌 다음 바퀴 — 포커스 복원 + 키 주입.
+    fn paste_now(&mut self, as_: PasteAs) {
+        match self.paste.restore_and_paste(as_) {
+            Ok(()) => println!("붙여넣기: 포커스 복원 + 키 주입 ok"),
+            Err(e) => eprintln!("붙여넣기 실패: {e:?} — 클립보드에는 실려 있습니다(Ctrl+V)"),
         }
     }
 
@@ -308,6 +328,7 @@ impl ApplicationHandler<ShellEvent> for Shell {
             ShellEvent::Open => self.app.ensure_window(el),
             ShellEvent::Quit => el.exit(),
             ShellEvent::Hotkey => self.toggle_popup(el),
+            ShellEvent::PasteAfterClose(as_) => self.paste_now(as_),
             ShellEvent::HotkeyStatus(ok) => {
                 if ok {
                     println!(
@@ -496,6 +517,7 @@ pub(crate) fn run() {
         tray_n,
         paste: PlatformPaste::new(),
         paste_auto,
+        proxy: el.create_proxy(),
     };
     if let Err(e) = el.run_app(&mut shell) {
         eprintln!("이벤트 루프 오류: {e}");
