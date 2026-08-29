@@ -77,13 +77,12 @@ const FREE_TEXT_KEYS: &[&str] = &[
 ];
 
 /// 기본 off 토글 — 프로필 공개(DR-22 **기본 전부 비노출** · 옵트인). 미등록 토글은 on.
-// ★ M3-2d ① 확정(08-15 **사용자 확정 = 3-OS 공통 off**): `ui.close_to_tray`
-// 기본 꺼짐 — X = 종료(예측 가능성 우선). mac 관례 차등(빨간 버튼 = 유지)을
-// 권고했으나 사용자가 공통 off로 확정했다. 켜는 것은 설정 고급에서 옵트인.
+// (beep M3-2d ①의 `ui.close_to_tray` 공통 off는 08-30 정정으로 여기서 빠졌다 — 아래 주석.)
 const TOGGLE_DEFAULT_OFF: &[&str] = &[
     "paste.plain_default",
-    // 닫을 때 트레이로 — beep 사용자 확정(08-15 3-OS 공통 off · X = 종료)과 동일.
-    "ui.close_to_tray",
+    // ★ `ui.close_to_tray`는 **기본 켜짐으로 정정**(08-30 사용자 QA — Linux 실기 "닫기를 눌렀더니
+    //   종료돼 다시 실행해야 함"). 클립보드 매니저는 24시간 상주가 존재 이유라 beep(대화 앱)의
+    //   공통 off 확정을 그대로 물려받은 것이 틀렸다. 끄는 것은 설정에서 옵트아웃.
     "sec.clear_on_quit",
     // ★ D-79 브라우저 암호 차단 — 기본 꺼짐(사용자 확정 08-27 · 켜는 것은 옵트인).
     "sec.conceal_browser_pw",
