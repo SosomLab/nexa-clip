@@ -4,6 +4,34 @@
 
 ---
 
+## 2026-08-29 (3차) — ★ Linux 실기 환경 구축 + 실기가 잡은 결함 여섯
+
+이 자리가 Linux(Ubuntu 26.04 · GNOME/Wayland)라 1차에서 못 한 **Linux 실기**를 했다.
+사용자 요청 셋(최신화·분석 / 전체 테스트 자동화·파일 포함 / 환경 구성·배포판별 문서).
+
+- ★ **sudo 없이 환경 구축** — rustup + **`apt-get download` + `dpkg-deb -x`** 로컬 프리픽스.
+  ⚠️ **`cc`가 없으면 크로스 `cargo check`도 죽는다**(빌드 스크립트가 호스트에서 링크된다) —
+  [docs/18 §1](18-build-and-test.md)의 *"C 툴체인 불요"* 는 **틀렸다 · 정정함**.
+- ★ **자동 실기 하네스** [`scripts/linux-watch-e2e.sh`](../scripts/linux-watch-e2e.sh) — 8유형을
+  `wl-copy --type`으로 직접 주입. 사람 없이 재현된다([docs/21 §2-7](21-manual-test.md)).
+
+| # | 결함 | 조치 |
+|:--:|---|---|
+| ① | `watch.rs`가 **git에서 바이너리**(raw NUL 2개 — diff·blame·병합 불가) | `\0` 이스케이프 |
+| ② | ★ **빈 클립보드가 영구히 활동 주기**(500ms마다 프로세스 · DR-9 위반) | `next_idle_ticks` — 못 읽음·빈 것·같은 지문 = 전부 "변화 없음" |
+| ③ | 64MB 상한이 **읽고 나서** 걸렸다 | `run_bytes` 스트리밍 — `cap+1`까지만 |
+| ④ | ★ **Linux 파일 잘라내기 유실**(`x-special/gnome-copied-files` → `Object`) | 파일 표현 3종 + KDE 곁다리 · **경로 중복 제거** |
+| ⑤ | `MissingTool`을 *"미구현"* 으로 안내 | `unsupported_hint` — 배포판별 설치 명령 |
+| ⑥ | ★ **부분 스냅숏**(실기가 잡음) — `text/html`이 `text/plain`만 보일 때 잡혀 **같은 복사가 두 항목 + `Text` 오분류** | 백엔드 `settle` — **두 번 같게 읽힐 때까지**(120ms×4). `coalesces`는 **늘어나는 방향만** 합쳐 절반만 막혔다 |
+
+✅ **실기 8/8** — 텍스트(한글)·HTML·RTF·PNG(256×256)·파일 1개(한글 이름)·다중 파일·
+★ **잘라내기**·민감 표식. 수정 후 **케이스당 정확히 1건**.
+📄 [docs/18 §9](18-build-and-test.md) 신설 — Linux 개발/실행/테스트 환경 **배포판별 차이 포함**.
+
+**실측**: **340 테스트**(Linux) · clippy `-D warnings` 클린(호스트 + **4 크로스**) · rustfmt 클린.
+
+---
+
 ## 2026-08-29 (2차) — mac 유형별 실기(사용자)가 결함 둘을 잡았다
 
 사용자 훑기 9건 — 판정은 전부 정확(★ **PPT 도형 = `Object` 12표현** — GVML·SVG·PDF·TIFF ·
