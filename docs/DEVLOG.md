@@ -2,6 +2,10 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-08-30 (2차) — 사용자 실기 셋 수정
+
+- ★ **Wayland 키 주입 = 포털 RemoteDesktop**(ei-portal Xwayland에선 XTest가 앱까지 못 간다 — 1차 가정 정정) · ★ **`wl-paste` 폴링이 포커스를 뺏던 것**(GNOME data-control 부재) → 레지스트리 사실 판정 후 XWayland `xclip` · 타이틀바 두부 → ASCII · Dock 톱니바퀴 → 런처 `.desktop`+아이콘. 349 테스트 → [journal 2차](journal/2026-08-30.md)
+
 ## 2026-08-30 — ★ Linux 트레이 · 포털 단축키 · K-1 Linux · 클립보드 쓰기
 
 - ★ **T-12e Linux** — beep SNI 이식 + 최근 항목/알림 확장 · `wlactivate`(셸 토큰 → 진짜 포커스) · app_id. **D-Bus 실측**: 등록·메뉴·재적재(`wl-paste`)·Quit 전부 ✓.

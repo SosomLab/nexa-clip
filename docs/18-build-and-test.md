@@ -416,8 +416,8 @@ cargo run -p nexa-clip -- watch    # 계속 감시. NEXA_CLIP_DIAG=1 로 진단 
 |---|---|---|---|
 | **트레이** | SNI(`org.kde.StatusNotifierWatcher`) | ✅ `ubuntu-appindicators@ubuntu.com` 확장이 워처(`busctl --user list \| grep StatusNotifier`) | `트레이를 띄울 수 없습니다 — 세션 버스에 StatusNotifierWatcher가 없음 …` — GNOME은 AppIndicator 확장, KDE/Sway(waybar)는 내장 |
 | **전역 단축키** | xdg 포털 `org.freedesktop.portal.GlobalShortcuts` v1 | ✅ (`busctl --user introspect org.freedesktop.portal.Desktop /org/freedesktop/portal/desktop org.freedesktop.portal.GlobalShortcuts`) · 첫 등록 = **사용자 확인 대화창** | `등록 실패 — xdg 포털 GlobalShortcuts가 없거나(GNOME 48+ · KDE 6+) 거부됨` → 트레이 좌클릭 |
-| **키 주입** | X11 `XTest`(x11rb) — Wayland 세션은 **XWayland**(`DISPLAY=:0`) | ✅ `xdpyinfo \| grep XTEST` · `nexa-clip` → `paste inject : ok (xwayland-xtest)` | `DISPLAY` 없음(순수 Wayland) = `WaylandNoInjection` — 클립보드 적재까지만(FR-P-1) |
-| **클립보드 쓰기** | `wl-copy` / `xclip -i`(읽기와 같은 도구) | ✅ 로컬 프리픽스 | `클립보드 쓰기 도구가 없습니다 — wl-clipboard (wl-copy)` |
+| **키 주입** | Wayland = ★ **xdg 포털 `RemoteDesktop`**(첫 회 "원격 제어" 승인 · `restore_token` 영구) · X11 = `XTest`(x11rb) | ✅ `nexa-clip` → `paste inject : ok (wayland-portal-remotedesktop)`. ⚠️ Xwayland `-enable-ei-portal`에선 **XTest가 앱까지 못 간다**(08-30 실기 정정) | 포털도 `DISPLAY`도 없음 = `WaylandNoInjection` — 클립보드 적재까지만(FR-P-1) |
+| **클립보드 읽기/쓰기** | ★ **data-control 있는 컴포지터만 `wl-paste`/`wl-copy`** · 없으면(GNOME) **XWayland `xclip`**(Mutter 양방향 동기화) — 판정은 `wayland_probe`(레지스트리 사실) | ✅ `clipboard watch : ok (xwayland-xclip)`. ⚠️ **08-30 실기**: data-control 없는 곳에서 wl-clipboard는 **매 호출 숨은 창으로 포커스를 뺏는다** — 폴링이면 타이핑 불가 | `클립보드 쓰기 도구가 없습니다 — xclip` |
 | **창 앞으로(Wayland)** | 셸 발급 `xdg_activation` 토큰(SNI `ProvideXdgActivationToken`) | appindicator 확장이 준다 | 토큰 없음 = "앱이 준비되었습니다" 알림(Dock 강조) → 클릭 복귀 |
 
 자동 확인: K-1 X11 경로는 `Xvfb :99 -screen 0 640x480x24 & DISPLAY=:99 cargo test -p nclip-plat -- --ignored x11_xtest`
