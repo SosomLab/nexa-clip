@@ -4,6 +4,24 @@
 
 ---
 
+## 2026-08-29 (4차) — Linux 남은 확인 사항 소화(X11 · Weston · 프로토콜 실측)
+
+사용자 요청 *"리눅스에서 확인해야 할 사항 진행 — 기능 개발은 mac에서"*. 3차가 남긴 ⏳ 넷 중
+**사람 없이 되는 것**을 전부 **sudo 없이** 했다(`xvfb`·`wayland-utils`·`weston` 로컬 프리픽스).
+
+| 항목 | 결과 |
+|---|---|
+| **X11(`xclip`) 경로** | ✅ **XWayland 7/7 · 순수 Xvfb 7/7** + 표식 거부 — X11 세션 로그인 없이 검증하는 두 방법을 [21 §2-7](21-manual-test.md)에 |
+| **다른 컴포지터** | ✅ **Weston 14.0.2** nested — 텍스트·HTML·잘라내기 정판정(헤드리스는 seat가 없어 wl-clipboard 거부) |
+| ★ **프로토콜 실측** | **Mutter 50.1 · Weston 14.0.2 모두 `wlr`·`ext` data-control 없음**(`wayland-info`) — [18 §9-5](18-build-and-test.md) 표가 측정값 |
+| 결함 | 빈 클립보드 `peek` 안내가 Linux에서 **거짓**(*"다른 앱이 잡고 있다"* = Windows 사정) → OS별 사실 안내 |
+
+⏳ **남음(사람·다른 PC)** — Nautilus 실제 표현(파일 선택 → `Ctrl+C` → `nexa-clip peek`) · KWin/Sway(data-control 있는 컴포지터) · Klipper/GPaste 공존.
+
+**실측**: 340 테스트 · clippy 클린 · Linux 실기 **Wayland 7/7 · XWayland 7/7 · Xvfb 7/7 · Weston 3/3**.
+
+---
+
 ## 2026-08-29 (3차) — ★ Linux 실기 환경 구축 + 실기가 잡은 결함 여섯
 
 이 자리가 Linux(Ubuntu 26.04 · GNOME/Wayland)라 1차에서 못 한 **Linux 실기**를 했다.
