@@ -569,6 +569,54 @@ pub fn base_name(path: &str) -> &str {
         .unwrap_or(path)
 }
 
+/// ★ NFD 첫가끝 자모를 **음절로 조합**한다(한글 한정 NFC — 08-29 실기).
+///
+/// macOS는 파일명을 NFD(분해형)로 준다 — `한글.pdf`가 `한글.pdf`(자모 6개)로
+/// 온다. 우리 래스터라이저는 자모 결합(shaping)을 하지 않으므로 **그대로 그리면
+/// 자모가 낱낱이 보인다**(사용자 실기 — 터미널도 동일). 검색도 NFC 입력(IME)과
+/// 안 맞는다. → 표시용 이름은 여기서 조합한다.
+///
+/// 유니코드 표준 조합(L·V·T → `0xAC00 + L×588 + V×28 + T`)만 쓴다 — 현대 한글 전부.
+/// 범위 밖(옛한글·라틴 결합 부호)은 **그대로 둔다**(지어내지 않는다).
+/// NFC 입력(Windows 경로 등)은 조합할 자모가 없어 그대로 나온다 — 멱등.
+///
+/// ⚠️ beep `hangul.rs`와 다른 물건이다 — 그쪽은 **호환 자모(ㄱㅏ) IME 조합기**(키 입력),
+/// 여기는 **첫가끝 자모(NFD) 정규화**(파일명 표시). 층도 다르다(UI vs core).
+#[must_use]
+pub fn compose_hangul_nfd(s: &str) -> String {
+    // 첫가끝 자모 범위 — L(초성 19) · V(중성 21) · T(종성 27).
+    const L0: u32 = 0x1100;
+    const V0: u32 = 0x1161;
+    const T0: u32 = 0x11A8;
+    let is_l = |c: char| ('\u{1100}'..='\u{1112}').contains(&c);
+    let is_v = |c: char| ('\u{1161}'..='\u{1175}').contains(&c);
+    let is_t = |c: char| ('\u{11A8}'..='\u{11C2}').contains(&c);
+
+    let mut out = String::with_capacity(s.len());
+    let mut it = s.chars().peekable();
+    while let Some(c) = it.next() {
+        if is_l(c) {
+            if let Some(&v) = it.peek() {
+                if is_v(v) {
+                    it.next();
+                    let mut syl = 0xAC00 + (c as u32 - L0) * 588 + (v as u32 - V0) * 28;
+                    if let Some(&t) = it.peek() {
+                        if is_t(t) {
+                            it.next();
+                            syl += t as u32 - T0 + 1;
+                        }
+                    }
+                    // 범위 계산상 항상 유효한 음절(AC00..D7A3)이다.
+                    out.push(char::from_u32(syl).unwrap_or(c));
+                    continue;
+                }
+            }
+        }
+        out.push(c);
+    }
+    out
+}
+
 // ─────────────────────────────────────────────── ② 대표·썸네일 원본
 
 /// 붙여넣기 사다리 꼭대기 — **벤더 > HTML > RTF > 비트맵 > 파일 > 평문**.
@@ -1851,5 +1899,47 @@ mod tests {
         fn one_line_contains(&self, needle: &str) -> bool {
             self.preview.one_line().contains(needle)
         }
+    }
+}
+
+#[cfg(test)]
+mod hangul_nfd_tests {
+    use super::compose_hangul_nfd;
+
+    /// ★ macOS NFD 파일명이 음절로 보인다(08-29 실기 — 자모가 낱낱이 보였다).
+    #[test]
+    fn nfd_jamo_compose_to_syllables() {
+        // "한글" NFD: ᄒ+ᅡ+ᆫ · ᄀ+ᅳ+ᆯ (LVT · LVT)
+        assert_eq!(
+            compose_hangul_nfd("\u{1112}\u{1161}\u{11AB}\u{1100}\u{1173}\u{11AF}"),
+            "한글"
+        );
+        // 받침 없는 LV: "가나" = ᄀ+ᅡ · ᄂ+ᅡ
+        assert_eq!(
+            compose_hangul_nfd("\u{1100}\u{1161}\u{1102}\u{1161}"),
+            "가나"
+        );
+        // 파일명 꼴 — ASCII와 섞여도 한글만 조합된다.
+        assert_eq!(
+            compose_hangul_nfd("\u{1112}\u{1161}\u{11AB}_v1.0.pdf"),
+            "한_v1.0.pdf"
+        );
+    }
+
+    /// NFC 입력(Windows 경로 등)은 그대로 — 멱등이라 3-OS 공통으로 걸어도 안전하다.
+    #[test]
+    fn nfc_and_ascii_pass_through() {
+        assert_eq!(compose_hangul_nfd("한글.pdf"), "한글.pdf");
+        assert_eq!(compose_hangul_nfd("report_final.txt"), "report_final.txt");
+        assert_eq!(compose_hangul_nfd(""), "");
+    }
+
+    /// 범위 밖(짝 없는 자모·비한글)은 **그대로 둔다** — 지어내지 않는다.
+    #[test]
+    fn unpaired_jamo_stay_as_is() {
+        // 초성 뒤에 중성이 없다 — 조합할 수 없으니 원문 유지.
+        assert_eq!(compose_hangul_nfd("\u{1100}x"), "\u{1100}x");
+        // 종성 단독도 그대로.
+        assert_eq!(compose_hangul_nfd("\u{11AB}"), "\u{11AB}");
     }
 }

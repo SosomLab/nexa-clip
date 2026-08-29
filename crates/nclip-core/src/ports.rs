@@ -63,11 +63,14 @@ impl ClipSnapshot {
     }
 
     /// 파일 항목의 **이름만**(목록 표시용 — 전체 경로는 길고 사생활이다).
+    ///
+    /// ★ macOS NFD 자모는 음절로 조합해 준다(08-29 실기 — 자모가 낱낱이 보였다).
+    /// 경로([`Self::file_paths`])는 **원본 그대로**다 — 정규화는 표시에만.
     #[must_use]
     pub fn file_names(&self) -> Vec<String> {
         self.file_paths()
             .iter()
-            .map(|p| crate::capture::base_name(p).to_string())
+            .map(|p| crate::capture::compose_hangul_nfd(crate::capture::base_name(p)))
             .collect()
     }
 

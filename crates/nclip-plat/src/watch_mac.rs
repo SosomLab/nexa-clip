@@ -193,18 +193,83 @@ fn is_conceal_marker(uti: &str) -> bool {
 ///
 /// ⚠️ Windows처럼 클립보드 주인을 직접 알 방법이 없다(파스텔보드에 주인 API가 없다).
 /// 폴링 주기(≤1s) 안이라 근사가 어긋나는 일은 드물고, 어긋나도 표시용일 뿐이다.
+///
+/// ★ `NSWorkspace.frontmostApplication`을 쓰지 않는다(08-29 실기) — 그 값은
+/// **메인 런루프가 도는 앱**에서만 갱신된다. 우리 감시 프로세스는 런루프가 없어
+/// 시작 시점 값이 **박제**됐다(PPT·Finder 복사가 전부 iTerm2로 찍혔다).
+/// `CGWindowListCopyWindowInfo`는 부를 때마다 창 서버에 물으므로 런루프가 필요 없다 —
+/// 화면 맨 앞(z순서 첫) **layer 0 창**의 소유 앱이 곧 프런트모스트다.
+/// (창 **이름**은 화면 기록 권한이 필요하지만 소유 앱 이름·레이어는 아니다.)
 fn frontmost_app() -> Option<String> {
-    // SAFETY: 전부 nil-관용 — 실패는 None으로 돌아온다.
+    /// 화면에 보이는 창만 + 데스크톱 요소 제외.
+    const ON_SCREEN_ONLY: u32 = 1 << 0;
+    const EXCLUDE_DESKTOP: u32 = 1 << 4;
+    const UTF8: u32 = 0x0800_0100; // kCFStringEncodingUTF8
+    const CF_NUMBER_INT: isize = 9; // kCFNumberIntType
+
+    #[link(name = "CoreGraphics", kind = "framework")]
+    extern "C" {
+        fn CGWindowListCopyWindowInfo(option: u32, relative_to: u32) -> Id;
+    }
+    #[link(name = "CoreFoundation", kind = "framework")]
+    extern "C" {
+        fn CFRelease(cf: Id);
+        fn CFArrayGetCount(arr: Id) -> isize;
+        fn CFArrayGetValueAtIndex(arr: Id, idx: isize) -> Id;
+        fn CFDictionaryGetValue(dict: Id, key: Id) -> Id;
+        fn CFStringCreateWithCString(alloc: Id, s: *const core::ffi::c_char, enc: u32) -> Id;
+        fn CFStringGetCString(s: Id, buf: *mut core::ffi::c_char, size: isize, enc: u32) -> bool;
+        fn CFNumberGetValue(num: Id, ty: isize, out: *mut core::ffi::c_void) -> bool;
+    }
+
+    // SAFETY: CF 반환은 전부 nil-관용으로 검사하고, Copy/Create만 짝 맞춰 놓는다.
     unsafe {
-        let ws = send0(cls(b"NSWorkspace\0"), b"sharedWorkspace\0");
-        if ws.is_null() {
+        let list = CGWindowListCopyWindowInfo(ON_SCREEN_ONLY | EXCLUDE_DESKTOP, 0);
+        if list.is_null() {
             return None;
         }
-        let app = send0(ws, b"frontmostApplication\0");
-        if app.is_null() {
-            return None;
+        let key_layer =
+            CFStringCreateWithCString(core::ptr::null_mut(), c"kCGWindowLayer".as_ptr(), UTF8);
+        let key_owner =
+            CFStringCreateWithCString(core::ptr::null_mut(), c"kCGWindowOwnerName".as_ptr(), UTF8);
+        let mut found = None;
+        let n = CFArrayGetCount(list);
+        for i in 0..n {
+            let win = CFArrayGetValueAtIndex(list, i);
+            if win.is_null() {
+                continue;
+            }
+            // 일반 창은 layer 0 — 메뉴바·독·오버레이(높은 layer)를 거른다.
+            let mut layer: i32 = -1;
+            let num = CFDictionaryGetValue(win, key_layer);
+            if num.is_null()
+                || !CFNumberGetValue(num, CF_NUMBER_INT, (&raw mut layer).cast())
+                || layer != 0
+            {
+                continue;
+            }
+            let name = CFDictionaryGetValue(win, key_owner);
+            if name.is_null() {
+                continue;
+            }
+            let mut buf = [0i8; 256];
+            if CFStringGetCString(name, buf.as_mut_ptr(), buf.len() as isize, UTF8) {
+                let cstr = core::ffi::CStr::from_ptr(buf.as_ptr());
+                let s = cstr.to_string_lossy().into_owned();
+                if !s.is_empty() {
+                    found = Some(s);
+                }
+            }
+            break; // z순서 첫 layer-0 창 — 그 뒤는 볼 필요 없다.
         }
-        ns_string(send0(app, b"localizedName\0"))
+        if !key_layer.is_null() {
+            CFRelease(key_layer);
+        }
+        if !key_owner.is_null() {
+            CFRelease(key_owner);
+        }
+        CFRelease(list);
+        found
     }
 }
 
