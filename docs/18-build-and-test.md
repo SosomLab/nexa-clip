@@ -315,7 +315,8 @@ Wayland는 보안 모델상 **아무 앱이나 클립보드를 훔쳐볼 수 없
 |---|:--:|---|
 | **wlroots 계열**(Sway · Hyprland · river · Wayfire) | ✅ | 본편(T-14 본체) 이벤트 구독 가능 |
 | **KWin**(KDE Plasma) | ✅ | 동일 |
-| ★ **Mutter**(GNOME) | ❌ | ★ **이것 때문에 1단이 도구 파이프다** |
+| ★ **Mutter**(GNOME) | ❌ | ★ **이것 때문에 1단이 도구 파이프다** — ✅ **실측 08-29**: Mutter **50.1**(Ubuntu 26.04) `wayland-info` = `wl_data_device_manager v3`뿐 · `zwlr`·`ext` data-control **둘 다 없음** |
+| **Weston** | ❌ | ✅ **실측 08-29**: **14.0.2** nested — data-control 없음. `wl-paste`는 seat만 있으면 동작(헤드리스 백엔드는 seat가 없어 **wl-clipboard가 거부**) |
 
 > ★ **GNOME이 이 설계를 결정했다.** 데스크톱 점유율 1위가 `data-control`을 제공하지 않으므로,
 > 프로토콜 구독만 구현하면 **가장 많은 사용자에게서 동작하지 않는다**. 그래서 1단은
@@ -326,6 +327,12 @@ Wayland는 보안 모델상 **아무 앱이나 클립보드를 훔쳐볼 수 없
 
 ⚠️ **확인 필요** — 표준 후속 프로토콜 `ext-data-control-v1`이 최근 채택되고 있다.
 어느 컴포지터가 어느 버전부터 싣는지는 **실기로 확인한 뒤** 이 표를 갱신한다(D-75 운영 방식).
+확인 명령은 `wayland-info | grep data_control`(패키지 `wayland-utils` — 루트 없이도 §9-3 방식으로 놓인다).
+KWin·wlroots 계열은 이 PC에 없어 **아직 문서 기반**이다.
+
+✅ **X11 경로 실측 08-29** — `x11-xclip` 백엔드를 **XWayland**(`WAYLAND_DISPLAY`만 지우면 Mutter가
+X 클립보드를 양방향으로 잇는다)와 **순수 `Xvfb`** 에서 7/7 통과([21 §2-7](21-manual-test.md)).
+X11 세션 로그인 없이도 두 방법으로 X11 경로를 검증할 수 있다.
 
 ### 9-6. ★ 파일 관리자 — 잘라내기/복사 표현이 갈린다
 

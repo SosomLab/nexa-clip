@@ -124,7 +124,10 @@ pub(crate) fn peek() {
     match watch.read_now() {
         Some(snap) => report(&snap, &gate),
         // ⚠️ 빈 스냅숏으로 위장하지 않는다 — 못 연 것과 비어 있는 것은 다르다.
-        None => eprintln!("클립보드를 열지 못했습니다(다른 앱이 잡고 있을 수 있습니다)."),
+        // ★ Linux 도구 파이프(`wl-paste`·`xclip`)는 **비어 있음과 못 읽음을 구분해 주지 않는다**
+        //   (둘 다 비정상 종료 — 08-29 Linux 실기). "다른 앱이 잡고 있다"는 Windows
+        //   `OpenClipboard` 사정이라 Linux에서는 거짓 안내다 — 사실대로 둘 다 말한다.
+        None => eprintln!("{}", read_failed_hint()),
     }
 }
 
@@ -272,6 +275,15 @@ fn human(bytes: u64) -> String {
         format!("{:.1} KB", bytes as f64 / KB as f64)
     } else {
         format!("{bytes} B")
+    }
+}
+
+/// `read_now`가 `None`일 때의 안내 — OS별로 **그 OS에서 참인 말**만 한다.
+fn read_failed_hint() -> &'static str {
+    if cfg!(target_os = "linux") {
+        "클립보드가 비어 있거나 읽지 못했습니다(도구 파이프는 둘을 구분하지 못합니다)."
+    } else {
+        "클립보드를 열지 못했습니다(다른 앱이 잡고 있을 수 있습니다)."
     }
 }
 

@@ -14,7 +14,7 @@
 
 | 항목 | Windows | macOS | Linux(X11) | Linux(Wayland) |
 |---|:--:|:--:|:--:|:--:|
-| **T-14b** ★ **클립보드 감시**(`watch`) | ✅ **자동 확인**(08-27) | ✅ **사용자 실기**(08-29 · 9건 — 텍스트·리치·PNG·★ **PPT 도형=`Object`**·파일 3건 전부 정판정. 결함 둘 발견 → 수정: 한글 파일명 NFD·출처 앱 박제) — ⏳ **재점검**: ① 한글 이름 파일 복사 = 음절로 보임 ② 출처가 복사한 앱으로 찍힘 | ⏳ **미실기**(`xclip` 경로 — 자동 하네스는 그대로 쓴다) | ✅ ★ **자동 실기 통과**(08-29 · Ubuntu 26.04 GNOME/Wayland · 8유형 — [§2-7](#2-7-t-14b-linux--유형별-자동-실기)) |
+| **T-14b** ★ **클립보드 감시**(`watch`) | ✅ **자동 확인**(08-27) | ✅ **사용자 실기**(08-29 · 9건 — 텍스트·리치·PNG·★ **PPT 도형=`Object`**·파일 3건 전부 정판정. 결함 둘 발견 → 수정: 한글 파일명 NFD·출처 앱 박제) — ⏳ **재점검**: ① 한글 이름 파일 복사 = 음절로 보임 ② 출처가 복사한 앱으로 찍힘 | ✅ ★ **자동 실기 통과**(08-29 4차 · `x11-xclip` — **XWayland**(`DISPLAY=:0`) + **순수 Xvfb** 둘 다 7/7 + 표식 · `NCLIP_E2E_X11=1`) | ✅ ★ **자동 실기 통과**(08-29 · Ubuntu 26.04 GNOME/Wayland · 8유형 — [§2-7](#2-7-t-14b-linux--유형별-자동-실기)) |
 | **T-14b'** 감시 — 앱별 훑기 1차(PPT·Excel·Edge·VS Code) | ✅ **완료**(08-27 · 18건) | ☐ | ☐ | ☐ |
 | **T-14b''** 감시 — 2차(**Word** · 탐색기 **잘라내기**) | ✅ **완료**(08-27 · 결함 셋 → 수정) | ☐ | ☐ | ☐ |
 | **T-14b'''** 감시 — 수정 재점검(**탐색기 복사·잘라내기**) | ✅ **통과**(08-27 · ⑫ 근본 수정 후 사용자 실기 — *"이제 정확하게 잡히고 있어"*) | ☐ | ☐ | ☐ |
@@ -292,7 +292,9 @@ X11은 `XTestFakeKeyEvent`로 가능하다(T-15b). **Wayland는 키 주입 표�
 > 쓸 수 있어(`wl-copy --type`) **하네스로 자동화했다** — 사람 없이 재현된다.
 
 ```bash
-bash scripts/linux-watch-e2e.sh        # 빌드 → watch 기동 → 8유형 주입 → 로그 출력
+bash scripts/linux-watch-e2e.sh                          # Wayland — 빌드 → watch 기동 → 8유형 주입 → 로그
+NCLIP_E2E_X11=1 bash scripts/linux-watch-e2e.sh          # X11 — WAYLAND_DISPLAY 지우고 xclip 주입(XWayland)
+NCLIP_E2E_X11=1 NCLIP_E2E_XVFB=1 bash scripts/linux-watch-e2e.sh  # 순수 X11 — Xvfb :99(데스크톱 클립보드 무관)
 ```
 
 ⚠️ **클립보드를 덮어쓴다** — 복사해 둔 것이 있으면 먼저 붙여 넣을 것.
@@ -330,13 +332,25 @@ env PATH=/usr/bin:/bin cargo run -p nexa-clip -- watch          # → MissingToo
 env -u WAYLAND_DISPLAY -u DISPLAY cargo run -p nexa-clip -- peek # → NoDisplayServer + 조치
 ```
 
+### 08-29 4차 — X11 경로 · 다른 컴포지터 실측
+
+| 환경 | 결과 |
+|---|---|
+| **X11 · XWayland**(`DISPLAY=:0`, `WAYLAND_DISPLAY` 제거) | ✅ `x11-xclip` 7/7 — Mutter가 X↔Wayland 클립보드를 양방향으로 이어 **직전 Wayland 케이스 8(표식)을 X11 경로가 기동 시 거부**한 것까지 보였다 |
+| **X11 · 순수 Xvfb :99**(루트 없이 `apt-get download xvfb`) | ✅ 7/7 + 표식 `peek` 거부 |
+| **Weston 14.0.2**(nested · 루트 없이 구성) | ✅ `wayland-wl-paste` — 텍스트·HTML·`gnome-copied-files` 정판정 |
+| 빈 클립보드(X11·Wayland 공통) | ⚠️ `peek`가 *"다른 앱이 잡고 있을 수 있습니다"* — Windows 사정을 Linux에 말하던 **거짓 안내 → 수정**(비어 있거나 못 읽음) |
+
+관찰(수정 없음) — `xclip`은 `wl-copy`와 달리 **`text/plain`을 덧붙이지 않아** HTML/RTF 단독 항목이
+`미리보기 없음`이 된다. 실제 앱은 거의 항상 평문을 함께 내놓으므로 하네스 주입의 성질이다.
+`wayland-info` 실측: **Mutter 50.1·Weston 14.0.2 모두 `wlr`·`ext` data-control 없음**([18 §9-5](18-build-and-test.md#9-5--컴포지터-차이--여기가-linux-클립보드의-핵심)).
+
 ### ⏳ 남은 Linux 실기
 
 | 항목 | 왜 자동화로 안 되나 |
 |---|---|
-| **X11(`xclip`) 경로** | X11 세션으로 로그인해야 한다 — 하네스는 그대로 쓴다 |
-| **실제 파일 관리자** | Nautilus·Dolphin·Thunar가 **실제로 내놓는 표현** 확인([18 §9-6](18-build-and-test.md#9-6--파일-관리자--잘라내기복사-표현이-갈린다) 표 갱신) |
-| **다른 컴포지터** | KDE(KWin)·Sway 등에서 백엔드 선택이 맞는가 |
+| **실제 파일 관리자** | Nautilus·Dolphin·Thunar가 **실제로 내놓는 표현** 확인([18 §9-6](18-build-and-test.md#9-6--파일-관리자--잘라내기복사-표현이-갈린다) 표 갱신). Wayland에는 입력 주입 도구가 없어 사람이 `Ctrl+C` 해야 한다 — 이 PC(Nautilus): 파일 선택 → `Ctrl+C` → `wl-paste --list-types` 와 `nexa-clip peek` |
+| **data-control 있는 컴포지터** | KWin·Sway에서 백엔드 선택 + `ext-data-control-v1` 버전 — 이 PC엔 없다(설치는 sudo) |
 | **클립보드 매니저 공존** | Klipper·GPaste가 떠 있을 때 셀렉션 주인 교체가 잦은 상황 |
 
 ---
