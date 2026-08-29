@@ -4,7 +4,7 @@
 
 | 브랜치 | 생성 | 병합 | 커밋 수 | 요약 |
 |---|---|---|---:|---|
-| `fix/watch-linux-hardening` | 2026-08-29 | — | 11 | ★ **Linux 실기 환경 구축 + 결함 여섯** + **4차: X11(XWayland·Xvfb)·Weston 실기 · data-control 실측 · `peek` 거짓 안내 수정** — `watch.rs` git 바이너리(raw NUL) · 빈 클립보드 영구 활동 주기 · 읽기 상한 사후 적용 · **파일 잘라내기 유실** · `MissingTool` 오안내 · ★ **부분 스냅숏**(실기가 잡음). [docs/18 §9](18-build-and-test.md) Linux 환경 문서(배포판별) + [`scripts/linux-watch-e2e.sh`](../scripts/linux-watch-e2e.sh) 자동 실기 |
+| `fix/watch-linux-hardening` | 2026-08-29 | 2026-08-29 | 12 | ★ **Linux 실기 환경 구축 + 결함 여섯** + **4차: X11(XWayland·Xvfb)·Weston 실기 · data-control 실측 · `peek` 거짓 안내 수정** — `watch.rs` git 바이너리(raw NUL) · 빈 클립보드 영구 활동 주기 · 읽기 상한 사후 적용 · **파일 잘라내기 유실** · `MissingTool` 오안내 · ★ **부분 스냅숏**(실기가 잡음). [docs/18 §9](18-build-and-test.md) Linux 환경 문서(배포판별) + [`scripts/linux-watch-e2e.sh`](../scripts/linux-watch-e2e.sh) 자동 실기 |
 | *(main 직접)* | 2026-08-27 | — | 2 | ⚠️ **macOS Retina 배율 정정**(`f44cc2b` — `RasterCtx::new`에 배율 필수 인자) · ★ **Windows 클립보드 감시 T-14b**(`08f0a62`). ⚠️ **규약 이탈** — 감시는 큰 단위라 브랜치를 땄어야 했다. 두 세션이 같은 main을 쓰고 있어 브랜치를 나누면 충돌이 잦을 것으로 보고 직접 커밋했으나, **판단 근거를 남기는 것이 규약**이다 |
 | *(main 직접)* | 2026-08-26 | — | 2 | 설정 영속 후속 — 점검 화면 저장본 읽기(`152a290`) · ⚠️ **macOS 빌드 복구**(`a823923`, K-1 `appkit` unsafe 블록) + mac 실기 확인. 소규모 fix라 main 직접 |
 | *(브랜치 없음 — main 직접)* | 2026-08-26 | — | 3 | ⚠️ **규약 이탈**: `nclip-*` 포크 · **K-1 스파이크** · OS별 실기 점검표를 브랜치 없이 main에 커밋했다. 앞선 병합 직후 main에 남아 있는 것을 못 보고 이어서 작업한 결과다. 다음부터 작업 시작 전 `git branch --show-current` 확인 |
