@@ -87,14 +87,23 @@ fn pick_backend() -> Result<Backend, UnsupportedReason> {
     if !wayland && !x11 {
         return Err(UnsupportedReason::NoDisplayServer);
     }
-    // Wayland 세션이라도 XWayland(DISPLAY)가 같이 떠 있는 일이 흔하다 — Wayland를 먼저 본다.
-    if wayland && tool_exists("wl-paste") {
+    // ★ Wayland는 **data-control이 있을 때만** wl-paste(08-30 실기: 없으면 wl-clipboard가 매번
+    //   숨은 창으로 포커스를 뺏는다 — GNOME이 그렇다). 없으면 XWayland(`xclip`) — Mutter가
+    //   Wayland↔X11 셀렉션을 동기화하므로 포커스 없이 읽힌다(08-29 XWayland 7/7).
+    let data_control = wayland && crate::wayland_probe::has_data_control();
+    if data_control && tool_exists("wl-paste") {
         return Ok(Backend::Wayland);
     }
     if x11 && tool_exists("xclip") {
         return Ok(Backend::X11);
     }
-    Err(UnsupportedReason::MissingTool(if wayland {
+    if wayland && !data_control && !x11 {
+        // 순수 Wayland + data-control 없음 = 포커스 없이 읽을 길이 없다.
+        return Err(UnsupportedReason::MissingTool(
+            "xclip (XWayland 경유 — 컴포지터에 data-control 없음)",
+        ));
+    }
+    Err(UnsupportedReason::MissingTool(if data_control {
         "wl-clipboard (wl-paste)"
     } else {
         "xclip"
@@ -109,7 +118,11 @@ pub fn capability() -> WatchCapability {
             backend: "wayland-wl-paste",
         },
         Ok(Backend::X11) => WatchCapability::Supported {
-            backend: "x11-xclip",
+            backend: if std::env::var_os("WAYLAND_DISPLAY").is_some() {
+                "xwayland-xclip"
+            } else {
+                "x11-xclip"
+            },
         },
         Err(reason) => WatchCapability::Unsupported { reason },
     }

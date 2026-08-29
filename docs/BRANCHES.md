@@ -4,6 +4,7 @@
 
 | 브랜치 | 생성 | 병합 | 커밋 수 | 요약 |
 |---|---|---|---:|---|
+| `fix/linux-paste-portal` | 2026-08-30 | 2026-08-30 | 5 | 사용자 실기 셋 — ★ **Wayland 키 주입 = xdg 포털 RemoteDesktop**(ei-portal Xwayland에선 XTest 미도달 · 정정) · ★ **`wl-paste` 폴링 포커스 플랩**(GNOME data-control 부재) → `wayland_probe` + XWayland `xclip` · 타이틀바 두부 → ASCII · Dock 톱니바퀴 → 런처 `.desktop`+아이콘. 349 테스트 |
 | `feat/linux-tray-paste` | 2026-08-30 | 2026-08-30 | 5 | ★ **Linux 트레이(SNI/zbus · 최근 항목·알림 · `wlactivate`) + 전역 단축키(xdg 포털 GlobalShortcuts) + K-1 Linux(x11rb XTest · X11 Xvfb 자동 왕복 ✓ · Wayland = 컴포지터 반환 + XWayland) + Linux 클립보드 쓰기 1단(wl-copy/xclip)**. D-Bus 실측 등록·메뉴·재적재·Quit ✓. 사람 실기 ⏳ [21 §2-8](21-manual-test.md) |
 | `fix/watch-linux-hardening` | 2026-08-29 | 2026-08-29 | 12 | ★ **Linux 실기 환경 구축 + 결함 여섯** + **4차: X11(XWayland·Xvfb)·Weston 실기 · data-control 실측 · `peek` 거짓 안내 수정** — `watch.rs` git 바이너리(raw NUL) · 빈 클립보드 영구 활동 주기 · 읽기 상한 사후 적용 · **파일 잘라내기 유실** · `MissingTool` 오안내 · ★ **부분 스냅숏**(실기가 잡음). [docs/18 §9](18-build-and-test.md) Linux 환경 문서(배포판별) + [`scripts/linux-watch-e2e.sh`](../scripts/linux-watch-e2e.sh) 자동 실기 |
 | *(main 직접)* | 2026-08-27 | — | 2 | ⚠️ **macOS Retina 배율 정정**(`f44cc2b` — `RasterCtx::new`에 배율 필수 인자) · ★ **Windows 클립보드 감시 T-14b**(`08f0a62`). ⚠️ **규약 이탈** — 감시는 큰 단위라 브랜치를 땄어야 했다. 두 세션이 같은 main을 쓰고 있어 브랜치를 나누면 충돌이 잦을 것으로 보고 직접 커밋했으나, **판단 근거를 남기는 것이 규약**이다 |

@@ -4,6 +4,18 @@
 
 ---
 
+## 2026-08-30 (2차) — 사용자 실기 셋: 포털 RemoteDesktop 주입 · ★ wl-paste 포커스 플랩 → XWayland · 톱니바퀴/두부
+
+| 보고 | 원인 | 조치 |
+|---|---|---|
+| 붙여넣기 안 됨(로그는 ok) | Xwayland `-enable-ei-portal` — XTest가 앱까지 못 간다(1차 가정 **정정**) | ★ **xdg 포털 `RemoteDesktop`**(`remote_input_linux.rs`) — 첫 회 "원격 제어" 승인 → `restore_token` 영구 |
+| ★ **포커스 뺏겼다 풀렸다 반복 · 타이핑 불가 · 톱니바퀴 창** | GNOME에 data-control 없음 → `wl-paste`가 **매 폴링 숨은 창으로 포커스** | `wayland_probe`(레지스트리 사실) → data-control 없으면 **XWayland `xclip`**(Mutter 양방향 동기화). `wl-paste` 스폰 0 실측 |
+| 타이틀바 한글 두부 · Dock 톱니바퀴 | sctk-adwaita 자체 폰트 · 런처 `.desktop` 부재 | Linux ASCII 제목 · `install_launcher`(.desktop + 아이콘) |
+
+**실측**: 349 테스트 · clippy 클린. ⏳ 사용자 재실기(붙여넣기 · 플랩 소멸 · 아이콘).
+
+---
+
 ## 2026-08-30 (1차) — ★ Linux 트레이(SNI) + 전역 단축키(포털) + K-1 Linux(XTest) + 클립보드 쓰기
 
 사용자 요청 *"1(트레이)·2(K-1) 순차 — beep 참고"*. 브랜치 `feat/linux-tray-paste`(코드 3 커밋).

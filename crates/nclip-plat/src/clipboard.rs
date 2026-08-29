@@ -236,7 +236,10 @@ mod imp {
         let ty = wire_type(&rep.format);
         let wayland = std::env::var_os("WAYLAND_DISPLAY").is_some();
         let x11 = std::env::var_os("DISPLAY").is_some();
-        let (cmd, args): (&str, Vec<&str>) = if wayland && tool_exists("wl-copy") {
+        // 읽기와 같은 규칙(08-30): data-control 없는 Wayland(GNOME)는 wl-copy가 숨은 창으로
+        // 포커스를 뺏는다 → XWayland xclip(Mutter가 Wayland 쪽으로 동기화).
+        let data_control = wayland && crate::wayland_probe::has_data_control();
+        let (cmd, args): (&str, Vec<&str>) = if data_control && tool_exists("wl-copy") {
             ("wl-copy", vec!["--type", &ty])
         } else if x11 && tool_exists("xclip") {
             ("xclip", vec!["-selection", "clipboard", "-t", &ty, "-i"])

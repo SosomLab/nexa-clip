@@ -102,7 +102,13 @@ impl App {
         }
         let attrs = win_name(
             Window::default_attributes()
-                .with_title("Nexa Clip — 설정 (검색 · 사이드바 경계 드래그 · Esc 종료)")
+                // Linux(GNOME)는 서버 장식이 없어 winit(sctk-adwaita)이 제목을 자체 폰트로
+                // 그리는데 한글 글리프가 없다(08-30 사용자 실기 "타이틀바 글씨 깨짐") → ASCII.
+                .with_title(if cfg!(target_os = "linux") {
+                    "Nexa Clip - Settings"
+                } else {
+                    "Nexa Clip — 설정 (검색 · 사이드바 경계 드래그 · Esc 종료)"
+                })
                 .with_inner_size(winit::dpi::LogicalSize::new(760.0, 560.0)),
         );
         // 새 창도 토큰이 있으면 그것으로 활성화한다(트레이 → 첫 열기).

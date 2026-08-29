@@ -284,7 +284,7 @@ objc2 의존 없이 **objc 런타임을 직접 호출**했다(DR-8) — 이 부�
 | 세션 | 복원 | 주입 | 상태 |
 |---|---|---|---|
 | **X11** | `GetInputFocus` 기억 → `_NET_ACTIVE_WINDOW` + `SetInputFocus` | XTest `Ctrl+V` | ✅ **자동**: `Xvfb :99 & DISPLAY=:99 cargo test -p nclip-plat -- --ignored x11_xtest` — 자기 창이 `Control_L`·`v` KeyPress 순서로 받음(0.36s) |
-| **Wayland**(GNOME) | 클라이언트는 남의 창을 활성화 못 한다 → **팝업이 닫히면 컴포지터가 직전 창에 포커스 반환**(120ms 정착 대기) | **XWayland**(`DISPLAY=:0`)의 XTest — Mutter가 가상 입력 장치로 Wayland 앱에 배달 | ⏳ **사람 실기**(아래 §2-8) — 순수 Wayland(`DISPLAY` 없음)는 `WaylandNoInjection`으로 정직 강등 |
+| **Wayland**(GNOME) | 클라이언트는 남의 창을 활성화 못 한다 → **팝업이 닫히면 컴포지터가 직전 창에 포커스 반환**(150ms 정착 대기) | ★ **xdg 포털 `RemoteDesktop`** `NotifyKeyboardKeycode`(첫 회 "원격 제어" 승인 · `restore_token` 영구). ~~XWayland XTest~~ — `-enable-ei-portal` Xwayland에선 앱까지 못 간다(08-30 사용자 QA로 정정) · 포털 없는 컴포지터의 폴백으로만 | ⏳ **사람 재실기**(아래 §2-8) — 포털도 없으면 `WaylandNoInjection`으로 정직 강등 |
 
 `nexa-clip` 진단: `paste inject : ok (xwayland-xtest)`(이 PC) · `x11-xtest`(X11 세션).
 
@@ -296,11 +296,14 @@ objc2 의존 없이 **objc 런타임을 직접 호출**했다(DR-8) — 이 부�
 
 | # | 볼 것 | 기대 | 결과 |
 |:--:|---|---|:--:|
-| 1 | 기동 직후 GNOME **단축키 확인 대화창**(포털 `BindShortcuts`) | "Nexa Clip — 퀵 팝업 · Ctrl+Shift+V" 승인 → 콘솔 `전역 단축키: … — 퀵 팝업` (거부 = `등록 실패 — 포털 …` 안내) | ☐ |
-| 2 | gedit/터미널에서 `Ctrl+Shift+V` | 팝업이 뜨고 **키보드 포커스**를 받는다(↑↓·타이핑 검색이 먹는가) — Wayland 새 창 포커스 정책이 관건 | ☐ |
-| 3 | 항목 `Enter` | 팝업 닫힘 → 직전 앱에 **붙는다**(XWayland XTest → Wayland 네이티브 앱). 안 붙으면 콘솔 `붙여넣기 실패: …` 사유 기록 | ☐ |
+| 1 | 기동 직후 GNOME **단축키 확인 대화창**(포털 `BindShortcuts`) | "Nexa Clip — 퀵 팝업 · Ctrl+Shift+V" 승인 → 콘솔 `전역 단축키: … — 퀵 팝업` (거부 = `등록 실패 — 포털 …` 안내) | ✅ 08-30(승인 저장됨 · 재기동 무대화) |
+| 1b | 기동 직후 **"원격 제어" 승인 대화창**(포털 `RemoteDesktop` — 키 주입 권한) | 승인 → 콘솔 `키 주입 권한: ok` · 토큰 저장(`data/portal-remotedesktop.token`) → 다음부터 안 뜸 | ✅ 08-30 |
+| 2 | gedit/터미널에서 `Ctrl+Shift+V` | 팝업이 뜨고 **키보드 포커스**를 받는다(↑↓·타이핑 검색이 먹는가) — Wayland 새 창 포커스 정책이 관건 | ✅ 08-30("창은 뜸") |
+| 3 | 항목 `Enter` | 팝업 닫힘 → 직전 앱에 **붙는다**(포털 RemoteDesktop). 안 붙으면 콘솔 `붙여넣기 실패: …` 사유 기록 | ❌ 08-30 1차(XTest — 앱 미도달) → 포털로 교체 · ⏳ **재실기** |
+| 3b | 상주 중 다른 앱에서 타이핑 | **포커스가 흔들리지 않는다**(08-30 1차: `wl-paste` 폴링이 초당 2회 포커스를 뺏었다 → `xwayland-xclip`) · `nexa-clip` 진단 `clipboard watch : ok (xwayland-xclip)` | ⏳ **재실기** |
+| 3c | Dock 아이콘 | 톱니바퀴가 아니라 Nexa Clip 아이콘(런처 `.desktop` 설치 후 — 재실행/재로그인) | ⏳ |
 | 4 | 트레이 **좌클릭** / 메뉴 "열기" | 설정 창이 **앞으로**(셸 토큰 = 진짜 포커스). "앱이 준비되었습니다" 알림만 뜨면 토큰 경로 실패 → 기록 | ☐ |
-| 5 | 트레이 **우클릭** | 최근 항목(최신 위) · 클릭 = 재적재(다른 앱 `Ctrl+V`로 붙음 — **표현 1개**: 파일은 `text/uri-list`·이미지 `image/png`·나머지 평문) | ☐ |
+| 5 | 트레이 **우클릭** | 최근 항목(최신 위) · 클릭 = 재적재(다른 앱 `Ctrl+V`로 붙음 — **표현 1개**: 파일은 `text/uri-list`·이미지 `image/png`·나머지 평문) | 🚧 표시 ✅(08-30) · 재적재 자동 ✓ · 사람 ⏳ |
 | 6 | 메뉴 "종료" | 정상 종료(설정 저장) — 자동 실기 ✓ | ✅ |
 
 ⚠️ 알려진 한계(1단): 팝업은 커서 위치에 못 뜬다(Wayland는 전역 커서 좌표·창 위치 지정이 없다 — 컴포지터가 놓는 자리) ·

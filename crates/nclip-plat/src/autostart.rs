@@ -374,6 +374,55 @@ fn unregister() -> io::Result<()> {
     Ok(())
 }
 
+// ── Linux — 앱 런처 .desktop + 아이콘(Dock/앱 그리드가 app_id와 맞춘다) ─────────
+
+/// 런처 항목 설치(멱등) — `~/.local/share/applications/nexa-clip.desktop` +
+/// `~/.local/share/icons/hicolor/256x256/apps/nexa-clip.png`. `StartupWMClass`/파일명이 창의
+/// app_id(`nexa-clip`)와 같아야 GNOME Dock이 톱니바퀴 대신 우리 아이콘을 쓴다
+/// (08-30 사용자 실기 "톱니바퀴" · beep 08-29 ③). 다른 OS = no-op.
+///
+/// # Errors
+/// 홈 디렉터리 부재·쓰기 실패.
+pub fn install_launcher(icon_png: &[u8]) -> io::Result<()> {
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let exe = std::env::current_exe()?;
+        let data = std::env::var_os("XDG_DATA_HOME")
+            .map(std::path::PathBuf::from)
+            .filter(|p| p.is_absolute())
+            .or_else(|| crate::paths::home_dir().map(|h| h.join(".local/share")))
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no data directory"))?;
+        let icon_dir = data.join("icons/hicolor/256x256/apps");
+        std::fs::create_dir_all(&icon_dir)?;
+        let icon = icon_dir.join("nexa-clip.png");
+        if std::fs::read(&icon).ok().as_deref() != Some(icon_png) {
+            std::fs::write(&icon, icon_png)?;
+        }
+        let apps = data.join("applications");
+        std::fs::create_dir_all(&apps)?;
+        let content = launcher_content(&exe.display().to_string());
+        let f = apps.join("nexa-clip.desktop");
+        if std::fs::read_to_string(&f).ok().as_deref() != Some(content.as_str()) {
+            std::fs::write(&f, content)?;
+        }
+        Ok(())
+    }
+    #[cfg(not(all(unix, not(target_os = "macos"))))]
+    {
+        let _ = icon_png;
+        Ok(())
+    }
+}
+
+/// 런처 항목 — `Icon`은 테마 이름(hicolor에 둔 `nexa-clip.png`) · `StartupWMClass` = app_id.
+#[cfg(any(all(unix, not(target_os = "macos")), test))]
+fn launcher_content(exe: &str) -> String {
+    format!(
+        "[Desktop Entry]\nType=Application\nName=Nexa Clip\nComment=Clipboard manager\nExec={} tray\nIcon=nexa-clip\nTerminal=false\nCategories=Utility;\nStartupWMClass=nexa-clip\n",
+        exec_quote(exe)
+    )
+}
+
 #[cfg(not(any(windows, unix)))]
 fn os_registered() -> bool {
     false
