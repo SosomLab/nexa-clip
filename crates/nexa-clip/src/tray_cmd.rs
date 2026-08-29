@@ -414,6 +414,27 @@ pub(crate) fn run() {
         std::process::exit(1);
     };
 
+    // ★ Wayland 키 주입 권한(포털 RemoteDesktop) — 시작 때 한 번 받아 둔다(토큰 영구).
+    //   대화창 응답까지 막히므로 별도 스레드 — 트레이 기동을 기다리게 하지 않는다.
+    {
+        let token = crate::conf::data_dir().join("portal-remotedesktop.token");
+        let _ = std::thread::Builder::new()
+            .name("nclip-paste-warmup".into())
+            .spawn(move || match nclip_plat::paste::warm_up(Some(token)) {
+                Ok(()) => println!("키 주입 권한: ok"),
+                Err(e) => eprintln!(
+                    "⚠️ 키 주입 권한 없음 — {e}. 선택하면 클립보드 적재까지만(Ctrl+V는 직접)"
+                ),
+            });
+    }
+    // ★ 런처 .desktop + 아이콘(Linux) — Dock이 app_id `nexa-clip`과 맞춰 우리 아이콘을 쓴다
+    //   (08-30 사용자 실기 "톱니바퀴"). 멱등 · 다른 OS no-op.
+    if let Err(e) = nclip_plat::autostart::install_launcher(include_bytes!(
+        "../../../packaging/branding/nexa-clip-256.png"
+    )) {
+        eprintln!("런처 항목 설치 실패: {e}");
+    }
+
     // 감시 — 스냅숏을 통째로 셸에 넘긴다(게이트·이력은 메인 루프가).
     let mut watch = PlatformWatch::new();
     if matches!(watch.capability(), WatchCapability::Supported { .. }) {

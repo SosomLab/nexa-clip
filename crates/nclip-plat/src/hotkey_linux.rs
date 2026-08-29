@@ -28,8 +28,8 @@ pub enum HotkeyEvent {
     Activated,
 }
 
-const PORTAL_DEST: &str = "org.freedesktop.portal.Desktop";
-const PORTAL_PATH: &str = "/org/freedesktop/portal/desktop";
+pub(crate) const PORTAL_DEST: &str = "org.freedesktop.portal.Desktop";
+pub(crate) const PORTAL_PATH: &str = "/org/freedesktop/portal/desktop";
 const IFACE: &str = "org.freedesktop.portal.GlobalShortcuts";
 /// 단축키 id — 우리 쪽 식별자(셸 대화창엔 `description`이 보인다).
 pub const SHORTCUT_ID: &str = "open";
@@ -60,16 +60,16 @@ pub fn spawn(description: String, on_event: Box<dyn Fn(HotkeyEvent) + Send + Syn
 
 /// 포털 Request/Response 규약 — 응답 신호는 `/…/request/<sender>/<token>` 경로의
 /// `org.freedesktop.portal.Request.Response`로 온다. 호출 **전에** 구독해야 안 놓친다.
-fn request_path(conn: &Connection, token: &str) -> Option<String> {
+pub(crate) fn request_path(conn: &Connection, token: &str) -> Option<String> {
     let unique = conn.unique_name()?.to_string();
     let sender = unique.trim_start_matches(':').replace('.', "_");
     Some(format!("{PORTAL_PATH}/request/{sender}/{token}"))
 }
 
-type Results = HashMap<String, OwnedValue>;
+pub(crate) type Results = HashMap<String, OwnedValue>;
 
 /// 포털 메서드 호출 → Response(code, results). code 0 = 성공.
-fn call_with_response<B>(
+pub(crate) fn call_with_response<B>(
     conn: &Connection,
     portal: &Proxy<'_>,
     method: &str,

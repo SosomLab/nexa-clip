@@ -22,8 +22,11 @@ pub mod hotkey_linux;
 pub mod imgdec;
 pub mod paste;
 pub mod paths;
+#[cfg(target_os = "linux")]
+pub mod remote_input_linux;
 pub mod tray;
 pub mod watch;
+pub mod wayland_probe;
 // Linux는 순수 판정(타깃 정규화·지문)이 있어 다른 OS의 test 빌드에도 넣는다
 // (autostart의 cfg 선례 — 순수부는 어디서든 검증한다).
 #[cfg(any(all(unix, not(target_os = "macos")), test))]

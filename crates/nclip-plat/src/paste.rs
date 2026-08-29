@@ -505,7 +505,7 @@ mod imp {
     const KEY_PRESS: u8 = xproto::KEY_PRESS_EVENT;
     const KEY_RELEASE: u8 = xproto::KEY_RELEASE_EVENT;
     /// Wayland 컴포지터의 포커스 반환·X11 WM의 활성화가 정착할 시간.
-    const SETTLE: std::time::Duration = std::time::Duration::from_millis(120);
+    const SETTLE: std::time::Duration = std::time::Duration::from_millis(150);
 
     fn is_wayland() -> bool {
         std::env::var_os("WAYLAND_DISPLAY").is_some()
@@ -520,13 +520,20 @@ mod imp {
     }
 
     pub(super) fn capability() -> PasteCapability {
-        if !has_display() {
+        if !has_display() && !(is_wayland() && crate::remote_input_linux::available()) {
             return PasteCapability::ClipboardOnly {
                 reason: if is_wayland() {
                     PasteUnsupported::WaylandNoInjection
                 } else {
                     PasteUnsupported::NoDisplayServer
                 },
+            };
+        }
+        // ★ Wayland 세션은 포털 RemoteDesktop이 정식(08-30 실기: ei-portal Xwayland에선
+        //   XTest가 앱까지 못 간다). 포털이 없을 때만 XWayland XTest로.
+        if is_wayland() && crate::remote_input_linux::available() {
+            return PasteCapability::Full {
+                backend: "wayland-portal-remotedesktop",
             };
         }
         let Ok((conn, _)) = connect() else {
@@ -554,6 +561,9 @@ mod imp {
     }
 
     pub(super) fn foreground() -> Option<Target> {
+        if is_wayland() && crate::remote_input_linux::available() {
+            return Some(Target::Wayland);
+        }
         if !has_display() {
             return None;
         }
@@ -623,6 +633,9 @@ mod imp {
     }
 
     pub(super) fn send_paste(_as: PasteAs) -> Result<(), PasteError> {
+        if is_wayland() && crate::remote_input_linux::available() {
+            return crate::remote_input_linux::tap_ctrl_v().map_err(PasteError::Os);
+        }
         if !has_display() {
             return Err(PasteError::Unsupported(if is_wayland() {
                 PasteUnsupported::WaylandNoInjection
@@ -796,6 +809,22 @@ mod imp {
     pub(super) fn steal_focus_to_self() -> bool {
         false
     }
+}
+
+/// Linux/Wayland — 포털 `RemoteDesktop` 세션을 **미리** 연다(첫 회 권한 대화창을 시작 때
+/// 받기 위해 · `token_path` = `restore_token` 보관 파일). 다른 OS·X11 = no-op.
+pub fn warm_up(token_path: Option<std::path::PathBuf>) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    {
+        if std::env::var_os("WAYLAND_DISPLAY").is_some() && crate::remote_input_linux::available() {
+            if let Some(p) = token_path {
+                crate::remote_input_linux::configure_token_path(p);
+            }
+            return crate::remote_input_linux::ensure_session();
+        }
+    }
+    let _ = token_path;
+    Ok(())
 }
 
 /// 스파이크 전용 — 팝업이 포커스를 뺏는 순간을 흉내 낸다.
