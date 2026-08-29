@@ -251,3 +251,43 @@ mod tests {
         assert_eq!(data_dir(), data_dir());
     }
 }
+
+/// `ui.theme` → 실제 테마(08-30 사용자 요청 "시스템 항목 · 직접 고르지 않으면 시스템 기본").
+/// `system`(기본)은 OS 선호를 따르고, OS가 무선호/판정 불가면 **다크**(우리 기본 룩).
+/// `dark`/`light`는 명시값 존중.
+pub(crate) fn resolve_theme(setting: &str, system_dark: Option<bool>) -> nclip_ctl::theme::Theme {
+    use nclip_ctl::theme::Theme;
+    match setting {
+        "light" => Theme::light(),
+        "dark" => Theme::dark(),
+        _ => {
+            if system_dark == Some(false) {
+                Theme::light()
+            } else {
+                Theme::dark()
+            }
+        }
+    }
+}
+
+/// 지금 OS 선호로 `ui.theme`을 푼다.
+pub(crate) fn current_theme(setting: &str) -> nclip_ctl::theme::Theme {
+    resolve_theme(setting, nclip_plat::theme::system_prefers_dark())
+}
+
+#[cfg(test)]
+mod theme_tests {
+    use super::resolve_theme;
+
+    #[test]
+    fn system_follows_os_and_explicit_wins() {
+        assert!(!resolve_theme("system", Some(false)).is_dark);
+        assert!(resolve_theme("system", Some(true)).is_dark);
+        assert!(
+            resolve_theme("system", None).is_dark,
+            "무선호 = 다크(기본 룩)"
+        );
+        assert!(!resolve_theme("light", Some(true)).is_dark);
+        assert!(resolve_theme("dark", Some(false)).is_dark);
+    }
+}

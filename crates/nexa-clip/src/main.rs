@@ -126,7 +126,15 @@ fn status() {
         tr(lang, view_label),
         view.code()
     );
-    println!("theme           : {}", conf.state.get("ui.theme"));
+    println!(
+        "theme           : {} (OS: {})",
+        conf.state.get("ui.theme"),
+        match nclip_plat::theme::system_prefers_dark() {
+            Some(true) => "dark",
+            Some(false) => "light",
+            None => "no preference",
+        }
+    );
     println!("max items       : {}", conf.state.get("store.max_items"));
     println!("tray recent     : {}", conf.state.get("ui.tray_recent_n"));
 

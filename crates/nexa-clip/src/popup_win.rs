@@ -149,6 +149,14 @@ impl Popup {
     }
 
     /// 커서 위치(주면)에서 연다 — 검색·선택은 초기화.
+    /// 테마 교체(설정 창과 같은 실효값 — `ui.theme` · OS 선호).
+    pub(crate) fn set_theme(&mut self, t: Theme) {
+        if t.is_dark != self.theme.is_dark {
+            self.theme = t;
+            self.redraw();
+        }
+    }
+
     pub(crate) fn open(&mut self, el: &ActiveEventLoop, at: Option<(i32, i32)>, hist: &History) {
         if self.window.is_some() {
             return;

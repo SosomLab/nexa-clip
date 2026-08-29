@@ -2,6 +2,10 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-08-30 (3차) — 실기 라운드 2
+
+- **주입 순서**(팝업 파괴 flush 뒤 다음 바퀴 — "첫 번만 붙음" 해소 · 사용자 확인 텍스트·이미지 ✅) · ★ **닫기=트레이 기본 켜짐**(사용자 확정 · Quit만 종료) · **부분 게시 에코 = 원본 승격**(팝업 중복) · ★ **`ui.theme=system` 실제 추종**(beep theme.rs 이식 · 포털 실측). 352 테스트 → [journal 3차](journal/2026-08-30.md)
+
 ## 2026-08-30 (2차) — 사용자 실기 셋 수정
 
 - ★ **Wayland 키 주입 = 포털 RemoteDesktop**(ei-portal Xwayland에선 XTest가 앱까지 못 간다 — 1차 가정 정정) · ★ **`wl-paste` 폴링이 포커스를 뺏던 것**(GNOME data-control 부재) → 레지스트리 사실 판정 후 XWayland `xclip` · 타이틀바 두부 → ASCII · Dock 톱니바퀴 → 런처 `.desktop`+아이콘. 349 테스트 → [journal 2차](journal/2026-08-30.md)

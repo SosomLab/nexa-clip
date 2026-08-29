@@ -24,6 +24,7 @@ pub mod paste;
 pub mod paths;
 #[cfg(target_os = "linux")]
 pub mod remote_input_linux;
+pub mod theme;
 pub mod tray;
 pub mod watch;
 pub mod wayland_probe;

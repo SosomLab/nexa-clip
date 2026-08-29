@@ -63,12 +63,13 @@ pub(crate) struct App {
 impl App {
     pub(crate) fn new(font: Font, conf: Settings, resident: bool) -> Self {
         let widget = SettingsWidget::new(&conf.state);
+        let theme = crate::conf::current_theme(conf.state.get("ui.theme"));
         Self {
             window: None,
             ctx: None,
             surface: None,
             font,
-            theme: Theme::dark(),
+            theme,
             scale: 1.0,
             conf,
             widget,
@@ -199,6 +200,28 @@ impl App {
         }
     }
 
+    /// 현재 테마(팝업이 같은 것을 쓴다).
+    pub(crate) fn theme(&self) -> Theme {
+        self.theme
+    }
+
+    /// ★ `ui.theme`(system/dark/light)을 OS 선호와 함께 다시 푼다 — 설정 변경·OS 테마 변경 때.
+    pub(crate) fn apply_theme(&mut self) {
+        let t = crate::conf::current_theme(self.conf.state.get("ui.theme"));
+        if t.is_dark != self.theme.is_dark {
+            self.theme = t;
+            if let Some(w) = &self.window {
+                // 창 장식(CSD)도 같이 — Linux sctk 장식이 실효값을 따른다.
+                w.set_theme(Some(if t.is_dark {
+                    winit::window::Theme::Dark
+                } else {
+                    winit::window::Theme::Light
+                }));
+            }
+            self.redraw();
+        }
+    }
+
     fn drain_changes(&mut self) {
         let now = Instant::now();
         for (key, val) in self.widget.take_changes() {
@@ -206,6 +229,9 @@ impl App {
             //   (조용해진 뒤 1초 · 늦어도 10초 — [`crate::conf`]).
             self.conf.set(key, val.clone(), now);
             println!("설정 변경: {key} = {val}");
+            if key == "ui.theme" {
+                self.apply_theme();
+            }
             // ★ 자동 시작은 값만 저장하면 아무 일도 안 일어난다 — **OS 등록까지 즉시**.
             //   실패해도 값은 유지된다(다음 부팅 동기화·재토글에서 재시도 — beep 규약).
             if key == "app.autostart" {
@@ -285,6 +311,8 @@ impl ApplicationHandler for App {
                 self.redraw();
             }
             WindowEvent::RedrawRequested => self.paint(),
+            // Windows/mac은 winit이 OS 테마 변경을 창 이벤트로 준다(Linux는 포털 신호 — tray 셸).
+            WindowEvent::ThemeChanged(_) => self.apply_theme(),
 
             WindowEvent::MouseInput { state, button, .. } => {
                 if button != winit::event::MouseButton::Left {

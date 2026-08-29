@@ -52,6 +52,11 @@ pub enum Pushed {
 pub struct History {
     items: VecDeque<HistoryItem>,
     cap: usize,
+    /// ★ 재적재 직후 기대하는 **에코**의 원본 지문(08-30 Linux 실기 "같은 항목이 둘").
+    /// 플랫폼이 표현을 **일부만** 게시하면(Linux 1단 = 한 표현 · ⇧Enter 평문) 되돌아온
+    /// 스냅숏이 원본과 동일하지 않아 새 항목이 된다 — 다음 캡처가 그 원본의 **부분집합**이면
+    /// 원본을 승격시키고 새로 넣지 않는다. 한 번 쓰고 비운다.
+    pending_echo: Option<u64>,
 }
 
 /// 정렬된 (이름, 바이트) 위의 FNV-1a 64 — 암호학적일 필요가 없다(후보 거르기 전용,
@@ -78,6 +83,14 @@ fn fingerprint(reps: &[RawRep]) -> u64 {
     h
 }
 
+/// `sub`의 표현 전부가 `sup`에 같은 이름·같은 바이트로 있는가(에코 판정 — 게시한 것만 돌아온다).
+fn is_subset(sub: &[RawRep], sup: &[RawRep]) -> bool {
+    !sub.is_empty()
+        && sub
+            .iter()
+            .all(|r| sup.iter().any(|s| s.format == r.format && s.data == r.data))
+}
+
 fn same_content(a: &[RawRep], b: &[RawRep]) -> bool {
     if a.len() != b.len() {
         return false;
@@ -100,7 +113,14 @@ impl History {
         Self {
             items: VecDeque::new(),
             cap: cap.max(1),
+            pending_echo: None,
         }
+    }
+
+    /// 재적재 직후 호출 — 다음 캡처가 이 항목의 부분집합이면 새 항목이 아니라 **이 항목의
+    /// 승격**으로 처리한다(`i` = 현재 인덱스 · 지문으로 기억하므로 순서가 바뀌어도 맞는다).
+    pub fn expect_echo(&mut self, i: usize) {
+        self.pending_echo = self.items.get(i).map(|it| it.fingerprint);
     }
 
     /// 상한 변경(설정 즉시 적용) — 넘치는 꼬리는 지금 잘린다.
@@ -137,6 +157,19 @@ impl History {
                     thumb,
                 };
                 return Pushed::Replaced;
+            }
+        }
+        // ①b 재적재 에코(부분 게시) — 기대한 원본의 부분집합이면 원본 승격(한 번만).
+        if let Some(src) = self.pending_echo.take() {
+            if let Some(i) = self
+                .items
+                .iter()
+                .position(|it| it.fingerprint == src && is_subset(&snap.reps, &it.reps))
+            {
+                let mut it = self.items.remove(i).unwrap_or_else(|| unreachable!());
+                it.copies += 1;
+                self.items.push_front(it);
+                return Pushed::Promoted;
             }
         }
         // ② 같은 내용이 어딘가 있는가 — 승격(지문으로 거르고 바이트로 확정).
@@ -210,6 +243,36 @@ mod tests {
             source_app: Some(app.into()),
             ..Default::default()
         }
+    }
+
+    /// ★ 재적재 에코 — 원본(html+plain)을 평문 한 표현만 게시했을 때 되돌아온 스냅숏은
+    /// 원본의 부분집합 → 새 항목이 아니라 **원본 승격**(08-30 Linux 실기 "같은 항목 둘").
+    /// 기대를 걸지 않았거나 부분집합이 아니면 종전대로 새 항목이다.
+    #[test]
+    fn partial_repost_echo_promotes_source() {
+        let mut h = History::new(10);
+        let rich = snap("App", &[("text/html", b"<b>x</b>"), ("text/plain", b"x")]);
+        let other = snap("App", &[("text/plain", b"y")]);
+        push(&mut h, &rich, "x");
+        push(&mut h, &other, "y");
+        assert_eq!(h.len(), 2);
+        // 재적재(평문만) → 에코.
+        h.expect_echo(1);
+        let echo = snap("App", &[("text/plain", b"x")]);
+        assert_eq!(push(&mut h, &echo, "x"), Pushed::Promoted);
+        assert_eq!(h.len(), 2);
+        assert_eq!(
+            h.get(0).map(|i| i.reps.len()),
+            Some(2),
+            "원본 표현이 유지된다"
+        );
+        assert_eq!(h.get(0).map(|i| i.copies), Some(2));
+        // 기대는 한 번뿐 — 같은 평문이 또 오면 이제 같은 내용이 없으니 새 항목.
+        assert_eq!(push(&mut h, &echo, "x"), Pushed::New);
+        // 기대와 무관한 내용은 부분집합이 아니면 새 항목.
+        h.expect_echo(0);
+        let z = snap("App", &[("text/plain", b"z")]);
+        assert_eq!(push(&mut h, &z, "z"), Pushed::New);
     }
 
     fn push(h: &mut History, s: &ClipSnapshot, label: &str) -> Pushed {
