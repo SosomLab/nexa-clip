@@ -4,6 +4,24 @@
 
 ---
 
+## 2026-08-30 (1차) — ★ Linux 트레이(SNI) + 전역 단축키(포털) + K-1 Linux(XTest) + 클립보드 쓰기
+
+사용자 요청 *"1(트레이)·2(K-1) 순차 — beep 참고"*. 브랜치 `feat/linux-tray-paste`(코드 3 커밋).
+
+| 항목 | 결과 |
+|---|---|
+| **트레이 T-12e Linux** | beep `sni` 이식 + **최근 항목·알림** 확장. D-Bus 실측: 워처 등록 `Id="nexa-clip"` · 메뉴 = 헤더/최근 2건/Open/Quit · `Event(101)` → **재적재 `wl-paste`=alpha one** · Quit 정상 종료 |
+| **전역 단축키 T-15 Linux** | ★ **xdg 포털 `GlobalShortcuts`**(신설 `hotkey_linux.rs`) — `CreateSession` ✓ · `BindShortcuts`는 **사용자 확인 대화창** 대기(사람 몫) |
+| **"열기" = 진짜 포커스** | `wlactivate` 이식 + 새 창 `with_activation_token` · app_id `nexa-clip` |
+| **K-1 T-9b Linux** | x11rb `XTest` — X11: 포커스 기억/복원 · **Wayland: 팝업 닫힘 → 컴포지터가 포커스 반환 + XWayland XTest**. ★ **Xvfb 자동 왕복 ✓**(자기 창이 `Ctrl`→`V` 수신) |
+| 실기가 잡은 빈 자리 | **Linux 클립보드 쓰기 미이식** → `wl-copy`/`xclip` 1단(표현 1개 · `pick_rep`) |
+
+⏳ **사람 실기**([21 §2-5·§2-8](21-manual-test.md)): 포털 대화창 → 단축키 · 팝업 포커스 · Wayland 앱에 붙는가 · 좌클릭 열기 앞으로.
+
+**실측**: **347 테스트** · clippy 클린(호스트 + win + mac) · 의존 +5(Linux 한정 · [10 §3](10-decision-record.md)).
+
+---
+
 ## 2026-08-29 (4차) — Linux 남은 확인 사항 소화(X11 · Weston · 프로토콜 실측)
 
 사용자 요청 *"리눅스에서 확인해야 할 사항 진행 — 기능 개발은 mac에서"*. 3차가 남긴 ⏳ 넷 중
