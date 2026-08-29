@@ -349,7 +349,7 @@ env -u WAYLAND_DISPLAY -u DISPLAY cargo run -p nexa-clip -- peek # → NoDisplay
 
 | 항목 | 왜 자동화로 안 되나 |
 |---|---|
-| **실제 파일 관리자** | Nautilus·Dolphin·Thunar가 **실제로 내놓는 표현** 확인([18 §9-6](18-build-and-test.md#9-6--파일-관리자--잘라내기복사-표현이-갈린다) 표 갱신). Wayland에는 입력 주입 도구가 없어 사람이 `Ctrl+C` 해야 한다 — 이 PC(Nautilus): 파일 선택 → `Ctrl+C` → `wl-paste --list-types` 와 `nexa-clip peek` |
+| **실제 파일 관리자** | ✅ **Nautilus 실측**(08-29 사용자 — 복사·잘라내기 모두 `Files` · 포털 키 2종 발견 → 곁다리). ⏳ Dolphin·Thunar가 **실제로 내놓는 표현** 확인([18 §9-6](18-build-and-test.md#9-6--파일-관리자--잘라내기복사-표현이-갈린다) 표 갱신). Wayland에는 입력 주입 도구가 없어 사람이 `Ctrl+C` 해야 한다 — 이 PC(Nautilus): 파일 선택 → `Ctrl+C` → `wl-paste --list-types` 와 `nexa-clip peek` |
 | **data-control 있는 컴포지터** | KWin·Sway에서 백엔드 선택 + `ext-data-control-v1` 버전 — 이 PC엔 없다(설치는 sudo) |
 | **클립보드 매니저 공존** | Klipper·GPaste가 떠 있을 때 셀렉션 주인 교체가 잦은 상황 |
 

@@ -191,6 +191,11 @@ pub fn is_metadata_format(fmt: &str) -> bool {
             // ⚠️ GNOME `x-special/gnome-copied-files`는 **경로를 담고 있어** 곁다리가 아니다
             //    — 그쪽은 [`is_files_format`]가 파일 표현으로 받는다(08-29).
             | "application/x-kde-cutselection"
+            // ★ xdg-desktop-portal **파일 전송 세션 키**(GNOME Nautilus 실기 08-29 — 사용자 확인).
+            //   39B짜리 휘발 토큰이라 이력에 보관할 값이 없고, 복사마다 달라 동일성 판정도 흐린다.
+            //   경로는 `text/uri-list`·`gnome-copied-files`가 따로 담는다.
+            | "application/vnd.portal.files"
+            | "application/vnd.portal.filetransfer"
     )
 }
 
@@ -1335,6 +1340,20 @@ mod tests {
             "★ 개체 본문을 버리면 안 된다"
         );
         assert!(is_vendor_format("Embed Source"));
+    }
+
+    /// Nautilus 실기(08-29)가 내놓은 표현 5개 — 포털 키 둘은 곁다리, 나머지는 파일.
+    #[test]
+    fn nautilus_portal_keys_are_metadata() {
+        for f in [
+            "application/vnd.portal.files",
+            "application/vnd.portal.filetransfer",
+        ] {
+            assert!(is_metadata_format(f), "{f}는 곁다리여야 한다");
+            assert!(!is_vendor_format(f), "{f}가 벤더로 세어졌다");
+        }
+        assert!(is_files_format("text/uri-list"));
+        assert!(is_files_format("x-special/gnome-copied-files"));
     }
 
     /// 클립보드 기록 표식도 곁다리다 — 있다고 리치가 되면 안 된다.

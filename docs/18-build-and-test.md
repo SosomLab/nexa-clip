@@ -341,7 +341,7 @@ Linux에는 "복사한 파일"의 **표준 표현이 하나가 아니다**. 잘�
 
 | 파일 관리자 | 데스크톱 | 표현 | 잘라내기 표시 |
 |---|---|---|---|
-| **Nautilus** | GNOME | `text/uri-list` + `x-special/gnome-copied-files` | 본문 첫 줄 `cut` / `copy` |
+| **Nautilus** | GNOME | ✅ **실측 08-29**(GNOME 50 · 사용자 `Ctrl+C`/`Ctrl+X`): `text/uri-list` + `text/plain;charset=utf-8` + `x-special/gnome-copied-files` + ★ **`application/vnd.portal.files`·`application/vnd.portal.filetransfer`**(xdg-desktop-portal 전송 키 — 곁다리 처리) | 본문 첫 줄 `cut` / `copy` (실측: 92B→91B) |
 | **Dolphin** | KDE | `text/uri-list` + `application/x-kde-cutselection` | 표식 값 `1` |
 | Thunar · Nemo · Caja · PCManFM | XFCE · Cinnamon · MATE · LXDE | gnome 이름을 함께 쓰는 것으로 알려져 있다 | 동일 |
 
@@ -351,7 +351,7 @@ Linux에는 "복사한 파일"의 **표준 표현이 하나가 아니다**. 잘�
   첫 줄 `cut`/`copy`는 `parse_uri_list`가 `file://` 줄만 받으므로 저절로 걸러진다.
 - ⚠️ **경로 중복** — GNOME은 `text/uri-list`와 `x-special/gnome-copied-files`를 **함께** 내놓는다.
   `file_paths()`가 중복을 제거하지 않으면 **파일 하나가 목록에 둘로 보인다**.
-- ⏳ **실기 확인 대상** — 위 표에서 Nautilus 계열 외는 **문서·관례 기반**이다. Dolphin·Thunar가
+- ⏳ **실기 확인 대상** — 위 표에서 **Nautilus는 실측**, 그 외는 **문서·관례 기반**이다. Dolphin·Thunar가
   실제로 무엇을 내놓는지는 그 데스크톱에서 `wl-paste --list-types`로 확인하고 표를 갱신한다.
 
 ### 9-7. 민감 표식 — Linux에는 사실상 KDE 관례뿐

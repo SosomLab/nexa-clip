@@ -16,7 +16,7 @@
 | ★ **프로토콜 실측** | **Mutter 50.1 · Weston 14.0.2 모두 `wlr`·`ext` data-control 없음**(`wayland-info`) — [18 §9-5](18-build-and-test.md) 표가 측정값 |
 | 결함 | 빈 클립보드 `peek` 안내가 Linux에서 **거짓**(*"다른 앱이 잡고 있다"* = Windows 사정) → OS별 사실 안내 |
 
-⏳ **남음(사람·다른 PC)** — Nautilus 실제 표현(파일 선택 → `Ctrl+C` → `nexa-clip peek`) · KWin/Sway(data-control 있는 컴포지터) · Klipper/GPaste 공존.
+✅ **Nautilus 실측**(사용자 `Ctrl+C`/`Ctrl+X` — 둘 다 `Files` · 포털 전송 키 2종 발견 → 곁다리). ⏳ **남음(다른 PC)** — KWin/Sway(data-control 있는 컴포지터) · Klipper/GPaste 공존.
 
 **실측**: 340 테스트 · clippy 클린 · Linux 실기 **Wayland 7/7 · XWayland 7/7 · Xvfb 7/7 · Weston 3/3**.
 
