@@ -4,6 +4,7 @@
 
 ## 2026-08-29
 
+- ★ **mac 실기 결함 둘 수정** — ① **한글 파일명 자모 분해**(macOS NFD) → `compose_hangul_nfd`(한글 한정 NFC · 표시만 · 3-OS 멱등) ② **출처 앱 박제**(`NSWorkspace`는 런루프 없이 안 갱신 — 제외 앱 게이트가 오판) → `CGWindowListCopyWindowInfo`. 실기 ✅ `출처: Finder`·`한글검증_v1.0.pdf`. 관찰: PPT ole.source 토큰이 복사마다 달라 이력 승격 판정 저해 소지(T-13 후속) → [journal 2차](journal/2026-08-29.md)
 - ★ **T-14e macOS 감시 + Linux 감시 1단** — 3-OS가 처음으로 다 잡는다. mac = `changeCount` 적응형 폴링(objc 직접 호출 · 결함 ⑫ 교훈 선반영 · nspasteboard 표식 3종 · ★ **Finder 참조 URL을 경로로**) — **유형별 실기 통과**(한글 텍스트·RTF·PNG 치수·Finder ⌘C 파일). Linux = `wl-paste`/`xclip` 파이프 + 내용 지문(`MissingTool` 사유 신설 · 실기는 환경 대기). 334 테스트 · 3-타깃 클린 → [journal 1차](journal/2026-08-29.md)
 
 ## 2026-08-28

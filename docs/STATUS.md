@@ -4,6 +4,23 @@
 
 ---
 
+## 2026-08-29 (2차) — mac 유형별 실기(사용자)가 결함 둘을 잡았다
+
+사용자 훑기 9건 — 판정은 전부 정확(★ **PPT 도형 = `Object` 12표현** — GVML·SVG·PDF·TIFF ·
+결함 ⑤ 수정이 mac에서도 유효). 결함 둘 수정:
+
+| # | 결함 | 원인 · 조치 |
+|:--:|---|---|
+| 1 | ★ 한글 파일명이 자모로 낱낱이 | macOS 파일명 = **NFD**. 래스터라이저는 shaping이 없어 실결함 → [`compose_hangul_nfd`](../crates/nclip-core/src/capture.rs)(한글 한정 NFC · `file_names()` 표시만 · 경로는 원본 · NFC 멱등이라 3-OS 공통) |
+| 2 | ★ 출처 앱이 전부 iTerm2 | `NSWorkspace.frontmostApplication`은 **런루프 없인 박제** — 제외 앱 게이트(FR-S-2) 오판 위험 → `CGWindowListCopyWindowInfo`(호출마다 창 서버 조회 · layer-0 첫 창 소유 앱 · 권한 불요) |
+
+✅ 실기: Finder ⌘C → `출처: Finder` · `미리보기: 한글검증_v1.0.pdf`.
+관찰(기록만): PPT `ole.source.0x…` 토큰이 복사마다 달라 **이력 승격 판정 저해 소지**(T-13 후속).
+
+**실측**: **337 테스트** · clippy 클린(호스트+linux 크로스) · win-msvc check 클린.
+
+---
+
 ## 2026-08-29 (1차) — ★ T-14e macOS 감시 + Linux 1단: 3-OS가 다 잡는다
 
 사용자 요청("윈도우처럼 유형별 복사 테스트 · 파일 포함" + "리눅스도") — 감시 백엔드 둘 추가.
