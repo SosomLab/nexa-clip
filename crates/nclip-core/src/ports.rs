@@ -132,6 +132,8 @@ pub enum UnsupportedReason {
     WaylandNoDataControl,
     /// 표시 서버에 연결할 수 없다(헤드리스 등).
     NoDisplayServer,
+    /// 필요한 OS 도구가 없다(Linux — `wl-clipboard`/`xclip` 이 설치 대상).
+    MissingTool(&'static str),
     /// 이 타깃은 아직 구현되지 않았다.
     NotImplemented,
 }

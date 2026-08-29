@@ -22,6 +22,12 @@ pub mod paste;
 pub mod paths;
 pub mod tray;
 pub mod watch;
+// Linux는 순수 판정(타깃 정규화·지문)이 있어 다른 OS의 test 빌드에도 넣는다
+// (autostart의 cfg 선례 — 순수부는 어디서든 검증한다).
+#[cfg(any(all(unix, not(target_os = "macos")), test))]
+pub mod watch_linux;
+#[cfg(target_os = "macos")]
+pub mod watch_mac;
 #[cfg(windows)]
 pub mod watch_win;
 #[cfg(windows)]
