@@ -2,6 +2,13 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-08-30 — ★ Linux 트레이 · 포털 단축키 · K-1 Linux · 클립보드 쓰기
+
+- ★ **T-12e Linux** — beep SNI 이식 + 최근 항목/알림 확장 · `wlactivate`(셸 토큰 → 진짜 포커스) · app_id. **D-Bus 실측**: 등록·메뉴·재적재(`wl-paste`)·Quit 전부 ✓.
+- ★ **T-15 Linux = xdg 포털 GlobalShortcuts**(`hotkey_linux.rs` 신설) — 세션 ✓ · 등록은 사용자 대화창 대기.
+- ★ **T-9b K-1 Linux** — x11rb XTest. X11 = 포커스 기억/복원 · Wayland = 컴포지터 반환 + XWayland XTest(`DISPLAY` 없으면 정직 강등). **Xvfb 자동 왕복 ✓**.
+- 실기가 잡음: **Linux 클립보드 쓰기 미이식** → wl-copy/xclip 1단(표현 1개). 347 테스트 · 의존 +5(Linux 한정). 상세 → [journal](journal/2026-08-30.md)
+
 ## 2026-08-29 (4차) — Linux 남은 확인 사항: X11 · Weston · 프로토콜 실측
 
 - ★ **X11(`xclip`) 경로 실기 통과** — X11 세션 없이 **XWayland**(`WAYLAND_DISPLAY` 제거)와 **순수 Xvfb**(루트 없이) 둘 다 7/7. 하네스 `NCLIP_E2E_X11=1`/`NCLIP_E2E_XVFB=1` 모드.

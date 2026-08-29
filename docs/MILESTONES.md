@@ -41,7 +41,7 @@
 | ✅ | ★ **`watch`·`peek` 진단 명령** — 복사한 것이 무엇으로 잡히는지 실기로 본다 |
 | ✅ | ★ **실기 18건 회귀 박제**(PPT·Excel·Edge·VS Code·Greenshot·CopyQ) |
 | ✅ | ★ **캡처 파이프라인** — 종류 판정 · `Preview` · 용량 규칙([27](27-capture-cases.md) → `nclip-core::capture`) |
-| 📐 | `nclip-plat` — 전역 단축키 · **직전 포커스 창 복원 + 키 주입** · 트레이 · 자동시작 |
+| 🚧 | `nclip-plat` — 전역 단축키 · **직전 포커스 창 복원 + 키 주입** · 트레이 · 자동시작 — **Win ✅ · Linux ✅(08-30 · SNI/포털/XTest · Wayland 앱 실기 ⏳) · mac 트레이·단축키 ☐** |
 | 📐 | `nclip-store` — 암호화 세그먼트 + 내용 주소 blob |
 | 📐 | ★ **beep UI 이식** — `gfx`·`ctl` 무수정 복사 · **설정 화면 프레임워크**(registry만 교체) · 트레이 · 중립 모듈 |
 | 📐 | **S1 퀵 팝업**(타입어헤드 · 한글 조합 검색 · 자동 붙여넣기) |

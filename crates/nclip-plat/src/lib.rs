@@ -17,6 +17,8 @@ pub mod autostart;
 pub mod clipboard;
 pub mod console;
 pub mod font;
+#[cfg(target_os = "linux")]
+pub mod hotkey_linux;
 pub mod imgdec;
 pub mod paste;
 pub mod paths;
@@ -32,3 +34,4 @@ pub mod watch_mac;
 pub mod watch_win;
 #[cfg(windows)]
 pub(crate) mod win32;
+pub mod wlactivate;

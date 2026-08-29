@@ -17,3 +17,18 @@ nclip-core.workspace = true
 # fs::read는 폰트 파일을 통째로 힙에 복사한다(맑은 고딕 12.8MB · macOS 한글 TTC 55MB) —
 # 상주 앱 예산(DR-9)을 그대로 잠식한다. mmap은 실제로 읽은 글리프 페이지만 상주한다.
 memmap2 = "0.9"
+
+# ── Linux 타깃 한정(다른 OS 산출물 크기 불변) — 원장 docs/10 §3 · 전부 beep `nbeep-plat` 선례 ──
+[target.'cfg(target_os = "linux")'.dependencies]
+# 트레이(T-12e Linux · SNI = StatusNotifierItem/D-Bus) + 전역 단축키(T-15 Linux · xdg 포털
+# GlobalShortcuts) — zbus(MIT · 순수 Rust · 시스템 런타임 요구 없음).
+zbus = "5"
+# K-1 Linux(T-9b) — X11 `XTest` 키 주입 + 포커스 창 조회. RustConnection = 순수 Rust(libxcb 불요) ·
+# winit과 같은 판 0.13(Cargo.lock 동일 항목 · 트리 중복 0).
+x11rb = { version = "0.13", default-features = false, features = ["xtest"] }
+# Wayland 정식 창 활성화(`wlactivate` — 트레이 "열기"가 창을 **앞으로**). GNOME appindicator
+# 확장이 넘기는 xdg_activation 토큰으로 `activate(token, surface)`를 직접 부른다(winit에 외부
+# 토큰 API 없음). winit/sctk와 같은 판(0.31/0.3/0.32 — lock 동일 항목 · 산출물 증가 미미).
+wayland-client = "0.31"
+wayland-backend = { version = "0.3", features = ["client_system", "dlopen"] }
+wayland-protocols = { version = "0.32", features = ["client", "staging"] }

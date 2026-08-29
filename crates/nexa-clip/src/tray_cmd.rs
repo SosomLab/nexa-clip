@@ -310,11 +310,14 @@ impl ApplicationHandler<ShellEvent> for Shell {
             ShellEvent::Hotkey => self.toggle_popup(el),
             ShellEvent::HotkeyStatus(ok) => {
                 if ok {
-                    println!("전역 단축키: Ctrl+Shift+V — 퀵 팝업");
+                    println!(
+                        "전역 단축키: {} — 퀵 팝업",
+                        nclip_plat::tray::hotkey_label()
+                    );
                 } else {
                     eprintln!(
-                        "⚠️ 전역 단축키(Ctrl+Shift+V) 등록 실패 — 다른 앱(CopyQ 등)이 \
-                         쓰고 있습니다. 트레이 좌클릭으로 여세요"
+                        "⚠️ 전역 단축키(Ctrl+Shift+V) 등록 실패 — {}. 트레이 좌클릭으로 여세요",
+                        nclip_plat::tray::hotkey_failure_hint()
                     );
                 }
             }
@@ -404,7 +407,10 @@ pub(crate) fn run() {
             TrayEvent::Open | TrayEvent::OpenTarget(_) => ShellEvent::Open,
         });
     }) else {
-        eprintln!("트레이를 띄울 수 없습니다(이 OS는 아직 미이식 — docs/21 참조).");
+        eprintln!(
+            "트레이를 띄울 수 없습니다 — {}",
+            nclip_plat::tray::tray_failure_hint()
+        );
         std::process::exit(1);
     };
 

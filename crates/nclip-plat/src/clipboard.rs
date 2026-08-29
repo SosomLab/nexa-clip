@@ -179,7 +179,137 @@ mod imp {
     }
 }
 
-#[cfg(not(windows))]
+/// Linux — **도구 파이프 1단**(08-30): `wl-copy`(Wayland) / `xclip`(X11)에 stdin으로 넘긴다.
+/// 읽기([`crate::watch_linux`])와 같은 도구·같은 판별(`WAYLAND_DISPLAY` 우선 · PATH 확인).
+///
+/// ⚠️ **표현 한 개만 게시한다** — 두 도구 모두 `--type`/`-t` 하나뿐이다(Wayland에서
+/// 다중 표현은 자체 `wl_data_source`가 필요하고, 그건 **입력 시리얼을 가진 표면**이 있어야
+/// `set_selection`이 받아들여진다 — 팝업 창의 시리얼을 빌리는 후속 과제). 대표 표현은
+/// [`pick_rep`]가 고른다: 파일(`text/uri-list`) > 이미지(`image/png`) > 평문 > HTML > 첫 것.
+/// 게시 수는 그래서 최대 1이다 — 호스트가 "표현 N개"라고 찍는 값이 곧 사실이다.
+#[cfg(target_os = "linux")]
+mod imp {
+    use super::RawRep;
+    use std::io::Write as _;
+    use std::process::{Command, Stdio};
+
+    /// 표현 우선순위 — 붙여넣기 판단이 가장 잘 되는 것부터.
+    fn rank(format: &str) -> u8 {
+        match format {
+            "text/uri-list" => 0,
+            "image/png" => 1,
+            "text/plain" => 2,
+            "text/html" => 3,
+            "image/jpeg" | "image/bmp" => 4,
+            _ => 9,
+        }
+    }
+
+    /// 게시할 대표 표현 하나(날바이트가 있는 것 중 우선순위 최상) — 없으면 None.
+    pub(super) fn pick_rep(reps: &[RawRep]) -> Option<&RawRep> {
+        reps.iter()
+            .filter(|r| !r.data.is_empty())
+            .min_by_key(|r| (rank(&r.format), r.format.len()))
+    }
+
+    /// 도구에 넘길 MIME — 판정 어휘의 `text/plain`은 UTF-8을 명시해 준다(GTK가 charset
+    /// 없는 `text/plain`을 Latin-1로 읽는 사고 방지).
+    fn wire_type(format: &str) -> String {
+        if format == "text/plain" {
+            "text/plain;charset=utf-8".into()
+        } else {
+            format.to_string()
+        }
+    }
+
+    fn tool_exists(cmd: &str) -> bool {
+        Command::new(cmd)
+            .arg("--version")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .is_ok()
+    }
+
+    pub(super) fn set_reps(reps: &[RawRep]) -> Result<usize, String> {
+        let rep = pick_rep(reps).ok_or_else(|| "게시할 표현이 없습니다".to_string())?;
+        let ty = wire_type(&rep.format);
+        let wayland = std::env::var_os("WAYLAND_DISPLAY").is_some();
+        let x11 = std::env::var_os("DISPLAY").is_some();
+        let (cmd, args): (&str, Vec<&str>) = if wayland && tool_exists("wl-copy") {
+            ("wl-copy", vec!["--type", &ty])
+        } else if x11 && tool_exists("xclip") {
+            ("xclip", vec!["-selection", "clipboard", "-t", &ty, "-i"])
+        } else if !wayland && !x11 {
+            return Err("표시 서버가 없습니다(WAYLAND_DISPLAY/DISPLAY 없음)".into());
+        } else {
+            // 읽기(`watch_linux`)와 같은 도구라 안내도 같다 — 설치 명령은 `nexa-clip watch`가 배포판별로.
+            return Err(format!(
+                "클립보드 쓰기 도구가 없습니다 — {} (감시와 같은 도구 · `nexa-clip watch`의 조치 안내 참조)",
+                if wayland { "wl-clipboard (wl-copy)" } else { "xclip" }
+            ));
+        };
+        // 두 도구 모두 셀렉션 서빙을 위해 스스로 분리(fork)된다 — 우리는 stdin을 닫고
+        // 상위 프로세스 종료만 기다린다(블로킹 없음).
+        let mut child = Command::new(cmd)
+            .args(&args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|e| format!("{cmd} 실행 실패: {e}"))?;
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin
+                .write_all(&rep.data)
+                .map_err(|e| format!("{cmd} 입력 실패: {e}"))?;
+        }
+        let st = child.wait().map_err(|e| format!("{cmd} 대기 실패: {e}"))?;
+        if !st.success() {
+            return Err(format!("{cmd} 종료 코드 {st}"));
+        }
+        Ok(1)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        fn rep(f: &str, d: &[u8]) -> RawRep {
+            RawRep {
+                format: f.into(),
+                data: d.to_vec(),
+            }
+        }
+
+        /// 파일 > 이미지 > 평문 > HTML — 빈 바이트는 후보가 아니다.
+        #[test]
+        fn pick_rep_prefers_files_then_image_then_plain() {
+            let reps = [
+                rep("text/html", b"<b>x</b>"),
+                rep("text/plain", b"x"),
+                rep("image/png", b""),
+            ];
+            assert_eq!(
+                pick_rep(&reps).map(|r| r.format.as_str()),
+                Some("text/plain")
+            );
+            let reps = [rep("text/plain", b"p"), rep("text/uri-list", b"file:///a")];
+            assert_eq!(
+                pick_rep(&reps).map(|r| r.format.as_str()),
+                Some("text/uri-list")
+            );
+            assert!(pick_rep(&[rep("image/png", b"")]).is_none());
+        }
+
+        #[test]
+        fn wire_type_adds_utf8_to_plain() {
+            assert_eq!(wire_type("text/plain"), "text/plain;charset=utf-8");
+            assert_eq!(wire_type("image/png"), "image/png");
+        }
+    }
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
 mod imp {
     use super::RawRep;
 
