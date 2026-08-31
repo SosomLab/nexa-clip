@@ -1,6 +1,7 @@
-//! 메모리 이력 — ★ **잡은 것을 들고 있다가 승격·상한을 적용한다**(T-13 1단).
+//! 메모리 이력 — ★ **잡은 것을 들고 있다가 승격·상한을 적용한다**(T-13).
 //!
-//! 저장소(T-16)가 붙기 전의 **세션 한정** 이력이다. 그래도 규칙은 최종형 그대로다:
+//! 시작 때 저장소(T-16 · [`from_items`](History::from_items))에서 복원되고, 변화는 셸이
+//! id로 짝을 맞춰 이벤트로 흘려보낸다(이력 자체는 여전히 순수 메모리 — 디스크를 모른다):
 //!
 //! | 규칙 | 왜 |
 //! |---|---|
@@ -19,6 +20,11 @@ use std::collections::VecDeque;
 /// 이력 항목 — 표현 원본을 통째로 든다(재적재가 존재 이유다).
 #[derive(Clone, Debug)]
 pub struct HistoryItem {
+    /// ★ 항목 id — 셸이 영속(T-16)과 짝을 맞추는 열쇠. `push`가 단조 증가로 부여하고,
+    ///   복원([`History::from_items`])된 항목은 저장돼 있던 값을 그대로 쓴다.
+    pub id: u64,
+    /// ★ 핀(T-18b0 기초) — 상한 축출에서 지켜진다. UI는 후속.
+    pub pinned: bool,
     /// 종류.
     pub kind: ClipKind,
     /// 목록·메뉴에 보일 한 줄(호출자가 만든다 — 이력은 미리보기 정책을 모른다).
@@ -34,6 +40,35 @@ pub struct HistoryItem {
     pub thumb: Option<(u32, u32, Vec<u8>)>,
     /// 내용 지문(빠른 동일성 후보 판정).
     fingerprint: u64,
+}
+
+impl HistoryItem {
+    /// 저장소에서 복원할 때의 생성자 — 지문은 여기서 재계산한다(디스크의 지문을 믿지 않는다).
+    #[must_use]
+    #[allow(clippy::too_many_arguments)] // 영속 형상 1:1 — 묶으면 오히려 한 겹 더 생긴다
+    pub fn restored(
+        id: u64,
+        kind: ClipKind,
+        label: String,
+        reps: Vec<RawRep>,
+        source_app: Option<String>,
+        copies: u32,
+        pinned: bool,
+        thumb: Option<(u32, u32, Vec<u8>)>,
+    ) -> Self {
+        let fingerprint = fingerprint(&reps);
+        Self {
+            id,
+            pinned,
+            kind,
+            label,
+            reps,
+            source_app,
+            copies,
+            thumb,
+            fingerprint,
+        }
+    }
 }
 
 /// [`History::push`]의 결과 — 호출자가 화면 갱신 여부를 판단한다.
@@ -57,6 +92,10 @@ pub struct History {
     /// 스냅숏이 원본과 동일하지 않아 새 항목이 된다 — 다음 캡처가 그 원본의 **부분집합**이면
     /// 원본을 승격시키고 새로 넣지 않는다. 한 번 쓰고 비운다.
     pending_echo: Option<u64>,
+    /// 다음에 부여할 항목 id(단조 증가 — 복원 시 최댓값+1로 이어진다).
+    next_id: u64,
+    /// ★ 상한 축출로 빠진 항목 id — 셸이 [`Self::drain_evicted`]로 가져가 저장소에 반영한다.
+    evicted: Vec<u64>,
 }
 
 /// 정렬된 (이름, 바이트) 위의 FNV-1a 64 — 암호학적일 필요가 없다(후보 거르기 전용,
@@ -114,6 +153,52 @@ impl History {
             items: VecDeque::new(),
             cap: cap.max(1),
             pending_echo: None,
+            next_id: 1,
+            evicted: Vec::new(),
+        }
+    }
+
+    /// ★ 저장소에서 복원 — `items`는 최신이 앞. id 부여는 저장된 최댓값 다음부터 잇는다.
+    #[must_use]
+    pub fn from_items(cap: usize, items: Vec<HistoryItem>) -> Self {
+        let next_id = items.iter().map(|i| i.id).max().unwrap_or(0) + 1;
+        let mut h = Self {
+            items: items.into(),
+            cap: cap.max(1),
+            pending_echo: None,
+            next_id,
+            evicted: Vec::new(),
+        };
+        h.evict_over_cap();
+        h
+    }
+
+    /// 상한 초과분을 **오래된 비고정부터** 걷어낸다 — 핀은 지켜진다(설정 문구의 계약).
+    /// 걷힌 id는 [`Self::drain_evicted`]가 가져갈 때까지 쌓인다.
+    fn evict_over_cap(&mut self) {
+        while self.items.len() > self.cap {
+            let Some(i) = self.items.iter().rposition(|it| !it.pinned) else {
+                break; // 전부 핀 — 상한보다 핀이 우선이다(지우면 계약 위반)
+            };
+            if let Some(it) = self.items.remove(i) {
+                self.evicted.push(it.id);
+            }
+        }
+    }
+
+    /// 상한 축출로 빠진 항목 id를 가져간다(한 번 주면 비운다).
+    pub fn drain_evicted(&mut self) -> Vec<u64> {
+        std::mem::take(&mut self.evicted)
+    }
+
+    /// ★ 핀 토글(T-18b0 기초) — 축출에서 지켜진다. 있는 id면 `true`.
+    pub fn set_pinned(&mut self, id: u64, pinned: bool) -> bool {
+        match self.items.iter_mut().find(|it| it.id == id) {
+            Some(it) => {
+                it.pinned = pinned;
+                true
+            }
+            None => false,
         }
     }
 
@@ -123,10 +208,10 @@ impl History {
         self.pending_echo = self.items.get(i).map(|it| it.fingerprint);
     }
 
-    /// 상한 변경(설정 즉시 적용) — 넘치는 꼬리는 지금 잘린다.
+    /// 상한 변경(설정 즉시 적용) — 넘치는 꼬리는 지금 잘린다(핀 제외).
     pub fn set_cap(&mut self, cap: usize) {
         self.cap = cap.max(1);
-        self.items.truncate(self.cap);
+        self.evict_over_cap();
     }
 
     /// 스냅숏 하나를 이력에 반영한다. 내용 없음 걸러내기(민감·제외 앱 포함)와
@@ -146,8 +231,11 @@ impl History {
                 snap.source_app.as_deref(),
                 &snap.reps,
             ) {
-                let copies = front.copies;
+                // ★ 교체는 같은 항목의 다음 장면 — id·핀을 지킨다(저장소도 같은 id로 덮는다).
+                let (id, pinned, copies) = (front.id, front.pinned, front.copies);
                 self.items[0] = HistoryItem {
+                    id,
+                    pinned,
                     kind,
                     label,
                     fingerprint: fingerprint(&snap.reps),
@@ -189,7 +277,11 @@ impl History {
             return Pushed::Promoted;
         }
         // ③ 새 항목.
+        let id = self.next_id;
+        self.next_id += 1;
         self.items.push_front(HistoryItem {
+            id,
+            pinned: false,
             kind,
             label,
             fingerprint: fp,
@@ -198,7 +290,7 @@ impl History {
             copies: 1,
             thumb,
         });
-        self.items.truncate(self.cap);
+        self.evict_over_cap();
         Pushed::New
     }
 
@@ -341,5 +433,76 @@ mod tests {
         let a = snap("x", &[("A", b"ab"), ("B", b"c")]);
         let b = snap("x", &[("A", b"a"), ("B", b"bc")]);
         assert_ne!(fingerprint(&a.reps), fingerprint(&b.reps));
+    }
+}
+
+#[cfg(test)]
+mod persist_tests {
+    #![allow(clippy::unwrap_used)]
+    use super::*;
+
+    fn snap(reps: &[(&str, &[u8])]) -> ClipSnapshot {
+        ClipSnapshot {
+            reps: reps
+                .iter()
+                .map(|(f, d)| RawRep {
+                    format: (*f).to_string(),
+                    data: d.to_vec(),
+                })
+                .collect(),
+            source_app: Some("t".into()),
+            concealed: false,
+            seq: 0,
+        }
+    }
+
+    /// id는 단조 증가하고, 복원하면 저장된 최댓값 다음부터 잇는다.
+    #[test]
+    fn ids_are_monotonic_and_continue_after_restore() {
+        let mut h = History::new(10);
+        h.push(&snap(&[("T", b"a")]), ClipKind::Text, "a".into(), None);
+        h.push(&snap(&[("T", b"b")]), ClipKind::Text, "b".into(), None);
+        assert_eq!(h.get(0).unwrap().id, 2);
+        assert_eq!(h.get(1).unwrap().id, 1);
+
+        let items: Vec<HistoryItem> = (0..2).map(|i| h.get(i).unwrap().clone()).collect();
+        let mut h2 = History::from_items(10, items);
+        h2.push(&snap(&[("T", b"c")]), ClipKind::Text, "c".into(), None);
+        assert_eq!(h2.get(0).unwrap().id, 3, "최댓값 2 다음 = 3");
+    }
+
+    /// ★ 상한 축출은 오래된 **비고정**부터 — 핀은 상한보다 우선이다.
+    #[test]
+    fn eviction_skips_pinned_and_reports_ids() {
+        let mut h = History::new(2);
+        h.push(&snap(&[("T", b"a")]), ClipKind::Text, "a".into(), None); // id 1
+        h.push(&snap(&[("T", b"b")]), ClipKind::Text, "b".into(), None); // id 2
+                                                                         // 가장 오래된 a(id 1)를 핀.
+        assert_eq!(h.get(1).unwrap().id, 1, "a는 인덱스 1");
+        assert!(h.set_pinned(1, true));
+        h.push(&snap(&[("T", b"c")]), ClipKind::Text, "c".into(), None); // id 3 — b가 밀린다
+        let labels: Vec<_> = (0..h.len())
+            .map(|i| h.get(i).unwrap().label.clone())
+            .collect();
+        assert_eq!(labels, vec!["c", "a"], "핀(a)은 남고 b가 빠졌다");
+        assert_eq!(h.drain_evicted(), vec![2], "빠진 id를 셸이 가져간다");
+        assert!(h.drain_evicted().is_empty(), "한 번 주면 비운다");
+    }
+
+    /// 교체(coalesce 완본)는 id를 지킨다 — 저장소가 같은 자리를 덮을 수 있게.
+    #[test]
+    fn replace_keeps_id() {
+        let mut h = History::new(10);
+        h.push(&snap(&[("T", b"part")]), ClipKind::Text, "p".into(), None);
+        let id = h.get(0).unwrap().id;
+        // 같은 출처의 상위집합 = 다음 장면(coalesce).
+        h.push(
+            &snap(&[("T", b"part"), ("H", b"whole")]),
+            ClipKind::RichText,
+            "w".into(),
+            None,
+        );
+        assert_eq!(h.len(), 1);
+        assert_eq!(h.get(0).unwrap().id, id, "교체 후에도 같은 id");
     }
 }

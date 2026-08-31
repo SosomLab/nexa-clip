@@ -59,7 +59,11 @@ fn main() {
             .filter(|r| !OLE_PRIVATE.contains(&r.format.as_str()))
             .cloned()
             .collect();
-        println!("--no-ole: {} → {}개로 줄여 재게시", a.reps.len(), kept.len());
+        println!(
+            "--no-ole: {} → {}개로 줄여 재게시",
+            a.reps.len(),
+            kept.len()
+        );
         kept
     } else {
         a.reps.clone()
