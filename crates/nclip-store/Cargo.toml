@@ -13,3 +13,7 @@ workspace = true
 
 [dependencies]
 nclip-core.workspace = true
+# ── 암호화(beep nbeep-store 원장과 동일 판 — 자체 구현 금지 부류 · docs/10 §3)
+chacha20poly1305 = "0.10"  # 레코드·blob AEAD(ADR-0005 계열 · Noise와 같은 암호군)
+sha2 = "0.10"              # 봉투 키 KDF · blob_id(키 있는 내용 주소)
+getrandom = "0.2"          # 마스터·salt·nonce 난수(OS CSPRNG)

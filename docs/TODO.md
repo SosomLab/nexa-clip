@@ -69,7 +69,7 @@
 | **T-13** | P0 | 중 | `nclip-core` — 타입 판별 · **보관 정책**(개수/기간/용량) · 중복 승격 파이프라인 | T-12c | 🚧 **이력·승격 완료**(08-28 `history` — 메모리 · 개수 상한). 기간/용량·영속은 T-16. ⚠️ **휘발 벤더 토큰**(`ole.source.0x…`가 복사마다 다름 — 08-29 mac 실기 관찰)이 승격 판정을 저해 — 동일성에서 제외 검토 |
 | **T-14** | **P0** | **대** | ★ `nclip-plat` **클립보드 감시 3-OS** — Win 이벤트 / mac 폴링 / X11 XFIXES / Wayland data-control. **미지원 환경은 정직하게 표시** | T-13 | 🚧 **Win ✅ · mac ✅ · Linux/Wayland ✅ 자동 실기 8/8**(08-29 · Ubuntu 26.04 GNOME · 결함 여섯 수정). **X11 ✅**(4차 · XWayland+Xvfb 7/7) · **Weston ✅**. **Nautilus ✅**(사용자 실기). ★ **08-30 정정: data-control 없는 Wayland(GNOME)는 `xwayland-xclip`이 기본**(wl-paste 폴링 = 포커스 플랩 · 사용자 QA). ⏳ **남음**: Dolphin·Thunar 표현 · data-control 있는 컴포지터(KWin·Sway) · XFIXES/data-control 본편 |
 | **T-15** | **P0** | **대** | ★ `nclip-plat` **전역 단축키 + 직전 포커스 창 복원 + 키 주입** — 실패 시 FR-P-1로 정직 강등 | T-14 | 🚧 **Win 1단**(08-28 · `RegisterHotKey`) · ★ **Linux ✅**(08-30 · xdg 포털 `GlobalShortcuts` · 사용자 승인 · 팝업→붙여넣기 실기 통과) · mac 남음 |
-| **T-16** | P0 | 중 | `nclip-store` — 암호화 세그먼트 + 내용 주소 blob(beep `nbeep-store` 이식) | T-3, T-13 | ☐ → ★ **착수 가능**(08-31 DR-37) |
+| **T-16** | P0 | 중 | `nclip-store` — 암호화 세그먼트 + 내용 주소 blob(beep `nbeep-store` 이식) | T-3, T-13 | 🚧 ★ **1단 완료**(08-31 · 암호화 세그먼트+blob+복원 배선 · 스모크 "2개 복원" ✓ · 핀 기초 포함). 패스프레이즈 래핑·OS 비밀 저장은 후속 |
 | **T-17** | P0 | 소 | 중립 UI 모듈 이식 — `hangul`·`typeahead`·`alert`·`prompt`·`about`·`filter_bar` + **IME 게이트**(app.rs) | T-12b | ☐ |
 | **T-18** | P0 | 대 | **S1 퀵 팝업** — 타입어헤드 · **한글 조합 중 검색** · 미리보기 · 자동 붙여넣기 | T-14~17 | 🚧 **1단**(08-28 · 단축키→검색→Enter 원본/⇧Enter 평문→자동 붙여넣기 — 세션 이력). 한글 조합 검색·미리보기·가상화는 본편 |
 | **T-18b** | **P0** | **대** | ★ **S2 메인창** — 메뉴+검색 1줄(mac 미러링) · **좌측 세로 툴바** · **보기 3모드 + 가변 행 높이 가상화**(누적합+이진탐색) | T-17 | ☐ |

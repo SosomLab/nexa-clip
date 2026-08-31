@@ -21,7 +21,7 @@ use crate::popup_win::{Popup, PopupAction};
 use crate::settings_win::App;
 use crate::watch_cmd::Gate;
 use nclip_core::capture::{clip_text, summarize};
-use nclip_core::history::{History, Pushed};
+use nclip_core::history::{History, HistoryItem, Pushed};
 use nclip_core::{
     current_lang, has_content, is_plain_format, tr, ClipSnapshot, ClipboardWatch as _, Msg,
     PasteAs, PasteInjector as _, RawRep, WatchCapability,
@@ -31,6 +31,7 @@ use nclip_plat::autostart::{apply, boot_sync, is_registered, BootSync};
 use nclip_plat::paste::PlatformPaste;
 use nclip_plat::tray::{spawn, TrayContent, TrayEvent, TrayHandle};
 use nclip_plat::watch::PlatformWatch;
+use nclip_store::{FileStore, HistoryStore, NullStore, StoredItem};
 use std::time::Instant;
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
@@ -145,13 +146,43 @@ fn sync_autostart(conf: &mut Settings) {
     }
 }
 
+/// 이력 항목 ↔ 저장 형상 — 필드 1:1(지문만 복원 때 재계산).
+fn to_stored(it: &HistoryItem) -> StoredItem {
+    StoredItem {
+        id: it.id,
+        kind: it.kind,
+        label: it.label.clone(),
+        reps: it.reps.clone(),
+        source_app: it.source_app.clone(),
+        copies: it.copies,
+        pinned: it.pinned,
+        thumb: it.thumb.clone(),
+    }
+}
+
+fn to_history(it: StoredItem) -> HistoryItem {
+    HistoryItem::restored(
+        it.id,
+        it.kind,
+        it.label,
+        it.reps,
+        it.source_app,
+        it.copies,
+        it.pinned,
+        it.thumb,
+    )
+}
+
 /// 상주 셸 — 창·트레이·감시·이력·팝업을 winit 한 루프로.
 struct Shell {
     app: App,
     popup: Popup,
     tray: TrayHandle,
-    /// ★ 세션 이력(T-13 1단) — 팝업·트레이 메뉴와 재적재의 원천.
+    /// ★ 이력(T-13) — 팝업·트레이 메뉴와 재적재의 원천. 시작 때 저장소에서 복원된다.
     history: History,
+    /// ★ 영속(T-16 · DR-37) — 이력 변화를 이벤트로 흘려보낸다. 열기 실패면 [`NullStore`]
+    ///   (이력은 세션 한정으로 돈다 — 안 뜨는 것보다 낫다 · DR-31).
+    store: Box<dyn HistoryStore>,
     /// 수집 게이트 — `watch` 진단과 같은 정책(민감·제외 앱·브라우저 암호).
     gate: Gate,
     /// 트레이 메뉴에 보일 최근 개수(`ui.tray_recent_n`).
@@ -342,7 +373,23 @@ impl ApplicationHandler<ShellEvent> for Shell {
                     .flatten();
                 // ★ 재적재로 되돌아온 우리 게시도 여기로 온다 — 승격(맨 위로)이
                 //   곧 에코 처리다(항목이 늘지 않는다).
-                let _pushed: Pushed = self.history.push(&snap, kind, label, thumb);
+                let pushed: Pushed = self.history.push(&snap, kind, label, thumb);
+                // ★ 영속(T-16) — 이력 변화를 그대로 이벤트로 흘린다(id가 짝이다).
+                match pushed {
+                    Pushed::New | Pushed::Replaced => {
+                        if let Some(front) = self.history.get(0) {
+                            self.store.add(&to_stored(front));
+                        }
+                    }
+                    Pushed::Promoted => {
+                        if let Some(front) = self.history.get(0) {
+                            self.store.touch(front.id);
+                        }
+                    }
+                }
+                for id in self.history.drain_evicted() {
+                    self.store.remove(id);
+                }
                 self.refresh_tray();
                 if self.popup.is_open() {
                     // ★ 복사(중복 포함)가 들어오면 커서를 맨 위로 — 방금 것이
@@ -481,11 +528,38 @@ pub(crate) fn run() {
             }
         };
 
+    // ★ 영속(T-16) — 설정 옆 store/ 에서 이력을 복원한다. 열기 실패는
+    //   NullStore 강등(이력은 세션 한정 — 안 뜨는 것보다 낫다 · DR-31).
+    let (mut store, history): (Box<dyn HistoryStore>, History) =
+        match FileStore::open(&crate::conf::data_dir().join("store")) {
+            Ok(rep) => {
+                if rep.archived {
+                    eprintln!(
+                        "⚠️ 저장소: 기기 키 불일치 — 기존 기록을 .locked로 보관하고 새로 시작합니다"
+                    );
+                }
+                let mut fs = rep.store;
+                let items: Vec<HistoryItem> = fs.load().into_iter().map(to_history).collect();
+                println!("저장소: {}개 복원 (암호화 기본 · DR-38)", items.len());
+                (Box::new(fs), History::from_items(cap, items))
+            }
+            Err(e) => {
+                eprintln!("⚠️ 저장소를 열 수 없음: {e} — 이번 세션은 메모리로만 보관합니다");
+                (Box::new(NullStore), History::new(cap))
+            }
+        };
+    // 복원 직후 상한 축출분을 저장소에도 반영한다(설정을 줄여 놓았던 경우).
+    let mut history = history;
+    for id in history.drain_evicted() {
+        store.remove(id);
+    }
+
     let mut shell = Shell {
         app: App::new(font, conf, true),
         popup: Popup::new(popup_font),
         tray,
-        history: History::new(cap),
+        history,
+        store,
         gate,
         tray_n,
         paste: PlatformPaste::new(),
@@ -498,6 +572,11 @@ pub(crate) fn run() {
     // ★ 종료 직전 강제 수거 — "바꾸고 바로 종료하면 안 저장됨"을 막는다.
     if shell.app.conf.flush() {
         println!("설정 저장: {}", shell.app.conf.path().display());
+    }
+    // ★ `sec.clear_on_quit` — 켜져 있으면 종료 때 기록을 지운다(세그먼트·blob 실파일).
+    if shell.app.conf.state.get("sec.clear_on_quit") == "on" {
+        shell.store.wipe();
+        println!("기록 비움: sec.clear_on_quit = on");
     }
     println!("종료합니다 — 이번 상주에서 {}개 보관.", shell.history.len());
 }
