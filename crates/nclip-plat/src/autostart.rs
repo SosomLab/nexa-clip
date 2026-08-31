@@ -451,6 +451,16 @@ mod tests {
         assert!(d.contains("X-GNOME-Autostart-enabled=true"));
     }
 
+    // 런처(.desktop)는 자동 시작 항목과 달리 **`tray` 인자와 `StartupWMClass`** 가 계약이다
+    // (Dock 아이콘이 창에 붙는 근거 — 08-30 "톱니바퀴로 보인다").
+    #[test]
+    fn launcher_carries_tray_arg_and_wm_class() {
+        let l = launcher_content(r#"/opt/my apps/nexa"clip"#);
+        assert!(l.contains("Exec=\"/opt/my apps/nexa\\\"clip\" tray"));
+        assert!(l.contains("StartupWMClass=nexa-clip"));
+        assert!(l.contains("Icon=nexa-clip"));
+    }
+
     #[test]
     fn exec_quote_escapes_shell_reserved() {
         assert_eq!(exec_quote(r"/a/$b`c\d"), "\"/a/\\$b\\`c\\\\d\"");

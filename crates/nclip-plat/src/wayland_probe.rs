@@ -23,6 +23,14 @@ pub fn has_data_control() -> bool {
     has_data_control_in(&globals())
 }
 
+/// Wayland가 없는 OS의 **test 빌드**용 상수 거짓 — `watch_linux`의 순수부를 3-OS에서
+/// 컴파일하기 때문에 필요하다([`crate`] lib.rs의 `watch_linux` cfg 참조).
+#[cfg(not(target_os = "linux"))]
+#[must_use]
+pub fn has_data_control() -> bool {
+    false
+}
+
 /// 순수 판정(테스트 대상).
 #[must_use]
 pub fn has_data_control_in(globals: &[String]) -> bool {
