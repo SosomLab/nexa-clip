@@ -64,6 +64,9 @@ mod imp {
 
     const VK_SHIFT: u16 = 0x10;
     const VK_CONTROL: u16 = 0x11;
+    const VK_MENU: u16 = 0x12; // Alt
+    const VK_LWIN: u16 = 0x5B;
+    const VK_RWIN: u16 = 0x5C;
     const VK_V: u16 = 0x56;
     const KEYEVENTF_KEYUP: u32 = 0x0002;
     const INPUT_KEYBOARD: u32 = 1;
@@ -102,6 +105,7 @@ mod imp {
         fn AttachThreadInput(attach: u32, attach_to: u32, do_attach: i32) -> i32;
         fn SendInput(count: u32, inputs: *const Input, size: i32) -> u32;
         fn GetWindowTextW(hwnd: isize, buf: *mut u16, max: i32) -> i32;
+        fn GetAsyncKeyState(vk: i32) -> i16;
     }
 
     #[link(name = "kernel32")]
@@ -154,10 +158,12 @@ mod imp {
     }
 
     pub(super) fn send_paste(as_: PasteAs) -> Result<(), PasteError> {
-        // 원본 = Ctrl+V · 평문 = Ctrl+Shift+V(대상 앱의 관례를 빌린다).
-        // ⚠️ 평문은 앱마다 지원이 갈린다 — 확실한 길은 "평문만 클립보드에 올리고 Ctrl+V"다.
-        let plain = matches!(as_, PasteAs::Plain);
-        let mut seq: Vec<Input> = Vec::with_capacity(6);
+        // ★ 평문도 **Ctrl+V**다(08-31 사용자 실기 "⇧Enter가 팝업만 다시 연다").
+        //   재적재가 이미 평문 표현만 올렸으므로 Ctrl+V로 충분하고, Ctrl+Shift+V를 쏘면
+        //   그 조합은 **우리 자신의 전역 단축키**(RegisterHotKey)라 대상 앱 대신 우리가
+        //   가로채 팝업이 도로 열린다. Linux(포털 RemoteDesktop)도 같은 이유로 Ctrl+V만 쏜다.
+        let _ = as_; // 방식 차이는 재적재된 클립보드 내용이 이미 담고 있다(4모드 배선은 T-15b).
+        let mut seq: Vec<Input> = Vec::with_capacity(12);
         let key = |vk: u16, up: bool| Input {
             kind: INPUT_KEYBOARD,
             ki: KeyBdInput {
@@ -169,16 +175,24 @@ mod imp {
             },
             _mouse_tail: [0; 8],
         };
-        seq.push(key(VK_CONTROL, false));
-        if plain {
-            seq.push(key(VK_SHIFT, false));
+        // ★ 사용자가 아직 쥐고 있는 물리 수식 키를 먼저 뗀다(⇧Enter·⇧클릭 직후엔 Shift가,
+        //   단축키 직후엔 Ctrl+Shift가 눌린 채다) — 안 떼면 주입한 Ctrl+V와 합쳐져
+        //   Ctrl+Shift+V = 우리 전역 단축키가 되거나(팝업 재열림), Win+V(OS 클립보드 기록)가
+        //   된다. 끝나면 되눌러 물리 상태와 재동기화한다(다음 실제 keyup이 짝을 찾게).
+        let held: Vec<u16> = [VK_SHIFT, VK_MENU, VK_LWIN, VK_RWIN]
+            .into_iter()
+            .filter(|&vk| (unsafe { GetAsyncKeyState(i32::from(vk)) } as u16) & 0x8000 != 0)
+            .collect();
+        for &vk in &held {
+            seq.push(key(vk, true));
         }
+        seq.push(key(VK_CONTROL, false));
         seq.push(key(VK_V, false));
         seq.push(key(VK_V, true));
-        if plain {
-            seq.push(key(VK_SHIFT, true));
-        }
         seq.push(key(VK_CONTROL, true));
+        for &vk in &held {
+            seq.push(key(vk, false));
+        }
 
         let sent = unsafe {
             SendInput(
@@ -237,8 +251,8 @@ mod imp {
         }
 
         // 미리 등록된 시스템 클래스 "STATIC"을 쓴다 — 클래스 등록·wndproc이 필요 없다.
-        let class: Vec<u16> = "STATIC ".encode_utf16().collect();
-        let title: Vec<u16> = "nexa-clip spike ".encode_utf16().collect();
+        let class: Vec<u16> = "STATIC\0".encode_utf16().collect();
+        let title: Vec<u16> = "nexa-clip spike\0".encode_utf16().collect();
         let hwnd = unsafe {
             CreateWindowExW(
                 WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
