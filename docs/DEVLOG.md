@@ -2,6 +2,10 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-08-31 (2차) — Windows 실기: 결함 둘 + "서식 유실"은 Word 설정
+
+- 창 아이콘 부착(`icon.rs`) · ★ ⇧Enter 재열림(주입 Ctrl+Shift+V = 자기 단축키 + 물리 Shift 잔류 → Ctrl+V 통일·수식 키 중화) — 둘 다 실기 통과. ★ 빨강 유실은 왕복 바이트 동일 + Word COM 실험으로 **Word "서식 병합" 설정** 판정(결함 아님 · Win+V도 동일). 왕복 진단 `clip_roundtrip` 신설. 350 테스트 → [journal 2차](journal/2026-08-31.md)
+
 ## 2026-08-31 (1차) — Windows 자리 최신화: main이 red였다
 
 - Linux 자리 38커밋 ff → **Windows·mac test cfg 빌드 실패**(`has_data_control` linux 한정 · `launcher_content` dead_code). `not(linux)` 짝 + `.desktop` 계약 테스트로 복구. ★ CI는 이미 잡고 있었다(run 33262111549 failure 방치) — 병합 전 **크로스 `clippy --all-targets` 3타겟**으로 예방. 350 테스트 → [journal](journal/2026-08-31.md)
