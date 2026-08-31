@@ -2,6 +2,10 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-08-31 (1차) — Windows 자리 최신화: main이 red였다
+
+- Linux 자리 38커밋 ff → **Windows·mac test cfg 빌드 실패**(`has_data_control` linux 한정 · `launcher_content` dead_code). `not(linux)` 짝 + `.desktop` 계약 테스트로 복구. ★ CI는 이미 잡고 있었다(run 33262111549 failure 방치) — 병합 전 **크로스 `clippy --all-targets` 3타겟**으로 예방. 350 테스트 → [journal](journal/2026-08-31.md)
+
 ## 2026-08-30 (3차) — 실기 라운드 2
 
 - **주입 순서**(팝업 파괴 flush 뒤 다음 바퀴 — "첫 번만 붙음" 해소 · 사용자 확인 텍스트·이미지 ✅) · ★ **닫기=트레이 기본 켜짐**(사용자 확정 · Quit만 종료) · **부분 게시 에코 = 원본 승격**(팝업 중복) · ★ **`ui.theme=system` 실제 추종**(beep theme.rs 이식 · 포털 실측). 352 테스트 → [journal 3차](journal/2026-08-30.md)

@@ -4,6 +4,23 @@
 
 ---
 
+## 2026-08-31 (1차) — Windows 자리 최신화: ★ main이 red였다(Windows·mac test 빌드 실패)
+
+Linux 자리 38커밋을 fast-forward → **Windows `cargo test`가 컴파일 실패**. `cargo check`(lib)는 3-OS 통과라
+안 보였고, 깨지는 것은 **test cfg 빌드**뿐이다(`watch_linux` 순수부를 3-OS test에서 검증하는 구조 때문).
+
+| # | 결함 | 조치 |
+|:--:|---|---|
+| ① | `wayland_probe::has_data_control()`이 linux 한정 — Windows·mac **test 빌드 E0425** | `not(linux)` 상수 거짓 짝 |
+| ② | `launcher_content` dead_code(clippy `-D warnings`) — 박제 테스트 부재 | `.desktop` 계약 테스트(`tray` 인자·`StartupWMClass`·`Icon`) |
+
+★ **CI는 이미 잡고 있었다** — run `33262111549`가 windows·macos failure인 채 방치([16 §3](16-doc-git-conventions.md) *"main은 항상 green"* 위반).
+예방: 병합 전 **크로스 `clippy --all-targets` 3타깃**(링커 불요).
+
+**실측(Windows)**: **350 테스트** · clippy 클린 · fmt 클린 · 크로스 `--all-targets` 3타깃 클린.
+
+---
+
 ## 2026-08-30 (3차) — 실기 라운드 2: 주입 순서 · 닫기=트레이(확정) · 에코 승격 · ★ 테마 시스템 추종
 
 | 보고 | 조치 |
