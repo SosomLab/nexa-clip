@@ -101,7 +101,8 @@ impl App {
             w.focus_window();
             return;
         }
-        let attrs = win_name(
+        // ★ 창 아이콘(08-31 사용자 실기 "작업표시줄에 일반 창 아이콘") — 트레이와 같은 그림.
+        let attrs = win_name(crate::icon::with_icon(
             Window::default_attributes()
                 // Linux(GNOME)는 서버 장식이 없어 winit(sctk-adwaita)이 제목을 자체 폰트로
                 // 그리는데 한글 글리프가 없다(08-30 사용자 실기 "타이틀바 글씨 깨짐") → ASCII.
@@ -111,7 +112,7 @@ impl App {
                     "Nexa Clip — 설정 (검색 · 사이드바 경계 드래그 · Esc 종료)"
                 })
                 .with_inner_size(winit::dpi::LogicalSize::new(760.0, 560.0)),
-        );
+        ));
         // 새 창도 토큰이 있으면 그것으로 활성화한다(트레이 → 첫 열기).
         #[cfg(target_os = "linux")]
         let attrs = {

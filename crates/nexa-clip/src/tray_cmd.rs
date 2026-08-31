@@ -37,8 +37,7 @@ use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::window::WindowId;
 
-/// 아이콘 한 변(px) — 트레이 표준.
-const ICON_SIDE: u32 = 32;
+use crate::icon::{icon_rgba, ICON_SIDE};
 
 /// 트레이 메뉴 라벨 최대 글자 수 — 길면 메뉴가 화면을 덮는다(문자 경계 절단).
 const MENU_LABEL_CHARS: usize = 44;
@@ -92,56 +91,6 @@ enum ShellEvent {
     PasteAfterClose(PasteAs),
     /// OS 테마 선호가 바뀌었다(Linux 포털 `SettingChanged`) — `ui.theme = system`이면 따라간다.
     SystemTheme,
-}
-
-/// ★ 계열 아이콘을 코드로 그린다 — 라운드 스퀘어 + 청록 세로 그라디언트(`#22C3D6→#0B7FA6`)
-/// + 흰 클립보드 모티프. 애셋 파일을 링크에 끌어들이지 않는다(단일 바이너리).
-fn icon_rgba() -> Vec<u8> {
-    const TOP: (u8, u8, u8) = (0x22, 0xC3, 0xD6);
-    const BOT: (u8, u8, u8) = (0x0B, 0x7F, 0xA6);
-    let s = ICON_SIDE as i32;
-    let radius = 7i32;
-    let mut out = Vec::with_capacity((s * s * 4) as usize);
-    for y in 0..s {
-        // 세로 그라디언트.
-        let t = y as u32;
-        let lerp = |a: u8, b: u8| -> u8 {
-            ((u32::from(a) * (ICON_SIDE - 1 - t) + u32::from(b) * t) / (ICON_SIDE - 1)) as u8
-        };
-        let (r, g, b) = (lerp(TOP.0, BOT.0), lerp(TOP.1, BOT.1), lerp(TOP.2, BOT.2));
-        for x in 0..s {
-            // 라운드 스퀘어 밖은 투명 — 네 모서리에서 반지름 검사.
-            let cx = if x < radius {
-                radius - 1 - x
-            } else if x >= s - radius {
-                x - (s - radius)
-            } else {
-                -1
-            };
-            let cy = if y < radius {
-                radius - 1 - y
-            } else if y >= s - radius {
-                y - (s - radius)
-            } else {
-                -1
-            };
-            let outside = cx >= 0 && cy >= 0 && cx * cx + cy * cy > radius * radius;
-            if outside {
-                out.extend_from_slice(&[0, 0, 0, 0]);
-                continue;
-            }
-            // 흰 전경 — 클립보드 판(세로 직사각) + 상단 집게(가로 막대).
-            let board = (8..24).contains(&x) && (10..26).contains(&y);
-            let board_inner = (10..22).contains(&x) && (12..24).contains(&y);
-            let clip = (12..20).contains(&x) && (6..11).contains(&y);
-            if (board && !board_inner) || clip {
-                out.extend_from_slice(&[255, 255, 255, 255]);
-            } else {
-                out.extend_from_slice(&[r, g, b, 255]);
-            }
-        }
-    }
-    out
 }
 
 /// 툴팁 문자열 — 보관 수를 함께 보여 준다(감시가 실제로 도는 것이 보인다).

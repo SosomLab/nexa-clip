@@ -11,6 +11,7 @@
 
 mod conf;
 mod demo;
+mod icon;
 mod popup_win;
 mod settings_win;
 mod tray_cmd;

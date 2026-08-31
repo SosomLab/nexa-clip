@@ -133,9 +133,11 @@ impl ApplicationHandler for App {
         if self.window.is_some() {
             return;
         }
-        let attrs = Window::default_attributes()
-            .with_title("Nexa Clip — 렌더 데모 (1/2/3 보기 · P 미리보기 · T 테마 · Esc)")
-            .with_inner_size(winit::dpi::LogicalSize::new(560.0, 620.0));
+        let attrs = crate::icon::with_icon(
+            Window::default_attributes()
+                .with_title("Nexa Clip — 렌더 데모 (1/2/3 보기 · P 미리보기 · T 테마 · Esc)")
+                .with_inner_size(winit::dpi::LogicalSize::new(560.0, 620.0)),
+        );
         let Ok(win) = el.create_window(attrs) else {
             eprintln!("창 생성 실패");
             el.exit();
