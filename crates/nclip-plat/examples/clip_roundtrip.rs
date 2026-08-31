@@ -37,7 +37,35 @@ fn main() {
         let _ = std::fs::write(dir.join(format!("A-{i:02}-{safe}.bin")), &r.data);
     }
 
-    match clipboard::set_reps(&a.reps) {
+    // `--no-ole`: 주인 잃은 OLE 사설 포맷을 빼고 재게시(원본 앱의 데이터 객체를
+    // 참조하는 장부라 재게시 시점엔 죽은 참조다 — Word가 OLE 경로를 타다 실패하면
+    // 서식이 갓는 경로로 안 간다는 가설 검증 · 08-31 결함 2).
+    const OLE_PRIVATE: [&str; 9] = [
+        "DataObject",
+        "Ole Private Data",
+        "OwnerLink",
+        "ObjectLink",
+        "Link Source",
+        "Link Source Descriptor",
+        "Embed Source",
+        "Native",
+        "Object Descriptor",
+    ];
+    let no_ole = std::env::args().any(|a| a == "--no-ole");
+    let post: Vec<nclip_core::RawRep> = if no_ole {
+        let kept: Vec<nclip_core::RawRep> = a
+            .reps
+            .iter()
+            .filter(|r| !OLE_PRIVATE.contains(&r.format.as_str()))
+            .cloned()
+            .collect();
+        println!("--no-ole: {} → {}개로 줄여 재게시", a.reps.len(), kept.len());
+        kept
+    } else {
+        a.reps.clone()
+    };
+
+    match clipboard::set_reps(&post) {
         Ok(n) => println!("재게시: {n}개 (팝업 Enter와 같은 경로)"),
         Err(e) => {
             eprintln!("재게시 실패: {e}");
