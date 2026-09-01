@@ -54,3 +54,19 @@ lto = "fat"
 codegen-units = 1
 panic = "abort"
 strip = "symbols"
+
+# ★ debug 빌드에서도 암호 원어는 최적화한다(T-16 · 08-31 실기 "시작 수 초 블록") —
+#   ChaCha20-Poly1305가 opt-level 0에선 ~10MB/s라 blob 복원이 시작을 잡아먹는다.
+#   release는 무관 · 테스트/실기 체감만 바꾼다.
+[profile.dev.package.chacha20poly1305]
+opt-level = 3
+[profile.dev.package.sha2]
+opt-level = 3
+[profile.dev.package.cipher]
+opt-level = 3
+[profile.dev.package.chacha20]
+opt-level = 3
+[profile.dev.package.poly1305]
+opt-level = 3
+[profile.dev.package.universal-hash]
+opt-level = 3

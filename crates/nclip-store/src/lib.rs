@@ -21,6 +21,7 @@
 #![cfg_attr(test, allow(clippy::unwrap_used))]
 
 mod codec;
+pub mod diag;
 mod keys;
 pub mod sealed;
 

@@ -23,8 +23,8 @@
 
 use nclip_core::{current_lang, tr, Lang, Msg};
 use nclip_ctl::controls::{
-    Button, ColorPicker, Combo, ComboControl, ComboItem, Control, LabelSide, PositionPicker,
-    ScrollBars, Switch, TextBox, TreeControl, TreeModel, TreeNode, TreeView,
+    Button, ColorPicker, Combo, ComboControl, ComboItem, Control, LabelSide, ListEditor,
+    PositionPicker, ScrollBars, Switch, TextBox, TreeControl, TreeModel, TreeNode, TreeView,
 };
 use nclip_ctl::draw::{DrawCtx, FontSlot};
 use nclip_ctl::event::{InputEvent, Key};
@@ -150,6 +150,9 @@ pub enum SettingKind {
         /// 크기 값 키(`font.{region}.size`).
         size_key: &'static str,
     },
+    /// ★ **문자열 목록**(08-31 사용자 요청 — 차단 페이지·제외 앱) — ListBox +
+    /// 추가/삭제 + 행 인라인 편집([`ListEditor`]). 값 = `;` 구분 한 줄(저장 형식 불변).
+    ListEdit,
     /// 실행 버튼 — 값이 아니라 **행위**(백업·복원 등). 클릭 = `(key, "run")` 변경 방출.
     /// 값 키가 없어(`default_values` 빈 목록) 영속 파일에 실리지 않는다.
     Action {
@@ -207,6 +210,16 @@ impl Entry {
                 })
                 .into_iter()
                 .collect(),
+            // 목록 — 기본 표(차단 URL 기본 목록)에 있으면 그 값, 없으면 **빈 값으로 키 등록**
+            // (RadioInput과 같은 이유 — 키가 없으면 저장값이 미지 키로 증발한다 · 08-22).
+            SettingKind::ListEdit => vec![(
+                self.key,
+                RADIO_DEFAULTS
+                    .iter()
+                    .find(|(k, _)| *k == self.key)
+                    .map(|(_, v)| (*v).to_string())
+                    .unwrap_or_default(),
+            )],
             SettingKind::Toggle => {
                 // 프로필 공개는 **기본 비노출**(DR-22 — 옵트인). 그 외 토글은 기본 on.
                 let on = !TOGGLE_DEFAULT_OFF.contains(&self.key);
@@ -337,6 +350,8 @@ impl SettingsState {
             SettingKind::Radio(opts) => opts.iter().any(|(v, _)| *v == value),
             // 직접 입력 허용 — 빈 값만 거른다(빈 문자열은 기본값 의미가 아니다).
             SettingKind::RadioInput(..) => !value.is_empty(),
+            // 목록은 빈 것도 유효(제외 앱 기본 = 비어 있음).
+            SettingKind::ListEdit => true,
             // ★ 숫자 항목 — 파일에서 온 값도 **숫자여야** 받는다. 범위는 validate가 본다.
             SettingKind::Number { .. } => value.parse::<u64>().is_ok(),
             SettingKind::Toggle => value == "on" || value == "off",
@@ -470,6 +485,8 @@ enum RowCtl {
     },
     /// 3×3 위치 그리드.
     Pos(PositionPicker),
+    /// ★ 문자열 목록(ListBox + 추가/삭제 + 인라인 편집).
+    List(ListEditor),
     /// 글꼴 **얼굴만**(고정폭 — 크기는 Base UI를 따른다).
     Face(TextBox),
     /// 색상(스와치 + hex + 프리셋 · 08-10).
@@ -616,6 +633,7 @@ impl SettingsWidget {
                 .or_else(|| size.editing_input_ref().and_then(TextBox::copy_selection)),
             RowCtl::Face(family) => family.copy_selection(),
             RowCtl::Combo(c) => c.editing_input_ref().and_then(TextBox::copy_selection),
+            RowCtl::List(l) => l.editing_input_ref().and_then(TextBox::copy_selection),
             _ => None,
         })
     }
@@ -632,6 +650,7 @@ impl SettingsWidget {
                 .or_else(|| size.editing_input().and_then(|tb| tb.cut_selection(inv))),
             RowCtl::Face(family) => family.cut_selection(inv),
             RowCtl::Combo(c) => c.editing_input().and_then(|tb| tb.cut_selection(inv)),
+            RowCtl::List(l) => l.editing_input().and_then(|tb| tb.cut_selection(inv)),
             _ => None,
         })
     }
@@ -654,6 +673,11 @@ impl SettingsWidget {
                         tb.paste(text, inv);
                     }
                 }
+                RowCtl::List(l) => {
+                    if let Some(tb) = l.editing_input() {
+                        tb.paste(text, inv);
+                    }
+                }
                 _ => {}
             }
         }
@@ -670,6 +694,7 @@ impl SettingsWidget {
                 .or_else(|| size.editing_input().and_then(|tb| tb.take_edit_ctx())),
             RowCtl::Face(family) => family.take_edit_ctx(),
             RowCtl::Combo(c) => c.editing_input().and_then(|tb| tb.take_edit_ctx()),
+            RowCtl::List(l) => l.editing_input().and_then(|tb| tb.take_edit_ctx()),
             _ => None,
         })
     }
@@ -688,6 +713,11 @@ impl SettingsWidget {
                 RowCtl::Face(family) => family.set_clipboard_has_text(yes),
                 RowCtl::Combo(c) => {
                     if let Some(tb) = c.editing_input() {
+                        tb.set_clipboard_has_text(yes);
+                    }
+                }
+                RowCtl::List(l) => {
+                    if let Some(tb) = l.editing_input() {
                         tb.set_clipboard_has_text(yes);
                     }
                 }
@@ -935,6 +965,14 @@ impl SettingsWidget {
                     c.set_scale(self.scale);
                     RowCtl::Color(c)
                 }
+                SettingKind::ListEdit => {
+                    let mut l = ListEditor::new(
+                        self.values.get(e.key).map_or("", String::as_str),
+                        tr(lang, Msg::CustomInput),
+                    );
+                    l.set_scale(self.scale);
+                    RowCtl::List(l)
+                }
                 SettingKind::Toggle => {
                     // mac(iOS) 스타일 스위치(08-11 사용자 요청) — 라벨은 행 왼쪽 제목이
                     // 이미 있으므로 토글만([`LabelSide::None`]).
@@ -1016,6 +1054,7 @@ impl SettingsWidget {
             }
             match &mut row.ctl {
                 RowCtl::Combo(c) => c.select_value(value),
+                RowCtl::List(l) => l.set_value(value),
                 // 토글도 역반영(08-15 — 쌍방 동기화: 다른 경로가 켠/끈 것을 표시).
                 RowCtl::Check(c) => c.set_on(value == "on"),
                 _ => {}
@@ -1118,6 +1157,7 @@ impl SettingsWidget {
             dirty |= match &mut row.ctl {
                 RowCtl::Combo(c) => c.tick_hover(now_ms),
                 RowCtl::Act(b) => b.tick(now_ms),
+                RowCtl::List(l) => l.tick(now_ms),
                 RowCtl::Font { size, .. } => size.tick_hover(now_ms),
                 _ => false,
             };
@@ -1186,9 +1226,11 @@ impl SettingsWidget {
             .enumerate()
             .map(|(ri, row)| {
                 let e = &registry()[row.idx];
-                let base = match e.kind {
-                    SettingKind::FontSection { .. } => h_font,
-                    SettingKind::PositionGrid => h_pos,
+                let base = match (&row.ctl, e.kind) {
+                    // 목록은 제목 줄 아래 전폭으로 눈는다(FontSection 문법).
+                    (RowCtl::List(l), _) => dy32 + l.preferred_height() + pad,
+                    (_, SettingKind::FontSection { .. }) => h_font,
+                    (_, SettingKind::PositionGrid) => h_pos,
                     _ => h_entry,
                 };
                 let ctl_w = match &row.ctl {
@@ -1197,7 +1239,7 @@ impl SettingsWidget {
                     RowCtl::Face(_) => family_w,
                     RowCtl::Pos(p) => p.preferred_size().0,
                     RowCtl::Color(c) => c.preferred_width().min(rw - pad * 2),
-                    RowCtl::Font { .. } => 0,
+                    RowCtl::Font { .. } | RowCtl::List(_) => 0,
                 };
                 let desc_avail = (rw - pad * 2 - ctl_w - gap10).max(min_avail);
                 let est_logical: i32 = tr(lang, e.desc)
@@ -1228,7 +1270,8 @@ impl SettingsWidget {
                 RowCtl::Face(_) => family_w,
                 RowCtl::Pos(p) => p.preferred_size().0,
                 RowCtl::Color(c) => c.preferred_width().min(rw - pad * 2),
-                RowCtl::Font { .. } => 0, // 설명이 전폭을 쓴다(컨트롤이 아래 줄)
+                // 설명이 전폭을 쓴다(컨트롤이 아래 줄).
+                RowCtl::Font { .. } | RowCtl::List(_) => 0,
             };
             row.desc_avail = (rw - pad * 2 - ctl_w - gap10).max(min_avail);
             let est_logical: i32 = tr(lang, e.desc)
@@ -1238,9 +1281,10 @@ impl SettingsWidget {
             #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
             let est_px = (est_logical as f32 * scale).round() as i32;
             row.desc_lines = ((est_px + row.desc_avail - 1) / row.desc_avail).clamp(1, 3);
-            let h = match e.kind {
-                SettingKind::FontSection { .. } => h_font,
-                SettingKind::PositionGrid => h_pos,
+            let h = match (&row.ctl, e.kind) {
+                (RowCtl::List(l), _) => dy32 + l.preferred_height() + pad,
+                (_, SettingKind::FontSection { .. }) => h_font,
+                (_, SettingKind::PositionGrid) => h_pos,
                 _ => h_entry,
             } + (row.desc_lines - 1) * desc_line_h
                 + note_hs[ri];
@@ -1323,6 +1367,11 @@ impl SettingsWidget {
                         inv,
                     );
                 }
+                RowCtl::List(l) => {
+                    l.set_scale(self.scale);
+                    let lh = l.preferred_height();
+                    l.set_bounds(Rect::new(rx + pad, top + dy32, rw - pad * 2, lh), inv);
+                }
             }
             top += h;
         }
@@ -1359,6 +1408,11 @@ impl SettingsWidget {
                 }
                 RowCtl::Pos(g) => {
                     if let Some(v) = g.take_changed() {
+                        got.push((e.key, v));
+                    }
+                }
+                RowCtl::List(l) => {
+                    if let Some(v) = l.take_changed() {
                         got.push((e.key, v));
                     }
                 }
@@ -1662,6 +1716,11 @@ impl Widget for SettingsWidget {
                             size.set_focused(size.bounds().contains(p));
                         }
                         RowCtl::Pos(g) => g.set_focused(g.bounds().contains(p)),
+                        RowCtl::List(l) => {
+                            if !l.bounds().contains(p) {
+                                l.set_focused(false);
+                            }
+                        }
                         RowCtl::Face(f) => f.set_focused(f.bounds().contains(p)),
                         RowCtl::Color(c) => {
                             if !c.bounds().contains(p) {
@@ -1707,6 +1766,7 @@ impl Widget for SettingsWidget {
                             size.on_event(ev, inv);
                         }
                         RowCtl::Pos(g) => g.on_event(ev, inv),
+                        RowCtl::List(l) => l.on_event(ev, inv),
                         RowCtl::Face(f) => f.on_event(ev, inv),
                         RowCtl::Color(c) => c.on_event(ev, inv),
                         RowCtl::Act(b) => b.on_event(ev, inv),
@@ -1909,6 +1969,16 @@ impl Widget for SettingsWidget {
                         ctx.text(r.x + self.s(PAD), r.y + dy, r, line, theme.text_dim);
                     }
                 }
+                RowCtl::List(_) => {
+                    ctx.select_font(FontSlot::Base, true);
+                    ctx.text(
+                        r.x + self.s(PAD),
+                        r.y + self.s(6),
+                        r,
+                        tr(lang, e.label),
+                        theme.text,
+                    );
+                }
                 RowCtl::Font { .. } => {
                     ctx.select_font(FontSlot::Base, true);
                     ctx.text(
@@ -1938,6 +2008,7 @@ impl Widget for SettingsWidget {
                 RowCtl::Check(c) => c.paint(ctx, theme),
                 RowCtl::Act(b) => b.paint(ctx, theme),
                 RowCtl::Pos(g) => g.paint(ctx, theme),
+                RowCtl::List(l) => l.paint(ctx, theme),
                 RowCtl::Face(f) => f.paint(ctx, theme),
                 RowCtl::Color(c) => c.paint(ctx, theme),
                 RowCtl::Font { family, size } => {

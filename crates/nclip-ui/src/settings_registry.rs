@@ -188,7 +188,7 @@ pub(crate) const REGISTRY: &[Entry] = &[
         Msg::CatPrivacy,
         Msg::SetConcealUrls,
         Msg::SetConcealUrlsDesc,
-        SettingKind::RadioInput(&[], ""),
+        SettingKind::ListEdit,
         "sec.conceal_urls",
     ),
     // ★ FR-S-2 제외 앱 — 여기 적힌 앱의 복사는 (토글과 무관하게) 기록하지 않는다. 기본 비어 있음.
@@ -196,7 +196,7 @@ pub(crate) const REGISTRY: &[Entry] = &[
         Msg::CatPrivacy,
         Msg::SetExcludeApps,
         Msg::SetExcludeAppsDesc,
-        SettingKind::RadioInput(&[], ""),
+        SettingKind::ListEdit,
         "sec.exclude_apps",
     ),
     e(

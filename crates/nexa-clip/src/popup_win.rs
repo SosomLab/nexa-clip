@@ -94,6 +94,37 @@ pub(crate) struct Popup {
 const TYPE_GRACE: std::time::Duration = std::time::Duration::from_millis(150);
 
 /// 종류 배지 글리프 — ⚠️ 전부 KS X 1001(맑은 고딕 커버) — 이모지는 두부가 된다(08-27).
+/// 좌상단 (x, y)를 **커서가 든 모니터** 안으로 되민다 — 팝업 전체가 화면에 보이게.
+///
+/// 물리 좌표 기준. 팝업 크기는 논리 상수 × 그 모니터의 배율(창 생성 전이라 창 배율을
+/// 모른다 — 모니터 배율이 곧 그 값이다). 커서를 품은 모니터가 없으면(순간적 좌표 이상)
+/// 주 모니터, 그것도 없으면 그대로 둔다(fail-soft — 안 뜨는 것보다 낫다).
+fn clamp_to_monitor(el: &ActiveEventLoop, x: i32, y: i32) -> (i32, i32) {
+    let contains = |m: &winit::monitor::MonitorHandle| {
+        let p = m.position();
+        let s = m.size();
+        x >= p.x
+            && y >= p.y
+            && x < p.x + i32::try_from(s.width).unwrap_or(i32::MAX)
+            && y < p.y + i32::try_from(s.height).unwrap_or(i32::MAX)
+    };
+    let Some(mon) = el
+        .available_monitors()
+        .find(contains)
+        .or_else(|| el.primary_monitor())
+    else {
+        return (x, y);
+    };
+    let scale = mon.scale_factor();
+    let pw = (POPUP_W * scale).ceil() as i32;
+    let ph = (POPUP_H * scale).ceil() as i32;
+    let (mp, ms) = (mon.position(), mon.size());
+    let max_x = mp.x + i32::try_from(ms.width).unwrap_or(i32::MAX) - pw;
+    let max_y = mp.y + i32::try_from(ms.height).unwrap_or(i32::MAX) - ph;
+    // 모니터보다 팝업이 크면(극단) 좌상단 고정이 최선이다.
+    (x.min(max_x).max(mp.x), y.min(max_y).max(mp.y))
+}
+
 fn kind_glyph(kind: ClipKind) -> &'static str {
     match kind {
         ClipKind::Text => "▤",
@@ -176,6 +207,9 @@ impl Popup {
         ));
         if let Some((x, y)) = at {
             // 커서 위치(DR-24 기본) — 물리 좌표 그대로(커서가 곧 물리 좌표다).
+            // ★ 화면 경계 클램프(08-31 사용자 실기 "우측 하단이면 팝업이 잘린다") —
+            //   커서가 든 모니터 안에 **전체가 들어가도록** 좌상단을 되민다.
+            let (x, y) = clamp_to_monitor(el, x, y);
             attrs = attrs.with_position(PhysicalPosition::new(x, y));
         }
         let Ok(win) = el.create_window(attrs) else {
