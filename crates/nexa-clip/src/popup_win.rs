@@ -93,7 +93,6 @@ pub(crate) struct Popup {
 /// 속도보다 짧고, 키 해제보다 길게.
 const TYPE_GRACE: std::time::Duration = std::time::Duration::from_millis(150);
 
-/// 종류 배지 글리프 — ⚠️ 전부 KS X 1001(맑은 고딕 커버) — 이모지는 두부가 된다(08-27).
 /// 좌상단 (x, y)를 **커서가 든 모니터** 안으로 되민다 — 팝업 전체가 화면에 보이게.
 ///
 /// 물리 좌표 기준. 팝업 크기는 논리 상수 × 그 모니터의 배율(창 생성 전이라 창 배율을
@@ -136,7 +135,8 @@ fn clamp_to_monitor(el: &ActiveEventLoop, x: i32, y: i32) -> (i32, i32) {
     (x.min(max_x).max(ax + margin), y.min(max_y).max(ay + margin))
 }
 
-fn kind_glyph(kind: ClipKind) -> &'static str {
+/// 종류 배지 글리프 — ⚠️ 전부 KS X 1001(맑은 고딕 커버) — 이모지는 두부가 된다(08-27).
+pub(crate) fn kind_glyph(kind: ClipKind) -> &'static str {
     match kind {
         ClipKind::Text => "▤",
         ClipKind::RichText => "▧",

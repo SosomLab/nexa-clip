@@ -17,6 +17,7 @@
 //! (설정을 끔으로 내려 화면과 실제를 일치시킨다).
 
 use crate::conf::Settings;
+use crate::main_win::{MainAction, MainWin};
 use crate::popup_win::{Popup, PopupAction};
 use crate::settings_win::App;
 use crate::watch_cmd::Gate;
@@ -177,6 +178,8 @@ fn to_history(it: StoredItem) -> HistoryItem {
 struct Shell {
     app: App,
     popup: Popup,
+    /// ★ S2 메인창(T-18b0) — 항목 관리(핀·삭제·검색·복사). 트레이 좌클릭/"열기"의 목적지.
+    main: MainWin,
     tray: TrayHandle,
     /// ★ 이력(T-13) — 팝업·트레이 메뉴와 재적재의 원천. 시작 때 저장소에서 복원된다.
     history: History,
@@ -202,6 +205,44 @@ impl Shell {
             self.history.len(),
             self.history.recent_labels(self.tray_n),
         ));
+    }
+
+    /// 메인창 닫기 — `ui.close_to_tray` 정책 공유(설정 창과 동일 계약).
+    fn close_main(&mut self) {
+        // 메인창 X/Esc = 항상 숨김(상주 유지 — 종료는 트레이 Quit만 · 08-30 확정 계승).
+        self.main.close();
+    }
+
+    /// ★ 메인창 복사 — 재적재만(주입 없음 · 관리 화면). 에코는 승격으로.
+    fn copy_from_main(&mut self, id: u64, plain: bool) {
+        let Some(pos) =
+            (0..self.history.len()).find(|&i| self.history.get(i).is_some_and(|it| it.id == id))
+        else {
+            return;
+        };
+        let Some(item) = self.history.get(pos) else {
+            return;
+        };
+        let reps: Vec<RawRep> = if plain {
+            item.reps
+                .iter()
+                .filter(|r| is_plain_format(&r.format))
+                .cloned()
+                .collect()
+        } else {
+            item.reps.clone()
+        };
+        if reps.is_empty() {
+            eprintln!("평문 표현이 없는 항목입니다");
+            return;
+        }
+        match nclip_plat::clipboard::set_reps(&reps) {
+            Ok(n) => {
+                println!("복사(메인창): \"{}\" — 표현 {n}개", item.label);
+                self.history.expect_echo(pos);
+            }
+            Err(e) => eprintln!("복사 실패: {e}"),
+        }
     }
 
     /// 항목을 클립보드로 되돌린다(트레이 메뉴 — 주입 없음).
@@ -294,6 +335,38 @@ impl ApplicationHandler<ShellEvent> for Shell {
     }
 
     fn window_event(&mut self, el: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
+        if self.main.window_id() == Some(id) {
+            match self.main.handle_event(&event) {
+                MainAction::None => {}
+                MainAction::Close => self.close_main(),
+                MainAction::QueryChanged => self.main.on_history_changed(&self.history),
+                MainAction::OpenSettings => self.app.ensure_window(el),
+                MainAction::Copy { id, plain } => self.copy_from_main(id, plain),
+                MainAction::Delete(id) => {
+                    if self.history.remove(id) {
+                        self.store.remove(id);
+                        self.main.on_history_changed(&self.history);
+                        self.refresh_tray();
+                        self.main.on_history_changed(&self.history);
+                    }
+                }
+                MainAction::TogglePin(id) => {
+                    let now = self
+                        .history
+                        .get_by_id(id)
+                        .map(|it| !it.pinned)
+                        .unwrap_or(false);
+                    if self.history.set_pinned(id, now) {
+                        // ★ 핀 영속 = 같은 id Add 재기록(재생 시 교체 — docs/28 §4).
+                        if let Some(it) = self.history.get_by_id(id) {
+                            self.store.add(&to_stored(it));
+                        }
+                        self.main.on_history_changed(&self.history);
+                    }
+                }
+            }
+            return;
+        }
         // 팝업 창의 이벤트는 팝업으로 — 나머지(설정 창)는 App으로.
         if self.popup.window_id() == Some(id) {
             match self.popup.handle_event(&event, &self.history) {
@@ -308,13 +381,18 @@ impl ApplicationHandler<ShellEvent> for Shell {
 
     fn user_event(&mut self, el: &ActiveEventLoop, ev: ShellEvent) {
         match ev {
-            ShellEvent::Open => self.app.ensure_window(el),
+            ShellEvent::Open => {
+                // ★ 08-30 사용자 확정: 트레이 좌클릭/"열기" = **메인창**(설정은 메인 ⚙).
+                let theme = self.app.theme();
+                self.main.open(el, &self.history, theme);
+            }
             ShellEvent::Quit => el.exit(),
             ShellEvent::Hotkey => self.toggle_popup(el),
             ShellEvent::PasteAfterClose(as_) => self.paste_now(as_),
             ShellEvent::SystemTheme => {
                 self.app.apply_theme();
                 self.popup.set_theme(self.app.theme());
+                self.main.set_theme(self.app.theme());
                 println!(
                     "테마: OS 선호 변경 → {}(ui.theme = {})",
                     if self.app.theme().is_dark {
@@ -391,6 +469,7 @@ impl ApplicationHandler<ShellEvent> for Shell {
                     self.store.remove(id);
                 }
                 self.refresh_tray();
+                self.main.on_history_changed(&self.history);
                 if self.popup.is_open() {
                     // ★ 복사(중복 포함)가 들어오면 커서를 맨 위로 — 방금 것이
                     //   항상 첫 줄이고 선택도 그걸 가리킨다(08-28 사용자 요청).
@@ -501,7 +580,7 @@ pub(crate) fn run() {
         });
     }
 
-    println!("트레이 상주: ok — 좌클릭/열기 = 설정 창 · 우클릭 = 최근 항목 메뉴(클릭 = 재적재)");
+    println!("트레이 상주: ok — 좌클릭/열기 = 메인창(항목 관리) · 우클릭 = 최근 메뉴 · 설정은 메인창 ⚙");
     println!(
         "창 닫기: {}",
         if conf.state.get("ui.close_to_tray") == "on" {
@@ -554,9 +633,19 @@ pub(crate) fn run() {
         store.remove(id);
     }
 
+    // 메인창 폰트 — 팝업과 같은 이유로 자기 것을 따로 든다(mmap 정적 데이터).
+    let main_font =
+        match nclip_plat::font::system_ui_font().and_then(|(d, i)| Font::from_static(d, i).ok()) {
+            Some(f) => f,
+            None => {
+                eprintln!("메인창 폰트 로드 실패");
+                std::process::exit(1);
+            }
+        };
     let mut shell = Shell {
         app: App::new(font, conf, true),
         popup: Popup::new(popup_font),
+        main: MainWin::new(main_font),
         tray,
         history,
         store,

@@ -191,6 +191,23 @@ impl History {
         std::mem::take(&mut self.evicted)
     }
 
+    /// id로 찾기(S2 메인창 — 필터된 뷰가 인덱스 대신 id로 말한다).
+    #[must_use]
+    pub fn get_by_id(&self, id: u64) -> Option<&HistoryItem> {
+        self.items.iter().find(|it| it.id == id)
+    }
+
+    /// ★ 항목 삭제(S2 메인창 — T-18b0). 있었으면 `true`(저장소 동기화는 호출자 몫).
+    pub fn remove(&mut self, id: u64) -> bool {
+        match self.items.iter().position(|it| it.id == id) {
+            Some(i) => {
+                self.items.remove(i);
+                true
+            }
+            None => false,
+        }
+    }
+
     /// ★ 핀 토글(T-18b0 기초) — 축출에서 지켜진다. 있는 id면 `true`.
     pub fn set_pinned(&mut self, id: u64, pinned: bool) -> bool {
         match self.items.iter_mut().find(|it| it.id == id) {
