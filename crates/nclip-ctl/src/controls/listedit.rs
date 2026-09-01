@@ -47,6 +47,8 @@ pub struct ListEditor {
     del: Button,
     /// 목록이 바뀌었다 — [`Self::take_changed`] 1회성.
     changed: bool,
+    /// 빈 목록 표시 문구(i18n은 호스트 몸 — 컨트롤은 언어를 모른다).
+    empty_label: String,
 }
 
 impl ListEditor {
@@ -60,10 +62,31 @@ impl ListEditor {
             top: 0,
             editing: None,
             input: TextBox::new(placeholder),
-            add: Button::new("＋"),
-            del: Button::new("−"),
+            // ASCII 글림표 — U+FF0B/U+2212는 맑은 고딕에 없어 두부가 된다(09-01 실기).
+            add: Button::new("+"),
+            del: Button::new("-"),
             changed: false,
+            empty_label: "—".into(),
         }
+    }
+
+    /// 빈 목록 문구 지정(예: tr(lang, Msg::ListEmpty)).
+    #[must_use]
+    pub fn with_empty_label(mut self, label: impl Into<String>) -> Self {
+        self.empty_label = label.into();
+        self
+    }
+
+    /// 키 입력을 받을 상태인가 — 포커스 또는 편집 중(호스트 키 라우팅 근거).
+    #[must_use]
+    pub fn wants_keys(&self) -> bool {
+        self.base.focused || self.editing.is_some()
+    }
+
+    /// 행 인라인 편집 중인가.
+    #[must_use]
+    pub fn is_editing(&self) -> bool {
+        self.editing.is_some()
     }
 
     /// 권장 크기(물리 px) — 폭은 호스트 몫이라 높이만 의미 있다.
@@ -354,7 +377,7 @@ impl Widget for ListEditor {
         }
         if self.items.is_empty() {
             let clip = Rect::new(l.x + pad, l.y, (l.w - pad * 2).max(0), rh);
-            ctx.text(l.x + pad, l.y + ty, clip, "—", dim);
+            ctx.text(l.x + pad, l.y + ty, clip, &self.empty_label, dim);
         }
         // 넘침 표시 — 우측 얇은 스크롤 자국(조작은 휠).
         if self.items.len() > VISIBLE {

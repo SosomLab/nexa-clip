@@ -191,6 +191,8 @@ pub enum Msg {
     ValMinutesRange,
     /// 콤보의 직접 입력 항목.
     CustomInput,
+    /// 목록 컨트롤 빈 상태 표시(ListEditor · 09-01).
+    ListEmpty,
     /// 시스템 기본 글꼴.
     SystemDefaultFont,
     /// 설정 카테고리: 일반.
@@ -455,6 +457,7 @@ impl Msg {
                 "範囲内の分数を入力してください",
             ],
             Msg::CustomInput => ["Custom…", "직접 입력…", "自定义…", "カスタム…"],
+            Msg::ListEmpty => ["No items", "내용 없음", "无项目", "項目なし"],
             Msg::SystemDefaultFont => ["System default", "시스템 기본", "系统默认", "システム標準"],
             Msg::CatGeneral => ["General", "일반", "常规", "一般"],
             Msg::CatShortcuts => ["Shortcuts", "단축키", "快捷键", "ショートカット"],
@@ -706,7 +709,7 @@ mod tests {
     use super::*;
 
     /// 카탈로그 전수 — 새 `Msg`를 더하면 여기도 더한다(빈칸 검사가 그걸 강제한다).
-    const ALL_MSG: [Msg; 115] = [
+    const ALL_MSG: [Msg; 116] = [
         Msg::AppName,
         Msg::SearchPlaceholder,
         Msg::EmptyHistory,
@@ -752,6 +755,7 @@ mod tests {
         Msg::SizeXLarge,
         Msg::ValMinutesRange,
         Msg::CustomInput,
+        Msg::ListEmpty,
         Msg::SystemDefaultFont,
         Msg::CatGeneral,
         Msg::CatShortcuts,

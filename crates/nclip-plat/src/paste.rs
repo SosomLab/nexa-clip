@@ -845,6 +845,22 @@ pub fn warm_up(token_path: Option<std::path::PathBuf>) -> Result<(), String> {
 ///
 /// 실물에서는 창이 뜨면서 자연히 일어나는 일이라, 창 없이 그 왕복을 검증하려고 둔다.
 #[must_use]
+/// ★ 창을 진짜 포그라운드로(09-01 사용자 실기 "트레이 클릭 시 창이 뒤로 숨음") —
+/// Windows는 포그라운드 권한 규칙 때문에 `focus_window()`만으로는 작업표시줄만
+/// 깜박인다. K-1 복원과 같은 AttachThreadInput 문법을 재사용한다.
+/// 다른 OS는 no-op(컴포지터/WM이 알아서 — Linux는 wlactivate 경로가 담당).
+pub fn force_foreground(hwnd: isize) -> bool {
+    #[cfg(windows)]
+    {
+        imp::restore(&hwnd).is_ok()
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = hwnd;
+        false
+    }
+}
+
 pub fn spike_steal_focus() -> bool {
     imp::steal_focus_to_self()
 }

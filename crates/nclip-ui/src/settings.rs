@@ -485,8 +485,8 @@ enum RowCtl {
     },
     /// 3×3 위치 그리드.
     Pos(PositionPicker),
-    /// ★ 문자열 목록(ListBox + 추가/삭제 + 인라인 편집).
-    List(ListEditor),
+    /// ★ 문자열 목록(ListBox + 추가/삭제 + 인라인 편집) — 큼직해 Box(변형 크기 격차 린트).
+    List(Box<ListEditor>),
     /// 글꼴 **얼굴만**(고정폭 — 크기는 Base UI를 따른다).
     Face(TextBox),
     /// 색상(스와치 + hex + 프리셋 · 08-10).
@@ -969,9 +969,10 @@ impl SettingsWidget {
                     let mut l = ListEditor::new(
                         self.values.get(e.key).map_or("", String::as_str),
                         tr(lang, Msg::CustomInput),
-                    );
+                    )
+                    .with_empty_label(tr(lang, Msg::ListEmpty));
                     l.set_scale(self.scale);
-                    RowCtl::List(l)
+                    RowCtl::List(Box::new(l))
                 }
                 SettingKind::Toggle => {
                     // mac(iOS) 스타일 스위치(08-11 사용자 요청) — 라벨은 행 왼쪽 제목이
@@ -1503,6 +1504,34 @@ impl SettingsWidget {
             _ => false,
         })
     }
+
+    /// ★ 목록이 키를 받을 상태(포커스·편집)인가 — 이 때 ↑↓가 사이드바로 샐면
+    /// 메뉴가 움직인다(09-01 사용자 실기).
+    fn any_list_wants_keys(&self) -> bool {
+        self.rows
+            .iter()
+            .any(|r| matches!(&r.ctl, RowCtl::List(l) if l.wants_keys()))
+    }
+
+    /// 목록 행 인라인 편집 중인가 — 문자 입력이 검색으로 샐면 안 된다.
+    fn any_list_editing(&self) -> bool {
+        self.rows
+            .iter()
+            .any(|r| matches!(&r.ctl, RowCtl::List(l) if l.is_editing()))
+    }
+
+    /// 키 입력을 활성 목록으로 보내고 변경을 수확한다.
+    fn route_key_to_list(&mut self, ev: &InputEvent, inv: &mut Invalidations) {
+        for row in &mut self.rows {
+            if let RowCtl::List(l) = &mut row.ctl {
+                if l.wants_keys() {
+                    l.on_event(ev, inv);
+                }
+            }
+        }
+        self.drain_changes(inv);
+        inv.push(self.bounds);
+    }
 }
 
 impl Widget for SettingsWidget {
@@ -1786,7 +1815,10 @@ impl Widget for SettingsWidget {
                 self.drain_changes(inv);
             }
             InputEvent::Char { .. } => {
-                if self.any_family_focused() {
+                if self.any_list_editing() {
+                    // 목록 행 편집 중 — 문자는 그 입력 상자의 것이다(검색 폴백 금지).
+                    self.route_key_to_list(ev, inv);
+                } else if self.any_family_focused() {
                     for row in &mut self.rows {
                         match &mut row.ctl {
                             RowCtl::Font { family, .. } if family.is_focused() => {
@@ -1811,6 +1843,31 @@ impl Widget for SettingsWidget {
                 inv.push(self.bounds);
             }
             InputEvent::Key { key, .. } => match key {
+                // ★ 목록이 키를 원한다(09-01) — 편집 중은 편집 키 전부, 포커스만일 때는
+                //   탐색·삭제·확정 키를 그 목록으로. Esc는 편집 취소(편집 중) 또는
+                //   포커스 해제(그 외) — 창 닫기로 샐지 않는다.
+                Key::Enter | Key::Left | Key::Right | Key::Home | Key::End | Key::Space
+                    if self.any_list_editing() =>
+                {
+                    self.route_key_to_list(ev, inv);
+                }
+                Key::Up | Key::Down | Key::Delete if self.any_list_wants_keys() => {
+                    self.route_key_to_list(ev, inv);
+                }
+                Key::Enter if self.any_list_wants_keys() => {
+                    self.route_key_to_list(ev, inv);
+                }
+                Key::Escape if self.any_list_editing() => {
+                    self.route_key_to_list(ev, inv);
+                }
+                Key::Escape if self.any_list_wants_keys() => {
+                    for row in &mut self.rows {
+                        if let RowCtl::List(l) = &mut row.ctl {
+                            l.set_focused(false);
+                        }
+                    }
+                    inv.push(self.bounds);
+                }
                 Key::Escape => {
                     if self.any_family_focused() {
                         for row in &mut self.rows {

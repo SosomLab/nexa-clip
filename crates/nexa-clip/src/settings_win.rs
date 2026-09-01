@@ -99,6 +99,7 @@ impl App {
                 }
             }
             w.focus_window();
+            bring_to_front(w);
             return;
         }
         // ★ 창 아이콘(08-31 사용자 실기 "작업표시줄에 일반 창 아이콘") — 트레이와 같은 그림.
@@ -132,6 +133,7 @@ impl App {
             return;
         };
         let win = Rc::new(win);
+        bring_to_front(&win);
         self.scale = win.scale_factor() as f32;
         let mut inv = Invalidations::default();
         self.widget.set_scale(self.scale, &mut inv);
@@ -481,6 +483,22 @@ pub(crate) fn run() {
 
 /// 창에 앱 식별자를 싣는다 — Wayland `app_id` · X11 `WM_CLASS`(beep 08-29 실기 ③: 없으면
 /// GNOME Dock이 `.desktop`과 못 맞춰 톱니바퀴 + "알 수 없음"). 다른 OS는 무해한 no-op.
+/// ★ 창을 진짜 앞으로(09-01 사용자 실기 "트레이 클릭 시 창이 뒤로 숨음") —
+/// Windows는 포그라운드 권한 규칙 때문에 `focus_window()`만으로는 작업표시줄만 깜밖이고
+/// 말아서, K-1의 AttachThreadInput 문법(`nclip_plat::paste::force_foreground`)을 재사용한다.
+pub(crate) fn bring_to_front(win: &winit::window::Window) {
+    #[cfg(windows)]
+    {
+        use winit::raw_window_handle::{HasWindowHandle as _, RawWindowHandle};
+        if let Ok(h) = win.window_handle() {
+            if let RawWindowHandle::Win32(w) = h.as_raw() {
+                let _ = nclip_plat::paste::force_foreground(w.hwnd.get());
+            }
+        }
+    }
+    let _ = win;
+}
+
 pub(crate) fn win_name(attrs: winit::window::WindowAttributes) -> winit::window::WindowAttributes {
     #[cfg(target_os = "linux")]
     {

@@ -118,11 +118,22 @@ fn clamp_to_monitor(el: &ActiveEventLoop, x: i32, y: i32) -> (i32, i32) {
     let scale = mon.scale_factor();
     let pw = (POPUP_W * scale).ceil() as i32;
     let ph = (POPUP_H * scale).ceil() as i32;
-    let (mp, ms) = (mon.position(), mon.size());
-    let max_x = mp.x + i32::try_from(ms.width).unwrap_or(i32::MAX) - pw;
-    let max_y = mp.y + i32::try_from(ms.height).unwrap_or(i32::MAX) - ph;
-    // 모니터보다 팝업이 크면(극단) 좌상단 고정이 최선이다.
-    (x.min(max_x).max(mp.x), y.min(max_y).max(mp.y))
+    // ★ 작업 영역 우선(09-01 사용자 실기 "작업표시줄에 가린다") — Windows는 rcWork,
+    //   없으면 모니터 전체로 폴백. 가장자리 5px(논리) 여유도 사용자 요청.
+    let (ax, ay, aw, ah) = nclip_plat::screen::work_area_at(x, y).unwrap_or_else(|| {
+        let (mp, ms) = (mon.position(), mon.size());
+        (
+            mp.x,
+            mp.y,
+            i32::try_from(ms.width).unwrap_or(i32::MAX),
+            i32::try_from(ms.height).unwrap_or(i32::MAX),
+        )
+    });
+    let margin = (5.0 * scale).round() as i32;
+    let max_x = ax + aw - pw - margin;
+    let max_y = ay + ah - ph - margin;
+    // 작업 영역보다 팝업이 크면(극단) 좌상단 고정이 최선이다.
+    (x.min(max_x).max(ax + margin), y.min(max_y).max(ay + margin))
 }
 
 fn kind_glyph(kind: ClipKind) -> &'static str {
