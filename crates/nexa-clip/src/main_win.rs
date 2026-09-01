@@ -107,6 +107,8 @@ pub(crate) struct MainWin {
     primary: bool,
     /// 더블클릭 판정 — (시각, 행).
     last_click: Option<(Instant, usize)>,
+    /// 툴바 hover — 머티리얼 상태 레이어 + 툴팁(09-01 사용자 요청).
+    hovered: Option<Tool>,
     /// 상태줄에 보일 전체 개수(필터 전).
     total: usize,
 }
@@ -128,6 +130,7 @@ impl MainWin {
             shift: false,
             primary: false,
             last_click: None,
+            hovered: None,
             total: 0,
         }
     }
@@ -144,7 +147,14 @@ impl MainWin {
     }
 
     /// 창을 열거나 앞으로 가져온다(트레이 좌클릭·"열기").
-    pub(crate) fn open(&mut self, el: &ActiveEventLoop, hist: &History, theme: Theme) {
+    /// `geom` = 지난번 닫을 때 저장한 (x, y, w, h) 물리 좌표 — 같은 자리에 다시 연다(09-01).
+    pub(crate) fn open(
+        &mut self,
+        el: &ActiveEventLoop,
+        hist: &History,
+        theme: Theme,
+        geom: Option<(i32, i32, u32, u32)>,
+    ) {
         self.theme = theme;
         if let Some(w) = &self.window {
             w.set_visible(true);
@@ -167,6 +177,13 @@ impl MainWin {
                 })
                 .with_inner_size(LogicalSize::new(MAIN_W, MAIN_H)),
         ));
+        // ★ 마지막 위치·크기 복원 — 모니터 밖 좌표는 OS가 알아서 끌어온다(fail-soft).
+        let attrs = match geom {
+            Some((x, y, w, h)) => attrs
+                .with_position(winit::dpi::PhysicalPosition::new(x, y))
+                .with_inner_size(winit::dpi::PhysicalSize::new(w.max(200), h.max(200))),
+            None => attrs,
+        };
         let Ok(win) = el.create_window(attrs) else {
             eprintln!("메인창 생성 실패");
             return;
@@ -186,6 +203,14 @@ impl MainWin {
         }
         win.focus_window();
         self.window = Some(win);
+    }
+
+    /// 현재 창 기하(x, y, w, h 물리) — 닫기 전에 저장해 다음 열기가 이어받는다.
+    pub(crate) fn geometry(&self) -> Option<(i32, i32, u32, u32)> {
+        let w = self.window.as_ref()?;
+        let pos = w.outer_position().ok()?;
+        let size = w.inner_size();
+        Some((pos.x, pos.y, size.width, size.height))
     }
 
     /// 창만 걷는다(상주 유지) — 다음 open이 다시 만든다.
@@ -370,6 +395,11 @@ impl MainWin {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 self.cursor = (position.x as i32, position.y as i32);
+                let hovered = self.tool_at(self.cursor.0, self.cursor.1, h);
+                if hovered != self.hovered {
+                    self.hovered = hovered;
+                    self.redraw();
+                }
             }
             WindowEvent::MouseWheel { delta, .. } => {
                 let step = match delta {
@@ -549,6 +579,24 @@ impl MainWin {
             }
         }
         self.draw_tool(dc, self.settings_rect(h), Tool::Settings, true);
+        // ★ 툴팁(머티리얼 — hover 즉시 · 버튼 오른쪽) — 맨 위에 그린다.
+        if let Some(t) = self.hovered {
+            let r = self.tool_rect_of(t, h);
+            let label = tool_label(t);
+            dc.select_font(FontSlot::Status, false);
+            let tw = dc.text_width(label);
+            let (tip_h, pad_x) = (px(20.0), px(8.0));
+            let tip = Rect::new(
+                r.x + r.w + px(6.0),
+                r.y + (r.h - tip_h) / 2,
+                tw + pad_x * 2,
+                tip_h,
+            );
+            dc.fill_round_rect(tip, px(4.0), th.chrome_bg);
+            dc.stroke_round_rect(tip, px(4.0), th.border, 1.0);
+            dc.text(tip.x + pad_x, tip.y + px(3.0), full, label, th.text);
+            dc.select_font(FontSlot::Base, false);
+        }
 
         // ── ③ 목록(핀 구획 먼저) ──
         let list = self.list_rect(w, h);
@@ -639,9 +687,27 @@ impl MainWin {
         dc.select_font(FontSlot::Base, false);
     }
 
-    /// 툴바 아이콘 — 전부 벡터(사각·원 조합). `enabled=false`면 흐리게(VT-3).
+    /// 툴바 버튼의 rect — hover 툴팁이 자리를 되찾는다.
+    fn tool_rect_of(&self, tool: Tool, h: i32) -> Rect {
+        if tool == Tool::Settings {
+            return self.settings_rect(h);
+        }
+        for (k, t) in TOOLS_TOP.iter().enumerate() {
+            if *t == Some(tool) {
+                return self.tool_rect(k);
+            }
+        }
+        Rect::default()
+    }
+
+    /// 툴바 아이콘 — 전부 벡터(사각·원 조합 · 구글 머티리얼 아이콘 버튼 문법:
+    /// hover = 원형 상태 레이어 · 아이콘은 2px 선). `enabled=false`면 흐리게(VT-3).
     fn draw_tool(&self, dc: &mut RasterCtx<'_, '_, '_>, r: Rect, tool: Tool, enabled: bool) {
         let th = self.theme;
+        // ★ 상태 레이어(Material 3) — hover한 활성 버튼에만 은은한 원.
+        if enabled && self.hovered == Some(tool) {
+            dc.fill_round_rect_alpha(r, r.w / 2, th.text, 0.10);
+        }
         let ink = if enabled { th.text } else { th.text_dim };
         let px = |v: f32| (v * self.scale).round() as i32;
         let (cx, cy) = (r.x + r.w / 2, r.y + r.h / 2);
@@ -714,6 +780,17 @@ impl MainWin {
                 }
             }
         }
+    }
+}
+
+/// 툴팁 라벨 — 한글(현재 창 문안과 동일 언어 · i18n 스윙은 T-23).
+fn tool_label(t: Tool) -> &'static str {
+    match t {
+        Tool::Pin => "고정/해제 (Ctrl+P)",
+        Tool::Delete => "삭제 (Delete)",
+        Tool::Copy => "복사 (Enter)",
+        Tool::CopyPlain => "평문으로 복사 (⇧Enter)",
+        Tool::Settings => "설정",
     }
 }
 

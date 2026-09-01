@@ -210,7 +210,30 @@ impl Shell {
     /// 메인창 닫기 — `ui.close_to_tray` 정책 공유(설정 창과 동일 계약).
     fn close_main(&mut self) {
         // 메인창 X/Esc = 항상 숨김(상주 유지 — 종료는 트레이 Quit만 · 08-30 확정 계승).
+        self.save_main_geom();
         self.main.close();
+    }
+
+    /// ★ 메인창 기하 저장(09-01 사용자 요청 "닫힌 위치에 다시") — `ui.win_*` 키(예약되어 있던 자리).
+    fn save_main_geom(&mut self) {
+        if let Some((x, y, w, h)) = self.main.geometry() {
+            let now = Instant::now();
+            self.app.conf.set("ui.win_x", x.to_string(), now);
+            self.app.conf.set("ui.win_y", y.to_string(), now);
+            self.app.conf.set("ui.win_w", w.to_string(), now);
+            self.app.conf.set("ui.win_h", h.to_string(), now);
+        }
+    }
+
+    fn saved_main_geom(&self) -> Option<(i32, i32, u32, u32)> {
+        let gi = |k: &str| self.app.conf.state.get(k).parse::<i32>().ok();
+        let gu = |k: &str| self.app.conf.state.get(k).parse::<u32>().ok();
+        Some((
+            gi("ui.win_x")?,
+            gi("ui.win_y")?,
+            gu("ui.win_w")?,
+            gu("ui.win_h")?,
+        ))
     }
 
     /// ★ 메인창 복사 — 재적재만(주입 없음 · 관리 화면). 에코는 승격으로.
@@ -384,9 +407,13 @@ impl ApplicationHandler<ShellEvent> for Shell {
             ShellEvent::Open => {
                 // ★ 08-30 사용자 확정: 트레이 좌클릭/"열기" = **메인창**(설정은 메인 ⚙).
                 let theme = self.app.theme();
-                self.main.open(el, &self.history, theme);
+                let geom = self.saved_main_geom();
+                self.main.open(el, &self.history, theme, geom);
             }
-            ShellEvent::Quit => el.exit(),
+            ShellEvent::Quit => {
+                self.save_main_geom();
+                el.exit();
+            }
             ShellEvent::Hotkey => self.toggle_popup(el),
             ShellEvent::PasteAfterClose(as_) => self.paste_now(as_),
             ShellEvent::SystemTheme => {
@@ -508,17 +535,51 @@ pub(crate) fn run() {
     };
     el.set_control_flow(ControlFlow::Wait);
 
+    // 이력 상한·메뉴 개수 — 복원이 쓴다(아래).
+    let cap: usize = conf.state.get("store.max_items").parse().unwrap_or(1000);
+    let tray_n: usize = conf.state.get("ui.tray_recent_n").parse().unwrap_or(8);
+
+    // ★ 영속(T-16) — 설정 옆 store/ 에서 이력을 복원한다. 열기 실패는
+    //   NullStore 강등(이력은 세션 한정 — 안 뜨는 것보다 낫다 · DR-31).
+    let (mut store, history): (Box<dyn HistoryStore>, History) =
+        match FileStore::open(&crate::conf::data_dir().join("store")) {
+            Ok(rep) => {
+                if rep.archived {
+                    eprintln!(
+                        "⚠️ 저장소: 기기 키 불일치 — 기존 기록을 .locked로 보관하고 새로 시작합니다"
+                    );
+                }
+                let mut fs = rep.store;
+                let items: Vec<HistoryItem> = fs.load().into_iter().map(to_history).collect();
+                println!("저장소: {}개 복원 (암호화 기본 · DR-38)", items.len());
+                (Box::new(fs), History::from_items(cap, items))
+            }
+            Err(e) => {
+                eprintln!("⚠️ 저장소를 열 수 없음: {e} — 이번 세션은 메모리로만 보관합니다");
+                (Box::new(NullStore), History::new(cap))
+            }
+        };
+    // 복원 직후 상한 축출분을 저장소에도 반영한다(설정을 줄여 놓았던 경우).
+    let mut history = history;
+    for id in history.drain_evicted() {
+        store.remove(id);
+    }
+
     // 트레이 — 이벤트는 프록시로 메인 루프에 되돌린다(beep 호스트 문법).
+    //   ★ 복원을 먼저 끝내 첫 우클릭부터 최근이 보인다(09-01 D1 — 예전엔 빈 메뉴로 떴다).
     let proxy = el.create_proxy();
-    let Some(tray) = spawn(content(0, Vec::new()), move |ev| {
-        let _ = proxy.send_event(match ev {
-            TrayEvent::Quit => ShellEvent::Quit,
-            TrayEvent::Recent(i) => ShellEvent::Recent(i),
-            TrayEvent::Hotkey => ShellEvent::Hotkey,
-            TrayEvent::HotkeyStatus(ok) => ShellEvent::HotkeyStatus(ok),
-            TrayEvent::Open | TrayEvent::OpenTarget(_) => ShellEvent::Open,
-        });
-    }) else {
+    let Some(tray) = spawn(
+        content(history.len(), history.recent_labels(tray_n)),
+        move |ev| {
+            let _ = proxy.send_event(match ev {
+                TrayEvent::Quit => ShellEvent::Quit,
+                TrayEvent::Recent(i) => ShellEvent::Recent(i),
+                TrayEvent::Hotkey => ShellEvent::Hotkey,
+                TrayEvent::HotkeyStatus(ok) => ShellEvent::HotkeyStatus(ok),
+                TrayEvent::Open | TrayEvent::OpenTarget(_) => ShellEvent::Open,
+            });
+        },
+    ) else {
         eprintln!(
             "트레이를 띄울 수 없습니다 — {}",
             nclip_plat::tray::tray_failure_hint()
@@ -580,7 +641,9 @@ pub(crate) fn run() {
         });
     }
 
-    println!("트레이 상주: ok — 좌클릭/열기 = 메인창(항목 관리) · 우클릭 = 최근 메뉴 · 설정은 메인창 ⚙");
+    println!(
+        "트레이 상주: ok — 좌클릭/열기 = 메인창(항목 관리) · 우클릭 = 최근 메뉴 · 설정은 메인창 ⚙"
+    );
     println!(
         "창 닫기: {}",
         if conf.state.get("ui.close_to_tray") == "on" {
@@ -591,9 +654,6 @@ pub(crate) fn run() {
     );
     println!("종료: 트레이 메뉴 \"종료\" 또는 Ctrl+C — 둘 다 정상 종료(설정 저장 포함)");
 
-    // 이력 상한·메뉴 개수는 설정에서 — 세션 동안 고정(설정 즉시 반영은 후속).
-    let cap: usize = conf.state.get("store.max_items").parse().unwrap_or(1000);
-    let tray_n: usize = conf.state.get("ui.tray_recent_n").parse().unwrap_or(8);
     let paste_auto = conf.state.get("paste.auto") == "on";
     let gate = Gate::from_state(&conf);
 
@@ -606,32 +666,6 @@ pub(crate) fn run() {
                 std::process::exit(1);
             }
         };
-
-    // ★ 영속(T-16) — 설정 옆 store/ 에서 이력을 복원한다. 열기 실패는
-    //   NullStore 강등(이력은 세션 한정 — 안 뜨는 것보다 낫다 · DR-31).
-    let (mut store, history): (Box<dyn HistoryStore>, History) =
-        match FileStore::open(&crate::conf::data_dir().join("store")) {
-            Ok(rep) => {
-                if rep.archived {
-                    eprintln!(
-                        "⚠️ 저장소: 기기 키 불일치 — 기존 기록을 .locked로 보관하고 새로 시작합니다"
-                    );
-                }
-                let mut fs = rep.store;
-                let items: Vec<HistoryItem> = fs.load().into_iter().map(to_history).collect();
-                println!("저장소: {}개 복원 (암호화 기본 · DR-38)", items.len());
-                (Box::new(fs), History::from_items(cap, items))
-            }
-            Err(e) => {
-                eprintln!("⚠️ 저장소를 열 수 없음: {e} — 이번 세션은 메모리로만 보관합니다");
-                (Box::new(NullStore), History::new(cap))
-            }
-        };
-    // 복원 직후 상한 축출분을 저장소에도 반영한다(설정을 줄여 놓았던 경우).
-    let mut history = history;
-    for id in history.drain_evicted() {
-        store.remove(id);
-    }
 
     // 메인창 폰트 — 팝업과 같은 이유로 자기 것을 따로 든다(mmap 정적 데이터).
     let main_font =
