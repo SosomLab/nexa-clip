@@ -137,6 +137,28 @@ impl PasteAs {
         }
     }
 
+    /// 모드별 표현 선별(T-15b · 09-01 확정 키 배치의 실체) — 주입은 언제나 Ctrl+V이고
+    /// **클립보드에 무엇을 올리느냐**가 모드다(안전한 길 — paste.rs 주석 그대로).
+    /// 빈 결과 = 그 모드가 이 항목에 무의미(호출측이 정직히 거절).
+    #[must_use]
+    pub fn filter_reps(self, reps: &[crate::RawRep]) -> Vec<crate::RawRep> {
+        match self {
+            PasteAs::Original => reps.to_vec(),
+            // 평문/경로만 — 평문 계열 표현만(경로는 파일 항목의 평문 = 경로 텍스트).
+            PasteAs::Plain | PasteAs::PathOnly => reps
+                .iter()
+                .filter(|r| crate::is_plain_format(&r.format))
+                .cloned()
+                .collect(),
+            // 개체로 — 평문을 뺀다(PPT/Word가 개체로 받을 수밖없게).
+            PasteAs::Object => reps
+                .iter()
+                .filter(|r| !crate::is_plain_format(&r.format))
+                .cloned()
+                .collect(),
+        }
+    }
+
     /// i18n 라벨 키.
     #[must_use]
     pub fn label(self) -> crate::Msg {

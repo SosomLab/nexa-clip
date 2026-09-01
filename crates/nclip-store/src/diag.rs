@@ -4,7 +4,7 @@
 
 use std::path::Path;
 
-use crate::{codec, keys, sealed, DOMAIN_IDX, EV_ADD, EV_REMOVE, EV_TOUCH};
+use crate::{codec, keys, sealed, DOMAIN_IDX, EV_ADD, EV_ADD2, EV_REMOVE, EV_TOUCH};
 
 /// 세그먼트를 순서대로 해독해 이벤트 목록·blob 참조를 찍는다.
 ///
@@ -41,7 +41,13 @@ pub fn dump(dir: &Path) -> std::io::Result<()> {
             };
             let mut r = codec::R(&plain);
             match r.u8() {
-                Some(t) if t == EV_ADD => {
+                Some(t) if t == EV_ADD || t == EV_ADD2 => {
+                    let created = if t == EV_ADD2 {
+                        r.u64().unwrap_or(0)
+                    } else {
+                        0
+                    };
+                    let _ = created;
                     let id = r.u64().unwrap_or(0);
                     let _kind = r.u8();
                     let copies = r.u32().unwrap_or(0);

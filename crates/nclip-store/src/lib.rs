@@ -53,6 +53,8 @@ pub struct StoredItem {
     /// ★ 핀(T-18b0 기초) — 상한 제거에서 지켜진다. UI는 후속.
     pub pinned: bool,
     pub thumb: Option<(u32, u32, Vec<u8>)>,
+    /// 생성 시각(epoch ms · T-13 기간 정책) — 구본(EV_ADD)은 0.
+    pub created_ms: u64,
 }
 
 /// 이력 영속 포트(DR-37f) — 셸은 이것만 안다.
@@ -245,7 +247,8 @@ impl FileStore {
     /// Add 레코드 본문 인코딩 — blob 참조 수·항목→blob 표를 갱신한다.
     fn encode_add(&mut self, item: &StoredItem) -> Vec<u8> {
         let mut w = codec::W::new();
-        w.u8(EV_ADD);
+        w.u8(EV_ADD2);
+        w.u64(item.created_ms);
         w.u64(item.id);
         w.u8(kind_code(item.kind));
         w.u32(item.copies);
@@ -285,8 +288,10 @@ impl FileStore {
         w.0
     }
 
-    fn decode_add(&self, body: &[u8]) -> Option<(StoredItem, Vec<[u8; 32]>)> {
+    /// `with_time` = EV_ADD2(생성 시각 포함) · EV_ADD 구본은 0으로 복원(기간 면제).
+    fn decode_add(&self, body: &[u8], with_time: bool) -> Option<(StoredItem, Vec<[u8; 32]>)> {
         let mut r = codec::R(body);
+        let created_ms = if with_time { r.u64()? } else { 0 };
         let id = r.u64()?;
         let kind = kind_from(r.u8()?)?;
         let copies = r.u32()?;
@@ -330,6 +335,7 @@ impl FileStore {
                 copies,
                 pinned,
                 thumb,
+                created_ms,
             },
             ids,
         ))
@@ -370,8 +376,8 @@ impl FileStore {
                 events += 1;
                 let mut r = codec::R(&plain);
                 match r.u8() {
-                    Some(EV_ADD) => {
-                        if let Some((item, ids)) = self.decode_add(&plain[1..]) {
+                    Some(tag @ (EV_ADD | EV_ADD2)) => {
+                        if let Some((item, ids)) = self.decode_add(&plain[1..], tag == EV_ADD2) {
                             for id in &ids {
                                 *self.blob_refs.entry(*id).or_insert(0) += 1;
                             }
@@ -450,6 +456,8 @@ impl FileStore {
 const EV_ADD: u8 = 1;
 const EV_TOUCH: u8 = 2;
 const EV_REMOVE: u8 = 3;
+/// ★ 생성 시각이 붙은 Add(T-13 · 09-01) — 구본 EV_ADD도 계속 읽는다(마이그레이션 불요).
+const EV_ADD2: u8 = 4;
 
 fn kind_code(k: ClipKind) -> u8 {
     match k {
@@ -560,6 +568,7 @@ mod tests {
             copies: 1,
             pinned: false,
             thumb: None,
+            created_ms: 1_700_000_000_000,
         }
     }
 

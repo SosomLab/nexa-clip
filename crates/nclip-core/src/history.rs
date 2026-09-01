@@ -38,14 +38,38 @@ pub struct HistoryItem {
     /// ★ 목록용 썸네일(w, h, RGBA) — 호출자가 만든다(이력은 디코더를 모른다).
     ///   `None` = 이미지 아님·미리보기 꺼짐·디코드 실패(목록은 글리프 폴백).
     pub thumb: Option<(u32, u32, Vec<u8>)>,
+    /// ★ 생성 시각(epoch ms) — 보관 기간 정책(T-13)의 근거. 구본 복원은 0(= 기간 면제 —
+    ///   모르는 나이로 지우지 않는다 · fail-soft).
+    pub created_ms: u64,
+    /// 표현 바이트 합계 캠시 — 총용량 예산(500MB 기본) 판정이 매번 재지 않게.
+    bytes: u64,
     /// 내용 지문(빠른 동일성 후보 판정).
     fingerprint: u64,
+}
+
+/// 벽시계 epoch ms — 보관 기간 판정은 달력 시간이 맞다(단조 시계 아님).
+fn epoch_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+fn reps_bytes(reps: &[RawRep]) -> u64 {
+    reps.iter().map(|r| r.data.len() as u64).sum()
+}
+
+/// ★ 휘발 벤더 토큰(08-29 mac 실기 — `ole.source.0x…`가 복사마다 다르다) —
+/// 동일성 비교에서 제외한다. 안 빼면 같은 복사가 매번 새 항목이 돼 승격이 죽는다.
+fn is_volatile_format(fmt: &str) -> bool {
+    fmt.starts_with("ole.source.")
 }
 
 impl HistoryItem {
     /// 저장소에서 복원할 때의 생성자 — 지문은 여기서 재계산한다(디스크의 지문을 믿지 않는다).
     #[must_use]
     #[allow(clippy::too_many_arguments)] // 영속 형상 1:1 — 묶으면 오히려 한 겹 더 생긴다
+    #[allow(clippy::too_many_arguments)]
     pub fn restored(
         id: u64,
         kind: ClipKind,
@@ -55,8 +79,10 @@ impl HistoryItem {
         copies: u32,
         pinned: bool,
         thumb: Option<(u32, u32, Vec<u8>)>,
+        created_ms: u64,
     ) -> Self {
         let fingerprint = fingerprint(&reps);
+        let bytes = reps_bytes(&reps);
         Self {
             id,
             pinned,
@@ -66,6 +92,8 @@ impl HistoryItem {
             source_app,
             copies,
             thumb,
+            created_ms,
+            bytes,
             fingerprint,
         }
     }
@@ -96,6 +124,10 @@ pub struct History {
     next_id: u64,
     /// ★ 상한 축출로 빠진 항목 id — 셸이 [`Self::drain_evicted`]로 가져가 저장소에 반영한다.
     evicted: Vec<u64>,
+    /// 총용량 예산(바이트 · 0 = 무제한) — 기본 500MB(사용자 확정 09-01).
+    max_bytes: u64,
+    /// 보관 기간(ms · 0 = 무제한 — 기본값 · 사용자 확정 09-01).
+    max_age_ms: u64,
 }
 
 /// 정렬된 (이름, 바이트) 위의 FNV-1a 64 — 암호학적일 필요가 없다(후보 거르기 전용,
@@ -103,6 +135,7 @@ pub struct History {
 fn fingerprint(reps: &[RawRep]) -> u64 {
     let mut sorted: Vec<(&str, &[u8])> = reps
         .iter()
+        .filter(|r| !is_volatile_format(&r.format))
         .map(|r| (r.format.as_str(), r.data.as_slice()))
         .collect();
     sorted.sort();
@@ -124,19 +157,22 @@ fn fingerprint(reps: &[RawRep]) -> u64 {
 
 /// `sub`의 표현 전부가 `sup`에 같은 이름·같은 바이트로 있는가(에코 판정 — 게시한 것만 돌아온다).
 fn is_subset(sub: &[RawRep], sup: &[RawRep]) -> bool {
-    !sub.is_empty()
-        && sub
+    let core: Vec<&RawRep> = sub
+        .iter()
+        .filter(|r| !is_volatile_format(&r.format))
+        .collect();
+    !core.is_empty()
+        && core
             .iter()
             .all(|r| sup.iter().any(|s| s.format == r.format && s.data == r.data))
 }
 
 fn same_content(a: &[RawRep], b: &[RawRep]) -> bool {
-    if a.len() != b.len() {
-        return false;
-    }
+    // 휘발 표현을 뻐고 비교 — 개수도 같은 기준으로 재다.
     let sorted = |s: &[RawRep]| -> Vec<(String, Vec<u8>)> {
         let mut v: Vec<_> = s
             .iter()
+            .filter(|r| !is_volatile_format(&r.format))
             .map(|r| (r.format.clone(), r.data.clone()))
             .collect();
         v.sort();
@@ -155,6 +191,8 @@ impl History {
             pending_echo: None,
             next_id: 1,
             evicted: Vec::new(),
+            max_bytes: 0,
+            max_age_ms: 0,
         }
     }
 
@@ -168,6 +206,8 @@ impl History {
             pending_echo: None,
             next_id,
             evicted: Vec::new(),
+            max_bytes: 0,
+            max_age_ms: 0,
         };
         h.evict_over_cap();
         h
@@ -231,6 +271,45 @@ impl History {
         self.evict_over_cap();
     }
 
+    /// ★ 보관 예산(T-13 · 사용자 확정 09-01: 기본 기간 무제한 + 500MB) —
+    /// 총용량 초과·기한 경과분을 **오래된 비고정부터** 걷어낸다(핀 면제 · 구본 created 0 = 기간 면제).
+    pub fn set_budget(&mut self, max_bytes: u64, max_age_ms: u64, now_ms: u64) {
+        self.max_bytes = max_bytes;
+        self.max_age_ms = max_age_ms;
+        self.evict_over_budget(now_ms);
+    }
+
+    fn evict_over_budget(&mut self, now_ms: u64) {
+        // 기간 — 뒤(오래된 쪽)에서부터 기한 경과를 걷는다.
+        if self.max_age_ms > 0 {
+            while let Some(i) = self
+                .items
+                .iter()
+                .rposition(|it| !it.pinned && it.created_ms > 0)
+            {
+                if now_ms.saturating_sub(self.items[i].created_ms) <= self.max_age_ms {
+                    break; // 가장 오래된 것이 기한 안 = 나머지도 안
+                }
+                if let Some(it) = self.items.remove(i) {
+                    self.evicted.push(it.id);
+                }
+            }
+        }
+        // 총용량 — 핀 포함 합계가 예산을 넘으면 오래된 비고정부터.
+        if self.max_bytes > 0 {
+            let mut total: u64 = self.items.iter().map(|it| it.bytes).sum();
+            while total > self.max_bytes {
+                let Some(i) = self.items.iter().rposition(|it| !it.pinned) else {
+                    break; // 전부 핀 — 예산보다 핀이 우선
+                };
+                if let Some(it) = self.items.remove(i) {
+                    total -= it.bytes;
+                    self.evicted.push(it.id);
+                }
+            }
+        }
+    }
+
     /// 스냅숏 하나를 이력에 반영한다. 내용 없음 걸러내기(민감·제외 앱 포함)와
     /// 썸네일 생성은 **호출자 몫**이다 — 이력은 정책도 디코더도 모른다.
     pub fn push(
@@ -249,17 +328,20 @@ impl History {
                 &snap.reps,
             ) {
                 // ★ 교체는 같은 항목의 다음 장면 — id·핀을 지킨다(저장소도 같은 id로 덮는다).
-                let (id, pinned, copies) = (front.id, front.pinned, front.copies);
+                let (id, pinned, copies, created_ms) =
+                    (front.id, front.pinned, front.copies, front.created_ms);
                 self.items[0] = HistoryItem {
                     id,
                     pinned,
                     kind,
                     label,
                     fingerprint: fingerprint(&snap.reps),
+                    bytes: reps_bytes(&snap.reps),
                     reps: snap.reps.clone(),
                     source_app: snap.source_app.clone(),
                     copies,
                     thumb,
+                    created_ms,
                 };
                 return Pushed::Replaced;
             }
@@ -296,18 +378,22 @@ impl History {
         // ③ 새 항목.
         let id = self.next_id;
         self.next_id += 1;
+        let now_ms = epoch_ms();
         self.items.push_front(HistoryItem {
             id,
             pinned: false,
             kind,
             label,
             fingerprint: fp,
+            bytes: reps_bytes(&snap.reps),
             reps: snap.reps.clone(),
             source_app: snap.source_app.clone(),
             copies: 1,
             thumb,
+            created_ms: now_ms,
         });
         self.evict_over_cap();
+        self.evict_over_budget(now_ms);
         Pushed::New
     }
 
@@ -521,5 +607,93 @@ mod persist_tests {
         );
         assert_eq!(h.len(), 1);
         assert_eq!(h.get(0).unwrap().id, id, "교체 후에도 같은 id");
+    }
+}
+
+#[cfg(test)]
+mod budget_tests {
+    #![allow(clippy::unwrap_used)]
+    use super::*;
+
+    fn snap(reps: &[(&str, &[u8])]) -> ClipSnapshot {
+        ClipSnapshot {
+            reps: reps
+                .iter()
+                .map(|(f, d)| RawRep {
+                    format: (*f).to_string(),
+                    data: d.to_vec(),
+                })
+                .collect(),
+            source_app: Some("t".into()),
+            concealed: false,
+            seq: 0,
+        }
+    }
+
+    /// ★ 총용량 예산 — 초과하면 오래된 비고정부터 빠지고, 핀은 남는다(09-01 확정).
+    #[test]
+    fn byte_budget_evicts_oldest_unpinned_keeps_pinned() {
+        let mut h = History::new(100);
+        let big = vec![0u8; 400];
+        h.push(&snap(&[("T", &big)]), ClipKind::Text, "a".into(), None); // id 1
+        h.push(&snap(&[("U", &big)]), ClipKind::Text, "b".into(), None); // id 2
+        h.push(&snap(&[("V", &big)]), ClipKind::Text, "c".into(), None); // id 3
+        assert!(h.set_pinned(1, true));
+        h.set_budget(1000, 0, 0); // 1200B > 1000B — 비고정 중 가장 오래된 b(id 2)가 빠진다
+        assert_eq!(h.drain_evicted(), vec![2]);
+        assert_eq!(h.len(), 2, "핀(a)과 최신(c)이 남는다");
+    }
+
+    /// ★ 기간 예산 — 기한 경과 비고정만 · created 0(구본)은 면제.
+    #[test]
+    fn age_budget_spares_legacy_and_pinned() {
+        let now = 10_000_000u64;
+        let mk = |id: u64, created: u64, pinned: bool| {
+            HistoryItem::restored(
+                id,
+                ClipKind::Text,
+                format!("i{id}"),
+                vec![RawRep {
+                    format: "T".into(),
+                    data: vec![id as u8],
+                }],
+                None,
+                1,
+                pinned,
+                None,
+                created,
+            )
+        };
+        // 최신이 앞: [신품, 구본(0), 핀 낡음, 낡음]
+        let items = vec![
+            mk(4, now - 10, false),
+            mk(3, 0, false),
+            mk(2, now - 9_000_000, true),
+            mk(1, now - 9_000_000, false),
+        ];
+        let mut h = History::from_items(100, items);
+        h.set_budget(0, 1_000_000, now); // 기한 1_000_000ms
+        assert_eq!(h.drain_evicted(), vec![1], "낡은 비고정만");
+        assert_eq!(h.len(), 3);
+    }
+
+    /// ★ 휘발 벤더 토큰(`ole.source.*`)은 동일성에서 빠진다 — 재복사가 승격이 된다(08-29 관찰).
+    #[test]
+    fn volatile_vendor_token_does_not_break_promotion() {
+        let mut h = History::new(10);
+        h.push(
+            &snap(&[("HTML", b"x"), ("ole.source.0xAAAA", b"1")]),
+            ClipKind::RichText,
+            "x".into(),
+            None,
+        );
+        let r = h.push(
+            &snap(&[("HTML", b"x"), ("ole.source.0xBBBB", b"2")]),
+            ClipKind::RichText,
+            "x".into(),
+            None,
+        );
+        assert_eq!(r, Pushed::Promoted, "토큰만 다른 재복사 = 승격");
+        assert_eq!(h.len(), 1);
     }
 }

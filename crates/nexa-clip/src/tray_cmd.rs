@@ -161,6 +161,7 @@ fn to_stored(it: &HistoryItem) -> StoredItem {
         copies: it.copies,
         pinned: it.pinned,
         thumb: it.thumb.clone(),
+        created_ms: it.created_ms,
     }
 }
 
@@ -174,6 +175,7 @@ fn to_history(it: StoredItem) -> HistoryItem {
         it.copies,
         it.pinned,
         it.thumb,
+        it.created_ms,
     )
 }
 
@@ -287,22 +289,15 @@ impl Shell {
     }
 
     /// ★ 팝업 선택 — 재적재 후 **기억해 둔 창으로 복원 + `Ctrl+V` 주입**(K-1 실물 경로).
-    fn pick(&mut self, index: usize, plain: bool) {
+    /// 4모드(T-15b)는 **클립보드 내용 선별**로 구현한다 — 주입 키는 항상 Ctrl+V.
+    fn pick(&mut self, index: usize, as_: PasteAs) {
         let Some(item) = self.history.get(index) else {
             return;
         };
-        let reps: Vec<RawRep> = if plain {
-            item.reps
-                .iter()
-                .filter(|r| is_plain_format(&r.format))
-                .cloned()
-                .collect()
-        } else {
-            item.reps.clone()
-        };
+        let reps: Vec<RawRep> = as_.filter_reps(&item.reps);
         if reps.is_empty() {
-            // 평문이 없는 항목(이미지·개체)에 ⇧Enter — 있는 척하지 않는다(DR-31).
-            eprintln!("평문 표현이 없는 항목입니다 — 원본(Enter)으로 붙여넣으세요");
+            // 그 모드가 무의미한 항목 — 있는 척하지 않는다(DR-31).
+            eprintln!("이 항목에는 그 방식의 표현이 없습니다 — 원본(Enter)으로 붙여넣으세요");
             return;
         }
         let label = item.label.clone();
@@ -319,11 +314,6 @@ impl Shell {
             }
         }
         if self.paste_auto {
-            let as_ = if plain {
-                PasteAs::Plain
-            } else {
-                PasteAs::Original
-            };
             // 지금 주입하지 않는다 — 팝업 파괴가 컴포지터에 닿은 뒤(다음 바퀴)에.
             let _ = self.proxy.send_event(ShellEvent::PasteAfterClose(as_));
         }
@@ -398,7 +388,7 @@ impl ApplicationHandler<ShellEvent> for Shell {
             match self.popup.handle_event(&event, &self.history) {
                 PopupAction::None => {}
                 PopupAction::Close => self.popup.close(),
-                PopupAction::Pick { index, plain } => self.pick(index, plain),
+                PopupAction::Pick { index, as_ } => self.pick(index, as_),
             }
             return;
         }
@@ -459,6 +449,27 @@ impl ApplicationHandler<ShellEvent> for Shell {
                         .parse()
                         .unwrap_or(1000),
                 );
+                // ★ 보관 예산(T-13 · 09-01 확정: 기본 기간 무제한 + 500MB).
+                let mb: u64 = self
+                    .app
+                    .conf
+                    .state
+                    .get("store.max_total_mb")
+                    .parse()
+                    .unwrap_or(500);
+                let days: u64 = self
+                    .app
+                    .conf
+                    .state
+                    .get("store.max_age_days")
+                    .parse()
+                    .unwrap_or(0);
+                let now_ms = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis() as u64)
+                    .unwrap_or(0);
+                self.history
+                    .set_budget(mb * 1_000_000, days * 86_400_000, now_ms);
                 self.tray_n = self
                     .app
                     .conf

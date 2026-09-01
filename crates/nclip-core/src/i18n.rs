@@ -196,6 +196,12 @@ pub enum Msg {
     /// UI 글꼴 설정(09-01 사용자 요청 — JetBrains Mono 등 시스템 글꼴 지정).
     SetUiFont,
     SetUiFontDesc,
+    /// 보관 기간(T-13 · 09-01).
+    SetMaxAge,
+    SetMaxAgeDesc,
+    /// 총용량 상한(T-13 · 09-01).
+    SetMaxTotal,
+    SetMaxTotalDesc,
     /// 시스템 기본 글꼴.
     SystemDefaultFont,
     /// 설정 카테고리: 일반.
@@ -617,6 +623,20 @@ impl Msg {
                 "以 ; 分隔的应用名（如 KeePass）— 来自这些应用的复制不记录",
                 "; 区切りのアプリ名（例: KeePass）— これらのアプリからのコピーは記録しません",
             ],
+            Msg::SetMaxAge => ["Keep for (days)", "보관 기간(일)", "保留天数", "保持日数"],
+            Msg::SetMaxAgeDesc => [
+                "0 = keep forever. Older unpinned items are removed",
+                "0 = 무제한 · 기한이 지난 비고정 항목을 삭제합니다",
+                "0 = 永久保留。删除超期的未固定项",
+                "0 = 無期限。期限切れの未固定項目を削除",
+            ],
+            Msg::SetMaxTotal => ["Storage limit (MB)", "총용량 상한(MB)", "存储上限(MB)", "保存上限(MB)"],
+            Msg::SetMaxTotalDesc => [
+                "Oldest unpinned items are removed first when over the limit",
+                "초과하면 오래된 비고정 항목부터 삭제합니다(핀 면제)",
+                "超出时从最旧的未固定项开始删除",
+                "超過時は古い未固定項目から削除",
+            ],
             Msg::TrayOpen => ["Open", "열기", "打开", "開く"],
             Msg::TrayQuit => ["Quit", "종료", "退出", "終了"],
             Msg::TraySettings => ["Settings", "설정", "设置", "設定"],
@@ -722,7 +742,7 @@ mod tests {
     use super::*;
 
     /// 카탈로그 전수 — 새 `Msg`를 더하면 여기도 더한다(빈칸 검사가 그걸 강제한다).
-    const ALL_MSG: [Msg; 119] = [
+    const ALL_MSG: [Msg; 123] = [
         Msg::AppName,
         Msg::SearchPlaceholder,
         Msg::EmptyHistory,
@@ -771,6 +791,10 @@ mod tests {
         Msg::ListEmpty,
         Msg::SetUiFont,
         Msg::SetUiFontDesc,
+        Msg::SetMaxAge,
+        Msg::SetMaxAgeDesc,
+        Msg::SetMaxTotal,
+        Msg::SetMaxTotalDesc,
         Msg::SystemDefaultFont,
         Msg::CatGeneral,
         Msg::CatShortcuts,

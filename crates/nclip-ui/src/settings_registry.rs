@@ -158,6 +158,28 @@ pub(crate) const REGISTRY: &[Entry] = &[
         },
         "store.max_items",
     ),
+    // ★ T-13 보관 정책(09-01 사용자 확정: 기본 기간 무제한 + 500MB) — 초과분은
+    // 오래된 비고정부터 · 핀 면제 · 구본(시각 없는 복원분)은 기간 면제.
+    e(
+        Msg::CatStorage,
+        Msg::SetMaxAge,
+        Msg::SetMaxAgeDesc,
+        SettingKind::Number {
+            presets: &["0", "30", "90", "365"],
+            suffix: "일",
+        },
+        "store.max_age_days",
+    ),
+    e(
+        Msg::CatStorage,
+        Msg::SetMaxTotal,
+        Msg::SetMaxTotalDesc,
+        SettingKind::Number {
+            presets: &["100", "500", "1000", "2000"],
+            suffix: "MB",
+        },
+        "store.max_total_mb",
+    ),
     e(
         Msg::CatStorage,
         Msg::SetSortBy,

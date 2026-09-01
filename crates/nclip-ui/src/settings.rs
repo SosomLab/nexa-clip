@@ -105,6 +105,9 @@ const RADIO_DEFAULTS: &[(&str, &str)] = &[
     ("ui.theme", "system"),
     ("ui.tray_recent_n", "8"),
     ("store.max_items", "1000"),
+    // ★ T-13(09-01 확정): 기간 무제한(0) + 총용량 500MB.
+    ("store.max_age_days", "0"),
+    ("store.max_total_mb", "500"),
     ("store.sort", "recent"),
     ("find.mode", "exact"),
 ];

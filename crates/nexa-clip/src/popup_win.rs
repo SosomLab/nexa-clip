@@ -17,7 +17,7 @@
 //! 가변 높이 가상화·미리보기 패널은 T-18 본편에서.
 
 use nclip_core::history::History;
-use nclip_core::ClipKind;
+use nclip_core::{ClipKind, PasteAs};
 use nclip_ctl::draw::{DrawCtx, FontSlot};
 use nclip_ctl::geom::Rect;
 use nclip_ctl::raster::RasterCtx;
@@ -48,8 +48,8 @@ pub(crate) enum PopupAction {
     Pick {
         /// 이력 인덱스(0 = 최신).
         index: usize,
-        /// `⇧Enter` = 평문만.
-        plain: bool,
+        /// ★ 붙여넣기 방식(T-15b · 09-01 확정: ⇧=평문 · Ctrl=개체 · Alt=경로).
+        as_: PasteAs,
     },
 }
 
@@ -79,6 +79,7 @@ pub(crate) struct Popup {
     top: usize,
     shift: bool,
     ctrl: bool,
+    alt: bool,
     /// ★ 한 번이라도 포커스를 받았는가 — **생성 직후의 `Focused(false)`로 닫히지 않게**.
     ///   (잠금 화면·창 관리자에 따라 초기 이벤트 순서가 다르다 — 08-28 실기.)
     was_focused: bool,
@@ -162,6 +163,7 @@ impl Popup {
             top: 0,
             shift: false,
             ctrl: false,
+            alt: false,
             was_focused: false,
             opened_at: std::time::Instant::now(),
             cursor: (0, 0),
@@ -180,6 +182,19 @@ impl Popup {
         }
         let vi = self.top + ((y - header_h) / row_h) as usize;
         (vi < self.rows.len()).then_some(vi)
+    }
+
+    /// 눌린 수식 키 → 붙여넣기 모드(09-01 확정: ⇧ 평문 · Ctrl 개체 · Alt 경로 · 기본 원본).
+    fn paste_mode(&self) -> PasteAs {
+        if self.shift {
+            PasteAs::Plain
+        } else if self.ctrl {
+            PasteAs::Object
+        } else if self.alt {
+            PasteAs::PathOnly
+        } else {
+            PasteAs::Original
+        }
     }
 
     pub(crate) fn is_open(&self) -> bool {
@@ -307,6 +322,7 @@ impl Popup {
             WindowEvent::ModifiersChanged(m) => {
                 self.shift = m.state().shift_key();
                 self.ctrl = m.state().control_key();
+                self.alt = m.state().alt_key();
             }
             WindowEvent::CursorMoved { position, .. } => {
                 self.cursor = (position.x as i32, position.y as i32);
@@ -322,7 +338,7 @@ impl Popup {
                         if let Some(row) = self.rows.get(vi) {
                             return PopupAction::Pick {
                                 index: row.hist_index,
-                                plain: self.shift,
+                                as_: self.paste_mode(),
                             };
                         }
                     }
@@ -361,7 +377,7 @@ impl Popup {
                         if let Some(row) = self.rows.get(self.sel) {
                             return PopupAction::Pick {
                                 index: row.hist_index,
-                                plain: self.shift,
+                                as_: self.paste_mode(),
                             };
                         }
                         return PopupAction::Close;
@@ -536,7 +552,13 @@ fn draw(
         pad,
         fy + px(5.0),
         full,
-        "Enter 원본 · ⇧Enter 평문 · Esc 닫기",
+        // ★ 힌트는 선택 항목 종류를 따른다(DR-35 · 09-01 키 배치 확정).
+        match rows.get(sel).map(|r| r.kind) {
+            Some(ClipKind::Files) => "Enter 원본 · Ctrl 개체 · Alt 경로 · ⇧ 평문 · Esc 닫기",
+            Some(ClipKind::RichText) => "Enter 원본 · ⇧Enter 평문 · Esc 닫기",
+            Some(ClipKind::Image | ClipKind::Object) => "Enter 원본 · Esc 닫기",
+            _ => "Enter 붙여넣기 · Esc 닫기",
+        },
         th.text_dim,
     );
 }
