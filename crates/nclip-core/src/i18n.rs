@@ -193,6 +193,9 @@ pub enum Msg {
     CustomInput,
     /// 목록 컨트롤 빈 상태 표시(ListEditor · 09-01).
     ListEmpty,
+    /// UI 글꼴 설정(09-01 사용자 요청 — JetBrains Mono 등 시스템 글꼴 지정).
+    SetUiFont,
+    SetUiFontDesc,
     /// 시스템 기본 글꼴.
     SystemDefaultFont,
     /// 설정 카테고리: 일반.
@@ -458,6 +461,13 @@ impl Msg {
             ],
             Msg::CustomInput => ["Custom…", "직접 입력…", "自定义…", "カスタム…"],
             Msg::ListEmpty => ["No items", "내용 없음", "无项目", "項目なし"],
+            Msg::SetUiFont => ["UI font", "UI 글꼴", "UI 字体", "UI フォント"],
+            Msg::SetUiFontDesc => [
+                "Font family name (e.g. JetBrains Mono). Empty = system default. Applies after restart",
+                "글꼴 이름(예: JetBrains Mono) · 비우면 시스템 기본 · 재시작 후 적용",
+                "字体名称（例：JetBrains Mono）。空 = 系统默认。重启后生效",
+                "フォント名（例: JetBrains Mono）。空欄 = システム既定。再起動後に適用",
+            ],
             Msg::SystemDefaultFont => ["System default", "시스템 기본", "系统默认", "システム標準"],
             Msg::CatGeneral => ["General", "일반", "常规", "一般"],
             Msg::CatShortcuts => ["Shortcuts", "단축키", "快捷键", "ショートカット"],
@@ -709,7 +719,7 @@ mod tests {
     use super::*;
 
     /// 카탈로그 전수 — 새 `Msg`를 더하면 여기도 더한다(빈칸 검사가 그걸 강제한다).
-    const ALL_MSG: [Msg; 116] = [
+    const ALL_MSG: [Msg; 118] = [
         Msg::AppName,
         Msg::SearchPlaceholder,
         Msg::EmptyHistory,
@@ -756,6 +766,8 @@ mod tests {
         Msg::ValMinutesRange,
         Msg::CustomInput,
         Msg::ListEmpty,
+        Msg::SetUiFont,
+        Msg::SetUiFontDesc,
         Msg::SystemDefaultFont,
         Msg::CatGeneral,
         Msg::CatShortcuts,

@@ -443,10 +443,12 @@ impl ApplicationHandler for App {
 
 /// 설정 창 실행.
 pub(crate) fn run() {
-    let Some((data, idx)) = nclip_plat::font::system_ui_font() else {
+    let conf_probe = Settings::load();
+    let Some((data, idx)) = crate::conf::ui_font_data(&conf_probe) else {
         eprintln!("시스템 UI 폰트를 찾지 못했습니다.");
         std::process::exit(1);
     };
+    drop(conf_probe);
     let font = match Font::from_static(data, idx) {
         Ok(f) => f,
         Err(e) => {

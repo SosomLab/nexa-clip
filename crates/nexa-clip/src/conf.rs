@@ -291,3 +291,18 @@ mod theme_tests {
         assert!(resolve_theme("dark", Some(false)).is_dark);
     }
 }
+
+/// ★ UI 글꼴 해석(09-01 사용자 요청 "JetBrains Mono") — `ui.font_family`가 있으면
+/// 이름으로 시스템 글꼴을 찾고(mmap), 없거나 못 찾으면 시스템 기본. 못 찾은 것은
+/// 조용히 넘어가지 않고 콘솔에 알린다(DR-31 — 설정이 거짓말하면 안 된다).
+pub(crate) fn ui_font_data(conf: &Settings) -> Option<(&'static [u8], u32)> {
+    let fam = conf.state.get("ui.font_family").trim().to_string();
+    if !fam.is_empty() {
+        if let Some(hit) = nclip_plat::font::find_font_by_family(&fam) {
+            println!("UI 글꼴: {fam}");
+            return Some(hit);
+        }
+        eprintln!("⚠️ 글꼴 '{fam}'을(를) 못 찾았습니다 — 시스템 기본으로 실행합니다");
+    }
+    nclip_plat::font::system_ui_font()
+}

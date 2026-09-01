@@ -1,4 +1,5 @@
 //! sealed 봉투 처리량 측정(09-01 — dev 프로필 opt 적용 확인).
+#![allow(clippy::unwrap_used)] // 진단 벤치 — 실패 = 즉사로 충분
 fn main() {
     let secret = [7u8; 32];
     let data = vec![0xA5u8; 8 * 1024 * 1024];

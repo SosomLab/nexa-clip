@@ -830,7 +830,7 @@ fn tool_label(t: Tool) -> &'static str {
         Tool::Pin => "고정/해제 (Ctrl+P)",
         Tool::Delete => "삭제 (Delete)",
         Tool::Copy => "복사 (Enter)",
-        Tool::CopyPlain => "평문으로 복사 (⇧Enter)",
+        Tool::CopyPlain => "평문으로 복사 (Shift+Enter)", // ⇧는 맑은 고딕에 없다(두부 · 09-01)
         Tool::Settings => "설정",
     }
 }

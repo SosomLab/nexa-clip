@@ -253,6 +253,17 @@ pub(crate) const REGISTRY: &[Entry] = &[
         },
         "ui.tray_recent_n",
     ),
+    // ★ UI 글꼴(09-01 사용자 요청 — "JetBrains Mono 쓰게 해줘") — 이름으로 시스템 글꼴을
+    // 찾는다(nclip_plat::font::find_font_by_family) · 비면 시스템 기본 · 재시작 후 적용.
+    e(
+        Msg::CatAppearance,
+        Msg::SetUiFont,
+        Msg::SetUiFontDesc,
+        SettingKind::FontFace {
+            family_key: "ui.font_family",
+        },
+        "ui.font_family",
+    ),
     // ★ 이미지 썸네일(08-28 사용자 요청) — 기본 켜짐. 끄면 "[이미지] W×H"만.
     e(
         Msg::CatAppearance,

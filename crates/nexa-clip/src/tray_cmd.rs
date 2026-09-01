@@ -514,7 +514,9 @@ impl ApplicationHandler<ShellEvent> for Shell {
 
 /// 트레이 + 감시 + 설정 창 상주. 종료는 트레이 메뉴에서.
 pub(crate) fn run() {
-    let Some((data, idx)) = nclip_plat::font::system_ui_font() else {
+    // ★ 설정을 먼저 — UI 글꼴(`ui.font_family`)이 폰트 선택을 좌우한다(09-01 "JetBrains Mono").
+    let mut conf = Settings::load();
+    let Some((data, idx)) = crate::conf::ui_font_data(&conf) else {
         eprintln!("시스템 UI 폰트를 찾지 못했습니다.");
         std::process::exit(1);
     };
@@ -526,7 +528,6 @@ pub(crate) fn run() {
         }
     };
 
-    let mut conf = Settings::load();
     sync_autostart(&mut conf);
 
     let Ok(el) = EventLoop::<ShellEvent>::with_user_event().build() else {
@@ -658,24 +659,22 @@ pub(crate) fn run() {
     let gate = Gate::from_state(&conf);
 
     // 팝업은 자기 폰트를 따로 든다(mmap 정적 데이터라 값싸다 — App이 font를 소유해서).
-    let popup_font =
-        match nclip_plat::font::system_ui_font().and_then(|(d, i)| Font::from_static(d, i).ok()) {
-            Some(f) => f,
-            None => {
-                eprintln!("팝업 폰트 로드 실패");
-                std::process::exit(1);
-            }
-        };
+    let popup_font = match Font::from_static(data, idx) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("팝업 폰트 로드 실패: {e:?}");
+            std::process::exit(1);
+        }
+    };
 
     // 메인창 폰트 — 팝업과 같은 이유로 자기 것을 따로 든다(mmap 정적 데이터).
-    let main_font =
-        match nclip_plat::font::system_ui_font().and_then(|(d, i)| Font::from_static(d, i).ok()) {
-            Some(f) => f,
-            None => {
-                eprintln!("메인창 폰트 로드 실패");
-                std::process::exit(1);
-            }
-        };
+    let main_font = match Font::from_static(data, idx) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("메인창 폰트 로드 실패: {e:?}");
+            std::process::exit(1);
+        }
+    };
     let mut shell = Shell {
         app: App::new(font, conf, true),
         popup: Popup::new(popup_font),
