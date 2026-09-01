@@ -63,6 +63,9 @@ fn reps_bytes(reps: &[RawRep]) -> u64 {
 /// 동일성 비교에서 제외한다. 안 빼면 같은 복사가 매번 새 항목이 돼 승격이 죽는다.
 fn is_volatile_format(fmt: &str) -> bool {
     fmt.starts_with("ole.source.")
+        // ★ 09-01 실측(diff_dupes): PPT 글상자 재복사에서 이 3종(각 8B — 세션 포인터)만
+        //   달랐다 — 같은 도형이 복사마다 새 항목이 되던 원인(J6).
+        || (fmt.starts_with("PowerPoint ") && fmt.contains(" Internal "))
 }
 
 impl HistoryItem {

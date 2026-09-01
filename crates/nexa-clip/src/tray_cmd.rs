@@ -265,6 +265,25 @@ impl Shell {
         }
     }
 
+    /// ★ 모드 선별 + 폴백(09-01 J2) — 파일 항목의 "경로만"은 평문 표현이 아예 없을 수
+    /// 있어(탐색기 복사 = CF_HDROP뿐) 경로 목록에서 평문을 **만들어** 준다.
+    fn reps_for_mode(item: &nclip_core::history::HistoryItem, as_: PasteAs) -> Vec<RawRep> {
+        let filtered = as_.filter_reps(&item.reps);
+        if !filtered.is_empty() || as_ != PasteAs::PathOnly {
+            return filtered;
+        }
+        let paths: Vec<String> = item
+            .reps
+            .iter()
+            .filter(|r| r.format == "CF_HDROP")
+            .flat_map(|r| nclip_core::capture::parse_hdrop(&r.data))
+            .collect();
+        if paths.is_empty() {
+            return Vec::new();
+        }
+        nclip_plat::clipboard::plain_text_reps(&paths.join("\r\n"))
+    }
+
     fn copy_from_main(&mut self, id: u64, as_: PasteAs) {
         let Some(pos) =
             (0..self.history.len()).find(|&i| self.history.get(i).is_some_and(|it| it.id == id))
@@ -274,7 +293,7 @@ impl Shell {
         let Some(item) = self.history.get(pos) else {
             return;
         };
-        let reps: Vec<RawRep> = as_.filter_reps(&item.reps);
+        let reps: Vec<RawRep> = Self::reps_for_mode(item, as_);
         if reps.is_empty() {
             eprintln!("평문 표현이 없는 항목입니다");
             return;
@@ -309,7 +328,7 @@ impl Shell {
         let Some(item) = self.history.get(index) else {
             return;
         };
-        let reps: Vec<RawRep> = as_.filter_reps(&item.reps);
+        let reps: Vec<RawRep> = Self::reps_for_mode(item, as_);
         if reps.is_empty() {
             // 그 모드가 무의미한 항목 — 있는 척하지 않는다(DR-31).
             eprintln!("이 항목에는 그 방식의 표현이 없습니다 — 원본(Enter)으로 붙여넣으세요");
@@ -464,6 +483,11 @@ impl ApplicationHandler<ShellEvent> for Shell {
                 for r in &mut snap.reps {
                     if r.format == "HTML Format" {
                         if let Some(clean) = nclip_core::capture::sanitize_cf_html(&r.data) {
+                            println!(
+                                "HTML 정제: {}B → {}B (script/이벤트 속성 제거)",
+                                r.data.len(),
+                                clean.len()
+                            );
                             r.data = clean;
                         }
                     }

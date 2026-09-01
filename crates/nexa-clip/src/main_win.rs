@@ -324,7 +324,7 @@ impl MainWin {
 
     fn row_h(&self) -> i32 {
         match self.view {
-            ViewMode::Rich => self.px(48.0).max(1),
+            ViewMode::Rich => self.px(76.0).max(1),
             ViewMode::Compact => self.px(30.0).max(1),
             ViewMode::Plain => self.px(22.0).max(1),
         }
@@ -756,6 +756,13 @@ impl MainWin {
                 pin_divider_done = true;
             }
             let tx = list.x + pad;
+            // ★ Rich = 행 번호(CopyQ 화법 · 09-01 J4) — 목록 위치가 곧 번호(1 = 최신).
+            if self.view == ViewMode::Rich {
+                dc.select_font(FontSlot::Status, false);
+                let no = format!("{}", vi + 1);
+                dc.text(tx, y + px(6.0), clip, &no, th.text_dim);
+                dc.select_font(FontSlot::Base, false);
+            }
             // 보기 3모드(docs/04 §2-2) — Plain은 글리프도 접어 밀도 최우선.
             let show_glyph = self.view != ViewMode::Plain;
             if show_glyph {
@@ -825,19 +832,23 @@ impl MainWin {
             dc.text(lx, text_y, label_clip, &row.label, th.text);
             if self.view == ViewMode::Rich {
                 dc.select_font(FontSlot::Status, false);
-                let second = if row.source.is_empty() {
-                    row.plain.clone().unwrap_or_default()
-                } else if let Some(pl) = &row.plain {
-                    format!("{} — {}", row.source, pl)
-                } else {
-                    row.source.clone()
-                };
-                let one_line: String = second
-                    .chars()
-                    .map(|c| if c == '\n' || c == '\r' { ' ' } else { c })
-                    .take(120)
-                    .collect();
-                dc.text(lx, y + px(26.0), label_clip, &one_line, th.text_dim);
+                // 둘째 줄 = 출처 · 아래 두 줄 = 본문 미리보기(개행 유지 — CopyQ 화법).
+                if !row.source.is_empty() {
+                    dc.text(lx, y + px(24.0), label_clip, &row.source, th.text_dim);
+                }
+                if let Some(pl) = &row.plain {
+                    for (k, line) in pl.lines().take(2).enumerate() {
+                        let one: String = line.chars().take(140).collect();
+                        #[allow(clippy::cast_precision_loss)]
+                        dc.text(
+                            lx,
+                            y + px(40.0 + 16.0 * k as f32),
+                            label_clip,
+                            &one,
+                            th.text_dim,
+                        );
+                    }
+                }
                 dc.select_font(FontSlot::Base, false);
             }
         }
@@ -1130,6 +1141,25 @@ impl MainWin {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 self.cursor = (position.x as i32, position.y as i32);
+            }
+            // ★ 한글 입력(09-01 J5) — IME 조합은 Char가 아니라 Ime 이벤트로 온다.
+            WindowEvent::Ime(ime) => {
+                use winit::event::Ime;
+                if let Some((_, tb)) = self.editor.as_mut() {
+                    let mut inv = Invalidations::default();
+                    match ime {
+                        Ime::Preedit(t, _) => tb.set_preedit(t, &mut inv),
+                        Ime::Commit(t) => {
+                            tb.set_preedit("", &mut inv);
+                            for c in t.chars().filter(|c| !c.is_control()) {
+                                tb.on_event(&CtlEvent::Char { c, now_ms: 0 }, &mut inv);
+                            }
+                        }
+                        _ => {}
+                    }
+                    self.redraw();
+                }
+                return MainAction::None;
             }
             WindowEvent::KeyboardInput { event: kev, .. } if kev.state == ElementState::Pressed => {
                 match kev.logical_key.as_ref() {
