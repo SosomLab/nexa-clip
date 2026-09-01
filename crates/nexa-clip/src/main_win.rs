@@ -12,12 +12,17 @@
 //! 존재 이유("자주 쓰는 것이 안 떠내려간다"). 툴바 아이콘은 **벡터로 직접** 그린다
 //! (글꼴 글리프는 두부 위험 — 09-01 `−` 교훈 · VT-1).
 
+use nclip_core::capture::decode_plain;
 use nclip_core::history::History;
-use nclip_core::ClipKind;
+use nclip_core::{ClipKind, PasteAs};
+use nclip_ctl::controls::{ContextMenu, Control as _, CtxItem, TextBox};
 use nclip_ctl::draw::{DrawCtx, FontSlot};
+use nclip_ctl::event::{InputEvent as CtlEvent, Key as CtlKey};
 use nclip_ctl::geom::Rect;
 use nclip_ctl::raster::RasterCtx;
 use nclip_ctl::theme::Theme;
+use nclip_ctl::widget::{Invalidations, Widget as _};
+use nclip_ctl::ViewMode;
 use nclip_gfx::{Font, Surface};
 
 use std::num::NonZeroU32;
@@ -47,8 +52,8 @@ pub(crate) enum MainAction {
     Copy {
         /// 항목 id.
         id: u64,
-        /// 평문만.
-        plain: bool,
+        /// ★ 붙여넣기 방식(4모드 — T-15b · 클립보드 내용 선별).
+        as_: PasteAs,
     },
     /// ★ 삭제 — 이력 + 저장소.
     Delete(u64),
@@ -56,6 +61,15 @@ pub(crate) enum MainAction {
     TogglePin(u64),
     /// 설정 창 열기(⚙).
     OpenSettings,
+    /// ★ 보기 모드 변경(Ctrl+1/2/3) — 셸이 `ui.view_mode`에 영속한다.
+    SetViewMode(&'static str),
+    /// ★ 편집 저장(S4 평문화 · 09-01 확정).
+    SaveEdit {
+        /// 항목 id.
+        id: u64,
+        /// 새 평문 내용.
+        text: String,
+    },
     /// 검색어가 바뀌었다 — 셸이 이력으로 `refresh`를 다시 불러줘야 한다
     /// (창은 이력을 빌리지 않고 스냅샷만 든다).
     QueryChanged,
@@ -70,6 +84,8 @@ struct Row {
     source: String,
     copies: u32,
     thumb: Option<nclip_ctl::theme::IconImage>,
+    /// 첫 평문 표현(편집 시드 · Rich 보기 둘째 줄) — 없으면 None.
+    plain: Option<String>,
 }
 
 /// 세로 툴바 버튼.
@@ -110,6 +126,12 @@ pub(crate) struct MainWin {
     last_click: Option<(Instant, usize)>,
     /// 툴바 hover — 머티리얼 상태 레이어 + 툴팁(09-01 사용자 요청).
     hovered: Option<Tool>,
+    /// ★ 보기 모드(Ctrl+1/2/3 · `ui.view_mode` 영속).
+    view: ViewMode,
+    /// ★ 우클릭 컨텍스트 메뉴(VT-5).
+    menu: ContextMenu,
+    /// ★ 인라인 편집(S4 평문화) — (항목 id, 멀티라인 입력).
+    editor: Option<(u64, TextBox)>,
     /// 상태줄에 보일 전체 개수(필터 전).
     total: usize,
 }
@@ -132,6 +154,9 @@ impl MainWin {
             primary: false,
             last_click: None,
             hovered: None,
+            view: ViewMode::Compact,
+            menu: ContextMenu::new(),
+            editor: None,
             total: 0,
         }
     }
@@ -155,8 +180,10 @@ impl MainWin {
         hist: &History,
         theme: Theme,
         geom: Option<(i32, i32, u32, u32)>,
+        view_code: &str,
     ) {
         self.theme = theme;
+        self.view = ViewMode::from_code(view_code).unwrap_or_default();
         if let Some(w) = &self.window {
             w.set_visible(true);
             w.focus_window();
@@ -244,6 +271,10 @@ impl MainWin {
                 thumb: item.thumb.as_ref().map(|(w, h, rgba)| {
                     nclip_ctl::theme::IconImage::from_rgba(*w, *h, rgba.clone())
                 }),
+                plain: item
+                    .reps
+                    .iter()
+                    .find_map(|r| decode_plain(&r.format, &r.data)),
             };
             if row.pinned {
                 pinned.push(row);
@@ -292,7 +323,11 @@ impl MainWin {
     }
 
     fn row_h(&self) -> i32 {
-        self.px(30.0).max(1)
+        match self.view {
+            ViewMode::Rich => self.px(48.0).max(1),
+            ViewMode::Compact => self.px(30.0).max(1),
+            ViewMode::Plain => self.px(22.0).max(1),
+        }
     }
 
     fn list_rect(&self, w: i32, h: i32) -> Rect {
@@ -365,8 +400,14 @@ impl MainWin {
             (_, None) => MainAction::None, // VT-3: 선택 없으면 비활성
             (Tool::Pin, Some(id)) => MainAction::TogglePin(id),
             (Tool::Delete, Some(id)) => MainAction::Delete(id),
-            (Tool::Copy, Some(id)) => MainAction::Copy { id, plain: false },
-            (Tool::CopyPlain, Some(id)) => MainAction::Copy { id, plain: true },
+            (Tool::Copy, Some(id)) => MainAction::Copy {
+                id,
+                as_: PasteAs::Original,
+            },
+            (Tool::CopyPlain, Some(id)) => MainAction::Copy {
+                id,
+                as_: PasteAs::Plain,
+            },
         }
     }
 
@@ -379,6 +420,39 @@ impl MainWin {
             }
             None => return MainAction::None,
         };
+        // ★ 열린 컨텍스트 메뉴가 있으면 먼저 먹는다(바깥 클릭 = 닫기 — 메뉴 계약).
+        if self.menu.is_open() {
+            if let Some(ev) = to_ctl_event(event, self.cursor) {
+                let changed = self.menu.on_event(&ev);
+                if changed {
+                    self.redraw();
+                }
+                if let Some(id) = self.menu.take_picked() {
+                    return self.menu_action(&id);
+                }
+                // 메뉴가 열려 있는 동안 메인 입력은 전부 메뉴 몸.
+                if matches!(
+                    ev,
+                    CtlEvent::MouseDown { .. }
+                        | CtlEvent::MouseUp { .. }
+                        | CtlEvent::Key { .. }
+                        | CtlEvent::Wheel { .. }
+                ) {
+                    return MainAction::None;
+                }
+            }
+            if matches!(event, WindowEvent::RedrawRequested) {
+                self.paint();
+            }
+            if let WindowEvent::CursorMoved { position, .. } = event {
+                self.cursor = (position.x as i32, position.y as i32);
+            }
+            return MainAction::None;
+        }
+        // ★ 인라인 편집 중 — Esc 취소 · Ctrl+Enter 저장 · 나머지는 입력 상자로.
+        if self.editor.is_some() {
+            return self.handle_editor_event(event);
+        }
         match event {
             WindowEvent::CloseRequested => return MainAction::Close,
             WindowEvent::RedrawRequested => self.paint(),
@@ -441,6 +515,15 @@ impl MainWin {
                 }
             }
             WindowEvent::MouseInput { state, button, .. } => {
+                if *state == ElementState::Pressed && *button == winit::event::MouseButton::Right {
+                    let (x, y) = self.cursor;
+                    if let Some(vi) = self.row_at(x, y, w, h) {
+                        self.sel = vi;
+                        self.open_menu(x, y, w, h);
+                        self.redraw();
+                    }
+                    return MainAction::None;
+                }
                 if *state == ElementState::Pressed && *button == winit::event::MouseButton::Left {
                     let (x, y) = self.cursor;
                     if let Some(t) = self.tool_at(x, y, h) {
@@ -458,7 +541,11 @@ impl MainWin {
                             if let Some(id) = self.selected_id() {
                                 return MainAction::Copy {
                                     id,
-                                    plain: self.shift,
+                                    as_: if self.shift {
+                                        PasteAs::Plain
+                                    } else {
+                                        PasteAs::Original
+                                    },
                                 };
                             }
                         }
@@ -487,7 +574,11 @@ impl MainWin {
                         if let Some(id) = self.selected_id() {
                             return MainAction::Copy {
                                 id,
-                                plain: self.shift,
+                                as_: if self.shift {
+                                    PasteAs::Plain
+                                } else {
+                                    PasteAs::Original
+                                },
                             };
                         }
                     }
@@ -499,6 +590,19 @@ impl MainWin {
                     Key::Named(NamedKey::Backspace) => {
                         let _ = self.ta.backspace(now_epoch_ms());
                         return MainAction::QueryChanged;
+                    }
+                    // ★ 보기 3모드(Ctrl+1/2/3 — docs/04 §2-2 보기 메뉴 계약).
+                    Key::Character(d @ ("1" | "2" | "3")) if self.primary => {
+                        let (v, code) = match d {
+                            "1" => (ViewMode::Rich, "rich"),
+                            "2" => (ViewMode::Compact, "compact"),
+                            _ => (ViewMode::Plain, "plain"),
+                        };
+                        if self.view != v {
+                            self.view = v;
+                            self.redraw();
+                            return MainAction::SetViewMode(code);
+                        }
                     }
                     Key::Character("p" | "P") if self.primary => {
                         if let Some(id) = self.selected_id() {
@@ -542,6 +646,22 @@ impl MainWin {
         };
         let (w, h) = (size.width as i32, size.height as i32);
         self.ensure_visible(h);
+        if let Some((_, tb)) = self.editor.as_mut() {
+            let list = {
+                let tbw = (self.scale * 40.0).round() as i32;
+                let hh = (self.scale * 38.0).round() as i32;
+                let sh = (self.scale * 22.0).round() as i32;
+                let pad = (self.scale * 10.0).round() as i32;
+                Rect::new(
+                    tbw + pad,
+                    hh + pad,
+                    (w - tbw - pad * 2).max(60),
+                    (h - hh - sh - pad * 2 - (self.scale * 20.0) as i32).max(60),
+                )
+            };
+            let mut inv = Invalidations::default();
+            tb.set_bounds(list, &mut inv);
+        }
         // ★ surface를 잠시 꺼내 빌림을 끕는다 — draw(&self)가 전체 상태를 읽기 때문.
         let Some(mut surface) = self.surface.take() else {
             return;
@@ -636,30 +756,50 @@ impl MainWin {
                 pin_divider_done = true;
             }
             let tx = list.x + pad;
-            if let Some(img) = &row.thumb {
-                let box_side = px(24.0);
-                let (iw, ih) = (img.w.max(1) as i32, img.h.max(1) as i32);
-                let (dw, dh) = if iw >= ih {
-                    (box_side, (box_side * ih / iw).max(1))
+            // 보기 3모드(docs/04 §2-2) — Plain은 글리프도 접어 밀도 최우선.
+            let show_glyph = self.view != ViewMode::Plain;
+            if show_glyph {
+                if let Some(img) = &row.thumb {
+                    let box_side = if self.view == ViewMode::Rich {
+                        px(40.0)
+                    } else {
+                        px(24.0)
+                    };
+                    let (iw, ih) = (img.w.max(1) as i32, img.h.max(1) as i32);
+                    let (dw, dh) = if iw >= ih {
+                        (box_side, (box_side * ih / iw).max(1))
+                    } else {
+                        ((box_side * iw / ih).max(1), box_side)
+                    };
+                    let dst = Rect::new(tx + (box_side - dw) / 2, y + (row_h - dh) / 2, dw, dh);
+                    dc.image_scaled(dst, img, clip);
                 } else {
-                    ((box_side * iw / ih).max(1), box_side)
-                };
-                let dst = Rect::new(tx + (box_side - dw) / 2, y + (row_h - dh) / 2, dw, dh);
-                dc.image_scaled(dst, img, clip);
-            } else {
-                dc.text(
-                    tx,
-                    y + px(7.0),
-                    clip,
-                    crate::popup_win::kind_glyph(row.kind),
-                    th.accent,
-                );
+                    dc.text(
+                        tx,
+                        y + (row_h - px(16.0)) / 2,
+                        clip,
+                        crate::popup_win::kind_glyph(row.kind),
+                        th.accent,
+                    );
+                }
             }
             // 핀 표식 — 라벨 앞 작은 점.
-            let mut lx = tx + px(30.0);
+            let text_y = match self.view {
+                ViewMode::Rich => y + px(7.0),
+                ViewMode::Compact => y + px(7.0),
+                ViewMode::Plain => y + px(3.0),
+            };
+            let mut lx = tx
+                + if self.view == ViewMode::Plain {
+                    px(0.0)
+                } else if self.view == ViewMode::Rich {
+                    px(48.0)
+                } else {
+                    px(30.0)
+                };
             if row.pinned {
                 dc.fill_round_rect(
-                    Rect::new(lx, y + row_h / 2 - px(3.0), px(6.0), px(6.0)),
+                    Rect::new(lx, text_y + px(4.0), px(6.0), px(6.0)),
                     px(3.0),
                     th.accent,
                 );
@@ -671,17 +811,35 @@ impl MainWin {
                 let tag = format!("×{}", row.copies);
                 let tw = dc.text_width(&tag);
                 right -= tw;
-                dc.text(right, y + px(7.0), clip, &tag, th.text_dim);
+                dc.text(right, text_y, clip, &tag, th.text_dim);
                 right -= px(8.0);
             }
-            if !row.source.is_empty() {
+            // 출처 — Rich는 둘째 줄로 내려가 라벨이 전폭을 쓴다.
+            if !row.source.is_empty() && self.view != ViewMode::Rich {
                 let tw = dc.text_width(&row.source);
                 right -= tw;
-                dc.text(right, y + px(7.0), clip, &row.source, th.text_dim);
+                dc.text(right, text_y, clip, &row.source, th.text_dim);
                 right -= px(8.0);
             }
             let label_clip = Rect::new(lx, y, (right - lx).max(0), row_h);
-            dc.text(lx, y + px(7.0), label_clip, &row.label, th.text);
+            dc.text(lx, text_y, label_clip, &row.label, th.text);
+            if self.view == ViewMode::Rich {
+                dc.select_font(FontSlot::Status, false);
+                let second = if row.source.is_empty() {
+                    row.plain.clone().unwrap_or_default()
+                } else if let Some(pl) = &row.plain {
+                    format!("{} — {}", row.source, pl)
+                } else {
+                    row.source.clone()
+                };
+                let one_line: String = second
+                    .chars()
+                    .map(|c| if c == '\n' || c == '\r' { ' ' } else { c })
+                    .take(120)
+                    .collect();
+                dc.text(lx, y + px(26.0), label_clip, &one_line, th.text_dim);
+                dc.select_font(FontSlot::Base, false);
+            }
         }
 
         // ── ④ 상태 1줄 ──
@@ -713,6 +871,26 @@ impl MainWin {
             dc.fill_round_rect(tip, px(5.0), th.chrome_bg);
             dc.stroke_round_rect(tip, px(5.0), th.border, 1.0);
             dc.text(tip.x + pad_x, tip.y + px(5.0), full, label, th.text);
+        }
+
+        // ★ 인라인 에디터(S4 평문화) — 목록 영역을 덮는 시트 + 안내 줄.
+        if let Some((_, tb)) = &self.editor {
+            let list = self.list_rect(w, h);
+            dc.fill_rect(list, th.panel_bg);
+            tb.paint(dc, &th);
+            dc.select_font(FontSlot::Status, false);
+            dc.text(
+                list.x + px(10.0),
+                list.y + list.h - px(18.0),
+                full,
+                "Ctrl+Enter 저장 · Esc 취소 (평문으로 저장됩니다)",
+                th.text_dim,
+            );
+            dc.select_font(FontSlot::Base, false);
+        }
+        // ★ 컨텍스트 메뉴 — 언제나 맨 위(툴팁 교훈).
+        if self.menu.is_open() {
+            self.menu.paint(dc, &th);
         }
     }
 
@@ -846,6 +1024,210 @@ impl MainWin {
             }
         }
     }
+}
+
+impl MainWin {
+    /// 우클릭 메뉴 — 툴바와 같은 항목 전부(VT-5) + 파일은 개체/경로(4모드).
+    fn open_menu(&mut self, x: i32, y: i32, w: i32, h: i32) {
+        let Some(row) = self.rows.get(self.sel) else {
+            return;
+        };
+        let mut items = vec![
+            CtxItem::item("copy", "복사"),
+            CtxItem::item("plain", "평문으로 복사"),
+        ];
+        if row.kind == ClipKind::Files {
+            items.push(CtxItem::item("object", "개체로 복사"));
+            items.push(CtxItem::item("path", "경로만 복사"));
+        }
+        items.push(CtxItem::item(
+            "pin",
+            if row.pinned {
+                "고정 해제"
+            } else {
+                "고정"
+            },
+        ));
+        let editable = matches!(row.kind, ClipKind::Text | ClipKind::RichText);
+        items.push(CtxItem::maybe("edit", "편집(평문화)", editable));
+        items.push(CtxItem::item("delete", "삭제"));
+        self.menu.set_scale(self.scale);
+        // 라벨 폭 추정 — 페인트 전이라 실측 불가(한글 13px 기준 넉넉하게).
+        let text_w = self.px(13.0) * 8;
+        self.menu
+            .open_at(x, y, items, Rect::new(0, 0, w, h), text_w);
+    }
+
+    /// 메뉴 선택 id → 셸 행동.
+    fn menu_action(&mut self, id: &str) -> MainAction {
+        let Some(item_id) = self.selected_id() else {
+            return MainAction::None;
+        };
+        match id {
+            "copy" => MainAction::Copy {
+                id: item_id,
+                as_: PasteAs::Original,
+            },
+            "plain" => MainAction::Copy {
+                id: item_id,
+                as_: PasteAs::Plain,
+            },
+            "object" => MainAction::Copy {
+                id: item_id,
+                as_: PasteAs::Object,
+            },
+            "path" => MainAction::Copy {
+                id: item_id,
+                as_: PasteAs::PathOnly,
+            },
+            "pin" => MainAction::TogglePin(item_id),
+            "delete" => MainAction::Delete(item_id),
+            "edit" => {
+                self.begin_edit(item_id);
+                MainAction::None
+            }
+            _ => MainAction::None,
+        }
+    }
+
+    /// ★ 편집 시작(S4 평문화) — 첫 평문 표현을 멀티라인 입력으로.
+    fn begin_edit(&mut self, id: u64) {
+        let Some(row) = self.rows.iter().find(|r| r.id == id) else {
+            return;
+        };
+        let text = row.plain.clone().unwrap_or_default();
+        let mut tb = TextBox::new("").with_multiline().with_text(&text);
+        tb.set_scale(self.scale);
+        tb.set_focused(true);
+        self.editor = Some((id, tb));
+        self.redraw();
+    }
+
+    /// 편집 중 이벤트 — Esc 취소 · Ctrl+Enter 저장 · 나머지는 입력 상자로.
+    fn handle_editor_event(&mut self, event: &WindowEvent) -> MainAction {
+        match event {
+            WindowEvent::CloseRequested => {
+                self.editor = None;
+                return MainAction::Close;
+            }
+            WindowEvent::RedrawRequested => {
+                self.paint();
+                return MainAction::None;
+            }
+            WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
+                self.scale = *scale_factor as f32;
+                self.redraw();
+                return MainAction::None;
+            }
+            WindowEvent::ModifiersChanged(m) => {
+                self.shift = m.state().shift_key();
+                self.primary = if cfg!(target_os = "macos") {
+                    m.state().super_key()
+                } else {
+                    m.state().control_key()
+                };
+                return MainAction::None;
+            }
+            WindowEvent::CursorMoved { position, .. } => {
+                self.cursor = (position.x as i32, position.y as i32);
+            }
+            WindowEvent::KeyboardInput { event: kev, .. } if kev.state == ElementState::Pressed => {
+                match kev.logical_key.as_ref() {
+                    Key::Named(NamedKey::Escape) => {
+                        self.editor = None;
+                        self.redraw();
+                        return MainAction::None;
+                    }
+                    Key::Named(NamedKey::Enter) if self.primary => {
+                        if let Some((id, tb)) = self.editor.take() {
+                            self.redraw();
+                            return MainAction::SaveEdit {
+                                id,
+                                text: tb.text(),
+                            };
+                        }
+                        return MainAction::None;
+                    }
+                    _ => {}
+                }
+            }
+            _ => {}
+        }
+        // 나머지 입력은 입력 상자로(변환 가능한 것만).
+        if let Some(ev) = to_ctl_event(event, self.cursor) {
+            if let Some((_, tb)) = self.editor.as_mut() {
+                let mut inv = Invalidations::default();
+                tb.on_event(&ev, &mut inv);
+                if !inv.is_empty() {
+                    self.redraw();
+                }
+            }
+        }
+        MainAction::None
+    }
+}
+
+/// winit 이벤트 → nclip-ctl [`CtlEvent`] 최소 변환(메뉴·입력 상자용) —
+/// 메인창은 winit을 직접 다루지만 이식 컨트롤은 ctl 이벤트를 말한다.
+fn to_ctl_event(event: &WindowEvent, cursor: (i32, i32)) -> Option<CtlEvent> {
+    let (x, y) = cursor;
+    let key = |key: CtlKey| CtlEvent::Key {
+        key,
+        shift: false,
+        primary: false,
+    };
+    Some(match event {
+        WindowEvent::CursorMoved { position, .. } => CtlEvent::MouseMove {
+            x: position.x as i32,
+            y: position.y as i32,
+        },
+        WindowEvent::MouseInput { state, button, .. } => match (state, button) {
+            (ElementState::Pressed, winit::event::MouseButton::Left) => CtlEvent::MouseDown {
+                x,
+                y,
+                shift: false,
+                primary: false,
+            },
+            (ElementState::Released, winit::event::MouseButton::Left) => CtlEvent::MouseUp { x, y },
+            (ElementState::Pressed, winit::event::MouseButton::Right) => {
+                CtlEvent::RightDown { x, y }
+            }
+            _ => return None,
+        },
+        WindowEvent::MouseWheel { delta, .. } => CtlEvent::Wheel {
+            delta: match delta {
+                MouseScrollDelta::LineDelta(_, dy) => (*dy * 120.0) as i32,
+                MouseScrollDelta::PixelDelta(p) => p.y as i32,
+            },
+        },
+        WindowEvent::KeyboardInput { event: kev, .. } if kev.state == ElementState::Pressed => {
+            match kev.logical_key.as_ref() {
+                Key::Named(NamedKey::Enter) => key(CtlKey::Enter),
+                Key::Named(NamedKey::Escape) => key(CtlKey::Escape),
+                Key::Named(NamedKey::ArrowUp) => key(CtlKey::Up),
+                Key::Named(NamedKey::ArrowDown) => key(CtlKey::Down),
+                Key::Named(NamedKey::ArrowLeft) => key(CtlKey::Left),
+                Key::Named(NamedKey::ArrowRight) => key(CtlKey::Right),
+                Key::Named(NamedKey::Home) => key(CtlKey::Home),
+                Key::Named(NamedKey::End) => key(CtlKey::End),
+                Key::Named(NamedKey::Delete) => key(CtlKey::Delete),
+                Key::Named(NamedKey::Backspace) => CtlEvent::Char {
+                    c: '\u{8}',
+                    now_ms: 0,
+                },
+                Key::Named(NamedKey::Space) => CtlEvent::Char { c: ' ', now_ms: 0 },
+                Key::Character(t) => {
+                    let c = t.chars().next()?;
+                    if c.is_control() {
+                        return None;
+                    }
+                    CtlEvent::Char { c, now_ms: 0 }
+                }
+                _ => return None,
+            }
+        }
+        _ => return None,
+    })
 }
 
 /// 툴팁 라벨 — 한글(현재 창 문안과 동일 언어 · i18n 스윙은 T-23).

@@ -237,6 +237,29 @@ impl History {
         self.items.iter().find(|it| it.id == id)
     }
 
+    /// ★ 편집 저장(S4 평문화 · 09-01 확정) — 내용을 평문 표현으로 교체한다.
+    /// id·핀·copies·created는 유지(같은 항목의 새 내용) · 썸네일은 버린다(평문이니까).
+    pub fn replace_content(
+        &mut self,
+        id: u64,
+        kind: ClipKind,
+        label: String,
+        reps: Vec<RawRep>,
+    ) -> bool {
+        match self.items.iter_mut().find(|it| it.id == id) {
+            Some(it) => {
+                it.fingerprint = fingerprint(&reps);
+                it.bytes = reps_bytes(&reps);
+                it.reps = reps;
+                it.kind = kind;
+                it.label = label;
+                it.thumb = None;
+                true
+            }
+            None => false,
+        }
+    }
+
     /// ★ 항목 삭제(S2 메인창 — T-18b0). 있었으면 `true`(저장소 동기화는 호출자 몫).
     pub fn remove(&mut self, id: u64) -> bool {
         match self.items.iter().position(|it| it.id == id) {

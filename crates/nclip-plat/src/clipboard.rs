@@ -26,6 +26,35 @@ pub fn set_reps(reps: &[RawRep]) -> Result<usize, String> {
     imp::set_reps(reps)
 }
 
+/// ★ 평문 항목의 표준 표현(S4 편집 저장 · 09-01) — OS가 재게시·붙여넣기에 쓰는 모양 그대로.
+/// Windows는 CF_UNICODETEXT(UTF-16LE + NUL — 나머지는 OS가 합성) · 그 외는 UTF-8 text/plain.
+#[must_use]
+pub fn plain_text_reps(text: &str) -> Vec<RawRep> {
+    #[cfg(windows)]
+    {
+        let mut data = Vec::with_capacity((text.len() + 1) * 2);
+        for u in text.encode_utf16().chain(std::iter::once(0)) {
+            data.extend_from_slice(&u.to_le_bytes());
+        }
+        vec![RawRep {
+            format: "CF_UNICODETEXT".into(),
+            data,
+        }]
+    }
+    #[cfg(not(windows))]
+    {
+        let fmt = if cfg!(target_os = "macos") {
+            "public.utf8-plain-text"
+        } else {
+            "text/plain;charset=utf-8"
+        };
+        vec![RawRep {
+            format: fmt.into(),
+            data: text.as_bytes().to_vec(),
+        }]
+    }
+}
+
 #[cfg(windows)]
 // Win32 타입 이름은 원문 그대로(MSDN 대조) — FFI 선언부에 한해 린트를 끈다.
 #[allow(clippy::upper_case_acronyms)]

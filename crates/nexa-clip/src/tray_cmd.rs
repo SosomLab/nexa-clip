@@ -24,7 +24,7 @@ use crate::watch_cmd::Gate;
 use nclip_core::capture::{clip_text, summarize};
 use nclip_core::history::{History, HistoryItem, Pushed};
 use nclip_core::{
-    current_lang, has_content, is_plain_format, tr, ClipSnapshot, ClipboardWatch as _, Msg,
+    current_lang, has_content, tr, ClipSnapshot, ClipboardWatch as _, Msg,
     PasteAs, PasteInjector as _, RawRep, WatchCapability,
 };
 // Font는 conf::load_ui_font가 만들어 준다(폴백 체인 포함).
@@ -242,7 +242,30 @@ impl Shell {
     }
 
     /// ★ 메인창 복사 — 재적재만(주입 없음 · 관리 화면). 에코는 승격으로.
-    fn copy_from_main(&mut self, id: u64, plain: bool) {
+    /// ★ 편집 저장(S4 평문화 · 09-01 확정) — 같은 id로 평문 교체 + 저장소 Add(재생 교체).
+    fn save_edit(&mut self, id: u64, text: &str) {
+        let trimmed = text.trim_end();
+        if trimmed.is_empty() {
+            eprintln!("빈 내용은 저장하지 않습니다 — 삭제를 쓰세요");
+            return;
+        }
+        let line = trimmed.lines().next().unwrap_or_default();
+        let label = clip_text(line, MENU_LABEL_CHARS);
+        let reps = nclip_plat::clipboard::plain_text_reps(trimmed);
+        if self
+            .history
+            .replace_content(id, nclip_core::ClipKind::Text, label, reps)
+        {
+            if let Some(it) = self.history.get_by_id(id) {
+                self.store.add(&to_stored(it));
+            }
+            self.main.on_history_changed(&self.history);
+            self.refresh_tray();
+            println!("편집 저장: 항목 {id} — 평문으로 교체");
+        }
+    }
+
+    fn copy_from_main(&mut self, id: u64, as_: PasteAs) {
         let Some(pos) =
             (0..self.history.len()).find(|&i| self.history.get(i).is_some_and(|it| it.id == id))
         else {
@@ -251,15 +274,7 @@ impl Shell {
         let Some(item) = self.history.get(pos) else {
             return;
         };
-        let reps: Vec<RawRep> = if plain {
-            item.reps
-                .iter()
-                .filter(|r| is_plain_format(&r.format))
-                .cloned()
-                .collect()
-        } else {
-            item.reps.clone()
-        };
+        let reps: Vec<RawRep> = as_.filter_reps(&item.reps);
         if reps.is_empty() {
             eprintln!("평문 표현이 없는 항목입니다");
             return;
@@ -357,7 +372,13 @@ impl ApplicationHandler<ShellEvent> for Shell {
                 MainAction::Close => self.close_main(),
                 MainAction::QueryChanged => self.main.on_history_changed(&self.history),
                 MainAction::OpenSettings => self.app.ensure_window(el),
-                MainAction::Copy { id, plain } => self.copy_from_main(id, plain),
+                MainAction::Copy { id, as_ } => self.copy_from_main(id, as_),
+                MainAction::SetViewMode(code) => {
+                    self.app
+                        .conf
+                        .set("ui.view_mode", code.to_string(), Instant::now());
+                }
+                MainAction::SaveEdit { id, text } => self.save_edit(id, &text),
                 MainAction::Delete(id) => {
                     if self.history.remove(id) {
                         self.store.remove(id);
@@ -401,7 +422,8 @@ impl ApplicationHandler<ShellEvent> for Shell {
                 // ★ 08-30 사용자 확정: 트레이 좌클릭/"열기" = **메인창**(설정은 메인 ⚙).
                 let theme = self.app.theme();
                 let geom = self.saved_main_geom();
-                self.main.open(el, &self.history, theme, geom);
+                let view = self.app.conf.state.get("ui.view_mode").to_string();
+                self.main.open(el, &self.history, theme, geom, &view);
             }
             ShellEvent::OpenSettings => self.app.ensure_window(el),
             ShellEvent::Quit => {
