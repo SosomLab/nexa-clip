@@ -10,7 +10,22 @@ fn main() {
     let items = s.load();
     for w in items.windows(2) {
         let (a, b) = (&w[1], &w[0]); // 오래된 것 → 새것
-        if a.label != b.label || a.reps.len() != b.reps.len() {
+        if a.label != b.label {
+            continue;
+        }
+        if a.reps.len() != b.reps.len() {
+            let fa: Vec<&str> = a.reps.iter().map(|r| r.format.as_str()).collect();
+            let fb: Vec<&str> = b.reps.iter().map(|r| r.format.as_str()).collect();
+            println!(
+                "\"{}\" id {}→{} 표현 개수 다름: [{}] vs [{}] (src {:?}→{:?})",
+                a.label,
+                a.id,
+                b.id,
+                fa.join(", "),
+                fb.join(", "),
+                a.source_app,
+                b.source_app
+            );
             continue;
         }
         let mut diffs = Vec::new();

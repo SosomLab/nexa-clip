@@ -309,6 +309,16 @@ pub fn coalesces(prev: &crate::ClipSnapshot, next: &crate::ClipSnapshot) -> bool
     )
 }
 
+/// ★ 휘발 벤더 표현 — **세션 포인터라 복사마다 값이 다르다**. 동일성·연속 장면(coalesce)
+/// 비교에서 제외한다(저장·재적재는 그대로 — 붙여넣기 충실도 불변).
+///
+/// 실측 근거: `ole.source.0x…`(08-29 mac) · `PowerPoint 12.0 Internal *` 3종(09-01
+/// diff_dupes — 같은 글상자 재복사에서 이 8B짜리들만 달랐다 → ×가 매번 늘던 J6/K1).
+#[must_use]
+pub fn is_volatile_format(fmt: &str) -> bool {
+    fmt.starts_with("ole.source.") || (fmt.starts_with("PowerPoint ") && fmt.contains(" Internal "))
+}
+
 /// [`coalesces`]의 부품형 — 스냅숏이 아니라 저장된 조각(이력 항목 등)으로도 판정한다.
 #[must_use]
 pub fn coalesces_parts(
@@ -320,8 +330,13 @@ pub fn coalesces_parts(
     if prev_app != next_app {
         return false;
     }
+    // ★ 휘발 표현(세션 포인터)은 비교 전부에서 제외(09-01 — PPT 연타가 교체 대신
+    //   승격(×증가)으로 새던 원인. 텍스트 연타와 같은 거동이 된다: 연타 = ×유지).
     let names = |reps: &[crate::RawRep]| -> std::collections::BTreeSet<String> {
-        reps.iter().map(|r| r.format.clone()).collect()
+        reps.iter()
+            .filter(|r| !is_volatile_format(&r.format))
+            .map(|r| r.format.clone())
+            .collect()
     };
     let (p, n) = (names(prev_reps), names(next_reps));
     if p == n {
@@ -329,6 +344,7 @@ pub fn coalesces_parts(
         fn sorted(reps: &[crate::RawRep]) -> Vec<(&str, &[u8])> {
             let mut v: Vec<(&str, &[u8])> = reps
                 .iter()
+                .filter(|r| !is_volatile_format(r.format.as_str()))
                 .map(|r| (r.format.as_str(), r.data.as_slice()))
                 .collect();
             v.sort();

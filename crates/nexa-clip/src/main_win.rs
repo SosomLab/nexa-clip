@@ -114,8 +114,9 @@ pub(crate) struct MainWin {
     font: Font,
     theme: Theme,
     scale: f32,
-    /// ★ 검색 버퍼(T-17 `TypeAhead`) — IME 조합 중에도 실시간 필터(팝업과 동일 문법).
-    ta: nclip_ui::typeahead::TypeAhead,
+    /// ★ 검색 입력(09-01 — 사용자 요청 "캐럿·복사/붙여넣기·드래그 선택") — 이식 `TextBox`
+    ///   정식 편집기. 항상 포커스(키보드 기본 캡처)·IME preedit 인라인 표시.
+    search: TextBox,
     rows: Vec<Row>,
     sel: usize,
     top: usize,
@@ -145,7 +146,11 @@ impl MainWin {
             font,
             theme: Theme::dark(),
             scale: 1.0,
-            ta: nclip_ui::typeahead::TypeAhead::new(u64::MAX / 2),
+            search: {
+                let mut t = TextBox::new("검색…");
+                t.set_focused(true);
+                t
+            },
             rows: Vec::new(),
             sel: 0,
             top: 0,
@@ -192,7 +197,8 @@ impl MainWin {
             self.redraw();
             return;
         }
-        self.ta.clear();
+        self.search.set_text("");
+        self.search.set_focused(true);
         self.sel = 0;
         self.top = 0;
         self.refresh(hist);
@@ -251,7 +257,7 @@ impl MainWin {
 
     /// 이력 → 행 스냅숏. ★ **핀 먼저(각 구획 최신순)** — 관리 화면의 정렬 계약.
     pub(crate) fn refresh(&mut self, hist: &History) {
-        let q = self.ta.composing().to_lowercase();
+        let q = self.search.display_text().to_lowercase();
         self.total = hist.len();
         let mut pinned = Vec::new();
         let mut normal = Vec::new();
@@ -463,16 +469,17 @@ impl MainWin {
             WindowEvent::Resized(_) => self.redraw(),
             WindowEvent::Ime(ime) => {
                 use winit::event::Ime;
-                let now = now_epoch_ms();
+                let mut inv = Invalidations::default();
                 let changed = match ime {
                     Ime::Preedit(t, _) => {
-                        let _ = self.ta.set_preedit(t, now);
+                        self.search.set_preedit(t, &mut inv);
                         true
                     }
                     Ime::Commit(t) => {
-                        let _ = self.ta.set_preedit("", now);
+                        self.search.set_preedit("", &mut inv);
                         for c in t.chars().filter(|c| !c.is_control()) {
-                            let _ = self.ta.push(c, now);
+                            self.search
+                                .on_event(&CtlEvent::Char { c, now_ms: 0 }, &mut inv);
                         }
                         true
                     }
@@ -492,6 +499,18 @@ impl MainWin {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 self.cursor = (position.x as i32, position.y as i32);
+                // 드래그 선택 추적 — 캡처 없이 흘려도 TextBox가 자기 상태로 판단한다.
+                let mut inv = Invalidations::default();
+                self.search.on_event(
+                    &CtlEvent::MouseMove {
+                        x: self.cursor.0,
+                        y: self.cursor.1,
+                    },
+                    &mut inv,
+                );
+                if !inv.is_empty() {
+                    self.redraw();
+                }
                 let hovered = self.tool_at(self.cursor.0, self.cursor.1, h);
                 if hovered != self.hovered {
                     self.hovered = hovered;
@@ -524,8 +543,31 @@ impl MainWin {
                     }
                     return MainAction::None;
                 }
+                if *state == ElementState::Released && *button == winit::event::MouseButton::Left {
+                    let (x, y) = self.cursor;
+                    let mut inv = Invalidations::default();
+                    self.search.on_event(&CtlEvent::MouseUp { x, y }, &mut inv);
+                }
                 if *state == ElementState::Pressed && *button == winit::event::MouseButton::Left {
                     let (x, y) = self.cursor;
+                    if self
+                        .search
+                        .bounds()
+                        .contains(nclip_ctl::geom::Point { x, y })
+                    {
+                        let mut inv = Invalidations::default();
+                        self.search.on_event(
+                            &CtlEvent::MouseDown {
+                                x,
+                                y,
+                                shift: self.shift,
+                                primary: self.primary,
+                            },
+                            &mut inv,
+                        );
+                        self.redraw();
+                        return MainAction::None;
+                    }
                     if let Some(t) = self.tool_at(x, y, h) {
                         return self.act(t);
                     }
@@ -588,8 +630,73 @@ impl MainWin {
                         }
                     }
                     Key::Named(NamedKey::Backspace) => {
-                        let _ = self.ta.backspace(now_epoch_ms());
+                        let mut inv = Invalidations::default();
+                        self.search.on_event(
+                            &CtlEvent::Char {
+                                c: '\u{8}',
+                                now_ms: 0,
+                            },
+                            &mut inv,
+                        );
                         return MainAction::QueryChanged;
+                    }
+                    // ★ 캐럿 이동·범위 선택(⇧) — 검색 입력의 표준 편집 키(09-01).
+                    Key::Named(
+                        k @ (NamedKey::ArrowLeft
+                        | NamedKey::ArrowRight
+                        | NamedKey::Home
+                        | NamedKey::End),
+                    ) => {
+                        let key = match k {
+                            NamedKey::ArrowLeft => CtlKey::Left,
+                            NamedKey::ArrowRight => CtlKey::Right,
+                            NamedKey::Home => CtlKey::Home,
+                            _ => CtlKey::End,
+                        };
+                        let mut inv = Invalidations::default();
+                        self.search.on_event(
+                            &CtlEvent::Key {
+                                key,
+                                shift: self.shift,
+                                primary: self.primary,
+                            },
+                            &mut inv,
+                        );
+                        if !inv.is_empty() {
+                            self.redraw();
+                        }
+                    }
+                    // ★ 클립보드 단축(09-01) — 전체 선택·복사·잘라내기·붙여넣기.
+                    Key::Character("a" | "A") if self.primary => {
+                        let mut inv = Invalidations::default();
+                        self.search.on_event(&CtlEvent::SelectAll, &mut inv);
+                        self.redraw();
+                    }
+                    Key::Character("c" | "C") if self.primary => {
+                        if let Some(t) = self.search.copy_selection() {
+                            let _ = nclip_plat::clipboard::set_reps(
+                                &nclip_plat::clipboard::plain_text_reps(&t),
+                            );
+                        }
+                    }
+                    Key::Character("x" | "X") if self.primary => {
+                        let mut inv = Invalidations::default();
+                        if let Some(t) = self.search.cut_selection(&mut inv) {
+                            let _ = nclip_plat::clipboard::set_reps(
+                                &nclip_plat::clipboard::plain_text_reps(&t),
+                            );
+                            return MainAction::QueryChanged;
+                        }
+                    }
+                    Key::Character("v" | "V") if self.primary => {
+                        let text = nclip_plat::watch::PlatformWatch::new()
+                            .read_now()
+                            .and_then(|s| s.plain_text());
+                        if let Some(t) = text {
+                            let mut inv = Invalidations::default();
+                            self.search.paste(t.trim_end_matches('\n'), &mut inv);
+                            return MainAction::QueryChanged;
+                        }
                     }
                     // ★ 보기 3모드(Ctrl+1/2/3 — docs/04 §2-2 보기 메뉴 계약).
                     Key::Character(d @ ("1" | "2" | "3")) if self.primary => {
@@ -610,11 +717,15 @@ impl MainWin {
                         }
                     }
                     Key::Character(t) if !self.primary => {
-                        if let Some(c) = t.chars().next() {
-                            if !c.is_control() {
-                                let _ = self.ta.push(c, now_epoch_ms());
-                                return MainAction::QueryChanged;
-                            }
+                        let mut changed = false;
+                        let mut inv = Invalidations::default();
+                        for c in t.chars().filter(|c| !c.is_control()) {
+                            self.search
+                                .on_event(&CtlEvent::Char { c, now_ms: 0 }, &mut inv);
+                            changed = true;
+                        }
+                        if changed {
+                            return MainAction::QueryChanged;
                         }
                     }
                     _ => {}
@@ -646,6 +757,20 @@ impl MainWin {
         };
         let (w, h) = (size.width as i32, size.height as i32);
         self.ensure_visible(h);
+        {
+            let pad = (self.scale * 10.0).round() as i32;
+            let mut inv = Invalidations::default();
+            self.search.set_scale(self.scale);
+            self.search.set_bounds(
+                Rect::new(
+                    pad,
+                    (self.scale * 7.0).round() as i32,
+                    (w - pad * 2).max(40),
+                    (self.scale * 24.0).round() as i32,
+                ),
+                &mut inv,
+            );
+        }
         if let Some((_, tb)) = self.editor.as_mut() {
             let list = {
                 let tbw = (self.scale * 40.0).round() as i32;
@@ -687,21 +812,11 @@ impl MainWin {
         dc.select_font(FontSlot::Base, false);
         dc.fill_rect(full, th.window_bg);
 
-        // ── ① 검색 1줄 ──
+        // ── ① 검색 1줄 — 정식 TextBox(캐럿·선택 표시 · 09-01) ──
         let header_h = self.header_h();
         dc.fill_rect(Rect::new(0, 0, w, header_h), th.chrome_bg);
         let pad = px(10.0);
-        dc.fill_round_rect(
-            Rect::new(pad, px(7.0), w - pad * 2, px(24.0)),
-            px(6.0),
-            th.field_bg,
-        );
-        let q = self.ta.composing();
-        if q.is_empty() {
-            dc.text(pad + px(8.0), px(11.0), full, "검색…", th.text_dim);
-        } else {
-            dc.text(pad + px(8.0), px(11.0), full, &q, th.text);
-        }
+        self.search.paint(dc, &th);
         dc.fill_rect(Rect::new(0, header_h - 1, w, 1), th.border);
 
         // ── ② 좌측 세로 툴바 ──
@@ -734,7 +849,7 @@ impl MainWin {
         let row_h = self.row_h();
         let visible = (list.h / row_h).max(1) as usize;
         if self.rows.is_empty() {
-            let msg = if self.ta.composing().is_empty() {
+            let msg = if self.search.display_text().is_empty() {
                 "항목이 없습니다 — 복사하면 여기 쌓입니다"
             } else {
                 "일치하는 항목이 없습니다"
@@ -857,7 +972,7 @@ impl MainWin {
         let sy = h - self.status_h();
         dc.fill_rect(Rect::new(0, sy, w, self.status_h()), th.chrome_bg);
         dc.fill_rect(Rect::new(0, sy, w, 1), th.border);
-        let status = if self.ta.composing().is_empty() {
+        let status = if self.search.display_text().is_empty() {
             format!("{}개 · 암호화 · 로컬", self.total)
         } else {
             format!("{} / {}개 · 암호화 · 로컬", self.rows.len(), self.total)
@@ -1269,14 +1384,6 @@ fn tool_label(t: Tool) -> &'static str {
         Tool::CopyPlain => "평문으로 복사 (Shift+Enter)", // ⇧는 맑은 고딕에 없다(두부 · 09-01)
         Tool::Settings => "설정",
     }
-}
-
-/// 벽시계 ms — TypeAhead 타임스탬프용(검색창 모델이라 값 자체는 안 쓰이고 단조성만 필요).
-fn now_epoch_ms() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0)
 }
 
 /// `Rect`에 (x,y) 포함 판정이 없어 로컬 확장.

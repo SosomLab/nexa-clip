@@ -331,11 +331,42 @@ fn diag(msg: &str) {
     }
 }
 
+/// ★ 안정화 읽기(09-01 — Sublime `Ctrl+C` 연타 실기) — 앱이 표현을 **순차 게시하는
+/// 도중**을 읽으면 부분 스냅숏이 되고, 다음 읽기와 표현 구성이 달라 같은 복사가
+/// 여러 항목이 된다(Linux 결함 ⑥의 Windows판). **두 번 연속 같게 읽힐 때까지**
+/// 잠깐 기다렸다 다시 읽는다(30ms × 최대 4회 — 전용 감시 스레드라 UI 무관).
+fn read_settled() -> Option<ClipSnapshot> {
+    let mut cur = read_snapshot()?;
+    for _ in 0..4 {
+        std::thread::sleep(std::time::Duration::from_millis(30));
+        let Some(next) = read_snapshot() else {
+            // 재읽기 실패(다른 앱이 잠깐 잡음) — 지금 것을 쓴다(없는 것보다 낫다).
+            return Some(cur);
+        };
+        let same = cur.reps.len() == next.reps.len()
+            && cur
+                .reps
+                .iter()
+                .zip(&next.reps)
+                .all(|(a, b)| a.format == b.format && a.data == b.data);
+        if same {
+            return Some(next);
+        }
+        diag(&format!(
+            "표현이 아직 변함({}개 → {}개) — 재확인",
+            cur.reps.len(),
+            next.reps.len()
+        ));
+        cur = next;
+    }
+    Some(cur)
+}
+
 /// 스냅숏을 읽어 콜백에 넘긴다. **클립보드를 열지 못했으면 `false`**.
 ///
 /// 읽기는 됐지만 중복 일련번호라 건너뛴 경우는 `true`다 — 재시도할 일이 아니다.
 fn try_deliver() -> bool {
-    let Some(snap) = read_snapshot() else {
+    let Some(snap) = read_settled() else {
         diag("클립보드 열기 실패");
         return false;
     };

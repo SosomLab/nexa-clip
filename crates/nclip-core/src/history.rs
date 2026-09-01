@@ -59,14 +59,7 @@ fn reps_bytes(reps: &[RawRep]) -> u64 {
     reps.iter().map(|r| r.data.len() as u64).sum()
 }
 
-/// ★ 휘발 벤더 토큰(08-29 mac 실기 — `ole.source.0x…`가 복사마다 다르다) —
-/// 동일성 비교에서 제외한다. 안 빼면 같은 복사가 매번 새 항목이 돼 승격이 죽는다.
-fn is_volatile_format(fmt: &str) -> bool {
-    fmt.starts_with("ole.source.")
-        // ★ 09-01 실측(diff_dupes): PPT 글상자 재복사에서 이 3종(각 8B — 세션 포인터)만
-        //   달랐다 — 같은 도형이 복사마다 새 항목이 되던 원인(J6).
-        || (fmt.starts_with("PowerPoint ") && fmt.contains(" Internal "))
-}
+use crate::capture::is_volatile_format;
 
 impl HistoryItem {
     /// 저장소에서 복원할 때의 생성자 — 지문은 여기서 재계산한다(디스크의 지문을 믿지 않는다).
@@ -719,7 +712,20 @@ mod budget_tests {
             "x".into(),
             None,
         );
-        assert_eq!(r, Pushed::Promoted, "토큰만 다른 재복사 = 승격");
+        // ★ 정책 갱신(09-01 K1): 연타(맨 위와 같은 내용 재복사)는 coalesce가 먼저 받아
+        //   **교체(× 유지)** — 일반 텍스트 연타와 같은 거동. 다른 항목을 거쳐 돌아오면 승격(×+1).
+        assert_eq!(r, Pushed::Replaced, "연타 = 교체(× 유지)");
         assert_eq!(h.len(), 1);
+        assert_eq!(h.get(0).unwrap().copies, 1, "연타는 ×를 안 올린다");
+        // 사이에 다른 복사가 끼면 — 그때는 승격이다.
+        h.push(&snap(&[("T", b"other")]), ClipKind::Text, "o".into(), None);
+        let r2 = h.push(
+            &snap(&[("HTML", b"x"), ("ole.source.0xCCCC", b"3")]),
+            ClipKind::RichText,
+            "x".into(),
+            None,
+        );
+        assert_eq!(r2, Pushed::Promoted, "재방문 재복사 = 승격(토큰 무시)");
+        assert_eq!(h.get(0).unwrap().copies, 2);
     }
 }
