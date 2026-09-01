@@ -15,7 +15,17 @@ use ab_glyph::{Font as _, FontRef, ScaleFont as _};
 /// 바이트는 `&'static`이다 — `nclip-plat`의 mmap(파일 백드 페이지 · 힙 0)이 정상 경로이고,
 /// [`Font::from_bytes`]는 소유 바이트를 의도적으로 누수해 같은 표현으로 수렴한다(테스트·특수 경로용).
 pub struct Font {
-    inner: FontRef<'static>,
+    /// ★ 폴백 체인(09-01 사용자 요청 "두부 예방") — [0] = 주 폰트, 이후 = 대체.
+    /// 글자마다 글리프가 있는 첫 보을 쓴다(JetBrains Mono + 한글 = 시스템 본이 받는다).
+    faces: Vec<FontRef<'static>>,
+}
+
+impl Clone for Font {
+    fn clone(&self) -> Self {
+        Self {
+            faces: self.faces.clone(),
+        }
+    }
 }
 
 impl core::fmt::Debug for Font {
@@ -52,8 +62,27 @@ impl Font {
     /// 파싱 불가·인덱스 범위 밖이면 [`FontError`].
     pub fn from_static(data: &'static [u8], index: u32) -> Result<Self, FontError> {
         FontRef::try_from_slice_and_index(data, index)
-            .map(|inner| Self { inner })
+            .map(|f| Self { faces: vec![f] })
             .map_err(|_| FontError)
+    }
+
+    /// ★ 폴백 폰트 추가(09-01) — 주 폰트에 없는 글자만 이 보이 받는다.
+    /// 기준선(ascent·줄 높이)은 주 폰트가 계속 정한다 — 줌 안 주 글꼴이 섮여도 행이 안 흔들린다.
+    ///
+    /// # Errors
+    /// 파싱 불가·인덱스 범위 밖이면 [`FontError`].
+    pub fn push_fallback(&mut self, data: &'static [u8], index: u32) -> Result<(), FontError> {
+        let f = FontRef::try_from_slice_and_index(data, index).map_err(|_| FontError)?;
+        self.faces.push(f);
+        Ok(())
+    }
+
+    /// 글자가 있는 첫 보 — 없으면 주 폰트(.notdef 표시가 정직하다).
+    fn face_for(&self, ch: char) -> &FontRef<'static> {
+        self.faces
+            .iter()
+            .find(|f| f.glyph_id(ch).0 != 0)
+            .unwrap_or(&self.faces[0])
     }
 
     /// 소유 바이트에서 로드 — **의도적 누수**로 `'static`화(폰트는 프로세스 수명 자원).
@@ -67,35 +96,37 @@ impl Font {
     /// 이 폰트가 문자의 글리프를 갖고 있는가(폴백 체인 판단 근거).
     #[must_use]
     pub fn covers(&self, ch: char) -> bool {
-        self.inner.glyph_id(ch).0 != 0
+        self.faces.iter().any(|f| f.glyph_id(ch).0 != 0)
     }
 
     /// `size`(px)에서의 줄 높이.
     #[must_use]
     pub fn line_height(&self, size: f32) -> f32 {
-        let s = self.inner.as_scaled(size);
+        let s = self.faces[0].as_scaled(size);
         s.ascent() - s.descent() + s.line_gap()
     }
 
     /// 텍스트 폭(px) — 그리지 않고 잰다(라벨 실측 정렬 — [docs/12 §B]).
     #[must_use]
     pub fn measure(&self, text: &str, size: f32) -> f32 {
-        let s = self.inner.as_scaled(size);
         text.chars()
-            .map(|c| s.h_advance(self.inner.glyph_id(c)))
+            .map(|c| {
+                let face = self.face_for(c);
+                face.as_scaled(size).h_advance(face.glyph_id(c))
+            })
             .sum()
     }
 
     /// `size`에서의 어센트(베이스라인 위 높이, px) — 상단 기준 배치를 베이스라인으로 변환.
     #[must_use]
     pub fn ascent(&self, size: f32) -> f32 {
-        self.inner.as_scaled(size).ascent()
+        self.faces[0].as_scaled(size).ascent()
     }
 
     /// 이 폰트에 `c`의 글리프가 있는가(.notdef = 없음) — 슬롯 폴백 판단용(08-10).
     #[must_use]
     pub fn has_glyph(&self, c: char) -> bool {
-        self.inner.glyph_id(c).0 != 0
+        self.covers(c)
     }
 
     /// `size`에서 숫자 '0'의 **실측 외곽 높이**(px) — 광학 크기 보정용(08-10).
@@ -103,11 +134,10 @@ impl Font {
     /// 나란히 그리면 커 보인다. 외곽선이 없으면 경험 근사(0.7em).
     #[must_use]
     pub fn digit_height(&self, size: f32) -> f32 {
-        let g = self
-            .inner
+        let g = self.faces[0]
             .glyph_id('0')
             .with_scale_and_position(size, ab_glyph::point(0.0, 0.0));
-        self.inner
+        self.faces[0]
             .outline_glyph(g)
             .map_or(size * 0.7, |og| og.px_bounds().height())
     }
@@ -116,7 +146,7 @@ impl Font {
     /// `line_height`와 달리 줄 간격(line gap)을 빼서 한 줄 배치에 쓴다.
     #[must_use]
     pub fn text_box_height(&self, size: f32) -> f32 {
-        let s = self.inner.as_scaled(size);
+        let s = self.faces[0].as_scaled(size);
         s.ascent() - s.descent()
     }
 
@@ -151,12 +181,13 @@ impl Font {
         clip: (i32, i32, i32, i32),
         style: TextStyle,
     ) -> f32 {
-        let scaled = self.inner.as_scaled(size);
         let slant = if style.italic { 0.22 } else { 0.0 };
         let bold_pass = if style.bold { 2 } else { 1 };
         let mut pen = x;
         for ch in text.chars() {
-            let gid = self.inner.glyph_id(ch);
+            let face = self.face_for(ch);
+            let scaled = face.as_scaled(size);
+            let gid = face.glyph_id(ch);
             let glyph = gid.with_scale_and_position(size, ab_glyph::point(pen, y));
             if let Some(outlined) = scaled.outline_glyph(glyph) {
                 let bounds = outlined.px_bounds();
@@ -194,10 +225,11 @@ impl Font {
         color: Color,
         text: &str,
     ) -> f32 {
-        let scaled = self.inner.as_scaled(size);
         let mut pen = x;
         for ch in text.chars() {
-            let gid = self.inner.glyph_id(ch);
+            let face = self.face_for(ch);
+            let scaled = face.as_scaled(size);
+            let gid = face.glyph_id(ch);
             let glyph = gid.with_scale_and_position(size, ab_glyph::point(pen, y));
             if let Some(outlined) = scaled.outline_glyph(glyph) {
                 let bounds = outlined.px_bounds();

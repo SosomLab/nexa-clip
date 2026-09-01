@@ -295,14 +295,26 @@ mod theme_tests {
 /// ★ UI 글꼴 해석(09-01 사용자 요청 "JetBrains Mono") — `ui.font_family`가 있으면
 /// 이름으로 시스템 글꼴을 찾고(mmap), 없거나 못 찾으면 시스템 기본. 못 찾은 것은
 /// 조용히 넘어가지 않고 콘솔에 알린다(DR-31 — 설정이 거짓말하면 안 된다).
-pub(crate) fn ui_font_data(conf: &Settings) -> Option<(&'static [u8], u32)> {
+/// 된 폰트를 돌려준다 — ★ **시스템 기본이 항상 폴백으로 붙는다**(09-01 "두부 예방,
+/// 설정과 무관하게"). JetBrains Mono처럼 한글이 없는 글꼴을 지정해도 한글은
+/// 시스템 본이 받아 UI가 깨지지 않는다(글자 단위 폴백 — nclip-gfx).
+pub(crate) fn load_ui_font(conf: &Settings) -> Option<nclip_gfx::Font> {
+    use nclip_gfx::Font;
+    let sys = nclip_plat::font::system_ui_font();
     let fam = conf.state.get("ui.font_family").trim().to_string();
-    if !fam.is_empty() {
-        if let Some(hit) = nclip_plat::font::find_font_by_family(&fam) {
-            println!("UI 글꼴: {fam}");
-            return Some(hit);
+    let mut font = if fam.is_empty() {
+        Font::from_static(sys?.0, sys?.1).ok()?
+    } else if let Some((d, i)) = nclip_plat::font::find_font_by_family(&fam) {
+        println!("UI 글꼴: {fam} (+시스템 폴백)");
+        let mut f = Font::from_static(d, i).ok()?;
+        if let Some((sd, si)) = sys {
+            let _ = f.push_fallback(sd, si);
         }
+        return Some(f);
+    } else {
         eprintln!("⚠️ 글꼴 '{fam}'을(를) 못 찾았습니다 — 시스템 기본으로 실행합니다");
-    }
-    nclip_plat::font::system_ui_font()
+        Font::from_static(sys?.0, sys?.1).ok()?
+    };
+    let _ = &mut font;
+    Some(font)
 }

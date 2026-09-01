@@ -444,18 +444,11 @@ impl ApplicationHandler for App {
 /// 설정 창 실행.
 pub(crate) fn run() {
     let conf_probe = Settings::load();
-    let Some((data, idx)) = crate::conf::ui_font_data(&conf_probe) else {
+    let Some(font) = crate::conf::load_ui_font(&conf_probe) else {
         eprintln!("시스템 UI 폰트를 찾지 못했습니다.");
         std::process::exit(1);
     };
     drop(conf_probe);
-    let font = match Font::from_static(data, idx) {
-        Ok(f) => f,
-        Err(e) => {
-            eprintln!("폰트 로드 실패: {e:?}");
-            std::process::exit(1);
-        }
-    };
     // ★ 저장된 값을 먼저 읽는다 — 위젯은 이 값으로 시작해야 한다(기본값으로 그린 뒤
     //   덮어쓰면 첫 프레임이 잘못된 값으로 한 번 깜빡인다).
     let conf = Settings::load();

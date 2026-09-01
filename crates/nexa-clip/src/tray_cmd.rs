@@ -27,7 +27,7 @@ use nclip_core::{
     current_lang, has_content, is_plain_format, tr, ClipSnapshot, ClipboardWatch as _, Msg,
     PasteAs, PasteInjector as _, RawRep, WatchCapability,
 };
-use nclip_gfx::Font;
+// Font는 conf::load_ui_font가 만들어 준다(폴백 체인 포함).
 use nclip_plat::autostart::{apply, boot_sync, is_registered, BootSync};
 use nclip_plat::paste::PlatformPaste;
 use nclip_plat::tray::{spawn, TrayContent, TrayEvent, TrayHandle};
@@ -93,6 +93,8 @@ enum ShellEvent {
     PasteAfterClose(PasteAs),
     /// OS 테마 선호가 바뀌었다(Linux 포털 `SettingChanged`) — `ui.theme = system`이면 따라간다.
     SystemTheme,
+    /// ★ 트레이 메뉴 "설정"(09-01) — 메인창 거치지 않고 바로 설정 창.
+    OpenSettings,
 }
 
 /// 툴팁 문자열 — 보관 수를 함께 보여 준다(감시가 실제로 도는 것이 보인다).
@@ -113,6 +115,7 @@ fn content(held: usize, recent: Vec<String>) -> TrayContent {
         name: tr(lang, Msg::AppName).to_string(),
         open_label: tr(lang, Msg::TrayOpen).to_string(),
         quit_label: tr(lang, Msg::TrayQuit).to_string(),
+        settings_label: tr(lang, Msg::TraySettings).to_string(),
         recent,
     }
 }
@@ -410,6 +413,7 @@ impl ApplicationHandler<ShellEvent> for Shell {
                 let geom = self.saved_main_geom();
                 self.main.open(el, &self.history, theme, geom);
             }
+            ShellEvent::OpenSettings => self.app.ensure_window(el),
             ShellEvent::Quit => {
                 self.save_main_geom();
                 el.exit();
@@ -516,16 +520,9 @@ impl ApplicationHandler<ShellEvent> for Shell {
 pub(crate) fn run() {
     // ★ 설정을 먼저 — UI 글꼴(`ui.font_family`)이 폰트 선택을 좌우한다(09-01 "JetBrains Mono").
     let mut conf = Settings::load();
-    let Some((data, idx)) = crate::conf::ui_font_data(&conf) else {
+    let Some(font) = crate::conf::load_ui_font(&conf) else {
         eprintln!("시스템 UI 폰트를 찾지 못했습니다.");
         std::process::exit(1);
-    };
-    let font = match Font::from_static(data, idx) {
-        Ok(f) => f,
-        Err(e) => {
-            eprintln!("폰트 로드 실패: {e:?}");
-            std::process::exit(1);
-        }
     };
 
     sync_autostart(&mut conf);
@@ -578,6 +575,7 @@ pub(crate) fn run() {
                 TrayEvent::Hotkey => ShellEvent::Hotkey,
                 TrayEvent::HotkeyStatus(ok) => ShellEvent::HotkeyStatus(ok),
                 TrayEvent::Open | TrayEvent::OpenTarget(_) => ShellEvent::Open,
+                TrayEvent::Settings => ShellEvent::OpenSettings,
             });
         },
     ) else {
@@ -659,22 +657,10 @@ pub(crate) fn run() {
     let gate = Gate::from_state(&conf);
 
     // 팝업은 자기 폰트를 따로 든다(mmap 정적 데이터라 값싸다 — App이 font를 소유해서).
-    let popup_font = match Font::from_static(data, idx) {
-        Ok(f) => f,
-        Err(e) => {
-            eprintln!("팝업 폰트 로드 실패: {e:?}");
-            std::process::exit(1);
-        }
-    };
+    let popup_font = font.clone();
 
     // 메인창 폰트 — 팝업과 같은 이유로 자기 것을 따로 든다(mmap 정적 데이터).
-    let main_font = match Font::from_static(data, idx) {
-        Ok(f) => f,
-        Err(e) => {
-            eprintln!("메인창 폰트 로드 실패: {e:?}");
-            std::process::exit(1);
-        }
-    };
+    let main_font = font.clone();
     let mut shell = Shell {
         app: App::new(font, conf, true),
         popup: Popup::new(popup_font),

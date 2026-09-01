@@ -44,6 +44,8 @@ pub enum TrayEvent {
     HotkeyStatus(bool),
     /// 앱 종료(메뉴 "종료").
     Quit,
+    /// ★ 설정 창 열기(메뉴 "설정" — 09-01 사용자 요청).
+    Settings,
 }
 
 /// 트레이 표시 내용 — 호스트가 만들어 넘긴다(이 모듈은 앱 도메인을 모른다).
@@ -61,6 +63,8 @@ pub struct TrayContent {
     pub open_label: String,
     /// "종료" 라벨(i18n — 호스트 주입).
     pub quit_label: String,
+    /// ★ "설정" 라벨(i18n — 호스트 주입).
+    pub settings_label: String,
     /// ★ 최근 항목 라벨(0 = 최신 · T-18e) — 클릭 시 [`TrayEvent::Recent`]로 돌아온다.
     ///   개수·글자수 절단은 호스트 몫(이 모듈은 목록 정책을 모른다).
     pub recent: Vec<String>,
@@ -204,6 +208,8 @@ mod sni {
     const ID_OPEN: i32 = 3;
     const ID_QUIT: i32 = 4;
     const ID_SEP2: i32 = 5;
+    /// ★ 설정(09-01) — 열기와 종료 사이.
+    const ID_SETTINGS: i32 = 6;
     const ID_RECENT_BASE: i32 = 100;
 
     fn emit(ev: TrayEvent) {
@@ -255,6 +261,7 @@ mod sni {
             }
             ID_SEP | ID_SEP2 => put("type", ov("separator")),
             ID_OPEN => put("label", ov(c.open_label)),
+            ID_SETTINGS => put("label", ov(c.settings_label)),
             ID_QUIT => put("label", ov(c.quit_label)),
             i if i >= ID_RECENT_BASE => {
                 let idx = (i - ID_RECENT_BASE) as usize;
@@ -279,6 +286,7 @@ mod sni {
             ids.push(ID_SEP2);
         }
         ids.push(ID_OPEN);
+        ids.push(ID_SETTINGS);
         ids.push(ID_QUIT);
         ids
     }
@@ -291,6 +299,7 @@ mod sni {
     fn on_click(id: i32) {
         match id {
             ID_OPEN => emit(TrayEvent::Open),
+            ID_SETTINGS => emit(TrayEvent::Settings),
             ID_QUIT => emit(TrayEvent::Quit),
             i if i >= ID_RECENT_BASE => emit(TrayEvent::Recent((i - ID_RECENT_BASE) as usize)),
             _ => {}
@@ -548,7 +557,7 @@ mod sni {
         fn root_children_layout_follows_recent() {
             let _ = STATE.set(Mutex::new(TrayContent::default()));
             let ids = root_children();
-            assert_eq!(ids, vec![ID_HEADER, ID_SEP, ID_OPEN, ID_QUIT]);
+            assert_eq!(ids, vec![ID_HEADER, ID_SEP, ID_OPEN, ID_SETTINGS, ID_QUIT]);
             if let Some(s) = STATE.get() {
                 if let Ok(mut g) = s.lock() {
                     g.recent = vec!["a".into(), "b_c".into()];
@@ -557,7 +566,16 @@ mod sni {
             let ids = root_children();
             assert_eq!(
                 ids,
-                vec![ID_HEADER, ID_SEP, 100, 101, ID_SEP2, ID_OPEN, ID_QUIT]
+                vec![
+                    ID_HEADER,
+                    ID_SEP,
+                    100,
+                    101,
+                    ID_SEP2,
+                    ID_OPEN,
+                    ID_SETTINGS,
+                    ID_QUIT
+                ]
             );
             // 니모닉 이스케이프.
             let label = item_props(101)
@@ -687,6 +705,8 @@ mod win {
     const TPM_RIGHTBUTTON: u32 = 0x0002;
     const CMD_OPEN: usize = 1;
     const CMD_QUIT: usize = 2;
+    /// ★ 설정(09-01).
+    const CMD_SETTINGS: usize = 3;
     /// 최근 항목 명령 id 시작(개수는 호스트가 준 목록 길이).
     const CMD_RECENT_BASE: usize = 100;
 
@@ -801,10 +821,11 @@ mod win {
     /// 우클릭 메뉴 — 이름 헤더(비활성) · ★ **최근 항목**(T-18e) · 열기 · 종료.
     fn show_menu(hwnd: HWND) {
         let Some(state) = STATE.get() else { return };
-        let (name, open_label, quit_label, recent) = match state.lock() {
+        let (name, open_label, settings_label, quit_label, recent) = match state.lock() {
             Ok(g) => (
                 g.name.clone(),
                 g.open_label.clone(),
+                g.settings_label.clone(),
                 g.quit_label.clone(),
                 g.recent.clone(),
             ),
@@ -812,6 +833,7 @@ mod win {
         };
         let name_w = wide(&name);
         let open_w = wide(&open_label);
+        let settings_w = wide(&settings_label);
         let quit_w = wide(&quit_label);
         let recent_w: Vec<Vec<u16>> = recent.iter().map(|s| wide(s)).collect();
         // SAFETY: 메뉴는 이 함수 안에서 만들고 파괴한다. SetForegroundWindow 선행은
@@ -834,6 +856,7 @@ mod win {
                 AppendMenuW(menu, MF_SEPARATOR, 0, core::ptr::null());
             }
             AppendMenuW(menu, MF_STRING, CMD_OPEN, open_w.as_ptr());
+            AppendMenuW(menu, MF_STRING, CMD_SETTINGS, settings_w.as_ptr());
             AppendMenuW(menu, MF_STRING, CMD_QUIT, quit_w.as_ptr());
             let mut pt = Point { x: 0, y: 0 };
             GetCursorPos(&mut pt);
@@ -849,6 +872,7 @@ mod win {
             DestroyMenu(menu);
             match cmd as usize {
                 CMD_OPEN => emit(TrayEvent::Open),
+                CMD_SETTINGS => emit(TrayEvent::Settings),
                 CMD_QUIT => emit(TrayEvent::Quit),
                 c if c >= CMD_RECENT_BASE && c < CMD_RECENT_BASE + recent_w.len() => {
                     emit(TrayEvent::Recent(c - CMD_RECENT_BASE));

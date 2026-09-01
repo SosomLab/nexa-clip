@@ -294,6 +294,8 @@ pub enum Msg {
     TrayOpen,
     /// 트레이 메뉴 — 종료.
     TrayQuit,
+    /// 트레이 메뉴 "설정"(09-01 사용자 요청 — 우클릭에서 바로).
+    TraySettings,
     /// 닫을 때 트레이로.
     SetCloseToTray,
     /// 위 설명.
@@ -617,6 +619,7 @@ impl Msg {
             ],
             Msg::TrayOpen => ["Open", "열기", "打开", "開く"],
             Msg::TrayQuit => ["Quit", "종료", "退出", "終了"],
+            Msg::TraySettings => ["Settings", "설정", "设置", "設定"],
             Msg::SetCloseToTray => [
                 "Keep running in tray when closed",
                 "창을 닫아도 트레이에 남기",
@@ -719,7 +722,7 @@ mod tests {
     use super::*;
 
     /// 카탈로그 전수 — 새 `Msg`를 더하면 여기도 더한다(빈칸 검사가 그걸 강제한다).
-    const ALL_MSG: [Msg; 118] = [
+    const ALL_MSG: [Msg; 119] = [
         Msg::AppName,
         Msg::SearchPlaceholder,
         Msg::EmptyHistory,
@@ -817,6 +820,7 @@ mod tests {
         Msg::SetExcludeAppsDesc,
         Msg::TrayOpen,
         Msg::TrayQuit,
+        Msg::TraySettings,
         Msg::SetCloseToTray,
         Msg::SetCloseToTrayDesc,
         Msg::SetImagePreview,
