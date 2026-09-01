@@ -566,6 +566,9 @@ pub(crate) fn run() {
         paste_auto,
         proxy: el.create_proxy(),
     };
+    // ★ 복원 직후 트레이 메뉴·툴팁 갱신(09-01 사용자 실기 "우클릭에 최근이 안 보임") —
+    //   spawn 때는 빈 내용이었고 첫 캡처까지는 아무도 불러주지 않았다.
+    shell.refresh_tray();
     if let Err(e) = el.run_app(&mut shell) {
         eprintln!("이벤트 루프 오류: {e}");
     }

@@ -25,8 +25,8 @@ use crate::widget::{Invalidations, Widget};
 const ROW_H: i32 = 24;
 /// 보이는 행 수 — 넘치면 휠 스크롤.
 const VISIBLE: usize = 5;
-/// 버튼 한 변(논리 px) — 정사각 `＋`/`−`.
-const BTN: i32 = 22;
+/// 버튼 한 변(논리 px) — 정사각 아이콘 버튼(09-01 "75% 크기·머티리얼 스타일").
+const BTN: i32 = 16;
 /// 목록과 버튼 사이(논리 px).
 const GAP: i32 = 6;
 /// 행 안 좌우 여백(논리 px).
@@ -62,9 +62,9 @@ impl ListEditor {
             top: 0,
             editing: None,
             input: TextBox::new(placeholder),
-            // ASCII 글림표 — U+FF0B/U+2212는 맑은 고딕에 없어 두부가 된다(09-01 실기).
-            add: Button::new("+"),
-            del: Button::new("-"),
+            // 기호는 글꼴이 아니라 **벡터로 직접** 그린다(paint — 두부·글립 폭 문제 원천 차단).
+            add: Button::new(""),
+            del: Button::new(""),
             changed: false,
             empty_label: "—".into(),
         }
@@ -87,6 +87,12 @@ impl ListEditor {
     #[must_use]
     pub fn is_editing(&self) -> bool {
         self.editing.is_some()
+    }
+
+    /// 보이는 창(5행)을 넘치는가 — 호스트의 휠 라우팅 근거.
+    #[must_use]
+    pub fn overflows(&self) -> bool {
+        self.items.len() > VISIBLE
     }
 
     /// 권장 크기(물리 px) — 폭은 호스트 몫이라 높이만 의미 있다.
@@ -403,6 +409,23 @@ impl Widget for ListEditor {
         );
         self.add.paint(ctx, theme);
         self.del.paint(ctx, theme);
+        // 기호 = 벡터 라인(머티리얼풍 — 중앙 정렬 · 2px 굵기 · 본문색).
+        let stroke = self.s(2).max(2);
+        let arm = self.s(8);
+        for (btn, plus) in [(&self.add, true), (&self.del, false)] {
+            let b = btn.bounds();
+            let (cx, cy) = (b.x + b.w / 2, b.y + b.h / 2);
+            ctx.fill_rect(
+                Rect::new(cx - arm / 2, cy - stroke / 2, arm, stroke),
+                theme.text,
+            );
+            if plus {
+                ctx.fill_rect(
+                    Rect::new(cx - stroke / 2, cy - arm / 2, stroke, arm),
+                    theme.text,
+                );
+            }
+        }
         if self.editing.is_some() {
             self.input.paint(ctx, theme);
         }

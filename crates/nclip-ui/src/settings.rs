@@ -542,6 +542,8 @@ pub struct SettingsWidget {
     /// 검증 실패 경고(08-20 — 확정 즉시 · 호스트가 모달/상태줄로 표출).
     warnings: Vec<Msg>,
     back: bool,
+    /// 마지막 마우스 위치(휠 라우팅용).
+    last_mouse: Point,
     /// 우측 패널 세로 스크롤 오프셋(물리 px).
     scroll: i32,
     /// 우측 패널 콘텐츠 총 높이(물리 px) — layout에서 계산.
@@ -605,6 +607,7 @@ impl SettingsWidget {
             changes: Vec::new(),
             warnings: Vec::new(),
             back: false,
+            last_mouse: Point { x: -1, y: -1 },
             scroll: 0,
             content_h: 0,
             bars: ScrollBars::new(),
@@ -766,6 +769,16 @@ impl SettingsWidget {
     /// 검증 실패 경고를 꺼낸다(1회성 — 확정 시 즉시 발생 · 원복은 이미 끝난 뒤).
     pub fn take_warnings(&mut self) -> Vec<Msg> {
         std::mem::take(&mut self.warnings)
+    }
+
+    /// 마지막 마우스 위치 — 휠에는 좌표가 없어(09-01) 목록 위인지 판정에 쓴다.
+    fn note_mouse(&mut self, ev: &InputEvent) {
+        if let InputEvent::MouseDown { x, y, .. }
+        | InputEvent::MouseUp { x, y }
+        | InputEvent::MouseMove { x, y } = *ev
+        {
+            self.last_mouse = Point { x, y };
+        }
     }
 
     /// Esc 닫기 요청(1회성).
@@ -1701,6 +1714,26 @@ impl Widget for SettingsWidget {
             }
         }
 
+        self.note_mouse(ev);
+        // ★ 목록 위 휠은 목록 자신이 스크롤한다(09-01 실기 — 설정 패널이 가로채 가져감).
+        //   넘치는 목록만 소비 — 5행 이하는 패널 스크롤에 양보한다.
+        if matches!(*ev, InputEvent::Wheel { .. }) {
+            let p = self.last_mouse;
+            let mut hit = false;
+            for row in &mut self.rows {
+                if let RowCtl::List(l) = &mut row.ctl {
+                    if l.overflows() && l.bounds().contains(p) {
+                        l.on_event(ev, inv);
+                        hit = true;
+                    }
+                }
+            }
+            if hit {
+                inv.push(self.bounds);
+                return;
+            }
+        }
+
         // ── 우측 패널 오버레이 스크롤(세로 전용) — 콤보 열림 중에는 위 캡처가 우선 ──
         {
             let vp = self.right_viewport();
@@ -1805,11 +1838,13 @@ impl Widget for SettingsWidget {
                 inv.push(self.bounds);
             }
             InputEvent::MouseUp { .. } => {
-                // 실행 버튼은 "안에서 떼야" 클릭이다(Button 계약) — MouseUp을 전달해야
-                // take_clicked가 성립한다(다른 컨트롤은 MouseDown에서 완결).
+                // 실행 버튼과 목록(＋/－)은 "안에서 떼야" 클릭이다(Button 계약) — MouseUp을
+                // 전달해야 take_clicked가 성립하고 눌림 색도 풀린다(09-01 실기).
                 for row in &mut self.rows {
-                    if let RowCtl::Act(b) = &mut row.ctl {
-                        b.on_event(ev, inv);
+                    match &mut row.ctl {
+                        RowCtl::Act(b) => b.on_event(ev, inv),
+                        RowCtl::List(l) => l.on_event(ev, inv),
+                        _ => {}
                     }
                 }
                 self.drain_changes(inv);
@@ -1933,6 +1968,14 @@ impl Widget for SettingsWidget {
                 _ => {}
             },
             _ => {
+                // 마우스 이동은 목록 버튼 hover 페이드에도 필요하다(09-01).
+                if matches!(*ev, InputEvent::MouseMove { .. }) {
+                    for row in &mut self.rows {
+                        if let RowCtl::List(l) = &mut row.ctl {
+                            l.on_event(ev, inv);
+                        }
+                    }
+                }
                 // 휠 등 — 트리(스크롤바)로.
                 self.tree.on_event(ev, inv);
             }
