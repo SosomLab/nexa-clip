@@ -401,6 +401,11 @@ impl MainWin {
                     self.redraw();
                 }
             }
+            WindowEvent::CursorLeft { .. } => {
+                if self.hovered.take().is_some() {
+                    self.redraw();
+                }
+            }
             WindowEvent::MouseWheel { delta, .. } => {
                 let step = match delta {
                     MouseScrollDelta::LineDelta(_, y) => -*y as i32 * 3,
@@ -579,24 +584,6 @@ impl MainWin {
             }
         }
         self.draw_tool(dc, self.settings_rect(h), Tool::Settings, true);
-        // ★ 툴팁(머티리얼 — hover 즉시 · 버튼 오른쪽) — 맨 위에 그린다.
-        if let Some(t) = self.hovered {
-            let r = self.tool_rect_of(t, h);
-            let label = tool_label(t);
-            dc.select_font(FontSlot::Status, false);
-            let tw = dc.text_width(label);
-            let (tip_h, pad_x) = (px(20.0), px(8.0));
-            let tip = Rect::new(
-                r.x + r.w + px(6.0),
-                r.y + (r.h - tip_h) / 2,
-                tw + pad_x * 2,
-                tip_h,
-            );
-            dc.fill_round_rect(tip, px(4.0), th.chrome_bg);
-            dc.stroke_round_rect(tip, px(4.0), th.border, 1.0);
-            dc.text(tip.x + pad_x, tip.y + px(3.0), full, label, th.text);
-            dc.select_font(FontSlot::Base, false);
-        }
 
         // ── ③ 목록(핀 구획 먼저) ──
         let list = self.list_rect(w, h);
@@ -685,6 +672,24 @@ impl MainWin {
         dc.select_font(FontSlot::Status, false);
         dc.text(pad, sy + px(4.0), full, &status, th.text_dim);
         dc.select_font(FontSlot::Base, false);
+
+        // ★ 툴팁 — **반드시 맨 끝**(09-01 실기 "일부만 보임" = 목록이 덤어버렸다).
+        //   글자는 본문 크기(Base) — Status는 작다는 사용자 피드백.
+        if let Some(t) = self.hovered {
+            let r = self.tool_rect_of(t, h);
+            let label = tool_label(t);
+            let tw = dc.text_width(label);
+            let (tip_h, pad_x) = (px(26.0), px(10.0));
+            let tip = Rect::new(
+                r.x + r.w + px(6.0),
+                r.y + (r.h - tip_h) / 2,
+                tw + pad_x * 2,
+                tip_h,
+            );
+            dc.fill_round_rect(tip, px(5.0), th.chrome_bg);
+            dc.stroke_round_rect(tip, px(5.0), th.border, 1.0);
+            dc.text(tip.x + pad_x, tip.y + px(5.0), full, label, th.text);
+        }
     }
 
     /// 툴바 버튼의 rect — hover 툴팁이 자리를 되찾는다.
@@ -711,73 +716,109 @@ impl MainWin {
         let ink = if enabled { th.text } else { th.text_dim };
         let px = |v: f32| (v * self.scale).round() as i32;
         let (cx, cy) = (r.x + r.w / 2, r.y + r.h / 2);
-        let s2 = px(2.0).max(2);
+        // ★ 20px 박스(사용자 확정 09-01) · Material Symbols 형상을 사각/원 조합으로 근사 —
+        //   글꼴 링크 없이 단일 바이너리 유지(DR-8). 선 굵기 ≈ 1.7px(Material 400 가중).
+        let w2 = 1.7f32 * self.scale;
         match tool {
             Tool::Pin => {
-                // 압정: 머리(원) + 침(세로선).
+                // Material `keep`(push pin) — 위 깔땏기 몸통 + 받침 널판 + 바늘.
                 dc.fill_round_rect(
-                    Rect::new(cx - px(4.0), cy - px(6.0), px(8.0), px(8.0)),
-                    px(4.0),
+                    Rect::new(cx - px(3.5), cy - px(9.0), px(7.0), px(9.0)),
+                    px(1.5),
                     ink,
                 );
-                dc.fill_rect(Rect::new(cx - 1, cy + px(2.0), s2 - 1, px(5.0)), ink);
+                dc.fill_round_rect(
+                    Rect::new(cx - px(6.0), cy - px(1.0), px(12.0), px(2.5)),
+                    px(1.0),
+                    ink,
+                );
+                dc.fill_rect(
+                    Rect::new(cx - 1, cy + px(1.5), px(2.0).max(2), px(7.0)),
+                    ink,
+                );
             }
             Tool::Delete => {
-                // 휴지통: 뚜껑 + 몸통 테두리.
-                dc.fill_rect(Rect::new(cx - px(6.0), cy - px(6.0), px(12.0), s2 - 1), ink);
+                // Material `delete` — 손잡이·둪꺼워·몸통(세로줄 2).
+                dc.fill_round_rect(
+                    Rect::new(cx - px(2.5), cy - px(9.5), px(5.0), px(2.0)),
+                    px(1.0),
+                    ink,
+                );
+                dc.fill_round_rect(
+                    Rect::new(cx - px(7.0), cy - px(8.0), px(14.0), px(2.0)),
+                    px(1.0),
+                    ink,
+                );
                 dc.stroke_round_rect(
-                    Rect::new(cx - px(4.0), cy - px(3.0), px(8.0), px(9.0)),
+                    Rect::new(cx - px(5.5), cy - px(5.0), px(11.0), px(14.0)),
                     px(2.0),
                     ink,
-                    1.5,
+                    w2,
+                );
+                dc.fill_rect(
+                    Rect::new(cx - px(2.0), cy - px(2.0), px(1.5).max(2), px(8.0)),
+                    ink,
+                );
+                dc.fill_rect(
+                    Rect::new(cx + px(1.0), cy - px(2.0), px(1.5).max(2), px(8.0)),
+                    ink,
                 );
             }
             Tool::Copy => {
-                // 복사: 겹친 두 사각.
+                // Material `content_copy` — 뒤장(왼위) + 앞장(오른아래 · 속을 바닥색으로 가려 겹침 표현).
                 dc.stroke_round_rect(
-                    Rect::new(cx - px(6.0), cy - px(6.0), px(8.0), px(9.0)),
+                    Rect::new(cx - px(9.0), cy - px(9.0), px(12.0), px(14.0)),
                     px(2.0),
                     ink,
-                    1.5,
+                    w2,
                 );
-                dc.fill_round_rect(
-                    Rect::new(cx - px(2.0), cy - px(2.0), px(8.0), px(9.0)),
-                    px(2.0),
-                    ink,
-                );
+                let front = Rect::new(cx - px(4.0), cy - px(4.5), px(12.0), px(14.0));
+                dc.fill_round_rect(front, px(2.0), th.chrome_bg);
+                dc.stroke_round_rect(front, px(2.0), ink, w2);
             }
             Tool::CopyPlain => {
-                // 평문: 문서(테두리) + 글줄 두 개.
+                // Material `text_snippet` — 문서 테두리 + 글줄 3(마지막은 짧게).
                 dc.stroke_round_rect(
-                    Rect::new(cx - px(5.0), cy - px(7.0), px(10.0), px(13.0)),
-                    px(2.0),
+                    Rect::new(cx - px(8.0), cy - px(8.0), px(16.0), px(16.0)),
+                    px(2.5),
                     ink,
-                    1.5,
+                    w2,
                 );
-                dc.fill_rect(Rect::new(cx - px(3.0), cy - px(3.0), px(6.0), 1), ink);
-                dc.fill_rect(Rect::new(cx - px(3.0), cy, px(6.0), 1), ink);
+                dc.fill_rect(
+                    Rect::new(cx - px(4.5), cy - px(4.0), px(9.0), px(1.8).max(2)),
+                    ink,
+                );
+                dc.fill_rect(
+                    Rect::new(cx - px(4.5), cy - px(0.9), px(9.0), px(1.8).max(2)),
+                    ink,
+                );
+                dc.fill_rect(
+                    Rect::new(cx - px(4.5), cy + px(2.2), px(5.0), px(1.8).max(2)),
+                    ink,
+                );
             }
             Tool::Settings => {
-                // 톱니 약식: 바깥 원 테두리 + 중심 점 + 스포크 4개.
-                dc.stroke_round_rect(
-                    Rect::new(cx - px(6.0), cy - px(6.0), px(12.0), px(12.0)),
-                    px(6.0),
-                    ink,
-                    1.5,
-                );
-                dc.fill_round_rect(
-                    Rect::new(cx - px(2.0), cy - px(2.0), px(4.0), px(4.0)),
-                    px(2.0),
-                    ink,
-                );
+                // Material `settings` — 톱니 8개(4방 + 대각) + 링 + 중심 구멍.
+                let ring = Rect::new(cx - px(6.5), cy - px(6.5), px(13.0), px(13.0));
                 for (dx, dy, ww, hh) in [
-                    (-1, -px(8.0), s2 - 1, px(3.0)),
-                    (-1, px(5.0), s2 - 1, px(3.0)),
-                    (-px(8.0), -1, px(3.0), s2 - 1),
-                    (px(5.0), -1, px(3.0), s2 - 1),
+                    (-px(1.5), -px(10.0), px(3.0), px(4.0)),
+                    (-px(1.5), px(6.0), px(3.0), px(4.0)),
+                    (-px(10.0), -px(1.5), px(4.0), px(3.0)),
+                    (px(6.0), -px(1.5), px(4.0), px(3.0)),
                 ] {
-                    dc.fill_rect(Rect::new(cx + dx, cy + dy, ww, hh), ink);
+                    dc.fill_round_rect(Rect::new(cx + dx, cy + dy, ww, hh), px(1.0), ink);
                 }
+                for (dx, dy) in [
+                    (-px(7.5), -px(7.5)),
+                    (px(4.5), -px(7.5)),
+                    (-px(7.5), px(4.5)),
+                    (px(4.5), px(4.5)),
+                ] {
+                    dc.fill_round_rect(Rect::new(cx + dx, cy + dy, px(3.0), px(3.0)), px(1.0), ink);
+                }
+                dc.fill_ellipse(ring, ink);
+                let hole = Rect::new(cx - px(2.8), cy - px(2.8), px(5.6), px(5.6));
+                dc.fill_ellipse(hole, th.chrome_bg);
             }
         }
     }

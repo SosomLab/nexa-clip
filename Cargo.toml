@@ -70,3 +70,17 @@ opt-level = 3
 opt-level = 3
 [profile.dev.package.universal-hash]
 opt-level = 3
+[profile.dev.package.aead]
+opt-level = 3
+[profile.dev.package.generic-array]
+opt-level = 3
+[profile.dev.package.crypto-common]
+opt-level = 3
+[profile.dev.package.inout]
+opt-level = 3
+[profile.dev.package.subtle]
+opt-level = 3
+# ★ AEAD 제네릭은 "호출한 크레이트"에 단형화된다 — 원어 크레이트만 올려선 소용없고
+#   (실측 5MB/s 그대로), 호출측인 nclip-store가 opt 3이어야 dev에서도 212MB/s가 나온다.
+[profile.dev.package.nclip-store]
+opt-level = 3
