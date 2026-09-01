@@ -98,7 +98,8 @@ pub(crate) struct MainWin {
     font: Font,
     theme: Theme,
     scale: f32,
-    query: String,
+    /// ★ 검색 버퍼(T-17 `TypeAhead`) — IME 조합 중에도 실시간 필터(팝업과 동일 문법).
+    ta: nclip_ui::typeahead::TypeAhead,
     rows: Vec<Row>,
     sel: usize,
     top: usize,
@@ -122,7 +123,7 @@ impl MainWin {
             font,
             theme: Theme::dark(),
             scale: 1.0,
-            query: String::new(),
+            ta: nclip_ui::typeahead::TypeAhead::new(u64::MAX / 2),
             rows: Vec::new(),
             sel: 0,
             top: 0,
@@ -164,7 +165,7 @@ impl MainWin {
             self.redraw();
             return;
         }
-        self.query.clear();
+        self.ta.clear();
         self.sel = 0;
         self.top = 0;
         self.refresh(hist);
@@ -201,6 +202,7 @@ impl MainWin {
             }
             Err(e) => eprintln!("softbuffer context 실패: {e}"),
         }
+        win.set_ime_allowed(true); // 한글 조합 중 검색(Preedit)
         win.focus_window();
         self.window = Some(win);
     }
@@ -222,7 +224,7 @@ impl MainWin {
 
     /// 이력 → 행 스냅숏. ★ **핀 먼저(각 구획 최신순)** — 관리 화면의 정렬 계약.
     pub(crate) fn refresh(&mut self, hist: &History) {
-        let q = self.query.to_lowercase();
+        let q = self.ta.composing().to_lowercase();
         self.total = hist.len();
         let mut pinned = Vec::new();
         let mut normal = Vec::new();
@@ -385,6 +387,27 @@ impl MainWin {
                 self.redraw();
             }
             WindowEvent::Resized(_) => self.redraw(),
+            WindowEvent::Ime(ime) => {
+                use winit::event::Ime;
+                let now = now_epoch_ms();
+                let changed = match ime {
+                    Ime::Preedit(t, _) => {
+                        let _ = self.ta.set_preedit(t, now);
+                        true
+                    }
+                    Ime::Commit(t) => {
+                        let _ = self.ta.set_preedit("", now);
+                        for c in t.chars().filter(|c| !c.is_control()) {
+                            let _ = self.ta.push(c, now);
+                        }
+                        true
+                    }
+                    _ => false,
+                };
+                if changed {
+                    return MainAction::QueryChanged;
+                }
+            }
             WindowEvent::ModifiersChanged(m) => {
                 self.shift = m.state().shift_key();
                 self.primary = if cfg!(target_os = "macos") {
@@ -474,7 +497,7 @@ impl MainWin {
                         }
                     }
                     Key::Named(NamedKey::Backspace) => {
-                        self.query.pop();
+                        let _ = self.ta.backspace(now_epoch_ms());
                         return MainAction::QueryChanged;
                     }
                     Key::Character("p" | "P") if self.primary => {
@@ -485,7 +508,7 @@ impl MainWin {
                     Key::Character(t) if !self.primary => {
                         if let Some(c) = t.chars().next() {
                             if !c.is_control() {
-                                self.query.push(c);
+                                let _ = self.ta.push(c, now_epoch_ms());
                                 return MainAction::QueryChanged;
                             }
                         }
@@ -553,10 +576,11 @@ impl MainWin {
             px(6.0),
             th.field_bg,
         );
-        if self.query.is_empty() {
+        let q = self.ta.composing();
+        if q.is_empty() {
             dc.text(pad + px(8.0), px(11.0), full, "검색…", th.text_dim);
         } else {
-            dc.text(pad + px(8.0), px(11.0), full, &self.query, th.text);
+            dc.text(pad + px(8.0), px(11.0), full, &q, th.text);
         }
         dc.fill_rect(Rect::new(0, header_h - 1, w, 1), th.border);
 
@@ -590,7 +614,7 @@ impl MainWin {
         let row_h = self.row_h();
         let visible = (list.h / row_h).max(1) as usize;
         if self.rows.is_empty() {
-            let msg = if self.query.is_empty() {
+            let msg = if self.ta.composing().is_empty() {
                 "항목이 없습니다 — 복사하면 여기 쌓입니다"
             } else {
                 "일치하는 항목이 없습니다"
@@ -664,7 +688,7 @@ impl MainWin {
         let sy = h - self.status_h();
         dc.fill_rect(Rect::new(0, sy, w, self.status_h()), th.chrome_bg);
         dc.fill_rect(Rect::new(0, sy, w, 1), th.border);
-        let status = if self.query.is_empty() {
+        let status = if self.ta.composing().is_empty() {
             format!("{}개 · 암호화 · 로컬", self.total)
         } else {
             format!("{} / {}개 · 암호화 · 로컬", self.rows.len(), self.total)
@@ -833,6 +857,14 @@ fn tool_label(t: Tool) -> &'static str {
         Tool::CopyPlain => "평문으로 복사 (Shift+Enter)", // ⇧는 맑은 고딕에 없다(두부 · 09-01)
         Tool::Settings => "설정",
     }
+}
+
+/// 벽시계 ms — TypeAhead 타임스탬프용(검색창 모델이라 값 자체는 안 쓰이고 단조성만 필요).
+fn now_epoch_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 /// `Rect`에 (x,y) 포함 판정이 없어 로컬 확장.

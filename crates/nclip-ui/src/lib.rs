@@ -16,4 +16,6 @@
 pub mod settings;
 mod settings_registry;
 
+pub mod hangul;
+pub mod typeahead;
 pub use settings::{registry, Entry, NoteTone, SettingKind, SettingsState, SettingsWidget};

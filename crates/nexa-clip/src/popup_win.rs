@@ -70,7 +70,9 @@ pub(crate) struct Popup {
     font: Font,
     theme: Theme,
     scale: f32,
-    query: String,
+    /// ★ 검색 버퍼(T-17 이식 `TypeAhead`) — IME 조합 중(Preedit)에도 실시간 필터.
+    ///   검색창 모델이라 타임아웃은 사실상 무한(u64::MAX/2)으로 끔다.
+    ta: nclip_ui::typeahead::TypeAhead,
     /// 필터 통과 행(최신이 위).
     rows: Vec<Row>,
     /// 선택(rows 인덱스).
@@ -157,7 +159,7 @@ impl Popup {
             font,
             theme: Theme::dark(),
             scale: 1.0,
-            query: String::new(),
+            ta: nclip_ui::typeahead::TypeAhead::new(u64::MAX / 2),
             rows: Vec::new(),
             sel: 0,
             top: 0,
@@ -182,6 +184,10 @@ impl Popup {
         }
         let vi = self.top + ((y - header_h) / row_h) as usize;
         (vi < self.rows.len()).then_some(vi)
+    }
+
+    fn now_ms(&self) -> u64 {
+        self.opened_at.elapsed().as_millis() as u64
     }
 
     /// 눌린 수식 키 → 붙여넣기 모드(09-01 확정: ⇧ 평문 · Ctrl 개체 · Alt 경로 · 기본 원본).
@@ -218,7 +224,7 @@ impl Popup {
         if self.window.is_some() {
             return;
         }
-        self.query.clear();
+        self.ta.clear();
         self.sel = 0;
         self.top = 0;
         self.was_focused = false;
@@ -254,6 +260,7 @@ impl Popup {
             }
             Err(e) => eprintln!("softbuffer context 실패: {e}"),
         }
+        win.set_ime_allowed(true); // 한글 조합 이벤트(Ime::Preedit)를 받는다
         win.focus_window();
         self.window = Some(win);
     }
@@ -266,7 +273,7 @@ impl Popup {
 
     /// 이력 → 필터 통과 행 재구성(검색어 변경·이력 변경 시).
     pub(crate) fn refresh(&mut self, hist: &History) {
-        let q = self.query.to_lowercase();
+        let q = self.ta.composing().to_lowercase();
         self.rows.clear();
         let mut i = 0usize;
         while let Some(item) = hist.get(i) {
@@ -323,6 +330,32 @@ impl Popup {
                 self.shift = m.state().shift_key();
                 self.ctrl = m.state().control_key();
                 self.alt = m.state().alt_key();
+            }
+            // ★ 한글 조합 중 검색(T-17/T-18 · FR-F-2) — Preedit가 올 때마다 실시간 필터,
+            //   Commit은 버퍼에 확정. (winit `set_ime_allowed(true)` — open에서 켜 둔다.)
+            WindowEvent::Ime(ime) => {
+                use winit::event::Ime;
+                let now = self.now_ms();
+                let changed = match ime {
+                    Ime::Preedit(t, _) => {
+                        let _ = self.ta.set_preedit(t, now);
+                        true
+                    }
+                    Ime::Commit(t) => {
+                        let _ = self.ta.set_preedit("", now);
+                        for c in t.chars().filter(|c| !c.is_control()) {
+                            let _ = self.ta.push(c, now);
+                        }
+                        true
+                    }
+                    _ => false,
+                };
+                if changed {
+                    self.sel = 0;
+                    self.top = 0;
+                    self.refresh(hist);
+                    self.redraw();
+                }
             }
             WindowEvent::CursorMoved { position, .. } => {
                 self.cursor = (position.x as i32, position.y as i32);
@@ -383,7 +416,7 @@ impl Popup {
                         return PopupAction::Close;
                     }
                     Key::Named(NamedKey::Backspace) => {
-                        self.query.pop();
+                        let _ = self.ta.backspace(self.now_ms());
                         self.sel = 0;
                         self.top = 0;
                         self.refresh(hist);
@@ -397,8 +430,9 @@ impl Popup {
                         }
                         if let Some(txt) = event.text.as_ref() {
                             let mut changed = false;
+                            let now = self.now_ms();
                             for c in txt.chars().filter(|c| !c.is_control()) {
-                                self.query.push(c);
+                                let _ = self.ta.push(c, now);
                                 changed = true;
                             }
                             if changed {
@@ -449,7 +483,7 @@ impl Popup {
                 ih,
                 self.scale,
                 self.theme,
-                &self.query,
+                &self.ta.composing(),
                 &self.rows,
                 self.sel,
                 self.top,
