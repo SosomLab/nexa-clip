@@ -10,7 +10,8 @@
 
 - 조직: **SosomLab** · 개발자: Sangyong Bae · kiros33@gmail.com
 - 저장소: <https://github.com/SosomLab/nexa-clip> · 라이선스: **PolyForm Noncommercial 1.0.0**
-- 현 단계: ★ **설계·조사 단계 (코드 미착수)**. 2026-08-25 경쟁 조사 + 기능/화면/동기화/저장/신원 설계 완료.
+- 현 단계: ★ **M1 구현 진행 중**(09-01) — 3-OS 감시·캡처 · 암호화 영속(T-16) · 퀵 팝업(S1) ·
+메인창(S2 1단) · 설정 창 · 트레이(Win·Linux) · K-1 주입(Win·Linux). mac 트레이/단축키 남음. 핵심 결정은 DR-37~40까지 확정.
 
 ### 참조 원천 (재발명 금지 — 설계 전 반드시 확인)
 
