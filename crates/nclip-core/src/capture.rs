@@ -1973,3 +1973,333 @@ mod hangul_nfd_tests {
         assert_eq!(compose_hangul_nfd("\u{11AB}"), "\u{11AB}");
     }
 }
+// ─────────────────────────────────────────────── CF_HTML 정제 (T-14d · D-62 1단)
+
+/// ★ CF_HTML 정제(09-01 · D-62 1단 — **차단 목록**) — 캡처 때 **한 번**만 부른다.
+///
+/// 지운다: `<script>`·`<iframe>`·`<object>`·`<embed>`(내용째) · `<link>`(외부 리소스) ·
+/// `on*` 이벤트 속성 · `javascript:` href/src. **서식은 보존한다** — `<style>`·클래스·표까지
+/// 붙여넣기 충실도가 우선이다(Word 서식 실기 09-01의 교훈). 전면 화이트리스트는 본편(D-62).
+///
+/// CF_HTML 헤더(StartHTML/EndHTML/StartFragment/EndFragment — **바이트 오프셋**)는
+/// 내용이 바뀌므로 **다시 계산해 다시 쓴다**(SourceURL은 보존). 바뀐 게 없으면 `None`.
+#[must_use]
+pub fn sanitize_cf_html(data: &[u8]) -> Option<Vec<u8>> {
+    let text = core::str::from_utf8(data).ok()?;
+    // 헤더/본문 분리 — StartHTML 오프셋(십진)을 읽는다. 못 읽으면 손대지 않는다(fail-soft).
+    let start_html = header_num(text, "StartHTML:")?;
+    let (header, html) = (text.get(..start_html)?, text.get(start_html..)?);
+    let cleaned = sanitize_html(html);
+    if cleaned == html {
+        return None;
+    }
+    // 헤더 재작성 — 원본 키 순서를 지키되 오프셋 4종만 새 값으로.
+    let source_url: Option<&str> = header
+        .lines()
+        .find(|l| l.starts_with("SourceURL:"))
+        .map(str::trim_end);
+    let version: &str = header
+        .lines()
+        .find(|l| l.starts_with("Version:"))
+        .map_or("Version:0.9", str::trim_end);
+    // 자리수 고정(10자리) — 헤더 길이가 값에 영향을 주는 순환을 끊는 관례.
+    let mut head = String::new();
+    head.push_str(version);
+    head.push_str("\r\nStartHTML:__________\r\nEndHTML:__________\r\nStartFragment:__________\r\nEndFragment:__________\r\n");
+    if let Some(u) = source_url {
+        head.push_str(u);
+        head.push_str("\r\n");
+    }
+    let head_len = head.len();
+    let frag_start = cleaned
+        .find("<!--StartFragment-->")
+        .map_or(0, |i| i + "<!--StartFragment-->".len());
+    let frag_end = cleaned.find("<!--EndFragment-->").unwrap_or(cleaned.len());
+    let fill = |h: &str, key: &str, v: usize| -> String {
+        h.replacen(&format!("{key}__________"), &format!("{key}{v:010}"), 1)
+    };
+    let mut out_head = head;
+    out_head = fill(&out_head, "StartHTML:", head_len);
+    out_head = fill(&out_head, "EndHTML:", head_len + cleaned.len());
+    out_head = fill(&out_head, "StartFragment:", head_len + frag_start);
+    out_head = fill(&out_head, "EndFragment:", head_len + frag_end);
+    let mut out = out_head.into_bytes();
+    out.extend_from_slice(cleaned.as_bytes());
+    Some(out)
+}
+
+fn header_num(text: &str, key: &str) -> Option<usize> {
+    let i = text.find(key)?;
+    let rest = &text[i + key.len()..];
+    let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
+    let v: usize = digits.parse().ok()?;
+    (v <= text.len()).then_some(v)
+}
+
+/// 요소·속성 차단 목록 정제 — 파서 없이 태그 경계 스캔(대소문자 무시).
+fn sanitize_html(html: &str) -> String {
+    // ① 내용째 지우는 요소.
+    let mut s = strip_element(html, "script");
+    s = strip_element(&s, "iframe");
+    s = strip_element(&s, "object");
+    s = strip_element(&s, "embed");
+    // ② 단독 태그 제거.
+    s = strip_void_tag(&s, "link");
+    // ③ 태그 안 속성 정제(on* · javascript:).
+    strip_attrs(&s)
+}
+
+/// `<tag …> … </tag>`(중첩 없음 가정 — 이 요소들은 중첩이 무의미)를 통째로 지운다.
+fn strip_element(html: &str, tag: &str) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html;
+    loop {
+        let Some(open) = find_tag_open(rest, tag) else {
+            out.push_str(rest);
+            return out;
+        };
+        out.push_str(&rest[..open]);
+        let after_open = &rest[open..];
+        // 여는 태그의 '>'까지 — 자기닫힘(`/>`)이면 거기서 끝.
+        let Some(gt) = after_open.find('>') else {
+            // 깨진 태그 — 나머지를 통째로 버리기보다 그대로 두는 게 정직하다.
+            out.push_str(after_open);
+            return out;
+        };
+        let self_closing = after_open[..gt].ends_with('/');
+        let mut cursor = open + gt + 1;
+        if !self_closing {
+            let lower = rest.to_ascii_lowercase();
+            let close = format!("</{tag}");
+            if let Some(c) = lower[cursor..].find(&close) {
+                let c_abs = cursor + c;
+                let c_end = rest[c_abs..]
+                    .find('>')
+                    .map_or(rest.len(), |g| c_abs + g + 1);
+                cursor = c_end;
+            } else {
+                // 닫는 태그가 없다 — 나머지 전부가 그 요소 내용일 수 있어 버린다(fail-closed).
+                return out;
+            }
+        }
+        rest = &rest[cursor..];
+    }
+}
+
+/// `<link …>` 단독 태그 제거.
+fn strip_void_tag(html: &str, tag: &str) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html;
+    while let Some(open) = find_tag_open(rest, tag) {
+        out.push_str(&rest[..open]);
+        match rest[open..].find('>') {
+            Some(gt) => rest = &rest[open + gt + 1..],
+            None => return out,
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// `<tag` 여는 위치(대소문자 무시 · 단어 경계).
+fn find_tag_open(html: &str, tag: &str) -> Option<usize> {
+    let lower = html.to_ascii_lowercase();
+    let needle = format!("<{tag}");
+    let mut from = 0;
+    while let Some(i) = lower[from..].find(&needle) {
+        let at = from + i;
+        let after = lower.as_bytes().get(at + needle.len()).copied();
+        // `<li>`가 `<link>` 검색에 걸리지 않게 — 태그명 다음은 공백·'>'·'/'.
+        if matches!(
+            after,
+            Some(b' ' | b'\t' | b'\r' | b'\n' | b'>' | b'/') | None
+        ) {
+            return Some(at);
+        }
+        from = at + needle.len();
+    }
+    None
+}
+
+/// 태그 내부의 `on*=` 속성과 `javascript:` URL 값을 걷어낸다.
+fn strip_attrs(html: &str) -> String {
+    let mut out = String::with_capacity(html.len());
+    let bytes = html.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] != b'<' || i + 1 >= bytes.len() || !bytes[i + 1].is_ascii_alphabetic() {
+            // 태그 밖(텍스트·주석·닫는 태그)은 그대로.
+            out.push(bytes[i] as char);
+            i += 1;
+            continue;
+        }
+        let end = html[i..].find('>').map_or(html.len(), |g| i + g + 1);
+        out.push_str(&clean_tag(&html[i..end]));
+        i = end;
+    }
+    // UTF-8 경계 안전: 위 루프는 ASCII '<'/'>' 기준 분할이라 멀티바이트를 깨지 않지만,
+    // 태그 밖 단일 바이트 push가 멀티바이트를 쪼갤 수 있어 재조립로 교정한다.
+    if out.as_bytes() != html.as_bytes() {
+        return rebuild_non_tag_safe(html);
+    }
+    out
+}
+
+/// strip_attrs의 안전 재구현 — 문자 단위로 태그를 찾아 처리(멀티바이트 안전).
+fn rebuild_non_tag_safe(html: &str) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html;
+    while let Some(lt) = rest.find('<') {
+        out.push_str(&rest[..lt]);
+        let tag_rest = &rest[lt..];
+        let is_elem = tag_rest[1..]
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_alphabetic());
+        let end = tag_rest.find('>').map_or(tag_rest.len(), |g| g + 1);
+        if is_elem {
+            out.push_str(&clean_tag(&tag_rest[..end]));
+        } else {
+            out.push_str(&tag_rest[..end]);
+        }
+        rest = &tag_rest[end..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// 한 태그 문자열(`<a href=… onclick=…>`)에서 위험 속성 제거.
+fn clean_tag(tag: &str) -> String {
+    let mut out = String::with_capacity(tag.len());
+    let mut chars = tag.char_indices().peekable();
+    // 태그명까지 복사.
+    let name_end = tag
+        .find(|c: char| c.is_ascii_whitespace())
+        .unwrap_or(tag.len());
+    out.push_str(&tag[..name_end]);
+    let mut rest = &tag[name_end..];
+    loop {
+        let trimmed = rest.trim_start();
+        if trimmed.is_empty() || trimmed == ">" || trimmed == "/>" {
+            out.push_str(rest);
+            return out;
+        }
+        let ws_len = rest.len() - trimmed.len();
+        let (attr, next) = take_attr(trimmed);
+        let lower = attr.to_ascii_lowercase();
+        let is_event = lower.starts_with("on")
+            && lower[2..]
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_alphabetic());
+        let is_js_url = (lower.starts_with("href") || lower.starts_with("src"))
+            && lower
+                .split_once('=')
+                .map(|x| x.1)
+                .map(|v| v.trim_matches(|c| c == '"' || c == '\'' || c == ' '))
+                .is_some_and(|v| v.to_ascii_lowercase().starts_with("javascript:"));
+        if !(is_event || is_js_url) {
+            out.push_str(&rest[..ws_len]);
+            out.push_str(attr);
+        } else if !out.ends_with(' ') {
+            // 지운 자리는 공백 하나로(속성 붙음 방지).
+            out.push(' ');
+        }
+        rest = next;
+        let _ = &mut chars;
+    }
+}
+
+/// 다음 속성 토큰 하나(값 포함 · 따옴표 인지)를 떼어 돌려준다.
+fn take_attr(s: &str) -> (&str, &str) {
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    let mut quote: Option<u8> = None;
+    while i < bytes.len() {
+        let b = bytes[i];
+        match quote {
+            Some(q) => {
+                if b == q {
+                    quote = None;
+                }
+            }
+            None => match b {
+                b'"' | b'\'' => quote = Some(b),
+                b' ' | b'\t' | b'\r' | b'\n' => break,
+                b'>' => break,
+                b'/' if i + 1 < bytes.len() && bytes[i + 1] == b'>' => break,
+                _ => {}
+            },
+        }
+        i += 1;
+    }
+    (&s[..i], &s[i..])
+}
+
+#[cfg(test)]
+mod cf_html_tests {
+    #![allow(clippy::unwrap_used)]
+    use super::*;
+
+    fn wrap(html: &str) -> Vec<u8> {
+        let head = format!(
+            "Version:0.9\r\nStartHTML:{:010}\r\nEndHTML:{:010}\r\nStartFragment:{:010}\r\nEndFragment:{:010}\r\n",
+            97,
+            97 + html.len(),
+            97,
+            97 + html.len()
+        );
+        let mut v = head.into_bytes();
+        v.extend_from_slice(html.as_bytes());
+        v
+    }
+
+    /// 스크립트·이벤트 속성·javascript: URL이 사라지고 오프셋이 다시 맞는다.
+    #[test]
+    fn strips_script_events_and_js_urls_and_fixes_offsets() {
+        let html = "<html><body><!--StartFragment--><p onclick=\"evil()\">안녕</p>\
+<script>alert(1)</script><a href=\"javascript:x()\">링크</a><!--EndFragment--></body></html>";
+        let out = sanitize_cf_html(&wrap(html)).expect("변경이 있어야 한다");
+        let text = String::from_utf8(out).unwrap();
+        assert!(!text.to_lowercase().contains("<script"));
+        assert!(!text.to_lowercase().contains("onclick"));
+        assert!(!text.to_lowercase().contains("javascript:"));
+        assert!(text.contains("안녕"), "본문은 산다");
+        // 오프셋 검증 — StartFragment가 정확히 마커 뒤를 가리킨다.
+        let sf: usize = header_num(&text, "StartFragment:").unwrap();
+        assert_eq!(
+            &text[sf - "<!--StartFragment-->".len()..sf],
+            "<!--StartFragment-->"
+        );
+        let eh: usize = header_num(&text, "EndHTML:").unwrap();
+        assert_eq!(eh, text.len());
+    }
+
+    /// 서식(<style>·클래스·표)은 보존 — 붙여넣기 충실도 우선(D-62 1단은 차단 목록).
+    #[test]
+    fn keeps_styles_and_tables() {
+        let html = "<html><head><style>.x{color:red}</style></head><body>\
+<table class=\"x\"><tr><td>셀</td></tr></table></body></html>";
+        assert!(
+            sanitize_cf_html(&wrap(html)).is_none(),
+            "위험 요소가 없으면 무변경"
+        );
+    }
+
+    /// `<li>`는 `<link>` 제거에 걸리지 않는다(단어 경계).
+    #[test]
+    fn li_survives_link_stripping() {
+        let html = "<ul><li>하나</li></ul><link rel=\"stylesheet\" href=\"x.css\">";
+        let out = sanitize_cf_html(&wrap(html)).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(text.contains("<li>하나</li>"));
+        assert!(!text.contains("<link"));
+    }
+
+    /// 깨진 헤더·비UTF-8은 손대지 않는다(fail-soft).
+    #[test]
+    fn malformed_input_is_left_alone() {
+        assert!(sanitize_cf_html(b"\xff\xfe not utf8").is_none());
+        assert!(sanitize_cf_html(b"no header at all <script>x</script>").is_none());
+    }
+}

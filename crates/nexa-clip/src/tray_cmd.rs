@@ -24,8 +24,8 @@ use crate::watch_cmd::Gate;
 use nclip_core::capture::{clip_text, summarize};
 use nclip_core::history::{History, HistoryItem, Pushed};
 use nclip_core::{
-    current_lang, has_content, tr, ClipSnapshot, ClipboardWatch as _, Msg,
-    PasteAs, PasteInjector as _, RawRep, WatchCapability,
+    current_lang, has_content, tr, ClipSnapshot, ClipboardWatch as _, Msg, PasteAs,
+    PasteInjector as _, RawRep, WatchCapability,
 };
 // Font는 conf::load_ui_font가 만들어 준다(폴백 체인 포함).
 use nclip_plat::autostart::{apply, boot_sync, is_registered, BootSync};
@@ -459,7 +459,15 @@ impl ApplicationHandler<ShellEvent> for Shell {
                     );
                 }
             }
-            ShellEvent::Captured(snap) => {
+            ShellEvent::Captured(mut snap) => {
+                // ★ CF_HTML 정제(T-14d · D-62 1단) — 캡처 때 한 번만(재적재·저장은 이미 깨끗).
+                for r in &mut snap.reps {
+                    if r.format == "HTML Format" {
+                        if let Some(clean) = nclip_core::capture::sanitize_cf_html(&r.data) {
+                            r.data = clean;
+                        }
+                    }
+                }
                 // ★ 설정 즉시 반영 — 설정 창에서 바꾼 값이 다음 캡처부터 산다
                 //   (게이트·상한·메뉴 개수·자동 붙여넣기 — 재시작 불요).
                 self.gate = Gate::from_state(&self.app.conf);
