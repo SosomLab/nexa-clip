@@ -1438,6 +1438,17 @@ impl MainWin {
             // ★ 세로는 행 clip을 따른다 — 부분 행이 검색바/패널을 침범하지 않게(09-02).
             let label_clip = Rect::new(lx, clip.y, (right - lx).max(0), clip.h);
             dc.text(lx, text_y, label_clip, &row.label, th.text);
+            // ★ 이미지·개체 항목 식별 보조(09-02 Ctrl+2 — "[이미지] W×H"만으로는 무엇을
+            //   복사했는지 모른다) — 라벨 뒤에 본문 첫 줄을 흐릿하게 이어 붙인다.
+            if matches!(row.kind, ClipKind::Image | ClipKind::Object) {
+                if let Some(first) = row.plain.as_deref().and_then(|pl| pl.lines().next()) {
+                    if !first.trim().is_empty() {
+                        let snippet: String = first.chars().take(120).collect();
+                        let sx = lx + dc.text_width(&row.label) + px(8.0);
+                        dc.text(sx, text_y, label_clip, &snippet, th.text_dim);
+                    }
+                }
+            }
         }
 
         // 목록 오버레이 스크롤바(자동 숨김 · 설정창과 동일 화법).
