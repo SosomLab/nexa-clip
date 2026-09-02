@@ -220,6 +220,9 @@ struct Shell {
     paste_auto: bool,
     /// 루프에 되돌려 보내는 통로(`PasteAfterClose`).
     proxy: winit::event_loop::EventLoopProxy<ShellEvent>,
+    /// ★ 창 레벨(최상위)이 지금 창 백엔드에서 실제로 먹는가 — Wayland 네이티브 창이면
+    ///   false(프로토콜에 "항상 위" 요청이 없다). 토글 때 정직 안내에 쓴다(09-02).
+    atop_effective: bool,
 }
 
 impl Shell {
@@ -470,6 +473,11 @@ impl ApplicationHandler<ShellEvent> for Shell {
                     );
                     self.main.apply_always_top(on);
                     println!("최상위 고정: {}", if on { "켜짐" } else { "꺼짐" });
+                    if on && !self.atop_effective {
+                        println!(
+                            "최상위 고정: Wayland 창에는 즉시 적용되지 않습니다 — 재시작하면 X11 창으로 적용됩니다"
+                        );
+                    }
                 }
                 MainAction::TogglePreview => {
                     let on = self.app.conf.state.get("ui.preview_open") != "on";
@@ -710,6 +718,34 @@ impl ApplicationHandler<ShellEvent> for Shell {
 }
 
 /// 트레이 + 감시 + 설정 창 상주. 종료는 트레이 메뉴에서.
+/// ★ 최상위 고정 × Wayland(09-02) — Wayland 프로토콜에는 "항상 위" 요청 자체가 없다
+///   (winit wayland `set_window_level` = no-op). `ui.always_on_top=on`이면 **창 백엔드만**
+///   XWayland(X11)로 강제해 `_NET_WM_STATE_ABOVE`로 동작시킨다. 환경변수는 건드리지
+///   않으므로 주입(포털 RemoteDesktop)·감시(도구 판별)·트레이(D-Bus) 판정은 불변.
+///   XWayland(`DISPLAY`)가 없으면 강제하지 않는다(정직 강등).
+#[cfg(all(unix, not(target_os = "macos")))]
+fn want_x11_windows(conf: &Settings) -> bool {
+    conf.state.get("ui.always_on_top") == "on"
+        && std::env::var_os("WAYLAND_DISPLAY").is_some()
+        && std::env::var_os("DISPLAY").is_some()
+}
+
+/// X11 백엔드 선결 조건 — winit x11은 `libxkbcommon-x11`을 dlopen하며 **없으면 패닉**한다
+///   (09-02 실기 — 미설치 PC에서 기동 자체가 죽었다). 시작 전에 존재를 확인해 정직 강등.
+#[cfg(all(unix, not(target_os = "macos")))]
+fn x11_backend_ready() -> bool {
+    [
+        "/usr/lib/x86_64-linux-gnu",
+        "/usr/lib/aarch64-linux-gnu",
+        "/usr/lib64",
+        "/usr/lib",
+        "/lib",
+        "/usr/local/lib",
+    ]
+    .iter()
+    .any(|d| std::path::Path::new(d).join("libxkbcommon-x11.so.0").exists())
+}
+
 pub(crate) fn run() {
     // ★ 설정을 먼저 — UI 글꼴(`ui.font_family`)이 폰트 선택을 좌우한다(09-01 "JetBrains Mono").
     let mut conf = Settings::load();
@@ -721,7 +757,33 @@ pub(crate) fn run() {
 
     sync_autostart(&mut conf);
 
-    let Ok(el) = EventLoop::<ShellEvent>::with_user_event().build() else {
+    // ★ 최상위 고정이 지금 백엔드에서 실제로 먹는가 — Wayland 네이티브 창이면 false.
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let x11_windows = want_x11_windows(&conf) && x11_backend_ready();
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let atop_effective = std::env::var_os("WAYLAND_DISPLAY").is_none() || x11_windows;
+    #[cfg(not(all(unix, not(target_os = "macos"))))]
+    let atop_effective = true;
+
+    let mut el_builder = EventLoop::<ShellEvent>::with_user_event();
+    #[cfg(all(unix, not(target_os = "macos")))]
+    if x11_windows {
+        use winit::platform::x11::EventLoopBuilderExtX11 as _;
+        el_builder.with_x11();
+        println!("최상위 고정: Wayland 세션 — 창을 XWayland(X11) 백엔드로 띄워 적용합니다");
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    if !atop_effective && conf.state.get("ui.always_on_top") == "on" {
+        if want_x11_windows(&conf) && !x11_backend_ready() {
+            eprintln!(
+                "⚠️ 최상위 고정: libxkbcommon-x11 미설치 — 창을 Wayland로 띄웁니다. \
+`sudo apt install libxkbcommon-x11-0` 후 재시작하면 적용됩니다"
+            );
+        } else {
+            eprintln!("⚠️ 최상위 고정: XWayland(DISPLAY) 없음 — 이 세션에서는 적용할 수 없습니다");
+        }
+    }
+    let Ok(el) = el_builder.build() else {
         eprintln!("이벤트 루프 생성 실패");
         std::process::exit(1);
     };
@@ -814,7 +876,9 @@ pub(crate) fn run() {
             Err(e) => eprintln!("클립보드 감시 시작 실패: {e:?} — 트레이만 동작합니다"),
         }
     } else {
-        println!("클립보드 감시: 이 OS는 미구현 — 트레이만 동작합니다");
+        if let WatchCapability::Unsupported { reason } = watch.capability() {
+            println!("클립보드 감시: 사용 불가({reason:?}) — 트레이만 동작합니다");
+        }
     }
 
     // ★ OS 테마 변경 감시(Linux 포털 · 다른 OS는 창 이벤트) — `ui.theme = system` 추종.
@@ -867,6 +931,7 @@ pub(crate) fn run() {
         paste: PlatformPaste::new(),
         paste_auto,
         proxy: el.create_proxy(),
+        atop_effective,
     };
     // ★ 복원 직후 트레이 메뉴·툴팁 갱신(09-01 사용자 실기 "우클릭에 최근이 안 보임") —
     //   spawn 때는 빈 내용이었고 첫 캡처까지는 아무도 불러주지 않았다.

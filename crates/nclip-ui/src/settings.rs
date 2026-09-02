@@ -65,6 +65,13 @@ const HIDDEN_KEYS: &[&str] = &[
     "app.autostart_reg",
     // 동기화 신원 표시 이름(비밀 값은 별도 보안 저장).
     "sync.handle",
+    // ★ 09-02 창 상태 키 — 등재 누락으로 재시작 때 유실되던 것(09-02 발견):
+    //   `set_by_name`은 아는 키만 state에 복원한다(§F-1). 팝업 크기 기억 ·
+    //   미리보기 접힘 · 최상위 고정이 전부 조용히 기본값으로 돌아갔다.
+    "ui.popup_w",
+    "ui.popup_h",
+    "ui.preview_open",
+    "ui.always_on_top",
 ];
 
 /// 직접 입력이 **텍스트**인 RadioInput 키(08-22) — 기본은 숫자 전용(포트·ms·MiB).
