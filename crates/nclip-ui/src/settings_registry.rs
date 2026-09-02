@@ -260,6 +260,13 @@ pub(crate) const REGISTRY: &[Entry] = &[
     ),
     e(
         Msg::CatAppearance,
+        Msg::SetPopupView,
+        Msg::SetPopupViewDesc,
+        SettingKind::Radio(VIEW_OPTS),
+        "ui.popup_view",
+    ),
+    e(
+        Msg::CatAppearance,
         Msg::SetTheme,
         Msg::SetThemeDesc,
         SettingKind::Radio(THEME_OPTS),

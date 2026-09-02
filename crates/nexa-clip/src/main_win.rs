@@ -2009,7 +2009,7 @@ pub(crate) fn to_ctl_event(event: &WindowEvent, cursor: (i32, i32)) -> Option<Ct
 /// 툴팁 라벨 — 한글(현재 창 문안과 동일 언어 · i18n 스윙은 T-23).
 /// 평문 표현을 순위대로 고른다(스냅숏 `plain_text`와 같은 계약 · 09-02 실기 P —
 /// "첫 디코드 성공"이 CF_HTML 헤더·벤더 바이트를 물어 목록/미리보기에 깨진 글이 떴다).
-fn plain_of(reps: &[nclip_core::RawRep]) -> Option<String> {
+pub(crate) fn plain_of(reps: &[nclip_core::RawRep]) -> Option<String> {
     let mut best: Option<(u8, &nclip_core::RawRep)> = None;
     for r in reps {
         if let Some(rank) = nclip_core::capture::plain_rank(&r.format) {
@@ -2026,7 +2026,7 @@ fn plain_of(reps: &[nclip_core::RawRep]) -> Option<String> {
 /// PPT 래스터(PNG/DIB)는 ~150dpi 렌더라 화소 수 그대로 그리면 실물보다 ~1.56배
 /// 크다. CopyQ(Qt)는 SVG **선언 크기**(예: 447×51)로 그려 실물과 비슷하다.
 /// 우선순위: SVG width/height → EMF 프레임(0.01mm→96dpi) → 없음(래스터 화소 폴백).
-fn display_dims(reps: &[nclip_core::RawRep]) -> Option<(u32, u32)> {
+pub(crate) fn display_dims(reps: &[nclip_core::RawRep]) -> Option<(u32, u32)> {
     if let Some(r) = reps.iter().find(|r| r.format.starts_with("image/svg")) {
         if let Ok(xml) = std::str::from_utf8(&r.data) {
             if let (Some(w), Some(h)) = (svg_attr(xml, "width"), svg_attr(xml, "height")) {
@@ -2066,7 +2066,7 @@ fn svg_attr(xml: &str, name: &str) -> Option<u32> {
 
 /// 라벨의 "W×H" 치수 파싱(언어 무관 — × 양쪽 숫자만 본다) — 논리 크기를 못 얻는
 /// 항목(순수 래스터)의 폴백(09-02 가변 행).
-fn parse_dims(label: &str) -> Option<(u32, u32)> {
+pub(crate) fn parse_dims(label: &str) -> Option<(u32, u32)> {
     let x = label.find('×')?;
     let w: u32 = label[..x]
         .chars()

@@ -102,6 +102,8 @@ const RADIO_DEFAULTS: &[(&str, &str)] = &[
     // ★ 팝업은 마우스 위치에서 열린다(DR-24 — 사용자 확정 필수).
     ("ui.popup_at", "cursor"),
     ("ui.view_mode", "compact"),
+    // ★ 팝업은 리치가 기본(09-02 사용자 확정 — "기본은 1").
+    ("ui.popup_view", "rich"),
     ("ui.theme", "system"),
     ("ui.tray_recent_n", "8"),
     ("store.max_items", "1000"),

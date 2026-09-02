@@ -415,6 +415,8 @@ impl Shell {
             return;
         }
         println!("팝업: 열기 — 이력 {}개", self.history.len());
+        self.popup
+            .set_view_code(self.app.conf.state.get("ui.popup_view"));
         self.popup.set_theme(self.app.theme());
         // ★ 팝업이 뜨기 전의 포그라운드가 붙여넣기 대상이다(K-1 — 순서가 전부).
         if !self.paste.capture_focus() {

@@ -244,6 +244,10 @@ pub enum Msg {
     ValLastPos,
     /// 목록 보기 모드.
     SetViewMode,
+    /// 퀵 팝업 보기 모드 설정 라벨(09-02).
+    SetPopupView,
+    /// 퀵 팝업 보기 모드 설정 설명.
+    SetPopupViewDesc,
     /// 보기 모드 설명.
     SetViewModeDesc,
     /// 테마.
@@ -552,6 +556,18 @@ impl Msg {
             Msg::ValScreenCenter => ["Screen center", "화면 중앙", "屏幕中央", "画面中央"],
             Msg::ValLastPos => ["Last position", "마지막 위치", "上次位置", "前回の位置"],
             Msg::SetViewMode => ["List view", "목록 보기", "列表视图", "リスト表示"],
+            Msg::SetPopupView => [
+                "Popup view",
+                "팝업 보기",
+                "弹窗视图",
+                "ポップアップ表示",
+            ],
+            Msg::SetPopupViewDesc => [
+                "View mode for the quick popup (default: rich)",
+                "퀵 팝업의 보기 모드 (기본: 리치)",
+                "快捷弹窗的视图模式（默认：丰富）",
+                "クイックポップアップの表示モード（既定: リッチ）",
+            ],
             Msg::SetViewModeDesc => [
                 "How much of each item to show",
                 "항목을 얼마나 펼쳐 보일지",
@@ -843,7 +859,7 @@ mod tests {
     use super::*;
 
     /// 카탈로그 전수 — 새 `Msg`를 더하면 여기도 더한다(빈칸 검사가 그걸 강제한다).
-    const ALL_MSG: [Msg; 154] = [
+    const ALL_MSG: [Msg; 156] = [
         Msg::AppName,
         Msg::SearchPlaceholder,
         Msg::EmptyHistory,
@@ -917,6 +933,8 @@ mod tests {
         Msg::ValScreenCenter,
         Msg::ValLastPos,
         Msg::SetViewMode,
+        Msg::SetPopupView,
+        Msg::SetPopupViewDesc,
         Msg::SetViewModeDesc,
         Msg::SetTheme,
         Msg::SetThemeDesc,

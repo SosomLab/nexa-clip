@@ -25,6 +25,7 @@ use nclip_ctl::geom::Rect;
 use nclip_ctl::raster::RasterCtx;
 use nclip_ctl::theme::Theme;
 use nclip_ctl::widget::{Invalidations, Widget as _};
+use nclip_ctl::ViewMode;
 use nclip_gfx::{Font, Surface};
 
 use std::num::NonZeroU32;
@@ -64,6 +65,10 @@ struct Row {
     copies: u32,
     /// 이미지 썸네일(설정이 켜져 있고 디코드가 됐을 때) — 없으면 글리프.
     thumb: Option<nclip_ctl::theme::IconImage>,
+    /// 본문(평문 순위 → SVG 추출) — Rich 본문·이미지 라벨 뒤 식별 보조(09-02).
+    plain: Option<String>,
+    /// 표시 치수(문서 논리 크기 · 09-02 — 메인과 같은 배율 규약).
+    img_dims: Option<(u32, u32)>,
 }
 
 pub(crate) struct Popup {
@@ -88,6 +93,10 @@ pub(crate) struct Popup {
     wheel_frac: f32,
     /// ★ 목록 오버레이 스크롤바(자동 숨김 · 09-02).
     bars: ScrollBars,
+    /// ★ 보기 모드(`ui.popup_view` · 기본 Rich — 09-02 사용자 확정).
+    view: ViewMode,
+    /// 행 시작 y 누적합(len = rows+1) — Rich 가변 행(메인과 같은 규약).
+    row_offs: Vec<i32>,
     shift: bool,
     ctrl: bool,
     alt: bool,
@@ -179,6 +188,8 @@ impl Popup {
             scroll: 0,
             wheel_frac: 0.0,
             bars: ScrollBars::new(),
+            view: ViewMode::Rich,
+            row_offs: Vec::new(),
             shift: false,
             ctrl: false,
             alt: false,
@@ -193,18 +204,88 @@ impl Popup {
         let Some(win) = &self.window else { return None };
         let size = win.inner_size();
         let px = |v: f32| (v * self.scale).round() as i32;
-        let (header_h, footer_h, row_h) = (px(38.0), px(24.0), px(30.0).max(1));
+        let (header_h, footer_h) = (px(38.0), px(24.0));
         let list_bot = size.height as i32 - footer_h;
         if x < 0 || x >= size.width as i32 || y < header_h || y >= list_bot {
             return None;
         }
-        let vi = ((y - header_h + self.scroll.max(0)) / row_h) as usize;
+        let ly = y - header_h + self.scroll.max(0);
+        if self.row_offs.len() < 2 || ly >= *self.row_offs.last().unwrap_or(&0) {
+            return None;
+        }
+        let vi = self
+            .row_offs
+            .partition_point(|&o| o <= ly)
+            .saturating_sub(1);
         (vi < self.rows.len()).then_some(vi)
     }
 
-    /// 행 높이(px) — 레이아웃 공용 상수 30pt.
+    /// 행 높이(px) — 모드별 명목치(Compact·Plain은 그대로 행 높이 · Rich는 휠 노치 기준).
     fn row_h(&self) -> i32 {
-        ((self.scale * 30.0).round() as i32).max(1)
+        let pt = match self.view {
+            ViewMode::Rich => 76.0,
+            ViewMode::Compact => 30.0,
+            ViewMode::Plain => 22.0,
+        };
+        ((self.scale * pt).round() as i32).max(1)
+    }
+
+    /// ★ 보기 모드 적용(`ui.popup_view` — 열 때마다 셸이 읽어 넘긴다 · 09-02).
+    pub(crate) fn set_view_code(&mut self, code: &str) {
+        self.view = ViewMode::from_code(code).unwrap_or(ViewMode::Rich);
+    }
+
+    /// Rich 이미지 표시 크기 — 메인과 같은 규약(논리 크기 64% · 폭/최대 200px 비율 축소).
+    fn rich_fit(&self, ow: i32, oh: i32, content_w: i32) -> (i32, i32) {
+        let px = |v: f32| (v * self.scale).round() as i32;
+        let max_h = px(200.0);
+        let (ow, oh) = ((ow * 16 / 25).max(1), (oh * 16 / 25).max(1));
+        let mut dw = ow.min(content_w.max(40));
+        let mut dh = (oh * dw / ow).max(1);
+        if dh > max_h {
+            dw = (dw * max_h / dh).max(1);
+            dh = max_h;
+        }
+        (dw, dh)
+    }
+
+    fn content_w_of(&self, w: i32) -> i32 {
+        let px = |v: f32| (v * self.scale).round() as i32;
+        (w - px(10.0) * 2 - px(30.0)).max(40)
+    }
+
+    fn row_height_of(&self, row: &Row, content_w: i32) -> i32 {
+        let px = |v: f32| (v * self.scale).round() as i32;
+        if self.view != ViewMode::Rich {
+            return self.row_h();
+        }
+        if let Some(img) = &row.thumb {
+            #[allow(clippy::cast_possible_wrap)]
+            let (ow, oh) = row
+                .img_dims
+                .map_or((img.w.max(1) as i32, img.h.max(1) as i32), |(a, b)| {
+                    (a as i32, b as i32)
+                });
+            let (_, dh) = self.rich_fit(ow, oh, content_w);
+            dh + px(12.0)
+        } else {
+            let text = row.plain.as_deref().unwrap_or(row.label.as_str());
+            #[allow(clippy::cast_possible_wrap)]
+            let n = text.lines().take(5).count().max(1) as i32;
+            px(12.0) + px(22.0) * n
+        }
+    }
+
+    fn rebuild_offsets(&mut self, w: i32) {
+        let cw = self.content_w_of(w);
+        let mut offs = Vec::with_capacity(self.rows.len() + 1);
+        offs.push(0i32);
+        let mut acc = 0i32;
+        for row in &self.rows {
+            acc += self.row_height_of(row, cw);
+            offs.push(acc);
+        }
+        self.row_offs = offs;
     }
 
     /// 목록 사각형(검색바 아래 · 힌트 줄 위).
@@ -234,8 +315,7 @@ impl Popup {
         ) {
             return false;
         }
-        #[allow(clippy::cast_possible_wrap)]
-        let total = self.rows.len() as i32 * self.row_h();
+        let total = *self.row_offs.last().unwrap_or(&0);
         let (_, oy, consumed) =
             self.bars
                 .on_event(&ev, vp, vp.w, total, 0, self.scroll, self.scale);
@@ -397,6 +477,10 @@ impl Popup {
                     thumb: item.thumb.as_ref().map(|(w, h, rgba)| {
                         nclip_ctl::theme::IconImage::from_rgba(*w, *h, rgba.clone())
                     }),
+                    plain: crate::main_win::plain_of(&item.reps)
+                        .or_else(|| nclip_core::capture::svg_text(&item.reps)),
+                    img_dims: crate::main_win::display_dims(&item.reps)
+                        .or_else(|| crate::main_win::parse_dims(&item.label)),
                 });
             }
             i += 1;
@@ -404,10 +488,9 @@ impl Popup {
         if self.sel >= self.rows.len() {
             self.sel = self.rows.len().saturating_sub(1);
         }
-        #[allow(clippy::cast_possible_wrap)]
-        {
-            self.scroll = self.scroll.min(self.sel as i32 * self.row_h());
-        }
+        self.scroll = self
+            .scroll
+            .min(self.row_offs.get(self.sel).copied().unwrap_or(0));
     }
 
     /// ★ 이력이 바뀌었다(새 복사·승격) — **커서를 맨 위로**(방금 것이 첫 줄이고
@@ -718,29 +801,35 @@ impl Popup {
                 &mut inv,
             );
         }
-        let (Some(win), Some(surface)) = (self.window.clone(), self.surface.as_mut()) else {
+        let Some(win) = self.window.clone() else {
             return;
         };
         let size = win.inner_size();
         let (Some(w), Some(h)) = (NonZeroU32::new(size.width), NonZeroU32::new(size.height)) else {
             return;
         };
+        // ★ 선택 가시화 스크롤·오프셋은 **surface 빌림 전에** 계산한다(필드 분리 빌림).
+        let (iw, ih) = (size.width as i32, size.height as i32);
+        let sc = self.scale;
+        let px = move |v: f32| (v * sc).round() as i32;
+        let list_h = ((ih - px(24.0)) - px(38.0)).max(1);
+        self.rebuild_offsets(iw);
+        let Some(surface) = self.surface.as_mut() else {
+            return;
+        };
         if surface.resize(w, h).is_err() {
             return;
         }
-        // ★ 선택 가시화 스크롤은 **그리기 전에** 계산한다 — 그리는 동안 self를
-        //   다시 빌리지 않기 위해(필드 분리 빌림).
-        let (iw, ih) = (size.width as i32, size.height as i32);
-        let px = |v: f32| (v * self.scale).round() as i32;
-        let row_h = px(30.0).max(1);
-        let list_h = ((ih - px(24.0)) - px(38.0)).max(1);
-        #[allow(clippy::cast_possible_wrap)]
         {
-            let max_scroll = (self.rows.len() as i32 * row_h - list_h).max(0);
-            self.scroll = self.scroll.clamp(0, max_scroll);
-            let sel_bot = (self.sel as i32 + 1) * row_h;
-            if sel_bot > self.scroll + list_h {
-                self.scroll = sel_bot - list_h;
+            let total = *self.row_offs.last().unwrap_or(&0);
+            self.scroll = self.scroll.clamp(0, (total - list_h).max(0));
+            if self.sel + 1 < self.row_offs.len() {
+                let (top, bot) = (self.row_offs[self.sel], self.row_offs[self.sel + 1]);
+                if top < self.scroll {
+                    self.scroll = top;
+                } else if bot > self.scroll + list_h {
+                    self.scroll = bot - list_h;
+                }
             }
         }
         let Ok(mut buf) = surface.buffer_mut() else {
@@ -761,9 +850,10 @@ impl Popup {
                 &self.rows,
                 self.sel,
                 self.scroll,
+                self.view,
+                &self.row_offs,
             );
-            #[allow(clippy::cast_possible_wrap)]
-            let total = self.rows.len() as i32 * row_h;
+            let total = *self.row_offs.last().unwrap_or(&0);
             let vp = nclip_ctl::geom::Rect::new(0, px(38.0), iw, (ih - px(24.0) - px(38.0)).max(1));
             self.bars.paint(
                 &mut dc,
@@ -792,6 +882,8 @@ fn draw(
     rows: &[Row],
     sel: usize,
     scroll: i32,
+    view: ViewMode,
+    offs: &[i32],
 ) {
     let px = |v: f32| (v * s).round() as i32;
     let full = Rect::new(0, 0, w, h);
@@ -800,7 +892,12 @@ fn draw(
     let header_h = px(38.0);
     let footer_h = px(24.0);
     let pad = px(10.0);
-    let row_h = px(30.0).max(1);
+    let row_h = match view {
+        ViewMode::Rich => px(76.0),
+        ViewMode::Compact => px(30.0),
+        ViewMode::Plain => px(22.0),
+    }
+    .max(1);
 
     dc.fill_rect(full, th.window_bg);
     // 팝업 테두리 — 장식 없는 창이라 우리가 그린다.
@@ -814,12 +911,10 @@ fn draw(
     search.paint(dc, &th);
     dc.fill_rect(Rect::new(0, header_h - 1, w, 1), th.border);
 
-    // ── 목록(간략 보기 화법) ──
+    // ── 목록 — ★ 보기 3모드(`ui.popup_view` · 09-02) · 가변 행은 누적합.
     let list_top = header_h;
     let list_bot = h - footer_h;
-    let start = (scroll / row_h).max(0) as usize;
-    let off = scroll.rem_euclid(row_h);
-    let visible = ((list_bot - list_top + off + row_h - 1) / row_h).max(1) as usize;
+    let first = offs.partition_point(|&o| o <= scroll).saturating_sub(1);
     if rows.is_empty() {
         let lang = current_lang();
         let msg = if search.display_text().is_empty() {
@@ -829,34 +924,108 @@ fn draw(
         };
         dc.text(pad, list_top + px(12.0), full, msg, th.text_dim);
     }
-    for (vi, row) in rows.iter().enumerate().skip(start).take(visible) {
-        let y = list_top - off + ((vi - start) as i32) * row_h;
+    for (vi, row) in rows.iter().enumerate().skip(first) {
+        let y = list_top - scroll + offs.get(vi).copied().unwrap_or(0);
+        if y >= list_bot {
+            break;
+        }
+        let rh = offs
+            .get(vi + 1)
+            .map_or(row_h, |e| e - offs.get(vi).copied().unwrap_or(0));
         let cy0 = y.max(list_top);
-        let clip = Rect::new(0, cy0, w, ((y + row_h).min(list_bot) - cy0).max(0));
+        let clip = Rect::new(0, cy0, w, ((y + rh).min(list_bot) - cy0).max(0));
         if vi == sel {
             dc.fill_rect(clip, th.sel_bg);
         } else if vi % 2 == 1 {
             dc.fill_rect(clip, th.panel_bg_alt);
         }
-        // ★ 이미지 썸네일(설정 켜짐 · 디코드 성공 시) — 비율 유지로 24px 상자에.
-        if let Some(img) = &row.thumb {
-            let box_side = px(24.0);
-            let (iw, ih) = (img.w.max(1) as i32, img.h.max(1) as i32);
-            let (dw, dh) = if iw >= ih {
-                (box_side, (box_side * ih / iw).max(1))
-            } else {
-                ((box_side * iw / ih).max(1), box_side)
-            };
-            let dst = Rect::new(pad + (box_side - dw) / 2, y + (row_h - dh) / 2, dw, dh);
-            dc.image_scaled(dst, img, clip);
-        } else {
-            dc.text(pad, y + px(7.0), clip, kind_glyph(row.kind), th.accent);
-        }
-        dc.text(pad + px(30.0), y + px(7.0), clip, &row.label, th.text);
+        // 우측 ×n — 모든 모드 공통.
+        let mut right = w - pad;
         if row.copies > 1 {
             let tag = format!("×{}", row.copies);
             let tw = dc.text_width(&tag);
-            dc.text(w - pad - tw, y + px(7.0), clip, &tag, th.text_dim);
+            right -= tw;
+            dc.text(right, y + px(6.0), clip, &tag, th.text_dim);
+            right -= px(8.0);
+        }
+        if view == ViewMode::Rich {
+            // ── Rich = CopyQ 화법(메인과 동일 · 09-02): 거터 번호 + 내용 그 자체.
+            dc.select_font(FontSlot::Status, false);
+            let no = format!("{}", vi + 1);
+            dc.text(pad, y + px(6.0), clip, &no, th.text_dim);
+            dc.select_font(FontSlot::Base, false);
+            let cx0 = pad + px(30.0);
+            let content_clip = Rect::new(cx0, clip.y, (right - cx0).max(0), clip.h);
+            if let Some(img) = &row.thumb {
+                #[allow(clippy::cast_possible_wrap)]
+                let (ow, oh) = row
+                    .img_dims
+                    .map_or((img.w.max(1) as i32, img.h.max(1) as i32), |(a, b)| {
+                        (a as i32, b as i32)
+                    });
+                // rich_fit와 같은 규약(64% · 폭·최대 200px) — 자유 함수라 여기 다시 편다.
+                let max_h = px(200.0);
+                let (ow, oh) = ((ow * 16 / 25).max(1), (oh * 16 / 25).max(1));
+                let content_w = (w - pad * 2 - px(30.0)).max(40);
+                let mut dw = ow.min(content_w);
+                let mut dh = (oh * dw / ow).max(1);
+                if dh > max_h {
+                    dw = (dw * max_h / dh).max(1);
+                    dh = max_h;
+                }
+                let dst = Rect::new(cx0, y + px(6.0), dw, dh);
+                dc.image_scaled(dst, img, content_clip);
+            } else {
+                let text = row.plain.as_deref().unwrap_or(row.label.as_str());
+                for (k, line) in text.lines().take(5).enumerate() {
+                    let one: String = line.chars().take(200).collect();
+                    #[allow(clippy::cast_precision_loss)]
+                    dc.text(
+                        cx0,
+                        y + px(6.0 + 22.0 * k as f32),
+                        content_clip,
+                        &one,
+                        th.text,
+                    );
+                }
+            }
+            continue;
+        }
+        let text_y = if view == ViewMode::Plain {
+            y + px(3.0)
+        } else {
+            y + px(7.0)
+        };
+        let lx = if view == ViewMode::Plain {
+            pad
+        } else {
+            // ★ 이미지 썸네일(설정 켜짐 · 디코드 성공 시) — 비율 유지로 24px 상자에.
+            if let Some(img) = &row.thumb {
+                let box_side = px(24.0);
+                let (iw2, ih2) = (img.w.max(1) as i32, img.h.max(1) as i32);
+                let (dw, dh) = if iw2 >= ih2 {
+                    (box_side, (box_side * ih2 / iw2).max(1))
+                } else {
+                    ((box_side * iw2 / ih2).max(1), box_side)
+                };
+                let dst = Rect::new(pad + (box_side - dw) / 2, y + (rh - dh) / 2, dw, dh);
+                dc.image_scaled(dst, img, clip);
+            } else {
+                dc.text(pad, text_y, clip, kind_glyph(row.kind), th.accent);
+            }
+            pad + px(30.0)
+        };
+        let label_clip = Rect::new(lx, clip.y, (right - lx).max(0), clip.h);
+        dc.text(lx, text_y, label_clip, &row.label, th.text);
+        // 이미지·개체 식별 보조 — 라벨 뒤 본문 첫 줄(메인 Ctrl+2와 동일 · 09-02).
+        if matches!(row.kind, ClipKind::Image | ClipKind::Object) {
+            if let Some(fst) = row.plain.as_deref().and_then(|pl| pl.lines().next()) {
+                if !fst.trim().is_empty() {
+                    let snippet: String = fst.chars().take(120).collect();
+                    let sx = lx + dc.text_width(&row.label) + px(8.0);
+                    dc.text(sx, text_y, label_clip, &snippet, th.text_dim);
+                }
+            }
         }
     }
 
