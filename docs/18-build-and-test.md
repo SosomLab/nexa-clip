@@ -223,24 +223,39 @@ status          : Local only
 | 환경 | 무엇이 필요한가 | 없으면 |
 |---|---|---|
 | **개발(빌드)** | `rustup` 툴체인 + ★ **C 링커(`cc`)** | `cargo build`/`test`/`clippy` 전부 실패([§1](#1-준비)) |
-| **실행** | 표시 서버(Wayland/X11) + ★ **클립보드 도구**(`wl-clipboard` 또는 `xclip`) | 감시가 `MissingTool` 로 **정직하게 거부**한다 |
+| **실행** | 표시 서버(Wayland/X11)뿐 — ★ **클립보드는 내재화**(09-03 · x11rb 직결 · 도구 불요). 기능별 선택 패키지는 [§9-1b](#9-1b-기능별-시스템-패키지--무엇이-없으면-무엇이-안-되나) | 헤드리스면 감시가 `NoDisplayServer`로 **정직하게 거부**한다 |
 | **테스트(자동)** | 위 둘 + `coreutils` | 순수부 테스트는 링커만 있으면 돈다 |
 
 ⚠️ **실행 환경이 개발 환경의 부분집합이 아니다** — 빌드는 되는데 감시가 안 되는 조합이
 정상적으로 존재한다(헤드리스 CI가 정확히 그렇다). 그래서 감시 능력은 **런타임 판정**이다.
 
+### 9-1b. ★ 기능별 시스템 패키지 — 무엇이 없으면 무엇이 안 되나
+
+> 09-03 내재화(T-14 본편 · [29 §6](29-linux-clipboard-access.md)) 이후의 진실. **핵심 기능은 전부 무설치**이고,
+> 없으면 각 기능이 **정직 강등**한다(기동 실패 없음 · 시작 로그가 사유를 찍는다).
+
+| 기능 | 필요 패키지 | 없으면 |
+|---|---|---|
+| ★ **클립보드 수집·재적재** (본편) | **없음** — x11rb가 X11/XWayland에 직결 | X 연결 불가 환경에서만 아래 폴백으로 |
+| └ 폴백(도구 파이프) | `wl-clipboard`(data-control 컴포지터 — KWin·Sway) · `xclip`(x11rb 연결 실패 시) | `MissingTool` 정직 거부 — 트레이만 동작 |
+| 키 주입(K-1 붙여넣기) | `xdg-desktop-portal` + RemoteDesktop 백엔드(GNOME·KDE 기본 탑재) | 클립보드 적재까지만(Ctrl+V는 직접) |
+| 전역 단축키(⇧Ctrl+V) | `xdg-desktop-portal` GlobalShortcuts(GNOME 48+·KDE 기본) | 단축키 없음 — 트레이 좌클릭으로 |
+| 트레이(SNI) | GNOME: **AppIndicator 확장** · KDE·XFCE: 기본 | 트레이 부재 — 기동 시 힌트 출력 |
+| 테마 시스템 추종 | `xdg-desktop-portal` Settings | `ui.theme=system` 불가 — 수동 테마 |
+| ★ **최상위 고정 · 창 위치 기억** | **`libxkbcommon-x11-0`** — X11 창 백엔드(winit)가 dlopen. Wayland엔 "항상 위" 프로토콜이 없어 창만 XWayland로 띄우는 구조(09-02) | 정직 강등 — Wayland 창 · 토글 무시 + 설치 안내 로그 |
+
 ### 9-2. 설치 — 배포판별 명령
 
 빌드 도구와 클립보드 도구는 이름이 배포판마다 다르다.
 
-| 배포판 계열 | C 툴체인 | 클립보드 도구 |
-|---|---|---|
-| **Debian · Ubuntu · Mint · Pop!\_OS** | `sudo apt install build-essential` | `sudo apt install wl-clipboard xclip` |
-| **Fedora · RHEL · Rocky · Alma** | `sudo dnf install gcc` (또는 `sudo dnf group install development-tools`) | `sudo dnf install wl-clipboard xclip` |
-| **Arch · Manjaro · EndeavourOS** | `sudo pacman -S base-devel` | `sudo pacman -S wl-clipboard xclip` |
-| **openSUSE** | `sudo zypper install gcc` (또는 패턴 `devel_basis`) | `sudo zypper install wl-clipboard xclip` |
-| **Alpine** | `doas apk add build-base` | `doas apk add wl-clipboard xclip` |
-| **NixOS** | `pkgs.gcc` | `pkgs.wl-clipboard` · `pkgs.xclip` |
+| 배포판 계열 | C 툴체인(빌드) | 최상위 고정(선택) | 클립보드 도구(**폴백 전용** — 09-03부터 선택) |
+|---|---|---|---|
+| **Debian · Ubuntu · Mint · Pop!\_OS** | `sudo apt install build-essential` | `sudo apt install libxkbcommon-x11-0` | `sudo apt install wl-clipboard xclip` |
+| **Fedora · RHEL · Rocky · Alma** | `sudo dnf install gcc` (또는 `sudo dnf group install development-tools`) | `sudo dnf install libxkbcommon-x11` | `sudo dnf install wl-clipboard xclip` |
+| **Arch · Manjaro · EndeavourOS** | `sudo pacman -S base-devel` | `sudo pacman -S libxkbcommon-x11` | `sudo pacman -S wl-clipboard xclip` |
+| **openSUSE** | `sudo zypper install gcc` (또는 패턴 `devel_basis`) | `sudo zypper install libxkbcommon-x11-0` | `sudo zypper install wl-clipboard xclip` |
+| **Alpine** | `doas apk add build-base` | `doas apk add libxkbcommon` | `doas apk add wl-clipboard xclip` |
+| **NixOS** | `pkgs.gcc` | `pkgs.libxkbcommon` | `pkgs.wl-clipboard` · `pkgs.xclip` |
 
 Rust 툴체인은 **어느 배포판에서도 `rustup`을 쓴다** — 배포판 패키지 `rustc`는 쓰지 않는다.
 

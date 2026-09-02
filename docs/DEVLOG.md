@@ -4,6 +4,7 @@
 
 ## 2026-09-03 (1차) — ★ T-14 본편: Linux 클립보드 내재화(x11rb+XFIXES)
 
+- 2차 — 기능별 시스템 패키지 SSOT([18 §9-1b](18-build-and-test.md)·[21 §1-0](21-manual-test.md)): ★ 클립보드 = 무설치(내재화) · 최상위 고정만 libxkbcommon-x11-0 · 도구 = 폴백 표기(watch 안내 포함) → [journal](journal/2026-09-03.md)
 - 브랜치 `feat/linux-clipboard-native`(롤백 태그 `rollback/pre-linux-clipboard-native`) — `selection_x11.rs` 신설(감시 이벤트化·INCR 양방향·다중 표현 게시·소유자 창 에코 차단) · 도구 파이프는 폴백 강등. ★ **xclip 없는 이 PC에서 E2E ✓**(외부 게시 → 수집 → 트레이·영속) · 실서버 1.5MB INCR 왕복 ✓ · clippy 3타깃 → [journal](journal/2026-09-03.md)
 
 ## 2026-09-02 (1·2차) — 검색 완전판 · 최상위 고정 · 동적 언어 · 실기 M 반영
