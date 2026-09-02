@@ -14,7 +14,7 @@
 
 use nclip_core::capture::decode_plain;
 use nclip_core::history::History;
-use nclip_core::{ClipKind, PasteAs};
+use nclip_core::{current_lang, tr, ClipKind, Msg, PasteAs};
 use nclip_ctl::controls::{ContextMenu, Control as _, CtxItem, TextBox};
 use nclip_ctl::draw::{DrawCtx, FontSlot};
 use nclip_ctl::event::{InputEvent as CtlEvent, Key as CtlKey};
@@ -61,6 +61,8 @@ pub(crate) enum MainAction {
     TogglePin(u64),
     /// 설정 창 열기(⚙).
     OpenSettings,
+    /// ★ 최상위 고정 토글(09-02) — 셸이 `ui.always_on_top` 영속 + 창 레벨 적용.
+    ToggleAlwaysTop,
     /// ★ 보기 모드 변경(Ctrl+1/2/3) — 셸이 `ui.view_mode`에 영속한다.
     SetViewMode(&'static str),
     /// ★ 편집 저장(S4 평문화 · 09-01 확정).
@@ -95,6 +97,8 @@ enum Tool {
     Delete,
     Copy,
     CopyPlain,
+    /// ★ 최상위 고정(09-02 사용자 요청) — 모든 창 위에 표시. ⚙ 위 바닥 고정.
+    AlwaysTop,
     Settings,
 }
 
@@ -117,12 +121,17 @@ pub(crate) struct MainWin {
     /// ★ 검색 입력(09-01 — 사용자 요청 "캐럿·복사/붙여넣기·드래그 선택") — 이식 `TextBox`
     ///   정식 편집기. 항상 포커스(키보드 기본 캡처)·IME preedit 인라인 표시.
     search: TextBox,
+    /// 캐럿 깜빡임 위상(셸 500ms 타이머).
+    caret_phase: bool,
+    /// ★ 최상위 고정 상태(`ui.always_on_top` 영속 — 셸이 넘겨준다).
+    always_top: bool,
     rows: Vec<Row>,
     sel: usize,
     top: usize,
     cursor: (i32, i32),
     shift: bool,
     primary: bool,
+    alt: bool,
     /// 더블클릭 판정 — (시각, 행).
     last_click: Option<(Instant, usize)>,
     /// 툴바 hover — 머티리얼 상태 레이어 + 툴팁(09-01 사용자 요청).
@@ -147,16 +156,19 @@ impl MainWin {
             theme: Theme::dark(),
             scale: 1.0,
             search: {
-                let mut t = TextBox::new("검색…");
+                let mut t = TextBox::new(tr(current_lang(), Msg::SearchHint)).with_clearable();
                 t.set_focused(true);
                 t
             },
+            caret_phase: true,
+            always_top: false,
             rows: Vec::new(),
             sel: 0,
             top: 0,
             cursor: (0, 0),
             shift: false,
             primary: false,
+            alt: false,
             last_click: None,
             hovered: None,
             view: ViewMode::Compact,
@@ -168,6 +180,58 @@ impl MainWin {
 
     pub(crate) fn window_id(&self) -> Option<WindowId> {
         self.window.as_ref().map(|w| w.id())
+    }
+
+    /// Alt가 눌린 채인가 — winit 수식 상태를 에디터 경로에서도 쓰기 위한 도우미.
+    #[allow(clippy::unused_self)]
+    fn alt_down(&self, _kev: &winit::event::KeyEvent) -> bool {
+        self.alt
+    }
+
+    /// 검색 우클릭 편집 메뉴의 선택을 실행한다(복사/잘라내기/붙여넣기).
+    fn drain_search_edit_ctx(&mut self) {
+        if let Some(act) = self.search.take_edit_ctx() {
+            use nclip_ctl::controls::EditCtxAction as A;
+            let mut inv = Invalidations::default();
+            match act {
+                A::Copy => {
+                    if let Some(t) = self.search.copy_selection() {
+                        crate::cliptext::set_text(&t);
+                    }
+                }
+                A::Cut => {
+                    if let Some(t) = self.search.cut_selection(&mut inv) {
+                        crate::cliptext::set_text(&t);
+                    }
+                }
+                A::Paste => {
+                    if let Some(t) = crate::cliptext::get_text() {
+                        self.search.paste(t.trim_end_matches('\n'), &mut inv);
+                    }
+                }
+            }
+        }
+    }
+
+    /// 캐럿 깜빡임 위상(셸 타이머) — 바뀌면 다시 그린다.
+    pub(crate) fn set_caret_phase(&mut self, on: bool) {
+        if self.caret_phase != on {
+            self.caret_phase = on;
+            self.redraw();
+        }
+    }
+
+    /// ★ 최상위 고정 적용(09-02) — 토글 즉시 창 레벨 반영.
+    pub(crate) fn apply_always_top(&mut self, on: bool) {
+        self.always_top = on;
+        if let Some(w) = &self.window {
+            w.set_window_level(if on {
+                winit::window::WindowLevel::AlwaysOnTop
+            } else {
+                winit::window::WindowLevel::Normal
+            });
+        }
+        self.redraw();
     }
 
     pub(crate) fn set_theme(&mut self, t: Theme) {
@@ -186,8 +250,10 @@ impl MainWin {
         theme: Theme,
         geom: Option<(i32, i32, u32, u32)>,
         view_code: &str,
+        always_top: bool,
     ) {
         self.theme = theme;
+        self.always_top = always_top;
         self.view = ViewMode::from_code(view_code).unwrap_or_default();
         if let Some(w) = &self.window {
             w.set_visible(true);
@@ -205,9 +271,9 @@ impl MainWin {
         let attrs = crate::settings_win::win_name(crate::icon::with_icon(
             Window::default_attributes()
                 .with_title(if cfg!(target_os = "linux") {
-                    "Nexa Clip"
+                    "Nexa Clip".to_string()
                 } else {
-                    "Nexa Clip — 클립보드"
+                    format!("Nexa Clip — {}", tr(current_lang(), Msg::MainTitleSuffix))
                 })
                 .with_inner_size(LogicalSize::new(MAIN_W, MAIN_H)),
         ));
@@ -236,6 +302,9 @@ impl MainWin {
             Err(e) => eprintln!("softbuffer context 실패: {e}"),
         }
         win.set_ime_allowed(true); // 한글 조합 중 검색(Preedit)
+        if self.always_top {
+            win.set_window_level(winit::window::WindowLevel::AlwaysOnTop);
+        }
         win.focus_window();
         self.window = Some(win);
     }
@@ -362,6 +431,17 @@ impl MainWin {
         Rect::new(x, y, side, side)
     }
 
+    /// ★ 최상위 고정 — ⚙ 바로 위(바닥 구역 · 09-02).
+    fn always_top_rect(&self, h: i32) -> Rect {
+        let side = self.px(28.0);
+        Rect::new(
+            (self.toolbar_w() - side) / 2,
+            h - self.status_h() - side * 2 - self.px(12.0),
+            side,
+            side,
+        )
+    }
+
     /// ⚙ — 바닥 고정(VT-4).
     fn settings_rect(&self, h: i32) -> Rect {
         let side = self.px(28.0);
@@ -376,6 +456,9 @@ impl MainWin {
     fn tool_at(&self, x: i32, y: i32, h: i32) -> Option<Tool> {
         if self.settings_rect(h).contains_xy(x, y) {
             return Some(Tool::Settings);
+        }
+        if self.always_top_rect(h).contains_xy(x, y) {
+            return Some(Tool::AlwaysTop);
         }
         for (k, t) in TOOLS_TOP.iter().enumerate() {
             if let Some(t) = t {
@@ -403,6 +486,7 @@ impl MainWin {
     fn act(&self, tool: Tool) -> MainAction {
         match (tool, self.selected_id()) {
             (Tool::Settings, _) => MainAction::OpenSettings,
+            (Tool::AlwaysTop, _) => MainAction::ToggleAlwaysTop,
             (_, None) => MainAction::None, // VT-3: 선택 없으면 비활성
             (Tool::Pin, Some(id)) => MainAction::TogglePin(id),
             (Tool::Delete, Some(id)) => MainAction::Delete(id),
@@ -491,6 +575,7 @@ impl MainWin {
             }
             WindowEvent::ModifiersChanged(m) => {
                 self.shift = m.state().shift_key();
+                self.alt = m.state().alt_key();
                 self.primary = if cfg!(target_os = "macos") {
                     m.state().super_key()
                 } else {
@@ -534,6 +619,47 @@ impl MainWin {
                 }
             }
             WindowEvent::MouseInput { state, button, .. } => {
+                let (sx, sy) = self.cursor;
+                // ★ 검색 우클릭 = 편집 메뉴(09-02) · 메뉴 열림 동안은 전부 검색 몫.
+                if *state == ElementState::Pressed
+                    && *button == winit::event::MouseButton::Right
+                    && self
+                        .search
+                        .bounds()
+                        .contains(nclip_ctl::geom::Point { x: sx, y: sy })
+                {
+                    self.search
+                        .set_clipboard_has_text(crate::cliptext::has_text());
+                    let mut inv = Invalidations::default();
+                    self.search
+                        .on_event(&CtlEvent::RightDown { x: sx, y: sy }, &mut inv);
+                    self.redraw();
+                    return MainAction::None;
+                }
+                if self.search.popup_open() {
+                    let ev = match (state, button) {
+                        (ElementState::Pressed, winit::event::MouseButton::Left) => {
+                            Some(CtlEvent::MouseDown {
+                                x: sx,
+                                y: sy,
+                                shift: self.shift,
+                                primary: self.primary,
+                            })
+                        }
+                        (ElementState::Released, winit::event::MouseButton::Left) => {
+                            Some(CtlEvent::MouseUp { x: sx, y: sy })
+                        }
+                        _ => None,
+                    };
+                    if let Some(ev) = ev {
+                        let mut inv = Invalidations::default();
+                        self.search.on_event(&ev, &mut inv);
+                        self.drain_search_edit_ctx();
+                        self.redraw();
+                        return MainAction::QueryChanged;
+                    }
+                    return MainAction::None;
+                }
                 if *state == ElementState::Pressed && *button == winit::event::MouseButton::Right {
                     let (x, y) = self.cursor;
                     if let Some(vi) = self.row_at(x, y, w, h) {
@@ -545,8 +671,13 @@ impl MainWin {
                 }
                 if *state == ElementState::Released && *button == winit::event::MouseButton::Left {
                     let (x, y) = self.cursor;
+                    let before = self.search.display_text();
                     let mut inv = Invalidations::default();
                     self.search.on_event(&CtlEvent::MouseUp { x, y }, &mut inv);
+                    // ×(지우기) 클릭 등으로 값이 바뀌었으면 필터 재적용.
+                    if self.search.display_text() != before {
+                        return MainAction::QueryChanged;
+                    }
                 }
                 if *state == ElementState::Pressed && *button == winit::event::MouseButton::Left {
                     let (x, y) = self.cursor;
@@ -674,25 +805,18 @@ impl MainWin {
                     }
                     Key::Character("c" | "C") if self.primary => {
                         if let Some(t) = self.search.copy_selection() {
-                            let _ = nclip_plat::clipboard::set_reps(
-                                &nclip_plat::clipboard::plain_text_reps(&t),
-                            );
+                            crate::cliptext::set_text(&t);
                         }
                     }
                     Key::Character("x" | "X") if self.primary => {
                         let mut inv = Invalidations::default();
                         if let Some(t) = self.search.cut_selection(&mut inv) {
-                            let _ = nclip_plat::clipboard::set_reps(
-                                &nclip_plat::clipboard::plain_text_reps(&t),
-                            );
+                            crate::cliptext::set_text(&t);
                             return MainAction::QueryChanged;
                         }
                     }
                     Key::Character("v" | "V") if self.primary => {
-                        let text = nclip_plat::watch::PlatformWatch::new()
-                            .read_now()
-                            .and_then(|s| s.plain_text());
-                        if let Some(t) = text {
+                        if let Some(t) = crate::cliptext::get_text() {
                             let mut inv = Invalidations::default();
                             self.search.paste(t.trim_end_matches('\n'), &mut inv);
                             return MainAction::QueryChanged;
@@ -795,7 +919,8 @@ impl MainWin {
             if let Ok(mut buf) = surface.buffer_mut() {
                 {
                     let mut gfx = Surface::new(&mut buf, size.width as usize, size.height as usize);
-                    let mut dc = RasterCtx::new(&mut gfx, &self.font, self.scale);
+                    let mut dc = RasterCtx::new(&mut gfx, &self.font, self.scale)
+                        .with_caret_on(self.caret_phase);
                     self.draw(&mut dc, w, h);
                 }
                 let _ = buf.present();
@@ -842,6 +967,7 @@ impl MainWin {
                 }
             }
         }
+        self.draw_tool(dc, self.always_top_rect(h), Tool::AlwaysTop, true);
         self.draw_tool(dc, self.settings_rect(h), Tool::Settings, true);
 
         // ── ③ 목록(핀 구획 먼저) ──
@@ -849,10 +975,11 @@ impl MainWin {
         let row_h = self.row_h();
         let visible = (list.h / row_h).max(1) as usize;
         if self.rows.is_empty() {
+            let lang = current_lang();
             let msg = if self.search.display_text().is_empty() {
-                "항목이 없습니다 — 복사하면 여기 쌓입니다"
+                tr(lang, Msg::MainNoItems)
             } else {
-                "일치하는 항목이 없습니다"
+                tr(lang, Msg::MainNoMatch)
             };
             dc.text(list.x + pad, list.y + px(12.0), full, msg, th.text_dim);
         }
@@ -972,10 +1099,13 @@ impl MainWin {
         let sy = h - self.status_h();
         dc.fill_rect(Rect::new(0, sy, w, self.status_h()), th.chrome_bg);
         dc.fill_rect(Rect::new(0, sy, w, 1), th.border);
+        let lang = current_lang();
         let status = if self.search.display_text().is_empty() {
-            format!("{}개 · 암호화 · 로컬", self.total)
+            tr(lang, Msg::StatusLine).replacen("{}", &self.total.to_string(), 1)
         } else {
-            format!("{} / {}개 · 암호화 · 로컬", self.rows.len(), self.total)
+            tr(lang, Msg::StatusLineFiltered)
+                .replacen("{}", &self.rows.len().to_string(), 1)
+                .replacen("{}", &self.total.to_string(), 1)
         };
         dc.select_font(FontSlot::Status, false);
         dc.text(pad, sy + px(4.0), full, &status, th.text_dim);
@@ -1009,11 +1139,13 @@ impl MainWin {
                 list.x + px(10.0),
                 list.y + list.h - px(18.0),
                 full,
-                "Ctrl+Enter 저장 · Esc 취소 (평문으로 저장됩니다)",
+                tr(current_lang(), Msg::EditorHint),
                 th.text_dim,
             );
             dc.select_font(FontSlot::Base, false);
         }
+        // 검색 우클릭 편집 메뉴 — 맨 위 레이어.
+        self.search.paint_popup(dc, &th);
         // ★ 컨텍스트 메뉴 — 언제나 맨 위(툴팁 교훈).
         if self.menu.is_open() {
             self.menu.paint(dc, &th);
@@ -1024,6 +1156,9 @@ impl MainWin {
     fn tool_rect_of(&self, tool: Tool, h: i32) -> Rect {
         if tool == Tool::Settings {
             return self.settings_rect(h);
+        }
+        if tool == Tool::AlwaysTop {
+            return self.always_top_rect(h);
         }
         for (k, t) in TOOLS_TOP.iter().enumerate() {
             if *t == Some(tool) {
@@ -1125,6 +1260,27 @@ impl MainWin {
                     ink,
                 );
             }
+            Tool::AlwaysTop => {
+                // 위로 향한 화살표 + 상단 바(“맨 앞에 둔다”) — 켜짐 = accent.
+                let on = self.always_top;
+                let c = if on { th.accent } else { ink };
+                dc.fill_round_rect(
+                    Rect::new(cx - px(7.0), cy - px(8.0), px(14.0), px(2.0)),
+                    px(1.0),
+                    c,
+                );
+                dc.fill_rect(Rect::new(cx - 1, cy - px(4.0), px(2.0).max(2), px(11.0)), c);
+                dc.fill_round_rect(
+                    Rect::new(cx - px(4.0), cy - px(4.0), px(3.0), px(2.0)),
+                    px(1.0),
+                    c,
+                );
+                dc.fill_round_rect(
+                    Rect::new(cx + px(1.0), cy - px(4.0), px(3.0), px(2.0)),
+                    px(1.0),
+                    c,
+                );
+            }
             Tool::Settings => {
                 // Material `settings` — 톱니 8개(4방 + 대각) + 링 + 중심 구멍.
                 let ring = Rect::new(cx - px(6.5), cy - px(6.5), px(13.0), px(13.0));
@@ -1158,25 +1314,26 @@ impl MainWin {
         let Some(row) = self.rows.get(self.sel) else {
             return;
         };
+        let lang = current_lang();
         let mut items = vec![
-            CtxItem::item("copy", "복사"),
-            CtxItem::item("plain", "평문으로 복사"),
+            CtxItem::item("copy", tr(lang, Msg::MenuCopy)),
+            CtxItem::item("plain", tr(lang, Msg::MenuCopyPlain)),
         ];
         if row.kind == ClipKind::Files {
-            items.push(CtxItem::item("object", "개체로 복사"));
-            items.push(CtxItem::item("path", "경로만 복사"));
+            items.push(CtxItem::item("object", tr(lang, Msg::MenuCopyObject)));
+            items.push(CtxItem::item("path", tr(lang, Msg::MenuCopyPath)));
         }
         items.push(CtxItem::item(
             "pin",
             if row.pinned {
-                "고정 해제"
+                tr(lang, Msg::MenuUnpin)
             } else {
-                "고정"
+                tr(lang, Msg::MenuPin)
             },
         ));
         let editable = matches!(row.kind, ClipKind::Text | ClipKind::RichText);
-        items.push(CtxItem::maybe("edit", "편집(평문화)", editable));
-        items.push(CtxItem::item("delete", "삭제"));
+        items.push(CtxItem::maybe("edit", tr(lang, Msg::MenuEdit), editable));
+        items.push(CtxItem::item("delete", tr(lang, Msg::MenuDelete)));
         self.menu.set_scale(self.scale);
         // 라벨 폭 추정 — 페인트 전이라 실측 불가(한글 13px 기준 넉넉하게).
         let text_w = self.px(13.0) * 8;
@@ -1223,6 +1380,7 @@ impl MainWin {
         };
         let text = row.plain.clone().unwrap_or_default();
         let mut tb = TextBox::new("").with_multiline().with_text(&text);
+        tb.set_wrap(true); // ★ 기본 줄 바꿈(09-02) — Alt+Z로 스위칭.
         tb.set_scale(self.scale);
         tb.set_focused(true);
         self.editor = Some((id, tb));
@@ -1247,6 +1405,7 @@ impl MainWin {
             }
             WindowEvent::ModifiersChanged(m) => {
                 self.shift = m.state().shift_key();
+                self.alt = m.state().alt_key();
                 self.primary = if cfg!(target_os = "macos") {
                     m.state().super_key()
                 } else {
@@ -1290,6 +1449,15 @@ impl MainWin {
                                 id,
                                 text: tb.text(),
                             };
+                        }
+                        return MainAction::None;
+                    }
+                    // ★ Alt+Z = 줄 바꿈 토글(09-02 · VS Code 관례).
+                    Key::Character("z" | "Z") if self.alt_down(kev) => {
+                        if let Some((_, tb)) = self.editor.as_mut() {
+                            let on = !tb.wrap();
+                            tb.set_wrap(on);
+                            self.redraw();
                         }
                         return MainAction::None;
                     }
@@ -1377,12 +1545,14 @@ fn to_ctl_event(event: &WindowEvent, cursor: (i32, i32)) -> Option<CtlEvent> {
 
 /// 툴팁 라벨 — 한글(현재 창 문안과 동일 언어 · i18n 스윙은 T-23).
 fn tool_label(t: Tool) -> &'static str {
+    let lang = current_lang();
     match t {
-        Tool::Pin => "고정/해제 (Ctrl+P)",
-        Tool::Delete => "삭제 (Delete)",
-        Tool::Copy => "복사 (Enter)",
-        Tool::CopyPlain => "평문으로 복사 (Shift+Enter)", // ⇧는 맑은 고딕에 없다(두부 · 09-01)
-        Tool::Settings => "설정",
+        Tool::Pin => tr(lang, Msg::TipPin),
+        Tool::Delete => tr(lang, Msg::TipDelete),
+        Tool::Copy => tr(lang, Msg::TipCopy),
+        Tool::CopyPlain => tr(lang, Msg::TipCopyPlain),
+        Tool::AlwaysTop => tr(lang, Msg::TipAlwaysTop),
+        Tool::Settings => tr(lang, Msg::TraySettings),
     }
 }
 

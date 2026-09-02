@@ -318,3 +318,12 @@ pub(crate) fn load_ui_font(conf: &Settings) -> Option<nclip_gfx::Font> {
     let _ = &mut font;
     Some(font)
 }
+
+/// ★ `app.lang` 적용(09-02 "재시작 없는 설정") — 부팅·변경 즉시 전역 언어를 바꾼다.
+/// 이전엔 부팅에서조차 안 불려 설정이 죽은 값이었다(스윙 중 발견).
+pub(crate) fn apply_lang(conf: &Settings) {
+    let code = conf.state.get("app.lang");
+    if let Some(l) = nclip_core::Lang::from_code(code) {
+        nclip_core::set_lang(l);
+    }
+}

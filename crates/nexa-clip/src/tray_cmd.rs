@@ -398,6 +398,16 @@ impl ApplicationHandler<ShellEvent> for Shell {
                         .set("ui.view_mode", code.to_string(), Instant::now());
                 }
                 MainAction::SaveEdit { id, text } => self.save_edit(id, &text),
+                MainAction::ToggleAlwaysTop => {
+                    let on = self.app.conf.state.get("ui.always_on_top") != "on";
+                    self.app.conf.set(
+                        "ui.always_on_top",
+                        if on { "on" } else { "off" }.to_string(),
+                        Instant::now(),
+                    );
+                    self.main.apply_always_top(on);
+                    println!("최상위 고정: {}", if on { "켜짐" } else { "꺼짐" });
+                }
                 MainAction::Delete(id) => {
                     if self.history.remove(id) {
                         self.store.remove(id);
@@ -433,6 +443,12 @@ impl ApplicationHandler<ShellEvent> for Shell {
             return;
         }
         ApplicationHandler::window_event(&mut self.app, el, id, event);
+        // ★ 언어 즉시 반영(09-02) — 설정 창이 바꾼 전역을 트레이·메인·팝업에도.
+        if self.app.take_ui_refresh() {
+            self.refresh_tray();
+            self.main.on_history_changed(&self.history);
+            self.popup.redraw_public();
+        }
     }
 
     fn user_event(&mut self, el: &ActiveEventLoop, ev: ShellEvent) {
@@ -442,7 +458,8 @@ impl ApplicationHandler<ShellEvent> for Shell {
                 let theme = self.app.theme();
                 let geom = self.saved_main_geom();
                 let view = self.app.conf.state.get("ui.view_mode").to_string();
-                self.main.open(el, &self.history, theme, geom, &view);
+                let atop = self.app.conf.state.get("ui.always_on_top") == "on";
+                self.main.open(el, &self.history, theme, geom, &view, atop);
             }
             ShellEvent::OpenSettings => self.app.ensure_window(el),
             ShellEvent::Quit => {
@@ -578,6 +595,22 @@ impl ApplicationHandler<ShellEvent> for Shell {
 
     fn about_to_wait(&mut self, el: &ActiveEventLoop) {
         ApplicationHandler::about_to_wait(&mut self.app, el);
+        // ★ 캐럿 깜박임(09-02) — 검색창 띄운 창이 있으면 500ms 위상. 설정 창 페이드와
+        //   겹칠 땐 더 짧은 쪽 데드라인이 이기지만, 우리가 덮어도 250ms 주기라 체감 무해.
+        let searching = self.main.window_id().is_some() || self.popup.window_id().is_some();
+        if searching {
+            let now_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            let phase = (now_ms / 500) % 2 == 0;
+            self.main.set_caret_phase(phase);
+            self.popup.set_caret_phase(phase);
+            let rem = 500 - (now_ms % 500);
+            el.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(
+                std::time::Instant::now() + std::time::Duration::from_millis(rem.max(30)),
+            ));
+        }
     }
 }
 
@@ -585,6 +618,7 @@ impl ApplicationHandler<ShellEvent> for Shell {
 pub(crate) fn run() {
     // ★ 설정을 먼저 — UI 글꼴(`ui.font_family`)이 폰트 선택을 좌우한다(09-01 "JetBrains Mono").
     let mut conf = Settings::load();
+    crate::conf::apply_lang(&conf);
     let Some(font) = crate::conf::load_ui_font(&conf) else {
         eprintln!("시스템 UI 폰트를 찾지 못했습니다.");
         std::process::exit(1);

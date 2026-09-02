@@ -55,6 +55,8 @@ pub(crate) struct App {
     cursor: (i32, i32),
     /// ★ 지금 좌우 리사이즈 커서를 보이고 있는가 — 바뀔 때만 OS에 전달한다.
     col_resize: bool,
+    /// ★ 언어 등 UI 전역이 바뀌었다 — 셸이 가져다 트레이·창 전부 갱신(1회성).
+    ui_refresh: bool,
     /// ★ 상주 모드(트레이 셸 안 — T-12e2) — 닫기가 `ui.close_to_tray`를 따른다.
     ///   단독 `settings` 명령에서는 거짓 — 닫기 = 종료(설정과 무관).
     resident: bool,
@@ -78,8 +80,14 @@ impl App {
             laid_out: (0, 0),
             cursor: (0, 0),
             col_resize: false,
+            ui_refresh: false,
             resident,
         }
+    }
+
+    /// UI 전역 변경(언어 등) 1회성 수거 — 셸이 트레이/창 라벨을 새 언어로.
+    pub(crate) fn take_ui_refresh(&mut self) -> bool {
+        std::mem::take(&mut self.ui_refresh)
     }
 
     /// 창이 없으면 만들고, 있으면 앞으로 가져온다(트레이 "열기"의 재진입 경로).
@@ -234,6 +242,17 @@ impl App {
             println!("설정 변경: {key} = {val}");
             if key == "ui.theme" {
                 self.apply_theme();
+            }
+            // ★ 언어 즉시 반영(09-02 "재시작 최소화") — 전역 언어 + 설정 위젯 재구성.
+            //   셸(트레이·메인·팝업)은 take_ui_refresh로 알아채 갱신한다.
+            if key == "app.lang" {
+                crate::conf::apply_lang(&self.conf);
+                self.widget = SettingsWidget::new(&self.conf.state);
+                let mut inv2 = Invalidations::default();
+                self.widget.set_scale(self.scale, &mut inv2);
+                self.laid_out = (0, 0);
+                self.ui_refresh = true;
+                self.redraw();
             }
             // ★ 자동 시작은 값만 저장하면 아무 일도 안 일어난다 — **OS 등록까지 즉시**.
             //   실패해도 값은 유지된다(다음 부팅 동기화·재토글에서 재시도 — beep 규약).
@@ -444,6 +463,7 @@ impl ApplicationHandler for App {
 /// 설정 창 실행.
 pub(crate) fn run() {
     let conf_probe = Settings::load();
+    crate::conf::apply_lang(&conf_probe);
     let Some(font) = crate::conf::load_ui_font(&conf_probe) else {
         eprintln!("시스템 UI 폰트를 찾지 못했습니다.");
         std::process::exit(1);

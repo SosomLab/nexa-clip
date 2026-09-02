@@ -54,6 +54,9 @@ pub struct TextBox {
     /// 멀티라인(소개글) 모드(08-17) — Enter가 확정 대신 개행, 세로 여러 줄 렌더.
     /// 단일 라인 경로는 이 플래그가 꺼져 있어 종전 그대로다.
     multiline: bool,
+    /// ★ 멀티라인 **줄 바꿈**(09-02 사용자 요청 — 편집 시트 Alt+Z 토글). 표시 레이아웃만
+    ///   접는다 — 세로 이동(↑↓)·Home/End는 **논리 줄** 기준 유지(1단 · 시각 줄 nav는 후속).
+    wrap: bool,
     /// 멀티라인 세로 스크롤(첫 보이는 논리 줄 인덱스 · 캐럿을 따라간다).
     vscroll: std::cell::Cell<usize>,
     /// 멀티라인 가로 스크롤(px · 캐럿 열을 따라간다 · 08-17 드래그 자동 스크롤).
@@ -115,6 +118,7 @@ impl TextBox {
             char_filter: None,
             max_chars: 0,
             multiline: false,
+            wrap: false,
             vscroll: std::cell::Cell::new(0),
             mhscroll: std::cell::Cell::new(0),
             ml_user_scrolled: false,
@@ -161,6 +165,18 @@ impl TextBox {
     pub fn with_multiline(mut self) -> Self {
         self.multiline = true;
         self
+    }
+
+    /// ★ 줄 바꿈 토글(멀티라인 전용) — 켜면 가로 스크롤 대신 폭에 맞춰 접는다.
+    pub fn set_wrap(&mut self, on: bool) {
+        self.wrap = on;
+        self.mhscroll.set(0);
+    }
+
+    /// 현재 줄 바꿈 상태.
+    #[must_use]
+    pub fn wrap(&self) -> bool {
+        self.wrap
     }
 
     /// 논리 줄 분해 — `(첫 글자 char 인덱스, 줄 문자열)`. `'\n'`은 줄에 안 담고
@@ -501,12 +517,55 @@ impl TextBox {
             format!("{before}{}{after}", self.edit.preedit())
         };
         let disp_caret = caret_i + preedit_n;
-        let lines = Self::logical_lines(&display);
-        let caret_line = display
-            .chars()
-            .take(disp_caret)
-            .filter(|&c| c == '\n')
-            .count();
+        // ★ wrap = 논리 줄을 폭(avail)에 맞춰 소프트 행으로 접는다(공백 경계 선호).
+        //   행이 (시작 char 인덱스, 문자열) 계약을 지키므로 선택 반전·히트테스트(line_lay)가
+        //   그대로 따라온다.
+        let lines: Vec<(usize, String)> = if self.wrap {
+            let mut rows: Vec<(usize, String)> = Vec::new();
+            for (lstart, lstr) in Self::logical_lines(&display) {
+                let chars: Vec<char> = lstr.chars().collect();
+                if chars.is_empty() {
+                    rows.push((lstart, String::new()));
+                    continue;
+                }
+                let mut wpx = Vec::new();
+                ctx.text_prefix_widths(&lstr, &mut wpx);
+                let mut row_start = 0usize;
+                while row_start < chars.len() {
+                    let base = wpx[row_start];
+                    let mut end = row_start + 1;
+                    while end < chars.len() && wpx[end + 1] - base <= avail {
+                        end += 1;
+                    }
+                    let mut brk = end;
+                    if end < chars.len() {
+                        if let Some(sp) = chars[row_start..end].iter().rposition(|c| *c == ' ') {
+                            if sp > 0 {
+                                brk = row_start + sp + 1;
+                            }
+                        }
+                    }
+                    rows.push((lstart + row_start, chars[row_start..brk].iter().collect()));
+                    row_start = brk;
+                }
+            }
+            rows
+        } else {
+            Self::logical_lines(&display)
+        };
+        let caret_line = if self.wrap {
+            // 캐럿이 속한 소프트 행 — 시작이 캐럿 이하인 마지막 행.
+            lines
+                .iter()
+                .rposition(|(st, _)| *st <= disp_caret)
+                .unwrap_or(0)
+        } else {
+            display
+                .chars()
+                .take(disp_caret)
+                .filter(|&c| c == '\n')
+                .count()
+        };
 
         // 보이는 줄 수 + 세로 스크롤. 08-18: 사용자가 휠로 스크롤 중이면 vscroll을
         // 그대로 존중(자유 스크롤 · 캐럿 안 따라감). 아니면 캐럿을 따라간다.
@@ -540,7 +599,11 @@ impl TextBox {
             .unwrap_or(0);
         let content_h = lines.len() as i32 * lh + self.s(16);
         self.ml_content.set((content_w, content_h));
-        let max_hs = (content_w - avail).max(0);
+        let max_hs = if self.wrap {
+            0
+        } else {
+            (content_w - avail).max(0)
+        };
         let mut hs = self.mhscroll.get();
         if self.ml_user_scrolled {
             // 사용자 스크롤(바/휠) — 캐럿 안 따라감. 콘텐츠 범위로만 클램프.
@@ -759,8 +822,44 @@ impl Widget for TextBox {
                     self.base.focused = true;
                     self.ml_user_scrolled = false; // 클릭 = 캐럿 이동 → 캐럿 추종 재개
                     if self.edit.preedit().is_empty() {
-                        self.edit.set_caret(self.ml_caret_at(x, y), shift);
-                        self.dragging = true;
+                        let idx = self.ml_caret_at(x, y);
+                        // ★ 더블 = 단어 · 트리플 = **논리 줄**(09-02 사용자 요청 — 단일 줄과
+                        //   같은 체인 규약: 같은 위치 연속 클릭만 잇고 ⇧는 제외).
+                        self.last_click.1 = if shift {
+                            0
+                        } else if self.last_click.0 == idx && self.last_click.1 > 0 {
+                            if self.last_click.1 >= 3 {
+                                1
+                            } else {
+                                self.last_click.1 + 1
+                            }
+                        } else {
+                            1
+                        };
+                        self.last_click.0 = idx;
+                        match self.last_click.1 {
+                            2 => self.select_word_at(idx),
+                            3 => {
+                                let text = self.edit.text();
+                                let chars: Vec<char> = text.chars().collect();
+                                let i = idx.min(chars.len());
+                                let start = chars[..i]
+                                    .iter()
+                                    .rposition(|&c| c == '\n')
+                                    .map_or(0, |p| p + 1);
+                                let end = start
+                                    + chars[start..]
+                                        .iter()
+                                        .position(|&c| c == '\n')
+                                        .unwrap_or(chars.len() - start);
+                                self.edit.set_caret(start, false);
+                                self.edit.set_caret(end, true);
+                            }
+                            _ => {
+                                self.edit.set_caret(idx, shift);
+                                self.dragging = true;
+                            }
+                        }
                     }
                     inv.push(self.base.bounds);
                     return;

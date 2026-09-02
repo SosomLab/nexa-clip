@@ -9,6 +9,7 @@
 //! ★ **K-1 스파이크**(포커스 복원 + 키 주입)다 — 이 왕복이 안 되면 제품이 성립하지 않으므로
 //! 창보다 먼저 검증한다([docs/02 §7](../../docs/02-roadmap.md) · [docs/21](../../docs/21-manual-test.md)).
 
+mod cliptext;
 mod conf;
 mod demo;
 mod icon;
@@ -27,6 +28,18 @@ use nclip_plat::paste::{spike_steal_focus, PlatformPaste};
 use nclip_plat::watch::PlatformWatch;
 
 fn main() {
+    // ★ 이식 컨트롤(우클릭 편집 메뉴)의 라벨을 앱 i18n에 잇는다(미주입 기본 = 영어).
+    nclip_ctl::controls::set_ctl_labels(|m| {
+        use nclip_ctl::controls::CtlMsg as C;
+        let lang = current_lang();
+        match m {
+            C::CtxSelectAll => tr(lang, Msg::CtxSelectAll),
+            C::CtxCopy => tr(lang, Msg::CtxCopy),
+            C::CtxCut => tr(lang, Msg::CtxCut),
+            C::CtxPaste => tr(lang, Msg::CtxPaste),
+        }
+    });
+
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
         Some("spike-paste") => spike_paste(&args[1..]),

@@ -166,7 +166,7 @@ pub(crate) const REGISTRY: &[Entry] = &[
         Msg::SetMaxAgeDesc,
         SettingKind::Number {
             presets: &["0", "30", "90", "365"],
-            suffix: "일",
+            suffix: "d",
         },
         "store.max_age_days",
     ),

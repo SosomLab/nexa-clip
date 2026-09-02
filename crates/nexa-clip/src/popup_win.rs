@@ -17,11 +17,14 @@
 //! 가변 높이 가상화·미리보기 패널은 T-18 본편에서.
 
 use nclip_core::history::History;
-use nclip_core::{ClipKind, PasteAs};
+use nclip_core::{current_lang, tr, ClipKind, Msg, PasteAs};
+use nclip_ctl::controls::{Control as _, TextBox};
 use nclip_ctl::draw::{DrawCtx, FontSlot};
+use nclip_ctl::event::{InputEvent as CtlEvent, Key as CtlKey};
 use nclip_ctl::geom::Rect;
 use nclip_ctl::raster::RasterCtx;
 use nclip_ctl::theme::Theme;
+use nclip_ctl::widget::{Invalidations, Widget as _};
 use nclip_gfx::{Font, Surface};
 
 use std::num::NonZeroU32;
@@ -70,9 +73,11 @@ pub(crate) struct Popup {
     font: Font,
     theme: Theme,
     scale: f32,
-    /// ★ 검색 버퍼(T-17 이식 `TypeAhead`) — IME 조합 중(Preedit)에도 실시간 필터.
-    ///   검색창 모델이라 타임아웃은 사실상 무한(u64::MAX/2)으로 끔다.
-    ta: nclip_ui::typeahead::TypeAhead,
+    /// ★ 검색 입력(09-02 — "메인 검색창의 모든 기능을 팝업에도") — 이식 `TextBox`
+    ///   정식 편집기: 캐럿·드래그 선택·×지우기·우클릭 편집 메뉴·IME preedit.
+    search: TextBox,
+    /// 캐럿 깜박임 위상(셸이 500ms마다 돌린다).
+    caret_phase: bool,
     /// 필터 통과 행(최신이 위).
     rows: Vec<Row>,
     /// 선택(rows 인덱스).
@@ -159,7 +164,12 @@ impl Popup {
             font,
             theme: Theme::dark(),
             scale: 1.0,
-            ta: nclip_ui::typeahead::TypeAhead::new(u64::MAX / 2),
+            search: {
+                let mut t = TextBox::new(tr(current_lang(), Msg::SearchHint)).with_clearable();
+                t.set_focused(true);
+                t
+            },
+            caret_phase: true,
             rows: Vec::new(),
             sel: 0,
             top: 0,
@@ -186,8 +196,49 @@ impl Popup {
         (vi < self.rows.len()).then_some(vi)
     }
 
-    fn now_ms(&self) -> u64 {
-        self.opened_at.elapsed().as_millis() as u64
+    /// 캐럿 깜빡임 위상(셸 타이머) — 바뀌면 다시 그린다.
+    /// 다시 그리기(셸 공개 — 언어 등 전역 변경 반영).
+    pub(crate) fn redraw_public(&self) {
+        self.redraw();
+    }
+
+    pub(crate) fn set_caret_phase(&mut self, on: bool) {
+        if self.caret_phase != on {
+            self.caret_phase = on;
+            self.redraw();
+        }
+    }
+
+    /// 검색 입력에 ctl 이벤트를 넣고, 편집 메뉴 액션·질의 변화를 수확한다.
+    /// 질의가 바뀌었으면 true(호출측이 refresh).
+    fn feed_search(&mut self, ev: &CtlEvent) -> bool {
+        let before = self.search.display_text();
+        let mut inv = Invalidations::default();
+        self.search.on_event(ev, &mut inv);
+        if let Some(act) = self.search.take_edit_ctx() {
+            use nclip_ctl::controls::EditCtxAction as A;
+            match act {
+                A::Copy => {
+                    if let Some(t) = self.search.copy_selection() {
+                        crate::cliptext::set_text(&t);
+                    }
+                }
+                A::Cut => {
+                    if let Some(t) = self.search.cut_selection(&mut inv) {
+                        crate::cliptext::set_text(&t);
+                    }
+                }
+                A::Paste => {
+                    if let Some(t) = crate::cliptext::get_text() {
+                        self.search.paste(t.trim_end_matches('\n'), &mut inv);
+                    }
+                }
+            }
+        }
+        if !inv.is_empty() {
+            self.redraw();
+        }
+        self.search.display_text() != before
     }
 
     /// 눌린 수식 키 → 붙여넣기 모드(09-01 확정: ⇧ 평문 · Ctrl 개체 · Alt 경로 · 기본 원본).
@@ -224,7 +275,8 @@ impl Popup {
         if self.window.is_some() {
             return;
         }
-        self.ta.clear();
+        self.search.set_text("");
+        self.search.set_focused(true);
         self.sel = 0;
         self.top = 0;
         self.was_focused = false;
@@ -273,7 +325,7 @@ impl Popup {
 
     /// 이력 → 필터 통과 행 재구성(검색어 변경·이력 변경 시).
     pub(crate) fn refresh(&mut self, hist: &History) {
-        let q = self.ta.composing().to_lowercase();
+        let q = self.search.display_text().to_lowercase();
         self.rows.clear();
         let mut i = 0usize;
         while let Some(item) = hist.get(i) {
@@ -335,16 +387,17 @@ impl Popup {
             //   Commit은 버퍼에 확정. (winit `set_ime_allowed(true)` — open에서 켜 둔다.)
             WindowEvent::Ime(ime) => {
                 use winit::event::Ime;
-                let now = self.now_ms();
+                let mut inv = Invalidations::default();
                 let changed = match ime {
                     Ime::Preedit(t, _) => {
-                        let _ = self.ta.set_preedit(t, now);
+                        self.search.set_preedit(t, &mut inv);
                         true
                     }
                     Ime::Commit(t) => {
-                        let _ = self.ta.set_preedit("", now);
+                        self.search.set_preedit("", &mut inv);
                         for c in t.chars().filter(|c| !c.is_control()) {
-                            let _ = self.ta.push(c, now);
+                            self.search
+                                .on_event(&CtlEvent::Char { c, now_ms: 0 }, &mut inv);
                         }
                         true
                     }
@@ -359,12 +412,76 @@ impl Popup {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 self.cursor = (position.x as i32, position.y as i32);
+                let (x, y) = self.cursor;
+                if self.feed_search(&CtlEvent::MouseMove { x, y }) {
+                    self.sel = 0;
+                    self.top = 0;
+                    self.refresh(hist);
+                }
             }
             // ★ 클릭 = 선택 + 붙여넣기(Maccy 관례 — 08-28 사용자 실기 "클릭 선택 안 됨").
             //   `⇧` 클릭 = 평문. 목록 밖 클릭은 무시(닫기는 Esc·바깥 포커스가 담당).
             WindowEvent::MouseInput { state, button, .. } => {
+                let (x, y) = self.cursor;
+                // 우클릭 = 검색창 편집 메뉴(09-02) — 메뉴가 열려 있는 동안은 전부 검색 몫.
+                if *state == ElementState::Pressed
+                    && *button == winit::event::MouseButton::Right
+                    && self
+                        .search
+                        .bounds()
+                        .contains(nclip_ctl::geom::Point { x, y })
+                {
+                    self.search
+                        .set_clipboard_has_text(crate::cliptext::has_text());
+                    let _ = self.feed_search(&CtlEvent::RightDown { x, y });
+                    return PopupAction::None;
+                }
+                if self.search.popup_open() {
+                    let ev = match (state, button) {
+                        (ElementState::Pressed, winit::event::MouseButton::Left) => {
+                            Some(CtlEvent::MouseDown {
+                                x,
+                                y,
+                                shift: self.shift,
+                                primary: self.ctrl,
+                            })
+                        }
+                        (ElementState::Released, winit::event::MouseButton::Left) => {
+                            Some(CtlEvent::MouseUp { x, y })
+                        }
+                        _ => None,
+                    };
+                    if let Some(ev) = ev {
+                        if self.feed_search(&ev) {
+                            self.sel = 0;
+                            self.top = 0;
+                            self.refresh(hist);
+                        }
+                    }
+                    return PopupAction::None;
+                }
+                if *state == ElementState::Released && *button == winit::event::MouseButton::Left {
+                    let _ = self.feed_search(&CtlEvent::MouseUp { x, y });
+                }
                 if *state == ElementState::Pressed && *button == winit::event::MouseButton::Left {
-                    let (x, y) = self.cursor;
+                    if self
+                        .search
+                        .bounds()
+                        .contains(nclip_ctl::geom::Point { x, y })
+                    {
+                        if self.feed_search(&CtlEvent::MouseDown {
+                            x,
+                            y,
+                            shift: self.shift,
+                            primary: self.ctrl,
+                        }) {
+                            self.sel = 0;
+                            self.top = 0;
+                            self.refresh(hist);
+                        }
+                        self.redraw();
+                        return PopupAction::None;
+                    }
                     if let Some(vi) = self.row_at(x, y) {
                         self.sel = vi;
                         self.redraw();
@@ -416,11 +533,67 @@ impl Popup {
                         return PopupAction::Close;
                     }
                     Key::Named(NamedKey::Backspace) => {
-                        let _ = self.ta.backspace(self.now_ms());
-                        self.sel = 0;
-                        self.top = 0;
-                        self.refresh(hist);
+                        if self.feed_search(&CtlEvent::Char {
+                            c: '\u{8}',
+                            now_ms: 0,
+                        }) {
+                            self.sel = 0;
+                            self.top = 0;
+                            self.refresh(hist);
+                        }
                         self.redraw();
+                    }
+                    // ★ 캐럿 이동·범위 선택(⇧) — 메인 검색과 동일(09-02).
+                    Key::Named(
+                        k @ (NamedKey::ArrowLeft
+                        | NamedKey::ArrowRight
+                        | NamedKey::Home
+                        | NamedKey::End),
+                    ) => {
+                        let key = match k {
+                            NamedKey::ArrowLeft => CtlKey::Left,
+                            NamedKey::ArrowRight => CtlKey::Right,
+                            NamedKey::Home => CtlKey::Home,
+                            _ => CtlKey::End,
+                        };
+                        let _ = self.feed_search(&CtlEvent::Key {
+                            key,
+                            shift: self.shift,
+                            primary: self.ctrl,
+                        });
+                        self.redraw();
+                    }
+                    // ★ 클립보드 단축(09-02 — 메인과 동일). Ctrl+V는 유예와 무관.
+                    Key::Character("a" | "A") if self.ctrl => {
+                        let _ = self.feed_search(&CtlEvent::SelectAll);
+                        self.redraw();
+                    }
+                    Key::Character("c" | "C") if self.ctrl => {
+                        if let Some(t) = self.search.copy_selection() {
+                            crate::cliptext::set_text(&t);
+                        }
+                    }
+                    Key::Character("x" | "X") if self.ctrl => {
+                        let mut inv = Invalidations::default();
+                        if let Some(t) = self.search.cut_selection(&mut inv) {
+                            crate::cliptext::set_text(&t);
+                            self.sel = 0;
+                            self.top = 0;
+                            self.refresh(hist);
+                            self.redraw();
+                        }
+                    }
+                    Key::Character("v" | "V")
+                        if self.ctrl && self.opened_at.elapsed() >= TYPE_GRACE =>
+                    {
+                        if let Some(t) = crate::cliptext::get_text() {
+                            let mut inv = Invalidations::default();
+                            self.search.paste(t.trim_end_matches('\n'), &mut inv);
+                            self.sel = 0;
+                            self.top = 0;
+                            self.refresh(hist);
+                            self.redraw();
+                        }
                     }
                     _ => {
                         // ★ 단축키 잔향 차단(08-28 실기) — 열림 직후 유예 동안과
@@ -430,10 +603,10 @@ impl Popup {
                         }
                         if let Some(txt) = event.text.as_ref() {
                             let mut changed = false;
-                            let now = self.now_ms();
                             for c in txt.chars().filter(|c| !c.is_control()) {
-                                let _ = self.ta.push(c, now);
-                                changed = true;
+                                if self.feed_search(&CtlEvent::Char { c, now_ms: 0 }) {
+                                    changed = true;
+                                }
                             }
                             if changed {
                                 self.sel = 0;
@@ -451,6 +624,22 @@ impl Popup {
     }
 
     fn paint(&mut self) {
+        // 검색창 배치 — 그리기 전에(빌림 분리).
+        if let Some(win) = &self.window {
+            let size = win.inner_size();
+            let px = |v: f32| (v * self.scale).round() as i32;
+            let mut inv = Invalidations::default();
+            self.search.set_scale(self.scale);
+            self.search.set_bounds(
+                Rect::new(
+                    px(10.0),
+                    px(7.0),
+                    (size.width as i32 - px(20.0)).max(40),
+                    px(24.0),
+                ),
+                &mut inv,
+            );
+        }
         let (Some(win), Some(surface)) = (self.window.clone(), self.surface.as_mut()) else {
             return;
         };
@@ -476,14 +665,15 @@ impl Popup {
         {
             let mut gfx = Surface::new(&mut buf, size.width as usize, size.height as usize);
             // ★ 배율은 레이아웃과 같은 값(08-27 macOS 회귀의 교훈).
-            let mut dc = RasterCtx::new(&mut gfx, &self.font, self.scale);
+            let mut dc =
+                RasterCtx::new(&mut gfx, &self.font, self.scale).with_caret_on(self.caret_phase);
             draw(
                 &mut dc,
                 iw,
                 ih,
                 self.scale,
                 self.theme,
-                &self.ta.composing(),
+                &self.search,
                 &self.rows,
                 self.sel,
                 self.top,
@@ -501,7 +691,7 @@ fn draw(
     h: i32,
     s: f32,
     th: Theme,
-    query: &str,
+    search: &TextBox,
     rows: &[Row],
     sel: usize,
     top: usize,
@@ -522,18 +712,9 @@ fn draw(
     dc.fill_rect(Rect::new(0, 0, 1, h), th.border);
     dc.fill_rect(Rect::new(w - 1, 0, 1, h), th.border);
 
-    // ── 헤더: 검색 필드(항상 포커스) ──
+    // ── 헤더: 검색 필드(정식 TextBox — 캐럿·선택·×· 09-02) ──
     dc.fill_rect(Rect::new(0, 0, w, header_h), th.chrome_bg);
-    dc.fill_round_rect(
-        Rect::new(pad, px(7.0), w - pad * 2, px(24.0)),
-        px(6.0),
-        th.field_bg,
-    );
-    if query.is_empty() {
-        dc.text(pad + px(8.0), px(11.0), full, "검색…", th.text_dim);
-    } else {
-        dc.text(pad + px(8.0), px(11.0), full, query, th.text);
-    }
+    search.paint(dc, &th);
     dc.fill_rect(Rect::new(0, header_h - 1, w, 1), th.border);
 
     // ── 목록(간략 보기 화법) ──
@@ -541,10 +722,11 @@ fn draw(
     let list_bot = h - footer_h;
     let visible = ((list_bot - list_top) / row_h).max(1) as usize;
     if rows.is_empty() {
-        let msg = if query.is_empty() {
-            "아직 잡은 항목이 없습니다 — 복사해 보세요"
+        let lang = current_lang();
+        let msg = if search.display_text().is_empty() {
+            tr(lang, Msg::PopupNoItems)
         } else {
-            "일치하는 항목이 없습니다"
+            tr(lang, Msg::MainNoMatch)
         };
         dc.text(pad, list_top + px(12.0), full, msg, th.text_dim);
     }
@@ -587,12 +769,18 @@ fn draw(
         fy + px(5.0),
         full,
         // ★ 힌트는 선택 항목 종류를 따른다(DR-35 · 09-01 키 배치 확정).
-        match rows.get(sel).map(|r| r.kind) {
-            Some(ClipKind::Files) => "Enter 원본 · Ctrl 개체 · Alt 경로 · ⇧ 평문 · Esc 닫기",
-            Some(ClipKind::RichText) => "Enter 원본 · ⇧Enter 평문 · Esc 닫기",
-            Some(ClipKind::Image | ClipKind::Object) => "Enter 원본 · Esc 닫기",
-            _ => "Enter 붙여넣기 · Esc 닫기",
+        {
+            let lang = current_lang();
+            match rows.get(sel).map(|r| r.kind) {
+                Some(ClipKind::Files) => tr(lang, Msg::HintFiles),
+                Some(ClipKind::RichText) => tr(lang, Msg::HintRich),
+                Some(ClipKind::Image | ClipKind::Object) => tr(lang, Msg::HintImage),
+                _ => tr(lang, Msg::HintDefault),
+            }
         },
         th.text_dim,
     );
+
+    // 검색 우클릭 편집 메뉴 — 맨 위 레이어(z = 그리는 순서).
+    search.paint_popup(dc, &th);
 }
