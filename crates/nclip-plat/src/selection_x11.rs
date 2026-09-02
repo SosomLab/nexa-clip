@@ -88,7 +88,9 @@ fn hidden_window(conn: &RustConnection, screen_n: usize) -> Result<Window, Strin
         .get(screen_n)
         .ok_or("X 화면 정보 없음")?
         .root;
-    let win = conn.generate_id().map_err(|e| format!("XID 할당 실패: {e}"))?;
+    let win = conn
+        .generate_id()
+        .map_err(|e| format!("XID 할당 실패: {e}"))?;
     conn.create_window(
         COPY_DEPTH_FROM_PARENT,
         win,
@@ -420,7 +422,11 @@ fn server() -> Result<&'static Server, String> {
 /// 표현 **전부**를 게시한다(빈 바이트 제외) — 1단의 "표현 1개" 제약 해소.
 /// 반환 = 게시한 표현 수. 서빙 스레드가 소유권을 잡을 때까지 기다린다(ACK_TIMEOUT).
 pub(crate) fn set_reps(reps: &[RawRep]) -> Result<usize, String> {
-    let posted: Vec<RawRep> = reps.iter().filter(|r| !r.data.is_empty()).cloned().collect();
+    let posted: Vec<RawRep> = reps
+        .iter()
+        .filter(|r| !r.data.is_empty())
+        .cloned()
+        .collect();
     if posted.is_empty() {
         return Err("게시할 표현이 없습니다".into());
     }
@@ -453,11 +459,7 @@ pub(crate) fn set_reps(reps: &[RawRep]) -> Result<usize, String> {
         if left.is_zero() {
             return Err("게시 회신 시한 초과".into());
         }
-        let (guard, _) = srv
-            .shared
-            .cv
-            .wait_timeout(a, left)
-            .map_err(|_| "락 오염")?;
+        let (guard, _) = srv.shared.cv.wait_timeout(a, left).map_err(|_| "락 오염")?;
         a = guard;
     }
     match a.take() {
@@ -500,8 +502,15 @@ fn serve_loop(conn: &Arc<RustConnection>, win: Window, atoms: &Atoms, shared: &A
             Event::ClientMessage(m) if m.window == win && m.type_ == atoms.NCLIP_WAKE => {
                 let reps = shared.pending.lock().ok().and_then(|mut p| p.take());
                 if let Some(reps) = reps {
-                    let res =
-                        publish(conn, win, atoms, &reps, &mut current, &mut own_time, &mut backlog);
+                    let res = publish(
+                        conn,
+                        win,
+                        atoms,
+                        &reps,
+                        &mut current,
+                        &mut own_time,
+                        &mut backlog,
+                    );
                     if res.is_ok() {
                         OWNER_WIN.store(win, Ordering::Relaxed);
                     }
@@ -572,7 +581,11 @@ fn publish(
         if r.format == "text/plain" {
             let utf8 = atoms.UTF8_STRING;
             entries.push((utf8, utf8, Arc::clone(&bytes)));
-            entries.push((Atom::from(AtomEnum::STRING), Atom::from(AtomEnum::STRING), Arc::clone(&bytes)));
+            entries.push((
+                Atom::from(AtomEnum::STRING),
+                Atom::from(AtomEnum::STRING),
+                Arc::clone(&bytes),
+            ));
             entries.push((atoms.TEXT, utf8, Arc::clone(&bytes)));
             entries.push((atoms.text_plain_utf8, atoms.text_plain_utf8, bytes));
         }
@@ -615,12 +628,27 @@ fn handle_request(
         conn.change_property32(PropMode::REPLACE, r.requestor, prop, AtomEnum::ATOM, &list)
             .is_ok()
     } else if r.target == atoms.TIMESTAMP {
-        conn.change_property32(PropMode::REPLACE, r.requestor, prop, AtomEnum::INTEGER, &[own_time])
-            .is_ok()
+        conn.change_property32(
+            PropMode::REPLACE,
+            r.requestor,
+            prop,
+            AtomEnum::INTEGER,
+            &[own_time],
+        )
+        .is_ok()
     } else if r.target == atoms.MULTIPLE {
         handle_multiple(conn, atoms, current, r, prop)
     } else {
-        serve_value(conn, atoms, current, r.requestor, prop, r.target, true, xfers)
+        serve_value(
+            conn,
+            atoms,
+            current,
+            r.requestor,
+            prop,
+            r.target,
+            true,
+            xfers,
+        )
     };
     let reply = SelectionNotifyEvent {
         response_type: SELECTION_NOTIFY_EVENT,
@@ -701,21 +729,24 @@ fn handle_multiple(
     else {
         return false;
     };
-    let mut pairs: Vec<u32> = reply
-        .value32()
-        .map(Iterator::collect)
-        .unwrap_or_default();
+    let mut pairs: Vec<u32> = reply.value32().map(Iterator::collect).unwrap_or_default();
     let mut dummy: HashMap<(Window, Atom), Xfer> = HashMap::new();
     for pair in pairs.chunks_mut(2) {
         let [t, p] = pair else { continue };
-        let served =
-            *p != x11rb::NONE && serve_value(conn, atoms, current, r.requestor, *p, *t, false, &mut dummy);
+        let served = *p != x11rb::NONE
+            && serve_value(conn, atoms, current, r.requestor, *p, *t, false, &mut dummy);
         if !served {
             *t = x11rb::NONE; // 이 항목은 못 준다.
         }
     }
-    conn.change_property32(PropMode::REPLACE, r.requestor, prop, atoms.ATOM_PAIR, &pairs)
-        .is_ok()
+    conn.change_property32(
+        PropMode::REPLACE,
+        r.requestor,
+        prop,
+        atoms.ATOM_PAIR,
+        &pairs,
+    )
+    .is_ok()
 }
 
 /// INCR 다음 청크 — 요청자가 프로퍼티를 지웠다(= 이전 청크를 소화했다).
@@ -731,7 +762,13 @@ fn incr_step(
     let rem = x.data.len() - x.off;
     let n = rem.min(INCR_CHUNK);
     let ok = conn
-        .change_property8(PropMode::REPLACE, win, prop, x.ty, &x.data[x.off..x.off + n])
+        .change_property8(
+            PropMode::REPLACE,
+            win,
+            prop,
+            x.ty,
+            &x.data[x.off..x.off + n],
+        )
         .is_ok();
     let _ = conn.flush();
     if !ok {
