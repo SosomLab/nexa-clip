@@ -271,6 +271,33 @@ fn normalize_target(t: &str) -> String {
     }
 }
 
+/// 텍스트 계열 타깃의 **신뢰 순위**(낮을수록 먼저) — `None`이면 텍스트 계열이 아니다.
+///
+/// TARGETS 순서를 믿지 않는다: Mutter XWayland 브리지는 charset 없는 `text/plain`을 선두에
+/// 두는데, GTK/glib은 그 타깃을 **ASCII**로 변환하며 비ASCII를 `\uXXXX`(Firefox 한글) ·
+/// `\E2\9E\9C`(VTE 프롬프트 화살표)로 이스케이프한다(09-03 실기). `STRING`은 Latin-1.
+/// UTF-8이 보장되는 `text/plain;charset=utf-8` · `UTF8_STRING`을 먼저 집는다.
+fn text_rank(t: &str) -> Option<u8> {
+    let base = t.split(';').next().unwrap_or(t);
+    let utf8 = t.to_ascii_lowercase().contains("charset=utf-8");
+    match base {
+        "text/plain" if utf8 => Some(0),
+        "UTF8_STRING" => Some(1),
+        "text/plain" => Some(2),
+        "TEXT" => Some(3),
+        "STRING" => Some(4),
+        _ => None,
+    }
+}
+
+/// 읽기 순서 — 텍스트 계열은 [`text_rank`] 순, 나머지는 TARGETS 순서 그대로.
+fn read_order(targets: &[String]) -> Vec<&String> {
+    let mut text: Vec<&String> = targets.iter().filter(|t| text_rank(t).is_some()).collect();
+    text.sort_by_key(|t| text_rank(t));
+    let others = targets.iter().filter(|t| text_rank(t).is_none());
+    text.into_iter().chain(others).collect()
+}
+
 /// FNV-1a — 내용 지문(변화 감지 전용 · 보안 아님).
 fn fnv1a(seed: u64, bytes: &[u8]) -> u64 {
     let mut h = if seed == 0 {
@@ -307,6 +334,7 @@ pub fn read_snapshot() -> Option<ClipSnapshot> {
 
 fn read_snapshot_with(backend: Backend) -> Option<ClipSnapshot> {
     let targets = list_targets(backend)?;
+    diag(&format!("TARGETS(원시 순서): {targets:?}"));
 
     // ★ 민감 표식 먼저 — 표식이 서면 내용은 읽지 않는다(fail-closed).
     let concealed = targets.iter().any(|t| t == KDE_PW_HINT)
@@ -315,23 +343,37 @@ fn read_snapshot_with(backend: Backend) -> Option<ClipSnapshot> {
 
     let mut reps = Vec::new();
     let mut seen: Vec<String> = Vec::new();
-    for t in &targets {
+    let ordered = read_order(&targets);
+    let mut text_left = ordered.iter().filter(|t| text_rank(t).is_some()).count();
+    for t in ordered {
         if is_meta_target(t) || t == KDE_PW_HINT {
             continue;
         }
+        let is_text = text_rank(t).is_some();
+        if is_text {
+            text_left -= 1;
+        }
         let name = normalize_target(t);
-        // 정규화로 겹친 이름(UTF8_STRING·STRING → text/plain)은 첫 것만 담는다.
+        // 정규화로 겹친 이름(UTF8_STRING·STRING → text/plain)은 **순위 첫 것**만 담는다.
         if seen.contains(&name) {
             continue;
         }
-        seen.push(name.clone());
         let data = if concealed {
             Vec::new()
         } else {
-            // 못 읽은 타깃(지연 제공·상한 초과)은 이름만 담는다
-            // — Windows 핸들 포맷과 같은 취급이다(분류는 이름만 본다).
-            read_target(backend, t).unwrap_or_default()
+            match read_target(backend, t) {
+                Some(d) => d,
+                // 텍스트 계열은 다음 순위로 물러난다(UTF8_STRING이 지연 제공이면 text/plain).
+                None if is_text && text_left > 0 => {
+                    diag(&format!("{t}: 읽기 실패 — 다음 순위 텍스트 타깃으로"));
+                    continue;
+                }
+                // 못 읽은 타깃(지연 제공·상한 초과)은 이름만 담는다
+                // — Windows 핸들 포맷과 같은 취급이다(분류는 이름만 본다).
+                None => Vec::new(),
+            }
         };
+        seen.push(name.clone());
         reps.push(RawRep { format: name, data });
     }
 
@@ -543,6 +585,43 @@ mod tests {
             normalize_target("application/x-vnd.foo"),
             "application/x-vnd.foo"
         );
+    }
+
+    /// 텍스트 계열은 TARGETS 순서가 아니라 UTF-8 보장 순으로 읽는다 — Mutter 브리지가
+    /// `text/plain`(ASCII 이스케이프)을 선두에 두는 실제 순서(09-03 실기)를 그대로 넣는다.
+    #[test]
+    fn text_targets_read_in_utf8_first_order() {
+        let raw: Vec<String> = [
+            "TARGETS",
+            "TIMESTAMP",
+            "MULTIPLE",
+            "text/plain",
+            "UTF8_STRING",
+            "STRING",
+            "TEXT",
+            "text/plain;charset=utf-8",
+            "text/html",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        let order: Vec<&str> = read_order(&raw).iter().map(|s| s.as_str()).collect();
+        assert_eq!(
+            order,
+            [
+                "text/plain;charset=utf-8",
+                "UTF8_STRING",
+                "text/plain",
+                "TEXT",
+                "STRING",
+                "TARGETS",
+                "TIMESTAMP",
+                "MULTIPLE",
+                "text/html",
+            ]
+        );
+        assert_eq!(text_rank("text/plain;charset=UTF-8"), Some(0));
+        assert_eq!(text_rank("text/html"), None);
     }
 
     /// 셀렉션 기계 장치 타깃은 내용이 아니다 — 읽지 않는다.
