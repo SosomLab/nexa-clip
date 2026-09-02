@@ -1193,12 +1193,56 @@ impl MainWin {
                 pin_divider_done = true;
             }
             let tx = list.x + pad;
-            // ★ Rich = 행 번호(CopyQ 화법 · 09-01 J4) — 목록 위치가 곧 번호(1 = 최신).
+            // ★ Rich = CopyQ 화법 전면(09-02 사용자 — "CopyQ처럼 보이게"):
+            //   거터(번호·핀·×n)만 남기고 행 = **내용 그 자체**.
+            //   이미지/EMF는 렌더 결과를 행 높이로 · 텍스트는 본문 3줄(본문 색).
+            //   라벨·출처 줄은 접는다(서식 렌더러는 T-18d).
             if self.view == ViewMode::Rich {
                 dc.select_font(FontSlot::Status, false);
                 let no = format!("{}", vi + 1);
                 dc.text(tx, y + px(6.0), clip, &no, th.text_dim);
                 dc.select_font(FontSlot::Base, false);
+                if row.pinned {
+                    let dot_y = y + px(22.0);
+                    if dot_y >= clip.y && dot_y + px(6.0) <= clip.y + clip.h {
+                        dc.fill_round_rect(
+                            Rect::new(tx, dot_y, px(6.0), px(6.0)),
+                            px(3.0),
+                            th.accent,
+                        );
+                    }
+                }
+                let mut right = list.x + list.w - pad;
+                if row.copies > 1 {
+                    let tag = format!("×{}", row.copies);
+                    let tw = dc.text_width(&tag);
+                    right -= tw;
+                    dc.text(right, y + px(6.0), clip, &tag, th.text_dim);
+                    right -= px(8.0);
+                }
+                let cx0 = tx + px(30.0);
+                let content_clip = Rect::new(cx0, clip.y, (right - cx0).max(0), clip.h);
+                if let Some(img) = &row.thumb {
+                    let zone_h = (row_h - px(12.0)).max(8);
+                    let (zw, zh) = (img.w.max(1) as i32, img.h.max(1) as i32);
+                    let dw = (zone_h * zw / zh).max(1);
+                    let dst = Rect::new(cx0, y + px(6.0), dw, zone_h);
+                    dc.image_scaled(dst, img, content_clip);
+                } else {
+                    let text = row.plain.as_deref().unwrap_or(row.label.as_str());
+                    for (k, line) in text.lines().take(3).enumerate() {
+                        let one: String = line.chars().take(200).collect();
+                        #[allow(clippy::cast_precision_loss)]
+                        dc.text(
+                            cx0,
+                            y + px(6.0 + 22.0 * k as f32),
+                            content_clip,
+                            &one,
+                            th.text,
+                        );
+                    }
+                }
+                continue;
             }
             // 보기 3모드(docs/04 §2-2) — Plain은 글리프도 접어 밀도 최우선.
             let show_glyph = self.view != ViewMode::Plain;
@@ -1224,16 +1268,14 @@ impl MainWin {
                 }
             }
             // 핀 표식 — 라벨 앞 작은 점.
-            let text_y = match self.view {
-                ViewMode::Rich => y + px(7.0),
-                ViewMode::Compact => y + px(7.0),
-                ViewMode::Plain => y + px(3.0),
+            let text_y = if self.view == ViewMode::Plain {
+                y + px(3.0)
+            } else {
+                y + px(7.0)
             };
             let mut lx = tx
                 + if self.view == ViewMode::Plain {
                     px(0.0)
-                } else if self.view == ViewMode::Rich {
-                    px(48.0)
                 } else {
                     px(30.0)
                 };
@@ -1255,8 +1297,7 @@ impl MainWin {
                 dc.text(right, text_y, clip, &tag, th.text_dim);
                 right -= px(8.0);
             }
-            // 출처 — Rich는 둘째 줄로 내려가 라벨이 전폭을 쓴다.
-            if !row.source.is_empty() && self.view != ViewMode::Rich {
+            if !row.source.is_empty() {
                 let tw = dc.text_width(&row.source);
                 right -= tw;
                 dc.text(right, text_y, clip, &row.source, th.text_dim);
@@ -1265,35 +1306,6 @@ impl MainWin {
             // ★ 세로는 행 clip을 따른다 — 부분 행이 검색바/패널을 침범하지 않게(09-02).
             let label_clip = Rect::new(lx, clip.y, (right - lx).max(0), clip.h);
             dc.text(lx, text_y, label_clip, &row.label, th.text);
-            if self.view == ViewMode::Rich {
-                dc.select_font(FontSlot::Status, false);
-                // 둘째 줄 = 출처 · 아래 두 줄 = 본문 미리보기(개행 유지 — CopyQ 화법).
-                if !row.source.is_empty() {
-                    dc.text(lx, y + px(24.0), label_clip, &row.source, th.text_dim);
-                }
-                if let Some(pl) = &row.plain {
-                    for (k, line) in pl.lines().take(2).enumerate() {
-                        let one: String = line.chars().take(140).collect();
-                        #[allow(clippy::cast_precision_loss)]
-                        dc.text(
-                            lx,
-                            y + px(40.0 + 16.0 * k as f32),
-                            label_clip,
-                            &one,
-                            th.text_dim,
-                        );
-                    }
-                } else if let Some(img) = &row.thumb {
-                    // ★ 본문 존 = 이미지(09-02 사용자 — Ctrl+1은 미리보기 내용이 행 높이만큼
-                    //   바로 보이게). 높이 기준 비율 — 왕가로 이미지가 슬리버가 되지 않는다.
-                    let zone_h = (row_h - px(34.0)).max(8);
-                    let (zw, zh) = (img.w.max(1) as i32, img.h.max(1) as i32);
-                    let dw = (zone_h * zw / zh).max(1);
-                    let dst = Rect::new(lx, y + px(28.0), dw, zone_h);
-                    dc.image_scaled(dst, img, label_clip);
-                }
-                dc.select_font(FontSlot::Base, false);
-            }
         }
 
         // ── ③b 미리보기 패널(09-02 K4) — 텍스트 전문(wrap·휠) / 이미지 원본(비율 유지) ──
