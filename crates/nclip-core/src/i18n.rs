@@ -333,6 +333,8 @@ pub enum Msg {
     CtxCopy,
     CtxCut,
     CtxPaste,
+    /// 편집 시트 줄 바꿈 스위치 라벨(09-02).
+    WrapLabel,
     /// 닫을 때 트레이로.
     SetCloseToTray,
     /// 위 설명.
@@ -730,6 +732,7 @@ impl Msg {
             Msg::CtxCopy => ["Copy", "복사", "复制", "コピー"],
             Msg::CtxCut => ["Cut", "잘라내기", "剪切", "切り取り"],
             Msg::CtxPaste => ["Paste", "붙여넣기", "粘贴", "貼り付け"],
+            Msg::WrapLabel => ["Wrap", "줄 바꿈", "换行", "折り返し"],
             Msg::SetCloseToTray => [
                 "Keep running in tray when closed",
                 "창을 닫아도 트레이에 남기",
@@ -832,7 +835,7 @@ mod tests {
     use super::*;
 
     /// 카탈로그 전수 — 새 `Msg`를 더하면 여기도 더한다(빈칸 검사가 그걸 강제한다).
-    const ALL_MSG: [Msg; 152] = [
+    const ALL_MSG: [Msg; 153] = [
         Msg::AppName,
         Msg::SearchPlaceholder,
         Msg::EmptyHistory,
@@ -964,6 +967,7 @@ mod tests {
         Msg::CtxCopy,
         Msg::CtxCut,
         Msg::CtxPaste,
+        Msg::WrapLabel,
         Msg::SetCloseToTray,
         Msg::SetCloseToTrayDesc,
         Msg::SetImagePreview,

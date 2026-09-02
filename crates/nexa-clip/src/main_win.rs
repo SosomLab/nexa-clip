@@ -15,7 +15,7 @@
 use nclip_core::capture::decode_plain;
 use nclip_core::history::History;
 use nclip_core::{current_lang, tr, ClipKind, Msg, PasteAs};
-use nclip_ctl::controls::{ContextMenu, Control as _, CtxItem, TextBox};
+use nclip_ctl::controls::{ContextMenu, Control as _, CtxItem, LabelSide, Switch, TextBox};
 use nclip_ctl::draw::{DrawCtx, FontSlot};
 use nclip_ctl::event::{InputEvent as CtlEvent, Key as CtlKey};
 use nclip_ctl::geom::Rect;
@@ -142,6 +142,8 @@ pub(crate) struct MainWin {
     menu: ContextMenu,
     /// ★ 인라인 편집(S4 평문화) — (항목 id, 멀티라인 입력).
     editor: Option<(u64, TextBox)>,
+    /// ★ 편집 시트 우상단 줄 바꿈 스위치(09-02 M4 — Alt+Z와 동기).
+    wrap_sw: Option<Switch>,
     /// 상태줄에 보일 전체 개수(필터 전).
     total: usize,
 }
@@ -174,6 +176,7 @@ impl MainWin {
             view: ViewMode::Compact,
             menu: ContextMenu::new(),
             editor: None,
+            wrap_sw: None,
             total: 0,
         }
     }
@@ -686,6 +689,9 @@ impl MainWin {
                         .bounds()
                         .contains(nclip_ctl::geom::Point { x, y })
                     {
+                        // ★ ×(지우기)는 MouseDown에서 값이 바뀐다(09-02 실기 — 빈 결과
+                        //   상태에서 × 눌러도 목록이 안 돌아오던 원인) → 변화 감지해 재필터.
+                        let before = self.search.display_text();
                         let mut inv = Invalidations::default();
                         self.search.on_event(
                             &CtlEvent::MouseDown {
@@ -697,6 +703,9 @@ impl MainWin {
                             &mut inv,
                         );
                         self.redraw();
+                        if self.search.display_text() != before {
+                            return MainAction::QueryChanged;
+                        }
                         return MainAction::None;
                     }
                     if let Some(t) = self.tool_at(x, y, h) {
@@ -896,20 +905,23 @@ impl MainWin {
             );
         }
         if let Some((_, tb)) = self.editor.as_mut() {
-            let list = {
-                let tbw = (self.scale * 40.0).round() as i32;
-                let hh = (self.scale * 38.0).round() as i32;
-                let sh = (self.scale * 22.0).round() as i32;
-                let pad = (self.scale * 10.0).round() as i32;
-                Rect::new(
-                    tbw + pad,
-                    hh + pad,
-                    (w - tbw - pad * 2).max(60),
-                    (h - hh - sh - pad * 2 - (self.scale * 20.0) as i32).max(60),
-                )
-            };
+            let tbw = (self.scale * 40.0).round() as i32;
+            let hh = (self.scale * 38.0).round() as i32;
+            let sh = (self.scale * 22.0).round() as i32;
+            let pad = (self.scale * 10.0).round() as i32;
+            let bar = (self.scale * 26.0).round() as i32; // 줄 바꿈 스위치 줄(09-02 M4)
+            let list = Rect::new(
+                tbw + pad,
+                hh + pad + bar,
+                (w - tbw - pad * 2).max(60),
+                (h - hh - sh - pad * 2 - bar - (self.scale * 20.0) as i32).max(60),
+            );
             let mut inv = Invalidations::default();
             tb.set_bounds(list, &mut inv);
+            if let Some(sw) = self.wrap_sw.as_mut() {
+                let sww = (self.scale * 40.0).round() as i32;
+                sw.set_bounds(Rect::new(w - pad - sww, hh + pad, sww, bar - 4), &mut inv);
+            }
         }
         // ★ surface를 잠시 꺼내 빌림을 끕는다 — draw(&self)가 전체 상태를 읽기 때문.
         let Some(mut surface) = self.surface.take() else {
@@ -1134,6 +1146,15 @@ impl MainWin {
             let list = self.list_rect(w, h);
             dc.fill_rect(list, th.panel_bg);
             tb.paint(dc, &th);
+            if let Some(sw) = &self.wrap_sw {
+                let r = sw.bounds();
+                dc.select_font(FontSlot::Status, false);
+                let label = tr(current_lang(), Msg::WrapLabel);
+                let tw = dc.text_width(label);
+                dc.text(r.x - tw - px(8.0), r.y + px(5.0), full, label, th.text_dim);
+                dc.select_font(FontSlot::Base, false);
+                sw.paint(dc, &th);
+            }
             dc.select_font(FontSlot::Status, false);
             dc.text(
                 list.x + px(10.0),
@@ -1380,9 +1401,12 @@ impl MainWin {
         };
         let text = row.plain.clone().unwrap_or_default();
         let mut tb = TextBox::new("").with_multiline().with_text(&text);
-        tb.set_wrap(true); // ★ 기본 줄 바꿈(09-02) — Alt+Z로 스위칭.
+        tb.set_wrap(true); // ★ 기본 줄 바꿈(09-02) — Alt+Z 또는 우상단 스위치.
         tb.set_scale(self.scale);
         tb.set_focused(true);
+        let mut sw = Switch::new("", true).with_label_side(LabelSide::None);
+        sw.set_scale(self.scale);
+        self.wrap_sw = Some(sw);
         self.editor = Some((id, tb));
         self.redraw();
     }
@@ -1392,6 +1416,7 @@ impl MainWin {
         match event {
             WindowEvent::CloseRequested => {
                 self.editor = None;
+                self.wrap_sw = None;
                 return MainAction::Close;
             }
             WindowEvent::RedrawRequested => {
@@ -1439,11 +1464,13 @@ impl MainWin {
                 match kev.logical_key.as_ref() {
                     Key::Named(NamedKey::Escape) => {
                         self.editor = None;
+                        self.wrap_sw = None;
                         self.redraw();
                         return MainAction::None;
                     }
                     Key::Named(NamedKey::Enter) if self.primary => {
                         if let Some((id, tb)) = self.editor.take() {
+                            self.wrap_sw = None;
                             self.redraw();
                             return MainAction::SaveEdit {
                                 id,
@@ -1457,6 +1484,9 @@ impl MainWin {
                         if let Some((_, tb)) = self.editor.as_mut() {
                             let on = !tb.wrap();
                             tb.set_wrap(on);
+                            if let Some(sw) = self.wrap_sw.as_mut() {
+                                sw.set_on(on);
+                            }
                             self.redraw();
                         }
                         return MainAction::None;
@@ -1465,6 +1495,28 @@ impl MainWin {
                 }
             }
             _ => {}
+        }
+        // 우상단 줄 바꿈 스위치 — 마우스 사건을 먼저 준다(놓음으로 확정 · Button 계약).
+        if let Some(ev) = to_ctl_event(event, self.cursor) {
+            if matches!(
+                ev,
+                CtlEvent::MouseDown { .. } | CtlEvent::MouseUp { .. } | CtlEvent::MouseMove { .. }
+            ) {
+                if let Some(sw) = self.wrap_sw.as_mut() {
+                    let mut inv = Invalidations::default();
+                    sw.on_event(&ev, &mut inv);
+                    if let Some(on) = sw.take_toggled() {
+                        if let Some((_, tb)) = self.editor.as_mut() {
+                            tb.set_wrap(on);
+                        }
+                        self.redraw();
+                        return MainAction::None;
+                    }
+                    if !inv.is_empty() {
+                        self.redraw();
+                    }
+                }
+            }
         }
         // 나머지 입력은 입력 상자로(변환 가능한 것만).
         if let Some(ev) = to_ctl_event(event, self.cursor) {
