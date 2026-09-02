@@ -74,11 +74,41 @@ Shell 확장에 위임. 공식 알려진 문제: **Flatpak/AppImage에선 확장
 | 우리에게의 교훈 | ① 방어층(재시도·TIMESTAMP·읽는-동안-바뀜 가드·드래그 중 보류)은 **P1 설계에 수용** ② Qt층이 없는 우리는 그 버그 우회 3종이 애초에 불필요 ③ 확장 없이 XWayland로 가는 우리 판정이 배포 관점에서 우위 |
 
 
-## 5. 출처
+## 5. CopyQ vs EcoPaste — 구현·앱 레벨 비교 평가 (2026-09-02)
+
+### 5-1. 구현 — 성능·호환성
+
+| 축 | CopyQ | EcoPaste |
+|---|---|---|
+| X11 감시 | Qt `changed()` 신호(하부 QXcb=XFIXES) + 방어층(재시도·TIMESTAMP·경합 가드) | `x11-clipboard`(x11rb+XFIXES) — 이벤트 직결. 설계는 더 현대적·깔끔 |
+| Wayland | KDE/wlroots data-control + GNOME 셸 확장 — **다 커버**(대가: 3중 폴백 + 확장 배포 제약) | ✗ 없음 |
+| ★ Linux 자체 | 3-OS 성숙 · 전 배포판 패키징 | ★ **v1.0 재작성(2026-07)에서 Linux 철회** — v0.x는 X11만 지원했었다. 호환성 평가 자체가 성립 불가 |
+| 상주 리소스 | Qt 상주 ~30–50MB(실측 평 기준) — 24h 상주에 정직한 모델 | 설치본 수 MB·"가볍다" 평 — 단 프론트가 OS WebView(Tauri)라 렌더 비용을 WebView에 위임(3-OS 동일 화면도 없음 · [03 차별점 ①③](03-competitive-landscape.md)) |
+| **판정** | **종합 우위** — 호환성·견고성·검증 연한 | 백엔드 감시 설계만 보면 우아하나, 그 백엔드조차 이제 Linux에서 안 쓰인다 |
+
+### 5-2. 앱 레벨 — 지명도·다운로드·사용성
+
+| 축 | CopyQ | EcoPaste |
+|---|---|---|
+| 지명도 | 12.2k★ · 589 fork · 6,901 커밋 · 2013~ 성숙 · 전 배포판 + Flathub ~3.0k/월 | 7.4k★ · 374 fork · **2024-05 창립** 급성장(중국권 기반) |
+| 다운로드(GitHub) | v16 55.3k · v15 35.4k · v14 16.3k — 배포판 채널 별도(실제는 훨씬 큼) | v1.1.0 10.9k · v1.0.0 3.7k · v0.6.0-beta.3 89.8k(베타기 인기 정점) |
+| 사용성 평판 | 능력 최강이나 **"UI 낡음 · 검색 동선 묻힘 · 학습 곡선"**(리뷰 공통) | **"현대적 · 직관 · 즉시 사용"** 호평 · OCR 등 |
+| 활동성 | 현역(v16 2026-05) | 현역(nightly 활발) — 단 이슈 100+ · 신생 리스크(03 §5-1 판정 유지) |
+
+### 5-3. 우리에게의 시사점
+
+1. 시장은 **"능력(CopyQ) vs 현대성(EcoPaste)"로 분단** — 둘 다 가진 제품이 없다. 우리 한 줄(*"Ditto의 능력 · Maccy의 가벼움 · CopyQ의 이식성"*)의 자리가 그대로 비어 있다.
+2. ★ **EcoPaste의 Linux 철회는 WebView 진영의 Linux 감당 실패 방증** — Tauri(WebKitGTK)+클립보드 파편화를 신생 팀이 유지 못 했다. 자체 래스터라이저 + 직접 구현(DR-1) 노선의 반사이익.
+3. CopyQ의 진짜 교훈은 §4의 방어층 목록이고, EcoPaste의 진짜 교훈은 하부 크레이트(x11rb+XFIXES) 선택이다 — **우리 P1은 이 둘의 합집합**을 새 crate 0으로 갖는다.
+
+
+## 6. 출처
 
 - CopyQ: [x11platformclipboard.cpp](https://github.com/hluk/CopyQ/blob/master/src/platform/x11/x11platformclipboard.cpp) · [Known Issues(GNOME 확장·Wayland)](https://copyq.readthedocs.io/en/latest/known-issues.html)
 - Klipper/KSystemClipboard: [KDE MR !1(Wayland 포팅)](https://invent.kde.org/plasma/plasma-workspace/-/merge_requests/1) · [wlr-data-control](https://wayland.app/protocols/wlr-data-control-unstable-v1)
 - GPaste: [Mutter MR !320(클립보드 매니저 논의)](https://gitlab.gnome.org/GNOME/mutter/-/merge_requests/320)
 - EcoPaste: [tauri-plugin-clipboard-x](https://github.com/ayangweb/tauri-plugin-clipboard-x) · [clipboard-rs](https://github.com/ChurchTao/clipboard-rs) · [x11-clipboard(x11rb+xfixes 실증)](https://github.com/quininer/x11-clipboard)
 - CopyQ Wayland 폴백: [waylandclipboard.cpp(KDE 사본·zwlr)](https://github.com/hluk/CopyQ/blob/master/src/platform/x11/systemclipboard/waylandclipboard.cpp)
+- 앱 지표: [CopyQ repo(12.2k★)](https://github.com/hluk/CopyQ) · [EcoPaste repo(7.4k★ · README에서 Linux 소멸)](https://github.com/EcoPasteHub/EcoPaste) · [EcoPaste Linux 이슈 #75](https://github.com/ayangweb/EcoPaste/issues/75) · GitHub API 릴리스 다운로드 실측(09-02) · [Flathub CopyQ](https://flathub.org/apps/com.github.hluk.copyq)
+- 사용성 평판: [DEV 2026 비교 리뷰](https://dev.to/abhijith_p_subash/best-clipboard-managers-in-2026-mac-windows-linux-compared-i-tested-them-all-8a3)
 - 진영 지형: [ArchWiki Clipboard](https://wiki.archlinux.org/title/Clipboard) · [Hyprland Wiki(cliphist)](https://wiki.hypr.land/Useful-Utilities/Clipboard-Managers/)

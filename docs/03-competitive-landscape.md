@@ -142,7 +142,7 @@ Wayland는 컴포지터가 중개하지만, **기록 수집에는 `wlr-data-cont
 | # | 제품 | 지원 OS | 기술 스택 | 라이선스 | 상태 |
 |---|---|---|---|---|---|
 | **C1** | **CopyQ** | Win · macOS · Linux(X11/Wayland) | **C++ / Qt** | **GPLv3** | ★ 현역 — 이 분야 **유일한 성숙 크로스플랫폼** |
-| **C2** | **EcoPaste** | Win · macOS · Linux | ★ **Rust + Tauri**(React 프론트) · **SQLite FTS5** | **Apache-2.0** | ★ 현역 · 급성장(GitHub ~6.6k★) |
+| **C2** | **EcoPaste** | Win · macOS(★ **Linux는 v1.0 재작성 2026-07에서 철회** — [29 §5](29-linux-clipboard-access.md)) | ★ **Rust + Tauri**(React 프론트) · **SQLite FTS5** | **Apache-2.0** | ★ 현역 · 급성장(GitHub ~6.6k★) |
 | **C3** | **PasteBar** | Win · macOS (**Linux 미확인**) | **Rust + Tauri**(React) | 오픈소스 | 현역 · 신생 |
 | **C4** | **ClipboardFusion** | Win 중심 + mac·모바일 연동 | 폐쇄 | 상용 | 현역([§2-B](#2-b-서드파티) 3번) |
 | **C5** | **Paste** | macOS · iOS · iPadOS (**Win/Linux 없음**) | Swift | 상용 | 현역 — "크로스플랫폼"이지만 **Apple 생태계 내부** |
