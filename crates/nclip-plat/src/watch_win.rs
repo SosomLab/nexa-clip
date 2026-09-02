@@ -85,6 +85,11 @@ extern "system" {
     fn KillTimer(hwnd: HWND, id: usize) -> i32;
 }
 
+#[link(name = "gdi32")]
+extern "system" {
+    fn GetEnhMetaFileBits(hemf: HANDLE, cb: u32, buf: *mut u8) -> u32;
+}
+
 #[link(name = "kernel32")]
 extern "system" {
     fn GlobalLock(h: HANDLE) -> *mut core::ffi::c_void;
@@ -211,6 +216,28 @@ unsafe fn read_hglobal(fmt: u32) -> Option<Vec<u8>> {
     }
 }
 
+/// `CF_ENHMETAFILE` 실바이트 — 핸들 포맷이지만 EMF는 바이트를 뽑을 수 있다
+/// (09-02 — PPT 글상자 렌더 미리보기의 재료 · GDI가 그린다).
+///
+/// # Safety
+/// 클립보드가 열려 있어야 한다.
+unsafe fn read_emf() -> Option<Vec<u8>> {
+    /// 상한 — 슬라이드 통째 복사도 넘지 않는 넓은 값(초과 = 손상 취급).
+    const EMF_MAX: u32 = 16 * 1024 * 1024;
+    unsafe {
+        let h = GetClipboardData(14); // CF_ENHMETAFILE
+        if h == NULL_HANDLE {
+            return None;
+        }
+        let n = GetEnhMetaFileBits(h, 0, core::ptr::null_mut());
+        if n == 0 || n > EMF_MAX {
+            return None;
+        }
+        let mut buf = vec![0u8; n as usize];
+        (GetEnhMetaFileBits(h, n, buf.as_mut_ptr()) == n).then_some(buf)
+    }
+}
+
 /// 클립보드를 연다 — ★ **다른 앱이 잡고 있으면 짧게 물러섰다 다시 시도**한다.
 ///
 /// 복사 직후에는 복사한 앱이 아직 쥐고 있는 일이 흔하다. 한 번 실패하고 포기하면
@@ -292,7 +319,10 @@ pub fn read_snapshot() -> Option<ClipSnapshot> {
                 str::to_string,
             );
             // ⚠️ 핸들 포맷은 바이트를 읽지 않는다 — 이름만 담는다.
-            let data = if is_handle_format(fmt) {
+            //   ★ 예외: EMF(14)는 GetEnhMetaFileBits로 실바이트를 뽑는다(09-02).
+            let data = if fmt == 14 {
+                read_emf().unwrap_or_default()
+            } else if is_handle_format(fmt) {
                 Vec::new()
             } else {
                 read_hglobal(fmt).unwrap_or_default()

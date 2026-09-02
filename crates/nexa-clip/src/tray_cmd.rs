@@ -74,6 +74,9 @@ fn decode_image(reps: &[RawRep], side: u32) -> Option<(u32, u32, Vec<u8>)> {
             downscale_rgba(w, h, &rgba, side)
         }
         "PNG" | "public.png" | "image/png" => nclip_plat::imgdec::decode_isolated(&r.data, side),
+        // ★ EMF = GDI 래스터화(09-02 — PPT 글상자 서식 그대로). Windows 전용.
+        #[cfg(target_os = "windows")]
+        "CF_ENHMETAFILE" if !r.data.is_empty() => nclip_plat::emf::emf_to_rgba(&r.data, side),
         _ => None,
     }
 }

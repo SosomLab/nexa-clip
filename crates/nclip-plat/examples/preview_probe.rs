@@ -7,6 +7,25 @@
 //! 예제는 `target/debug/examples/`에서 돌므로 워커를 그 옆에 복사해 시험한다.
 
 fn main() {
+    // 인자로 EMF 파일을 주면 해당 파일만 래스터화 시험(09-02 — GDI FFI 검증).
+    #[cfg(target_os = "windows")]
+    if let Some(path) = std::env::args().nth(1) {
+        let bytes = std::fs::read(&path).expect("EMF 읽기");
+        println!("EMF {}B", bytes.len());
+        for side in [160u32, 1600] {
+            match nclip_plat::emf::emf_to_rgba(&bytes, side) {
+                Some((w, h, px)) => {
+                    let non_white = px
+                        .chunks_exact(4)
+                        .filter(|p| p[0] != 255 || p[1] != 255 || p[2] != 255)
+                        .count();
+                    println!("side {side:>4} → {w}×{h} · 비백색 화소 {non_white}");
+                }
+                None => println!("side {side:>4} → ★ 실패"),
+            }
+        }
+        return;
+    }
     #[cfg(target_os = "windows")]
     {
         let Some(snap) = nclip_plat::watch_win::read_snapshot() else {
@@ -45,6 +64,13 @@ fn decode(r: &nclip_core::RawRep, side: u32) -> Option<(u32, u32, Vec<u8>)> {
         "image/bmp" if r.data.len() > 14 => {
             let (w, h, rgba) = dib_to_rgba(&r.data[14..])?;
             downscale_rgba(w, h, &rgba, side)
+        }
+        "CF_ENHMETAFILE" if !r.data.is_empty() => {
+            let out = nclip_plat::emf::emf_to_rgba(&r.data, side);
+            if out.is_none() {
+                eprintln!("  emf_to_rgba 실패");
+            }
+            out
         }
         "PNG" | "public.png" | "image/png" => {
             let out = nclip_plat::imgdec::decode_isolated(&r.data, side);

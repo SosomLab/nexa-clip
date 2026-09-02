@@ -695,8 +695,13 @@ pub fn thumbnail_source<R: RepInfo>(reps: &[R]) -> Option<usize> {
         match fmt {
             "PNG" | "public.png" | "image/png" => Some(0),
             "CF_DIBV5" => Some(1),
-            "CF_DIB" | "CF_BITMAP" | "image/bmp" => Some(2),
+            "CF_DIB" | "image/bmp" => Some(2),
+            // ★ CF_BITMAP은 항상 빈 핸들(바이트 없음) — 골라봐야 디코드 불가라 제외
+            //   (09-02 — PPT에서 이게 EMF를 가려 글상자 렌더가 죽었다).
+            "CF_BITMAP" => None,
             _ if is_bitmap_format(fmt) => Some(3), // TIFF·JPEG — 디코더가 없을 수 있다
+            // ★ EMF = 최후순 재료 — 래스터가 아예 없을 때(GDI 래스터화 · Windows).
+            "CF_ENHMETAFILE" => Some(4),
             _ => None,
         }
     };
@@ -1427,11 +1432,18 @@ mod tests {
         assert_eq!(classify(&["public.png", "public.tiff"]), ClipKind::Image);
     }
 
-    /// 우리가 못 그리는 메타파일만 있어도 **이미지로는 분류**한다(보관은 한다).
+    /// 메타파일만 있어도 **이미지로 분류**하고, ★ EMF는 이제 섬네일 재료다
+    /// (09-02 — GDI 래스터화 · 항상 빈 핸들인 CF_BITMAP은 재료에서 제외).
     #[test]
     fn metafile_only_is_image_kind() {
         assert_eq!(classify(&["CF_ENHMETAFILE"]), ClipKind::Image);
-        assert!(thumbnail_source(&[rep("CF_ENHMETAFILE", 10)]).is_none());
+        assert_eq!(thumbnail_source(&[rep("CF_ENHMETAFILE", 10)]), Some(0));
+        assert!(thumbnail_source(&[rep("CF_BITMAP", 0)]).is_none());
+        // PNG가 있으면 PNG가 정본 — EMF는 최후순.
+        assert_eq!(
+            thumbnail_source(&[rep("CF_ENHMETAFILE", 10), rep("PNG", 10)]),
+            Some(1)
+        );
     }
 
     #[test]

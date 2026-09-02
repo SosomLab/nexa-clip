@@ -31,6 +31,9 @@ pub mod watch;
 pub mod wayland_probe;
 // Linux는 순수 판정(타깃 정규화·지문)이 있어 다른 OS의 test 빌드에도 넣는다
 // (autostart의 cfg 선례 — 순수부는 어디서든 검증한다).
+/// EMF → RGBA(GDI 래스터화 · 09-02 — PPT 글상자 렌더 미리보기).
+#[cfg(windows)]
+pub mod emf;
 #[cfg(any(all(unix, not(target_os = "macos")), test))]
 pub mod watch_linux;
 #[cfg(target_os = "macos")]
