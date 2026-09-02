@@ -59,11 +59,21 @@ fn make_thumb(reps: &[RawRep]) -> Option<(u32, u32, Vec<u8>)> {
 }
 
 /// 이미지 표현 → RGBA(긴 변 `side` 이하) — 썸네일·미리보기 공용(09-02 K4).
+///
+/// ★ 후보를 순위순으로 **전부** 시도한다(09-02 실기 — PPT의 PNG는 워커가 못 읽어도
+/// CF_DIB·EMF가 멀쩡하다: 단일 후보 포기가 `thumb=-`의 원인이었다).
 fn decode_image(reps: &[RawRep], side: u32) -> Option<(u32, u32, Vec<u8>)> {
-    use nclip_core::capture::thumbnail_source;
+    for i in nclip_core::capture::thumbnail_sources(reps) {
+        if let Some(out) = decode_one(&reps[i], side) {
+            return Some(out);
+        }
+    }
+    None
+}
+
+/// 표현 하나를 디코드 — 실패는 다음 후보의 몷이다.
+fn decode_one(r: &RawRep, side: u32) -> Option<(u32, u32, Vec<u8>)> {
     use nclip_core::img::{dib_to_rgba, downscale_rgba};
-    let i = thumbnail_source(reps)?;
-    let r = &reps[i];
     match r.format.as_str() {
         "CF_DIB" | "CF_DIBV5" => {
             let (w, h, rgba) = dib_to_rgba(&r.data)?;

@@ -691,6 +691,13 @@ pub fn primary_index<R: RepInfo>(reps: &[R]) -> Option<usize> {
 /// Office가 같은 클립보드에 비트맵을 함께 넣어 준다.
 #[must_use]
 pub fn thumbnail_source<R: RepInfo>(reps: &[R]) -> Option<usize> {
+    thumbnail_sources(reps).into_iter().next()
+}
+
+/// ★ 섬네일 후보 **전부**(순위순 · 09-02 실기) — 1순위 하나만 쓰면 PPT처럼
+/// PNG 디코드가 실패할 때 DIB·EMF가 있어도 버리게 된다(thumb=- 실측).
+#[must_use]
+pub fn thumbnail_sources<R: RepInfo>(reps: &[R]) -> Vec<usize> {
     let rank = |fmt: &str| -> Option<u8> {
         match fmt {
             "PNG" | "public.png" | "image/png" => Some(0),
@@ -705,11 +712,13 @@ pub fn thumbnail_source<R: RepInfo>(reps: &[R]) -> Option<usize> {
             _ => None,
         }
     };
-    reps.iter()
+    let mut all: Vec<(u8, usize)> = reps
+        .iter()
         .enumerate()
         .filter_map(|(i, r)| rank(r.format()).map(|k| (k, i)))
-        .min()
-        .map(|(_, i)| i)
+        .collect();
+    all.sort_unstable();
+    all.into_iter().map(|(_, i)| i).collect()
 }
 
 // ─────────────────────────────────────────────── ③ 용량 상한
