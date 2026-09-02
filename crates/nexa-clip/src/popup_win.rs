@@ -95,6 +95,10 @@ pub(crate) struct Popup {
     bars: ScrollBars,
     /// ★ 보기 모드(`ui.popup_view` · 기본 Rich — 09-02 사용자 확정).
     view: ViewMode,
+    /// ★ 열 때 쓸 크기(물리 px · `ui.popup_w/h` — 09-02 "마지막 크기 기억").
+    pref_size: Option<(u32, u32)>,
+    /// 마지막 실측 크기(Resized에서 갱신) — 닫을 때 셸이 저장.
+    last_size: Option<(u32, u32)>,
     /// 행 시작 y 누적합(len = rows+1) — Rich 가변 행(메인과 같은 규약).
     row_offs: Vec<i32>,
     shift: bool,
@@ -119,7 +123,7 @@ const TYPE_GRACE: std::time::Duration = std::time::Duration::from_millis(150);
 /// 물리 좌표 기준. 팝업 크기는 논리 상수 × 그 모니터의 배율(창 생성 전이라 창 배율을
 /// 모른다 — 모니터 배율이 곧 그 값이다). 커서를 품은 모니터가 없으면(순간적 좌표 이상)
 /// 주 모니터, 그것도 없으면 그대로 둔다(fail-soft — 안 뜨는 것보다 낫다).
-fn clamp_to_monitor(el: &ActiveEventLoop, x: i32, y: i32) -> (i32, i32) {
+fn clamp_to_monitor(el: &ActiveEventLoop, x: i32, y: i32, pref: Option<(u32, u32)>) -> (i32, i32) {
     let contains = |m: &winit::monitor::MonitorHandle| {
         let p = m.position();
         let s = m.size();
@@ -136,8 +140,17 @@ fn clamp_to_monitor(el: &ActiveEventLoop, x: i32, y: i32) -> (i32, i32) {
         return (x, y);
     };
     let scale = mon.scale_factor();
-    let pw = (POPUP_W * scale).ceil() as i32;
-    let ph = (POPUP_H * scale).ceil() as i32;
+    // ★ 저장된 크기가 있으면 그걸로 클램프(09-02 — 리사이즈 기억과 짝).
+    #[allow(clippy::cast_possible_wrap)]
+    let (pw, ph) = pref.map_or_else(
+        || {
+            (
+                (POPUP_W * scale).ceil() as i32,
+                (POPUP_H * scale).ceil() as i32,
+            )
+        },
+        |(w, h)| (w as i32, h as i32),
+    );
     // ★ 작업 영역 우선(09-01 사용자 실기 "작업표시줄에 가린다") — Windows는 rcWork,
     //   없으면 모니터 전체로 폴백. 가장자리 5px(논리) 여유도 사용자 요청.
     let (ax, ay, aw, ah) = nclip_plat::screen::work_area_at(x, y).unwrap_or_else(|| {
@@ -189,6 +202,8 @@ impl Popup {
             wheel_frac: 0.0,
             bars: ScrollBars::new(),
             view: ViewMode::Rich,
+            pref_size: None,
+            last_size: None,
             row_offs: Vec::new(),
             shift: false,
             ctrl: false,
@@ -233,6 +248,37 @@ impl Popup {
     /// ★ 보기 모드 적용(`ui.popup_view` — 열 때마다 셸이 읽어 넘긴다 · 09-02).
     pub(crate) fn set_view_code(&mut self, code: &str) {
         self.view = ViewMode::from_code(code).unwrap_or(ViewMode::Rich);
+    }
+
+    /// ★ 저장된 크기(물리 px) — 열기 전에 셸이 넣는다(09-02 "마지막 크기 기억").
+    pub(crate) fn set_pref_size(&mut self, wh: Option<(u32, u32)>) {
+        self.pref_size = wh;
+    }
+
+    /// 마지막 실측 크기 — 닫을 때 셸이 저장한다.
+    pub(crate) fn last_size(&self) -> Option<(u32, u32)> {
+        self.last_size
+    }
+
+    /// 가장자리 리사이즈 방향(장식 없는 창 · 6px 마진) — 없으면 None.
+    fn resize_dir_at(&self, x: i32, y: i32) -> Option<winit::window::ResizeDirection> {
+        use winit::window::ResizeDirection as D;
+        let win = self.window.as_ref()?;
+        let sz = win.inner_size();
+        let (w, h) = (sz.width as i32, sz.height as i32);
+        let m = ((self.scale * 6.0).round() as i32).max(4);
+        let (l, r, t, b) = (x < m, x >= w - m, y < m, y >= h - m);
+        Some(match (l, r, t, b) {
+            (true, _, true, _) => D::NorthWest,
+            (_, true, true, _) => D::NorthEast,
+            (true, _, _, true) => D::SouthWest,
+            (_, true, _, true) => D::SouthEast,
+            (true, ..) => D::West,
+            (_, true, ..) => D::East,
+            (_, _, true, _) => D::North,
+            (_, _, _, true) => D::South,
+            _ => return None,
+        })
     }
 
     /// Rich 이미지 표시 크기 — 메인과 같은 규약(논리 크기 64% · 폭/최대 200px 비율 축소).
@@ -425,14 +471,20 @@ impl Popup {
             Window::default_attributes()
                 .with_title("Nexa Clip")
                 .with_decorations(false)
+                .with_resizable(true) // ★ 가장자리 드래그 리사이즈(09-02).
+                .with_min_inner_size(LogicalSize::new(260.0, 200.0))
                 .with_window_level(WindowLevel::AlwaysOnTop)
                 .with_inner_size(LogicalSize::new(POPUP_W, POPUP_H)),
         ));
+        // ★ 마지막 크기 복원(물리 px · 09-02) — 기본 크기보다 우선.
+        if let Some((pw, ph)) = self.pref_size {
+            attrs = attrs.with_inner_size(winit::dpi::PhysicalSize::new(pw.max(200), ph.max(160)));
+        }
         if let Some((x, y)) = at {
             // 커서 위치(DR-24 기본) — 물리 좌표 그대로(커서가 곧 물리 좌표다).
             // ★ 화면 경계 클램프(08-31 사용자 실기 "우측 하단이면 팝업이 잘린다") —
             //   커서가 든 모니터 안에 **전체가 들어가도록** 좌상단을 되민다.
-            let (x, y) = clamp_to_monitor(el, x, y);
+            let (x, y) = clamp_to_monitor(el, x, y, self.pref_size);
             attrs = attrs.with_position(PhysicalPosition::new(x, y));
         }
         let Ok(win) = el.create_window(attrs) else {
@@ -555,8 +607,29 @@ impl Popup {
                     self.redraw();
                 }
             }
+            WindowEvent::Resized(sz) => {
+                // ★ 마지막 크기 기억(09-02) — 닫을 때 셸이 ui.popup_w/h로 저장.
+                if sz.width > 0 && sz.height > 0 {
+                    self.last_size = Some((sz.width, sz.height));
+                }
+                self.redraw();
+            }
             WindowEvent::CursorMoved { position, .. } => {
                 self.cursor = (position.x as i32, position.y as i32);
+                // ★ 가장자리 = 리사이즈 커서(장식 없는 창 · 09-02).
+                if let Some(win) = &self.window {
+                    use winit::window::{CursorIcon, ResizeDirection as D};
+                    let icon = match self.resize_dir_at(self.cursor.0, self.cursor.1) {
+                        Some(D::East | D::West) => Some(CursorIcon::EwResize),
+                        Some(D::North | D::South) => Some(CursorIcon::NsResize),
+                        Some(D::NorthWest | D::SouthEast) => Some(CursorIcon::NwseResize),
+                        Some(D::NorthEast | D::SouthWest) => Some(CursorIcon::NeswResize),
+                        None => None,
+                    };
+                    win.set_cursor(winit::window::Cursor::Icon(
+                        icon.unwrap_or(CursorIcon::Default),
+                    ));
+                }
                 if self.feed_bars(event) {
                     return PopupAction::None;
                 }
@@ -570,6 +643,15 @@ impl Popup {
             // ★ 클릭 = 선택 + 붙여넣기(Maccy 관례 — 08-28 사용자 실기 "클릭 선택 안 됨").
             //   `⇧` 클릭 = 평문. 목록 밖 클릭은 무시(닫기는 Esc·바깥 포커스가 담당).
             WindowEvent::MouseInput { state, button, .. } => {
+                // ★ 가장자리 눌림 = OS 리사이즈 시작(09-02).
+                if *state == ElementState::Pressed && *button == winit::event::MouseButton::Left {
+                    if let Some(dir) = self.resize_dir_at(self.cursor.0, self.cursor.1) {
+                        if let Some(win) = &self.window {
+                            let _ = win.drag_resize_window(dir);
+                        }
+                        return PopupAction::None;
+                    }
+                }
                 if self.feed_bars(event) {
                     return PopupAction::None;
                 }

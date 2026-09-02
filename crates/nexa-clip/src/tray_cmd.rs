@@ -381,7 +381,7 @@ impl Shell {
             return;
         }
         let label = item.label.clone();
-        self.popup.close();
+        self.close_popup();
         match nclip_plat::clipboard::set_reps(&reps) {
             Ok(n) => {
                 println!("재적재: \"{label}\" — 표현 {n}개 게시");
@@ -407,16 +407,31 @@ impl Shell {
         }
     }
 
+    /// 팝업을 닫으며 마지막 크기를 저장한다(09-02 — 다음 열기가 이어받는다).
+    fn close_popup(&mut self) {
+        if let Some((w, h)) = self.popup.last_size() {
+            let now = Instant::now();
+            self.app.conf.set("ui.popup_w", w.to_string(), now);
+            self.app.conf.set("ui.popup_h", h.to_string(), now);
+        }
+        self.popup.close();
+    }
+
     /// 팝업 토글(전역 단축키) — 열 때 **먼저** 대상 포커스를 기억한다.
     fn toggle_popup(&mut self, el: &ActiveEventLoop) {
         if self.popup.is_open() {
             println!("팝업: 닫기(토글)");
-            self.popup.close();
+            self.close_popup();
             return;
         }
         println!("팝업: 열기 — 이력 {}개", self.history.len());
         self.popup
             .set_view_code(self.app.conf.state.get("ui.popup_view"));
+        // ★ 마지막 크기 복원(09-02) — 값이 없으면 기본 크기.
+        let pw: u32 = self.app.conf.state.get("ui.popup_w").parse().unwrap_or(0);
+        let ph: u32 = self.app.conf.state.get("ui.popup_h").parse().unwrap_or(0);
+        self.popup
+            .set_pref_size((pw >= 200 && ph >= 160).then_some((pw, ph)));
         self.popup.set_theme(self.app.theme());
         // ★ 팝업이 뜨기 전의 포그라운드가 붙여넣기 대상이다(K-1 — 순서가 전부).
         if !self.paste.capture_focus() {
@@ -495,7 +510,7 @@ impl ApplicationHandler<ShellEvent> for Shell {
         if self.popup.window_id() == Some(id) {
             match self.popup.handle_event(&event, &self.history) {
                 PopupAction::None => {}
-                PopupAction::Close => self.popup.close(),
+                PopupAction::Close => self.close_popup(),
                 PopupAction::Pick { index, as_ } => self.pick(index, as_),
             }
             return;
