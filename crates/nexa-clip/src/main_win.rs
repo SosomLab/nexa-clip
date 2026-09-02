@@ -1186,7 +1186,10 @@ impl MainWin {
             }
             // 핀 구획 경계 — 첫 비고정 행 위에 한 줄.
             if !pin_divider_done && !row.pinned && vi > 0 {
-                dc.fill_rect(Rect::new(list.x, cy0, list.w, 1), th.accent);
+                // ★ 부분 행이면 경계선은 화면 밖 — 옮겨 그리지 않는다(09-02 실기).
+                if y >= list.y {
+                    dc.fill_rect(Rect::new(list.x, y, list.w, 1), th.accent);
+                }
                 pin_divider_done = true;
             }
             let tx = list.x + pad;
@@ -1235,11 +1238,12 @@ impl MainWin {
                     px(30.0)
                 };
             if row.pinned {
-                dc.fill_round_rect(
-                    Rect::new(lx, text_y + px(4.0), px(6.0), px(6.0)),
-                    px(3.0),
-                    th.accent,
-                );
+                // ★ fill_round_rect는 clip을 모른다 — 부분 행에서 검색바 위로 샐던
+                //   하늘색 점(09-02 실기) → 점 전체가 행 clip 안일 때만 그린다.
+                let dot_y = text_y + px(4.0);
+                if dot_y >= clip.y && dot_y + px(6.0) <= clip.y + clip.h {
+                    dc.fill_round_rect(Rect::new(lx, dot_y, px(6.0), px(6.0)), px(3.0), th.accent);
+                }
                 lx += px(12.0);
             }
             // 우측 메타(출처 · ×n) 먼저 재서 라벨 clip을 줄인다.
