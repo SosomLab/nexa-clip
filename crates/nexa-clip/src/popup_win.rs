@@ -60,6 +60,8 @@ pub(crate) enum PopupAction {
 /// 목록 한 행(그리기용 사본) — 이력을 빌리지 않고 스냅숏으로 들어 수명을 끊는다.
 struct Row {
     hist_index: usize,
+    /// ★ 핀 — 메인창과 같은 구획·표시(09-02 사용자 "메인과 동일하게").
+    pinned: bool,
     kind: ClipKind,
     label: String,
     copies: u32,
@@ -457,11 +459,16 @@ impl Popup {
         }
         self.search.set_text("");
         self.search.set_focused(true);
-        self.sel = 0;
         self.scroll = 0;
         self.was_focused = false;
         self.opened_at = std::time::Instant::now();
         self.refresh(hist);
+        // ★ 열 때 선택 = 최신 항목(핀 구획 뒤에 있어도 · 09-02).
+        self.sel = self
+            .rows
+            .iter()
+            .position(|r| r.hist_index == 0)
+            .unwrap_or(0);
         let mut attrs = crate::settings_win::win_name(crate::icon::with_icon(
             Window::default_attributes()
                 .with_title("Nexa Clip")
@@ -513,11 +520,13 @@ impl Popup {
     pub(crate) fn refresh(&mut self, hist: &History) {
         let q = self.search.display_text().to_lowercase();
         self.rows.clear();
+        let mut normal = Vec::new();
         let mut i = 0usize;
         while let Some(item) = hist.get(i) {
             if q.is_empty() || item.label.to_lowercase().contains(&q) {
-                self.rows.push(Row {
+                let row = Row {
                     hist_index: i,
+                    pinned: item.pinned,
                     kind: item.kind,
                     label: item.label.clone(),
                     copies: item.copies,
@@ -528,10 +537,17 @@ impl Popup {
                         .or_else(|| nclip_core::capture::svg_text(&item.reps)),
                     img_dims: crate::main_win::display_dims(&item.reps)
                         .or_else(|| crate::main_win::parse_dims(&item.label)),
-                });
+                };
+                // ★ 핀 먼저(각 구획 최신순) — 메인창의 정렬 계약과 동일(09-02).
+                if row.pinned {
+                    self.rows.push(row);
+                } else {
+                    normal.push(row);
+                }
             }
             i += 1;
         }
+        self.rows.extend(normal);
         if self.sel >= self.rows.len() {
             self.sel = self.rows.len().saturating_sub(1);
         }
@@ -543,9 +559,15 @@ impl Popup {
     /// ★ 이력이 바뀌었다(새 복사·승격) — **커서를 맨 위로**(방금 것이 첫 줄이고
     /// 선택도 그걸 가리킨다 — 08-28 사용자 요청) + 다시 그린다.
     pub(crate) fn on_history_changed(&mut self, hist: &History) {
-        self.sel = 0;
         self.scroll = 0;
         self.refresh(hist);
+        // ★ 선택 = 방금 복사한 항목(이력 맨 앞) — 핀 구획이 앞에 와도 계약 유지(08-28·09-02).
+        self.sel = self
+            .rows
+            .iter()
+            .position(|r| r.hist_index == 0)
+            .unwrap_or(0);
+        self.ensure_visible();
         self.redraw();
     }
 
@@ -966,6 +988,7 @@ fn draw(
         };
         dc.text(pad, list_top + px(12.0), full, msg, th.text_dim);
     }
+    let mut pin_divider_done = false;
     for (vi, row) in rows.iter().enumerate().skip(first) {
         let y = list_top - scroll + offs.get(vi).copied().unwrap_or(0);
         if y >= list_bot {
@@ -980,6 +1003,24 @@ fn draw(
             dc.fill_rect(clip, th.sel_bg);
         } else if vi % 2 == 1 {
             dc.fill_rect(clip, th.panel_bg_alt);
+        }
+        // 핀 구획 경계 — 첫 비고정 행 위 한 줄(메인과 동일 · 부분 행이면 생략).
+        if !pin_divider_done && !row.pinned && vi > 0 {
+            if y >= list_top {
+                dc.fill_rect(Rect::new(0, y, w, 1), th.accent);
+            }
+            pin_divider_done = true;
+        }
+        // 핀 점 — 좌측 거터(행 clip 안일 때만).
+        if row.pinned {
+            let dot_y = y + px(11.0);
+            if dot_y >= clip.y && dot_y + px(6.0) <= clip.y + clip.h {
+                dc.fill_round_rect(
+                    Rect::new(px(3.0), dot_y, px(5.0), px(5.0)),
+                    px(2.5),
+                    th.accent,
+                );
+            }
         }
         // 우측 ×n — 모든 모드 공통.
         let mut right = w - pad;
