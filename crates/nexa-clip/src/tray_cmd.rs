@@ -303,19 +303,31 @@ impl Shell {
     /// 있어(탐색기 복사 = CF_HDROP뿐) 경로 목록에서 평문을 **만들어** 준다.
     fn reps_for_mode(item: &nclip_core::history::HistoryItem, as_: PasteAs) -> Vec<RawRep> {
         let filtered = as_.filter_reps(&item.reps);
-        if !filtered.is_empty() || as_ != PasteAs::PathOnly {
+        if !filtered.is_empty() {
             return filtered;
         }
-        let paths: Vec<String> = item
-            .reps
-            .iter()
-            .filter(|r| r.format == "CF_HDROP")
-            .flat_map(|r| nclip_core::capture::parse_hdrop(&r.data))
-            .collect();
-        if paths.is_empty() {
-            return Vec::new();
+        match as_ {
+            // 경로만 — 평문 표현이 없는 파일 항목은 CF_HDROP에서 경로를 합성(09-01).
+            PasteAs::PathOnly => {
+                let paths: Vec<String> = item
+                    .reps
+                    .iter()
+                    .filter(|r| r.format == "CF_HDROP")
+                    .flat_map(|r| nclip_core::capture::parse_hdrop(&r.data))
+                    .collect();
+                if paths.is_empty() {
+                    Vec::new()
+                } else {
+                    nclip_plat::clipboard::plain_text_reps(&paths.join("\r\n"))
+                }
+            }
+            // ★ 평문 — PPT 글상자는 평문 표현이 아예 없다(09-02 사용자 요청) →
+            //   표시와 같은 SVG <text> 추출을 CF_UNICODETEXT로 합성해 붙여넣는다.
+            PasteAs::Plain => nclip_core::capture::svg_text(&item.reps)
+                .map(|t| nclip_plat::clipboard::plain_text_reps(&t))
+                .unwrap_or_default(),
+            _ => Vec::new(),
         }
-        nclip_plat::clipboard::plain_text_reps(&paths.join("\r\n"))
     }
 
     fn copy_from_main(&mut self, id: u64, as_: PasteAs) {

@@ -456,6 +456,46 @@ pub fn looks_like_color(text: &str) -> bool {
 
 // ─────────────────────────────────────────────── ①-2 평문 디코드
 
+/// ★ 래스터 표현 없이 SVG만 오는 항목(PPT 글상자)의 텍스트 폴백(09-02 실기 · main_win에서 이관 —
+/// 순위 선택 도입으로 SVG 마크업이 통째로 빠지자 크기·내용이 아예 안 보였다).
+/// `<text>` 요소 안의 글만 모은다 — 내부 태그(tspan) 제거 · 기본 엔티티 해제.
+pub fn svg_text(reps: &[crate::RawRep]) -> Option<String> {
+    let r = reps.iter().find(|r| r.format.starts_with("image/svg"))?;
+    let xml = std::str::from_utf8(&r.data).ok()?;
+    let mut out = String::new();
+    let mut rest = xml;
+    while let Some(i) = rest.find("<text") {
+        let after = &rest[i..];
+        let Some(open_end) = after.find('>') else {
+            break;
+        };
+        let Some(close) = after.find("</text") else {
+            break;
+        };
+        if close > open_end {
+            let mut in_tag = false;
+            for ch in after[open_end + 1..close].chars() {
+                match ch {
+                    '<' => in_tag = true,
+                    '>' => in_tag = false,
+                    c if !in_tag => out.push(c),
+                    _ => {}
+                }
+            }
+            out.push(' ');
+        }
+        rest = &after[close + 6..];
+    }
+    let out = out
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+        .replace("&amp;", "&");
+    let t = out.trim();
+    (!t.is_empty()).then(|| t.to_string())
+}
+
 /// ★ **평문 표현의 바이트를 글자로 푼다** — 포맷마다 인코딩이 다르다.
 ///
 /// ⚠️ **`CF_UNICODETEXT`는 UTF-16LE다.** UTF-8로 읽으면
