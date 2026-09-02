@@ -6,6 +6,7 @@
 
 - 팝업 검색 = 메인과 동일(캐럿 깜밖임·×·우클릭 메뉴·IME) · 최상위 고정 · TextBox word-wrap(Alt+Z)·더블/트리플 클릭 · ★ i18n 29키 + **동적 언어**(app.lang 부팅 미적용 결함 발견) → [journal 1차](journal/2026-09-02.md)
 - ★ 픽셀 스크롤(5차 — 메인·팝업 · 터치패드 소수 델타 누적) · 타이틀 Clipboard Manager · Rich 인라인 미리보기 64px · preview_probe 진단 → [journal 5차](journal/2026-09-02.md)
+- 16~18차 — 팝업 완성판: 보기 모드 설정(기본 rich)·크기 기억·타이틀바·★ 핀 구획 동기화·휠 스냅 회귀 + PPT 평문 붙여넣기·Ctrl+2 식별 보조 → [journal](journal/2026-09-02.md)
 - 5~15차 — ★ Ctrl+1 = CopyQ 화법 완성(가변 행 누적합 · 문서 논리 크기 64% · ★ EMF GDI 래스터화 · 섬네일 캐스케이드·승격 영속 · bilinear) + 픽셀 스크롤·스크롤바 — ✅ 사용자 확정 → [journal](journal/2026-09-02.md)
 - 실기 P 회신(4차) — 휠 스냅백(paint의 ensure_visible 제거) · ★ 평문 순위 선택(`plain_of` — CF_HTML 헤더 노출 해소) · Object 이미지 미리보기+텍스트 폴백 → [journal 4차](journal/2026-09-02.md)
 - ★ K4 미리보기 패널(3차) — 툴바 눈 토글 · 기본 접힘 · 텍스트 전문(wrap·휠) / 이미지 원본(지연 디코드 1600) · `ui.preview_open` 영속 → [journal 3차](journal/2026-09-02.md)
