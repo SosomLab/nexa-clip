@@ -15,6 +15,9 @@ TextBox word-wrap(편집 시트 기본 켜짐 · Alt+Z + ★ 우상단 스위치
 섬네일 캐스케이드/승격 영속 · 타이틀 Clipboard Manager. ✅ **사용자 확정: "CTRL+1 보기와 스크롤 완성"**(09-02).
 16~18차(팝업 완성판): 보기 모드 설정(`ui.popup_view` 기본 rich) · 크기 기억(`ui.popup_w/h`) · 타이틀바 ·
 ★ 핀 구획 동기화(메인과 동일 · 선택 = 최신 유지) · 휠 스냅 회귀 수정 · PPT 글상자 평문 붙여넣기 · Ctrl+2 식별 보조. ⏳ M6 i18n 잔여 건별 · K4 미리보기 패널 다음 라운드.
+19차: ★ 최상위 고정 Linux — 창만 XWayland(X11) 강제(`with_x11` · 환경변수 불변) · ★ HIDDEN_KEYS 누락으로
+창 상태 키 4종(최상위·미리보기·팝업 크기) 재시작 유실 발견·해소 · libxkbcommon-x11 선결 검사(미설치 = 정직 강등 + 안내).
+⏳ 실기: `libxkbcommon-x11-0` 설치 후 최상위 실동작 · `wl-clipboard xclip` 설치로 감시 활성.
 
 ---
 

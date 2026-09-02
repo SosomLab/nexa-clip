@@ -11,6 +11,7 @@
 - 실기 P 회신(4차) — 휠 스냅백(paint의 ensure_visible 제거) · ★ 평문 순위 선택(`plain_of` — CF_HTML 헤더 노출 해소) · Object 이미지 미리보기+텍스트 폴백 → [journal 4차](journal/2026-09-02.md)
 - ★ K4 미리보기 패널(3차) — 툴바 눈 토글 · 기본 접힘 · 텍스트 전문(wrap·휠) / 이미지 원본(지연 디코드 1600) · `ui.preview_open` 영속 → [journal 3차](journal/2026-09-02.md)
 - 실기 M 회신: ★ 메인 ×(지우기) 후 빈 목록 잔류 수정(MouseDown 변화 감지) · 편집 시트 우상단 줄 바꿈 스위치(M4 · Alt+Z 동기) → [journal 2차](journal/2026-09-02.md)
+- 19차 — ★ 최상위 고정 Linux 실동작(Wayland 무프로토콜 → 창만 XWayland X11 · libxkbcommon-x11 선결 검사) · ★ 창 상태 키 4종 재시작 유실 결함 발견·해소(HIDDEN_KEYS) · 감시 문구 정직화 → [journal](journal/2026-09-02.md)
 
 ## 2026-09-01 (6차) — 단기 개발 일괄 7건
 
