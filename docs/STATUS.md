@@ -4,6 +4,18 @@
 
 ---
 
+## 2026-09-03 (1차) — ★ T-14 본편: Linux 클립보드 내재화 — xclip 의존 소멸
+
+`feat/linux-clipboard-native`(병합 전 · 롤백 태그 `rollback/pre-linux-clipboard-native`).
+[29 §6](29-linux-clipboard-access.md) 설계 그대로 — `selection_x11.rs`(연결 3개: XFIXES 감시 · INCR 수신 · 서빙+INCR 송신) ·
+감시 사다리 1순위 = `x11rb`(폴링·spawn 소멸) · ★ 쓰기 = **표현 전부 게시**(1단 1개 제약 해소 · 텍스트 별칭 광고) ·
+에코 = 소유자 창 비교 · 도구 파이프 = 폴백 계단. 새 crate 0(x11rb `xfixes` feature만).
+
+**실측**: 실서버 왕복(1.5MB INCR·상한 도중 집행) ✓ · ★ **xclip 전무한 PC에서 E2E ✓**(외부 게시 → 수집 →
+트레이 최근·영속 seg) · `watch: ok (xwayland-x11rb)` · clippy 3타깃 · 테스트 전부 통과. ⏳ 사용자 실기 → 병합.
+
+---
+
 ## 2026-09-02 (1·2차) — 검색 완전판 · ★ 동적 언어 · 실기 M 반영
 
 팝업 검색 = 메인과 동일 스택(캐럿 깜밖임 · ×지우기 · 우클릭 편집 메뉴 · IME) · 최상위 고정(툴바 · 영속) ·

@@ -2,6 +2,10 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-09-03 (1차) — ★ T-14 본편: Linux 클립보드 내재화(x11rb+XFIXES)
+
+- 브랜치 `feat/linux-clipboard-native`(롤백 태그 `rollback/pre-linux-clipboard-native`) — `selection_x11.rs` 신설(감시 이벤트化·INCR 양방향·다중 표현 게시·소유자 창 에코 차단) · 도구 파이프는 폴백 강등. ★ **xclip 없는 이 PC에서 E2E ✓**(외부 게시 → 수집 → 트레이·영속) · 실서버 1.5MB INCR 왕복 ✓ · clippy 3타깃 → [journal](journal/2026-09-03.md)
+
 ## 2026-09-02 (1·2차) — 검색 완전판 · 최상위 고정 · 동적 언어 · 실기 M 반영
 
 - 팝업 검색 = 메인과 동일(캐럿 깜밖임·×·우클릭 메뉴·IME) · 최상위 고정 · TextBox word-wrap(Alt+Z)·더블/트리플 클릭 · ★ i18n 29키 + **동적 언어**(app.lang 부팅 미적용 결함 발견) → [journal 1차](journal/2026-09-02.md)
