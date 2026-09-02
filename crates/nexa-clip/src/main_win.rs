@@ -166,8 +166,9 @@ pub(crate) struct MainWin {
     preview_open: bool,
     /// 미리보기 텍스트 — (항목 id, 읽기용 멀티라인 · wrap · 휠 스크롤만 라우팅).
     preview_tb: Option<(u64, TextBox)>,
-    /// 미리보기 이미지 원본 — (항목 id, 셸이 지연 디코드해 넘긴 RGBA).
-    preview_img: Option<(u64, nclip_ctl::theme::IconImage)>,
+    /// 미리보기 이미지 원본 — (항목 id, 셸이 지연 디코드해 넘긴 RGBA ·
+    /// `None` = 디코드 실패 → 텍스트 폴백 · 09-02 실기 P).
+    preview_img: Option<(u64, Option<nclip_ctl::theme::IconImage>)>,
 }
 
 impl MainWin {
@@ -374,10 +375,7 @@ impl MainWin {
                 thumb: item.thumb.as_ref().map(|(w, h, rgba)| {
                     nclip_ctl::theme::IconImage::from_rgba(*w, *h, rgba.clone())
                 }),
-                plain: item
-                    .reps
-                    .iter()
-                    .find_map(|r| decode_plain(&r.format, &r.data)),
+                plain: plain_of(&item.reps),
             };
             if row.pinned {
                 pinned.push(row);
@@ -562,12 +560,26 @@ impl MainWin {
             self.preview_img = None;
             return;
         };
-        if row.kind == ClipKind::Image {
-            // 이미지 원본은 셸이 지연 디코드(`take_preview_request`) — 여기선 텍스트만 접는다.
-            self.preview_tb = None;
-            return;
+        // ★ Object(PPT 글상자 등)도 이미지 표현이 있으면 그려 보인다(09-02 실기 P —
+        //   SVG 마크업 원문이 텍스트로 떴다). 셸 디코드 실패만 텍스트로 폴백.
+        if matches!(row.kind, ClipKind::Image | ClipKind::Object) {
+            match &self.preview_img {
+                // 디코드 성공 — 이미지가 그려진다.
+                Some((id, Some(_))) if *id == row.id => {
+                    self.preview_tb = None;
+                    return;
+                }
+                // 디코드 실패 판정 — 아래 텍스트 폴백으로 흐른다.
+                Some((id, None)) if *id == row.id => {}
+                // 아직 디코드 대기(셸 펌프가 곧 채운다).
+                _ => {
+                    self.preview_tb = None;
+                    return;
+                }
+            }
+        } else {
+            self.preview_img = None;
         }
-        self.preview_img = None;
         if self.preview_tb.as_ref().map(|(id, _)| *id) != Some(row.id) {
             let text = row.plain.clone().unwrap_or_else(|| row.label.clone());
             let mut tb = TextBox::new("").with_multiline().with_text(&text);
@@ -583,7 +595,7 @@ impl MainWin {
             return None;
         }
         let row = self.rows.get(self.sel)?;
-        if row.kind != ClipKind::Image {
+        if !matches!(row.kind, ClipKind::Image | ClipKind::Object) {
             return None;
         }
         if self.preview_img.as_ref().map(|(id, _)| *id) == Some(row.id) {
@@ -592,9 +604,18 @@ impl MainWin {
         Some(row.id)
     }
 
-    /// 셸이 디코드한 원본 이미지를 받는다(실패 시 1×1 투명 — 재요청 루프 차단).
+    /// 셸이 디코드한 원본 이미지를 받는다.
     pub(crate) fn set_preview_image(&mut self, id: u64, iw: u32, ih: u32, rgba: Vec<u8>) {
-        self.preview_img = Some((id, nclip_ctl::theme::IconImage::from_rgba(iw, ih, rgba)));
+        self.preview_img = Some((
+            id,
+            Some(nclip_ctl::theme::IconImage::from_rgba(iw, ih, rgba)),
+        ));
+        self.redraw();
+    }
+
+    /// 셸의 디코드 실패 통보 — 텍스트 폴백으로 전환하고 재요청 루프를 끊는다.
+    pub(crate) fn set_preview_failed(&mut self, id: u64) {
+        self.preview_img = Some((id, None));
         self.redraw();
     }
 
@@ -1011,7 +1032,6 @@ impl MainWin {
             return;
         };
         let (w, h) = (size.width as i32, size.height as i32);
-        self.ensure_visible(h);
         {
             let pad = (self.scale * 10.0).round() as i32;
             let mut inv = Invalidations::default();
@@ -1252,7 +1272,7 @@ impl MainWin {
             dc.fill_rect(pr, th.panel_bg);
             dc.fill_rect(Rect::new(pr.x, pr.y, pr.w, 1), th.border);
             let sel_id = self.rows.get(self.sel).map(|r| r.id);
-            if let Some((id, img)) = &self.preview_img {
+            if let Some((id, Some(img))) = &self.preview_img {
                 if Some(*id) == sel_id {
                     let pad2 = px(8.0);
                     let inner = Rect::new(
@@ -1782,6 +1802,21 @@ fn to_ctl_event(event: &WindowEvent, cursor: (i32, i32)) -> Option<CtlEvent> {
 }
 
 /// 툴팁 라벨 — 한글(현재 창 문안과 동일 언어 · i18n 스윙은 T-23).
+/// 평문 표현을 순위대로 고른다(스냅숏 `plain_text`와 같은 계약 · 09-02 실기 P —
+/// "첫 디코드 성공"이 CF_HTML 헤더·벤더 바이트를 물어 목록/미리보기에 깨진 글이 떴다).
+fn plain_of(reps: &[nclip_core::RawRep]) -> Option<String> {
+    let mut best: Option<(u8, &nclip_core::RawRep)> = None;
+    for r in reps {
+        if let Some(rank) = nclip_core::capture::plain_rank(&r.format) {
+            if best.is_none_or(|(b, _)| rank < b) {
+                best = Some((rank, r));
+            }
+        }
+    }
+    let (_, r) = best?;
+    decode_plain(&r.format, &r.data)
+}
+
 fn tool_label(t: Tool) -> &'static str {
     let lang = current_lang();
     match t {

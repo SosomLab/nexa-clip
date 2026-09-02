@@ -227,8 +227,8 @@ impl Shell {
                 .and_then(|it| decode_image(&it.reps, PREVIEW_SIDE));
             match img {
                 Some((w, h, rgba)) => self.main.set_preview_image(pid, w, h, rgba),
-                // 디코드 실패 — 1×1 투명으로 재요청 루프를 끊는다(표시 없음).
-                None => self.main.set_preview_image(pid, 1, 1, vec![0; 4]),
+                // 디코드 실패(이미지 표현 없는 Object 포함) — 텍스트 폴백으로 전환.
+                None => self.main.set_preview_failed(pid),
             }
         }
     }
