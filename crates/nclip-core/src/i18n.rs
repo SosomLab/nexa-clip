@@ -316,6 +316,8 @@ pub enum Msg {
     TipCopy,
     TipCopyPlain,
     TipAlwaysTop,
+    /// 미리보기 패널 토글 툴팁(09-02 K4).
+    TipPreview,
     MenuCopy,
     MenuCopyPlain,
     MenuCopyObject,
@@ -700,6 +702,7 @@ impl Msg {
                 "プレーンでコピー (Shift+Enter)",
             ],
             Msg::TipAlwaysTop => ["Always on top", "최상위 고정", "总在最前", "常に手前"],
+            Msg::TipPreview => ["Preview", "미리보기", "预览", "プレビュー"],
             Msg::MenuCopy => ["Copy", "복사", "复制", "コピー"],
             Msg::MenuCopyPlain => ["Copy as plain text", "평문으로 복사", "复制为纯文本", "プレーンでコピー"],
             Msg::MenuCopyObject => ["Copy as object", "개체로 복사", "复制为对象", "オブジェクトでコピー"],
@@ -835,7 +838,7 @@ mod tests {
     use super::*;
 
     /// 카탈로그 전수 — 새 `Msg`를 더하면 여기도 더한다(빈칸 검사가 그걸 강제한다).
-    const ALL_MSG: [Msg; 153] = [
+    const ALL_MSG: [Msg; 154] = [
         Msg::AppName,
         Msg::SearchPlaceholder,
         Msg::EmptyHistory,
@@ -950,6 +953,7 @@ mod tests {
         Msg::TipCopy,
         Msg::TipCopyPlain,
         Msg::TipAlwaysTop,
+        Msg::TipPreview,
         Msg::MenuCopy,
         Msg::MenuCopyPlain,
         Msg::MenuCopyObject,

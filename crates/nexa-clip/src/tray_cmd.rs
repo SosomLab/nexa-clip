@@ -46,12 +46,19 @@ const MENU_LABEL_CHARS: usize = 44;
 
 /// 목록 썸네일 긴 변(px) — 팝업 행(30px)에 들어가는 크기의 2배(고DPI 여유).
 const THUMB_SIDE: u32 = 48;
+/// ★ 미리보기 원본 디코드 상한(09-02 K4) — 패널 표시용이라 이 이상은 낭비.
+const PREVIEW_SIDE: u32 = 1600;
 
 /// 이미지 항목의 목록 썸네일 — `ui.image_preview`가 켜졌을 때만 호출된다.
 ///
 /// DIB는 순수 변환([`nclip_core::img`] — 프로세스 없음), PNG는 **격리 워커**
 /// ([`nclip_plat::imgdec`] — 파서는 본체에 없다). 실패는 `None` = 글리프 폴백.
 fn make_thumb(reps: &[RawRep]) -> Option<(u32, u32, Vec<u8>)> {
+    decode_image(reps, THUMB_SIDE)
+}
+
+/// 이미지 표현 → RGBA(긴 변 `side` 이하) — 썸네일·미리보기 공용(09-02 K4).
+fn decode_image(reps: &[RawRep], side: u32) -> Option<(u32, u32, Vec<u8>)> {
     use nclip_core::capture::thumbnail_source;
     use nclip_core::img::{dib_to_rgba, downscale_rgba};
     let i = thumbnail_source(reps)?;
@@ -59,15 +66,13 @@ fn make_thumb(reps: &[RawRep]) -> Option<(u32, u32, Vec<u8>)> {
     match r.format.as_str() {
         "CF_DIB" | "CF_DIBV5" => {
             let (w, h, rgba) = dib_to_rgba(&r.data)?;
-            downscale_rgba(w, h, &rgba, THUMB_SIDE)
+            downscale_rgba(w, h, &rgba, side)
         }
         "image/bmp" if r.data.len() > 14 => {
             let (w, h, rgba) = dib_to_rgba(&r.data[14..])?;
-            downscale_rgba(w, h, &rgba, THUMB_SIDE)
+            downscale_rgba(w, h, &rgba, side)
         }
-        "PNG" | "public.png" | "image/png" => {
-            nclip_plat::imgdec::decode_isolated(&r.data, THUMB_SIDE)
-        }
+        "PNG" | "public.png" | "image/png" => nclip_plat::imgdec::decode_isolated(&r.data, side),
         _ => None,
     }
 }
@@ -213,6 +218,21 @@ impl Shell {
     }
 
     /// 메인창 닫기 — `ui.close_to_tray` 정책 공유(설정 창과 동일 계약).
+    /// ★ K4 미리보기 펌프 — 메인창이 원본 이미지를 원하면 지연 디코드해 넘긴다.
+    fn pump_preview(&mut self) {
+        if let Some(pid) = self.main.take_preview_request() {
+            let img = self
+                .history
+                .get_by_id(pid)
+                .and_then(|it| decode_image(&it.reps, PREVIEW_SIDE));
+            match img {
+                Some((w, h, rgba)) => self.main.set_preview_image(pid, w, h, rgba),
+                // 디코드 실패 — 1×1 투명으로 재요청 루프를 끊는다(표시 없음).
+                None => self.main.set_preview_image(pid, 1, 1, vec![0; 4]),
+            }
+        }
+    }
+
     fn close_main(&mut self) {
         // 메인창 X/Esc = 항상 숨김(상주 유지 — 종료는 트레이 Quit만 · 08-30 확정 계승).
         self.save_main_geom();
@@ -408,6 +428,15 @@ impl ApplicationHandler<ShellEvent> for Shell {
                     self.main.apply_always_top(on);
                     println!("최상위 고정: {}", if on { "켜짐" } else { "꺼짐" });
                 }
+                MainAction::TogglePreview => {
+                    let on = self.app.conf.state.get("ui.preview_open") != "on";
+                    self.app.conf.set(
+                        "ui.preview_open",
+                        if on { "on" } else { "off" }.to_string(),
+                        Instant::now(),
+                    );
+                    self.main.apply_preview(on);
+                }
                 MainAction::Delete(id) => {
                     if self.history.remove(id) {
                         self.store.remove(id);
@@ -431,6 +460,7 @@ impl ApplicationHandler<ShellEvent> for Shell {
                     }
                 }
             }
+            self.pump_preview();
             return;
         }
         // 팝업 창의 이벤트는 팝업으로 — 나머지(설정 창)는 App으로.
@@ -459,7 +489,18 @@ impl ApplicationHandler<ShellEvent> for Shell {
                 let geom = self.saved_main_geom();
                 let view = self.app.conf.state.get("ui.view_mode").to_string();
                 let atop = self.app.conf.state.get("ui.always_on_top") == "on";
-                self.main.open(el, &self.history, theme, geom, &view, atop);
+                let pv = self.app.conf.state.get("ui.preview_open") == "on";
+                self.main.open(
+                    el,
+                    &self.history,
+                    theme,
+                    geom,
+                    crate::main_win::OpenOpts {
+                        view_code: &view,
+                        always_top: atop,
+                        preview_open: pv,
+                    },
+                );
             }
             ShellEvent::OpenSettings => self.app.ensure_window(el),
             ShellEvent::Quit => {
@@ -591,6 +632,7 @@ impl ApplicationHandler<ShellEvent> for Shell {
             }
             ShellEvent::Recent(i) => self.repost(i),
         }
+        self.pump_preview();
     }
 
     fn about_to_wait(&mut self, el: &ActiveEventLoop) {

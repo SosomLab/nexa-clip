@@ -43,6 +43,16 @@ const DBLCLICK_MS: u128 = 400;
 
 /// 메인창에서 셸로 되돌리는 행동.
 #[derive(Debug, PartialEq, Eq)]
+/// 메인창 열기 옵션(설정 스냅샷) — 인자 폭발 방지(clippy 8/7).
+pub(crate) struct OpenOpts<'a> {
+    /// `ui.view_mode` 코드.
+    pub view_code: &'a str,
+    /// `ui.always_on_top`.
+    pub always_top: bool,
+    /// `ui.preview_open`(09-02 K4).
+    pub preview_open: bool,
+}
+
 pub(crate) enum MainAction {
     /// 내부 처리 완료.
     None,
@@ -63,6 +73,8 @@ pub(crate) enum MainAction {
     OpenSettings,
     /// ★ 최상위 고정 토글(09-02) — 셸이 `ui.always_on_top` 영속 + 창 레벨 적용.
     ToggleAlwaysTop,
+    /// ★ 미리보기 패널 토글(09-02 K4) — 셸이 `ui.preview_open` 영속.
+    TogglePreview,
     /// ★ 보기 모드 변경(Ctrl+1/2/3) — 셸이 `ui.view_mode`에 영속한다.
     SetViewMode(&'static str),
     /// ★ 편집 저장(S4 평문화 · 09-01 확정).
@@ -97,18 +109,22 @@ enum Tool {
     Delete,
     Copy,
     CopyPlain,
+    /// ★ 미리보기 패널 토글(09-02 K4 — CopyQ식 하단 패널). 켜짐 = accent.
+    Preview,
     /// ★ 최상위 고정(09-02 사용자 요청) — 모든 창 위에 표시. ⚙ 위 바닥 고정.
     AlwaysTop,
     Settings,
 }
 
 /// 툴바 배치(위에서부터) — `None` = 구분선. ⚙는 바닥 고정(VT-4).
-const TOOLS_TOP: [Option<Tool>; 5] = [
+const TOOLS_TOP: [Option<Tool>; 7] = [
     Some(Tool::Pin),
     Some(Tool::Delete),
     None,
     Some(Tool::Copy),
     Some(Tool::CopyPlain),
+    None,
+    Some(Tool::Preview),
 ];
 
 pub(crate) struct MainWin {
@@ -146,6 +162,12 @@ pub(crate) struct MainWin {
     wrap_sw: Option<Switch>,
     /// 상태줄에 보일 전체 개수(필터 전).
     total: usize,
+    /// ★ 미리보기 패널 열림(09-02 K4 · `ui.preview_open` 영속 — 기본 접힘).
+    preview_open: bool,
+    /// 미리보기 텍스트 — (항목 id, 읽기용 멀티라인 · wrap · 휠 스크롤만 라우팅).
+    preview_tb: Option<(u64, TextBox)>,
+    /// 미리보기 이미지 원본 — (항목 id, 셸이 지연 디코드해 넘긴 RGBA).
+    preview_img: Option<(u64, nclip_ctl::theme::IconImage)>,
 }
 
 impl MainWin {
@@ -178,6 +200,9 @@ impl MainWin {
             editor: None,
             wrap_sw: None,
             total: 0,
+            preview_open: false,
+            preview_tb: None,
+            preview_img: None,
         }
     }
 
@@ -252,12 +277,12 @@ impl MainWin {
         hist: &History,
         theme: Theme,
         geom: Option<(i32, i32, u32, u32)>,
-        view_code: &str,
-        always_top: bool,
+        opts: OpenOpts<'_>,
     ) {
         self.theme = theme;
-        self.always_top = always_top;
-        self.view = ViewMode::from_code(view_code).unwrap_or_default();
+        self.always_top = opts.always_top;
+        self.preview_open = opts.preview_open;
+        self.view = ViewMode::from_code(opts.view_code).unwrap_or_default();
         if let Some(w) = &self.window {
             w.set_visible(true);
             w.focus_window();
@@ -413,7 +438,27 @@ impl MainWin {
             self.toolbar_w(),
             self.header_h(),
             (w - self.toolbar_w()).max(0),
-            (h - self.header_h() - self.status_h()).max(0),
+            (h - self.header_h() - self.status_h() - self.preview_h_of(h)).max(0),
+        )
+    }
+
+    /// ★ 미리보기 패널 높이(09-02 K4) — 목록 영역의 35% · 최소 80px.
+    fn preview_h_of(&self, h: i32) -> i32 {
+        if !self.preview_open {
+            return 0;
+        }
+        let avail = (h - self.header_h() - self.status_h()).max(0);
+        (avail * 35 / 100).max(self.px(80.0)).min(avail)
+    }
+
+    /// 미리보기 패널 사각형 — 상태줄 위 · 툴바 오른쪽.
+    fn preview_rect(&self, w: i32, h: i32) -> Rect {
+        let ph = self.preview_h_of(h);
+        Rect::new(
+            self.toolbar_w(),
+            h - self.status_h() - ph,
+            (w - self.toolbar_w()).max(0),
+            ph,
         )
     }
 
@@ -490,6 +535,7 @@ impl MainWin {
         match (tool, self.selected_id()) {
             (Tool::Settings, _) => MainAction::OpenSettings,
             (Tool::AlwaysTop, _) => MainAction::ToggleAlwaysTop,
+            (Tool::Preview, _) => MainAction::TogglePreview,
             (_, None) => MainAction::None, // VT-3: 선택 없으면 비활성
             (Tool::Pin, Some(id)) => MainAction::TogglePin(id),
             (Tool::Delete, Some(id)) => MainAction::Delete(id),
@@ -504,8 +550,64 @@ impl MainWin {
         }
     }
 
+    /// ★ 미리보기 내용을 현재 선택과 동기(09-02 K4) — id 비교만이라 매 사건 호출해도 값싸다.
+    fn sync_preview(&mut self) {
+        if !self.preview_open {
+            self.preview_tb = None;
+            self.preview_img = None;
+            return;
+        }
+        let Some(row) = self.rows.get(self.sel) else {
+            self.preview_tb = None;
+            self.preview_img = None;
+            return;
+        };
+        if row.kind == ClipKind::Image {
+            // 이미지 원본은 셸이 지연 디코드(`take_preview_request`) — 여기선 텍스트만 접는다.
+            self.preview_tb = None;
+            return;
+        }
+        self.preview_img = None;
+        if self.preview_tb.as_ref().map(|(id, _)| *id) != Some(row.id) {
+            let text = row.plain.clone().unwrap_or_else(|| row.label.clone());
+            let mut tb = TextBox::new("").with_multiline().with_text(&text);
+            tb.set_wrap(true);
+            tb.set_scale(self.scale);
+            self.preview_tb = Some((row.id, tb));
+        }
+    }
+
+    /// ★ 셸에 묻는다 — 원본 이미지 디코드가 필요한 항목 id(미리보기 열림 + 이미지 선택 + 미보유).
+    pub(crate) fn take_preview_request(&self) -> Option<u64> {
+        if !self.preview_open || self.window.is_none() {
+            return None;
+        }
+        let row = self.rows.get(self.sel)?;
+        if row.kind != ClipKind::Image {
+            return None;
+        }
+        if self.preview_img.as_ref().map(|(id, _)| *id) == Some(row.id) {
+            return None;
+        }
+        Some(row.id)
+    }
+
+    /// 셸이 디코드한 원본 이미지를 받는다(실패 시 1×1 투명 — 재요청 루프 차단).
+    pub(crate) fn set_preview_image(&mut self, id: u64, iw: u32, ih: u32, rgba: Vec<u8>) {
+        self.preview_img = Some((id, nclip_ctl::theme::IconImage::from_rgba(iw, ih, rgba)));
+        self.redraw();
+    }
+
+    /// ★ 미리보기 열림 상태 적용(토글 셸 왕복 · 09-02 K4).
+    pub(crate) fn apply_preview(&mut self, on: bool) {
+        self.preview_open = on;
+        self.sync_preview();
+        self.redraw();
+    }
+
     /// 창 이벤트 처리 — 행동은 셸로 되돌린다.
     pub(crate) fn handle_event(&mut self, event: &WindowEvent) -> MainAction {
+        self.sync_preview();
         let (w, h) = match &self.window {
             Some(win) => {
                 let s = win.inner_size();
@@ -611,6 +713,26 @@ impl MainWin {
                 }
             }
             WindowEvent::MouseWheel { delta, .. } => {
+                // ★ 패널 위 휠 = 미리보기 전문 스크롤(09-02 K4) — 목록은 건드리지 않는다.
+                if self.preview_open {
+                    if let Some(win) = &self.window {
+                        let sz = win.inner_size();
+                        let pr = self.preview_rect(sz.width as i32, sz.height as i32);
+                        let (cx, cy) = self.cursor;
+                        if pr.contains(nclip_ctl::geom::Point { x: cx, y: cy }) {
+                            if let (Some((_, tb)), Some(ev)) =
+                                (self.preview_tb.as_mut(), to_ctl_event(event, self.cursor))
+                            {
+                                let mut inv = Invalidations::default();
+                                tb.on_event(&ev, &mut inv);
+                                if !inv.is_empty() {
+                                    self.redraw();
+                                }
+                            }
+                            return MainAction::None;
+                        }
+                    }
+                }
                 let step = match delta {
                     MouseScrollDelta::LineDelta(_, y) => -*y as i32 * 3,
                     MouseScrollDelta::PixelDelta(p) => -(p.y as i32) / 20,
@@ -870,7 +992,7 @@ impl MainWin {
     }
 
     fn ensure_visible(&mut self, h: i32) {
-        let l_h = (h - self.header_h() - self.status_h()).max(1);
+        let l_h = (h - self.header_h() - self.status_h() - self.preview_h_of(h)).max(1);
         let visible = (l_h / self.row_h()).max(1) as usize;
         if self.sel < self.top {
             self.top = self.sel;
@@ -923,6 +1045,21 @@ impl MainWin {
                 sw.set_bounds(Rect::new(w - pad - sww, hh + pad, sww, bar - 4), &mut inv);
             }
         }
+        let pr = self.preview_rect(w, h);
+        if let Some((_, tb)) = self.preview_tb.as_mut() {
+            let pad2 = (self.scale * 8.0).round() as i32;
+            let mut inv = Invalidations::default();
+            tb.set_scale(self.scale);
+            tb.set_bounds(
+                Rect::new(
+                    pr.x + pad2,
+                    pr.y + pad2,
+                    (pr.w - pad2 * 2).max(20),
+                    (pr.h - pad2 * 2).max(20),
+                ),
+                &mut inv,
+            );
+        }
         // ★ surface를 잠시 꺼내 빌림을 끕는다 — draw(&self)가 전체 상태를 읽기 때문.
         let Some(mut surface) = self.surface.take() else {
             return;
@@ -969,7 +1106,9 @@ impl MainWin {
         let has_sel = !self.rows.is_empty();
         for (k, t) in TOOLS_TOP.iter().enumerate() {
             match t {
-                Some(t) => self.draw_tool(dc, self.tool_rect(k), *t, has_sel),
+                Some(t) => {
+                    self.draw_tool(dc, self.tool_rect(k), *t, has_sel || *t == Tool::Preview)
+                }
                 None => {
                     let r = self.tool_rect(k);
                     dc.fill_rect(
@@ -1104,6 +1243,43 @@ impl MainWin {
                     }
                 }
                 dc.select_font(FontSlot::Base, false);
+            }
+        }
+
+        // ── ③b 미리보기 패널(09-02 K4) — 텍스트 전문(wrap·휠) / 이미지 원본(비율 유지) ──
+        if self.preview_open {
+            let pr = self.preview_rect(w, h);
+            dc.fill_rect(pr, th.panel_bg);
+            dc.fill_rect(Rect::new(pr.x, pr.y, pr.w, 1), th.border);
+            let sel_id = self.rows.get(self.sel).map(|r| r.id);
+            if let Some((id, img)) = &self.preview_img {
+                if Some(*id) == sel_id {
+                    let pad2 = px(8.0);
+                    let inner = Rect::new(
+                        pr.x + pad2,
+                        pr.y + pad2,
+                        (pr.w - pad2 * 2).max(1),
+                        (pr.h - pad2 * 2).max(1),
+                    );
+                    let (iw, ih) = (img.w.max(1) as i32, img.h.max(1) as i32);
+                    // 축소만 — 원본보다 키우면 계단이 진다.
+                    let (dw, dh) = if iw <= inner.w && ih <= inner.h {
+                        (iw, ih)
+                    } else if iw * inner.h >= ih * inner.w {
+                        (inner.w, (inner.w * ih / iw).max(1))
+                    } else {
+                        ((inner.h * iw / ih).max(1), inner.h)
+                    };
+                    let dst = Rect::new(
+                        inner.x + (inner.w - dw) / 2,
+                        inner.y + (inner.h - dh) / 2,
+                        dw,
+                        dh,
+                    );
+                    dc.image_scaled(dst, img, inner);
+                }
+            } else if let Some((_, tb)) = &self.preview_tb {
+                tb.paint(dc, &th);
             }
         }
 
@@ -1280,6 +1456,16 @@ impl MainWin {
                     Rect::new(cx - px(4.5), cy + px(2.2), px(5.0), px(1.8).max(2)),
                     ink,
                 );
+            }
+            Tool::Preview => {
+                // Material `visibility` — 눈 윤곽(타원 링) + 홍채. 켜짐 = accent.
+                let c = if self.preview_open { th.accent } else { ink };
+                dc.fill_ellipse(Rect::new(cx - px(9.0), cy - px(5.5), px(18.0), px(11.0)), c);
+                dc.fill_ellipse(
+                    Rect::new(cx - px(7.0), cy - px(3.8), px(14.0), px(7.6)),
+                    th.chrome_bg,
+                );
+                dc.fill_ellipse(Rect::new(cx - px(3.0), cy - px(3.0), px(6.0), px(6.0)), c);
             }
             Tool::AlwaysTop => {
                 // 위로 향한 화살표 + 상단 바(“맨 앞에 둔다”) — 켜짐 = accent.
@@ -1603,6 +1789,7 @@ fn tool_label(t: Tool) -> &'static str {
         Tool::Delete => tr(lang, Msg::TipDelete),
         Tool::Copy => tr(lang, Msg::TipCopy),
         Tool::CopyPlain => tr(lang, Msg::TipCopyPlain),
+        Tool::Preview => tr(lang, Msg::TipPreview),
         Tool::AlwaysTop => tr(lang, Msg::TipAlwaysTop),
         Tool::Settings => tr(lang, Msg::TraySettings),
     }
