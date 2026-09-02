@@ -1515,25 +1515,33 @@ impl MainWin {
                 dc.fill_ellipse(Rect::new(cx - px(3.0), cy - px(3.0), px(6.0), px(6.0)), c);
             }
             Tool::AlwaysTop => {
-                // 위로 향한 화살표 + 상단 바(“맨 앞에 둔다”) — 켜짐 = accent.
+                // ★ Material `layers`(09-02 사용자 시안) — 꺼짐 = 윗장 윤곽선 + 밴드 1,
+                //   켜짐 = accent 적층 3장. 마름모 = 삼각형 2장 합성.
                 let on = self.always_top;
                 let c = if on { th.accent } else { ink };
-                dc.fill_round_rect(
-                    Rect::new(cx - px(7.0), cy - px(8.0), px(14.0), px(2.0)),
-                    px(1.0),
-                    c,
-                );
-                dc.fill_rect(Rect::new(cx - 1, cy - px(4.0), px(2.0).max(2), px(11.0)), c);
-                dc.fill_round_rect(
-                    Rect::new(cx - px(4.0), cy - px(4.0), px(3.0), px(2.0)),
-                    px(1.0),
-                    c,
-                );
-                dc.fill_round_rect(
-                    Rect::new(cx + px(1.0), cy - px(4.0), px(3.0), px(2.0)),
-                    px(1.0),
-                    c,
-                );
+                let (w2, h2) = (px(8.0), px(4.5));
+                let mut rhombus = |dy: f32, col: nclip_ctl::theme::Color| {
+                    let yc = cy + px(dy);
+                    dc.fill_triangle((cx, yc - h2), (cx - w2, yc), (cx + w2, yc), col);
+                    dc.fill_triangle((cx - w2, yc), (cx + w2, yc), (cx, yc + h2), col);
+                };
+                if on {
+                    // 아래서부터 밴드 2장(아래 V만 남기고 바탕으로 뒸어냄) + 윗장 꽉 채움.
+                    rhombus(5.0, c);
+                    rhombus(3.0, th.chrome_bg);
+                    rhombus(2.0, c);
+                    rhombus(0.0, th.chrome_bg);
+                    rhombus(-3.0, c);
+                } else {
+                    rhombus(2.5, c);
+                    rhombus(0.5, th.chrome_bg);
+                    rhombus(-3.0, c);
+                    // 윗장 속을 바탕색으로 비워 윤곽선만 남긴다.
+                    let yc = cy + px(-3.0);
+                    let (iw, ih2) = (px(5.2), px(2.9));
+                    dc.fill_triangle((cx, yc - ih2), (cx - iw, yc), (cx + iw, yc), th.chrome_bg);
+                    dc.fill_triangle((cx - iw, yc), (cx + iw, yc), (cx, yc + ih2), th.chrome_bg);
+                }
             }
             Tool::Settings => {
                 // Material `settings` — 톱니 8개(4방 + 대각) + 링 + 중심 구멍.
