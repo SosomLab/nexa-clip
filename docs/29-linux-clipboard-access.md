@@ -102,7 +102,49 @@ Shell 확장에 위임. 공식 알려진 문제: **Flatpak/AppImage에선 확장
 3. CopyQ의 진짜 교훈은 §4의 방어층 목록이고, EcoPaste의 진짜 교훈은 하부 크레이트(x11rb+XFIXES) 선택이다 — **우리 P1은 이 둘의 합집합**을 새 crate 0으로 갖는다.
 
 
-## 6. 출처
+## 6. 구현 설계 권장안 (T-14 본편 · P1/P2)
+
+> §1~§5의 수렴 — **x11rb 직접 구현**(EcoPaste의 크레이트 선택) + **CopyQ의 방어층**을
+> 새 crate 0으로. 참조 선례 = `x11-clipboard`(MIT · x11rb 0.13 + xfixes — 우리 lock과 같은 판).
+
+### 6-1. 모듈·스레드 구조
+
+- 신설 `nclip-plat/src/selection_x11.rs` — **연결 2개**(x11-clipboard 선례): ① 감시·읽기(요청자) ② 쓰기 서빙(소유자). 하나로 합치면 자기 셀렉션을 자기가 읽을 때 교착한다.
+- 각 연결 = 전용 스레드 + 숨은 창. 서빙 스레드는 이벤트 fd + 명령 채널을 `poll()`로 겸청.
+- 사다리 개정: ① Wayland+data-control → `wl-paste` 유지(P3까지) ② `DISPLAY` → **x11rb 직접** ③ x11rb 연결 실패 → 기존 도구 파이프 폴백(정직 강등 사유 보고) ④ 전무 → 사유.
+
+### 6-2. 감시·읽기 (P1)
+
+- `XFixesSelectSelectionInput(CLIPBOARD, owner-change)` → 이벤트마다: SETTLE 재확인(기존 규칙 유지) → `TARGETS` 변환 → 표현별 `ConvertSelection`.
+- **INCR 수신**: 프로퍼티 type=INCR → 삭제로 다음 청크 요청 → 조립. ★ `MAX_REP_BYTES`를 **청크 도중** 집행(초과 = 중단 + 이름만 — 기존 규칙 동일).
+- **CopyQ 방어층 수용**: 변환 실패(property=None) 재시도 ≤3 · TIMESTAMP 비교로 중복 스킵 · 스냅숏 확정 전 소유자/타임스탬프 재확인(읽는-동안-바뀜 가드).
+- ★ **에코 판정 승격**: 소유자 창 == 우리 서빙 창이면 자기 게시 — 지문 비교보다 정확(08-30 에코 승격 규칙의 X11판).
+- 민감 표식: TARGETS에 `x-kde-passwordManagerHint` 있으면 값 확인 · 못 읽으면 금지(fail-closed 유지).
+- 기존 `normalize_target`·`is_meta_target`·타깃 정리 로직 그대로 재사용(순수 함수 — 테스트 승계).
+
+### 6-3. 쓰기 서빙 (P2)
+
+- `SetSelectionOwner` 전 **TIMESTAMP 취득**(zero-append PropertyNotify 트릭 — CurrentTime 금지·ICCCM).
+- `SelectionRequest` 응대: TARGETS(★ **전 표현 광고 = 다중 표현 게시** — 1단의 "1개" 제약 해소) · TIMESTAMP · MULTIPLE · 표현별 데이터. text/plain ↔ UTF8_STRING/STRING/TEXT 매핑.
+- **INCR 송신**: `maximum_request_bytes()` 초과분은 요청자별 전송 상태 + PropertyNotify(delete) 구동 청크. 정체 전송은 타임아웃 GC.
+- `SelectionClear` = 소유권 상실 = 남이 복사 — 감시 신호와 합류.
+
+### 6-4. 검증·게이트
+
+- Xvfb 왕복(K-1 선례): 소형 왕복 · **INCR 왕복(≥1MB)** · TARGETS 광고 · UTF8 매핑 · 소유권 상실 이벤트 · 상한 중단. `clip_roundtrip` 확장.
+- 의존 원장: x11rb `xfixes` **feature 추가**(새 crate 0) — [10 §3](10-decision-record.md) 기록.
+- x11-clipboard 차용 시 MIT 고지. 통째 vendoring보다 **우리 규약(cap·정직 강등·이벤트 브리지)에 맞춘 재작성** 권장(~600~900줄 추정).
+
+### 6-5. 사용자 확정 대기(일괄)
+
+| # | 질문 | 권장 |
+|---|---|---|
+| ① | 도구 파이프 폴백 유지? | 유지 — x11rb 연결 실패·특수 환경의 정직 강등 계단 |
+| ② | PRIMARY(마우스 선택) 수집? | 범위 밖(CLIPBOARD만) — Klipper·CopyQ는 옵션 제공. 열린 결정으로 등재만 |
+| ③ | 종료 시 클립보드 내용? | 우리가 소유 중 종료하면 X11 특성상 소멸 — 종료 직전 재게시 없이 수용(우리가 곧 매니저) · 문구로 명시 |
+
+
+## 7. 출처
 
 - CopyQ: [x11platformclipboard.cpp](https://github.com/hluk/CopyQ/blob/master/src/platform/x11/x11platformclipboard.cpp) · [Known Issues(GNOME 확장·Wayland)](https://copyq.readthedocs.io/en/latest/known-issues.html)
 - Klipper/KSystemClipboard: [KDE MR !1(Wayland 포팅)](https://invent.kde.org/plasma/plasma-workspace/-/merge_requests/1) · [wlr-data-control](https://wayland.app/protocols/wlr-data-control-unstable-v1)
