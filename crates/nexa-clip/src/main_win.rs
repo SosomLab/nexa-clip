@@ -98,6 +98,8 @@ struct Row {
     source: String,
     copies: u32,
     thumb: Option<nclip_ctl::theme::IconImage>,
+    /// 원본 화소 치수(라벨 "W×H" 파싱 · 09-02 가변 행 — 섬네일은 축소본이라 절대 크기를 모른다).
+    img_dims: Option<(u32, u32)>,
     /// 첫 평문 표현(편집 시드 · Rich 보기 둘째 줄) — 없으면 None.
     plain: Option<String>,
 }
@@ -147,6 +149,8 @@ pub(crate) struct MainWin {
     scroll: i32,
     /// 휠 소수 델타 누적기 — 패드의 0.1노치도 쌓여서 움직인다(절단 0 방지).
     wheel_frac: f32,
+    /// ★ 행 시작 y 누적합(len = rows+1 · 마지막 = 총 높이) — Rich 가변 행(09-02 CopyQ 화법).
+    row_offs: Vec<i32>,
     cursor: (i32, i32),
     shift: bool,
     primary: bool,
@@ -194,6 +198,7 @@ impl MainWin {
             sel: 0,
             scroll: 0,
             wheel_frac: 0.0,
+            row_offs: Vec::new(),
             cursor: (0, 0),
             shift: false,
             primary: false,
@@ -379,6 +384,7 @@ impl MainWin {
                 thumb: item.thumb.as_ref().map(|(w, h, rgba)| {
                     nclip_ctl::theme::IconImage::from_rgba(*w, *h, rgba.clone())
                 }),
+                img_dims: parse_dims(&item.label),
                 plain: plain_of(&item.reps).or_else(|| svg_text(&item.reps)),
             };
             if row.pinned {
@@ -520,12 +526,73 @@ impl MainWin {
         None
     }
 
+    /// Rich 이미지 표시 크기 — 원본 크기 그대로(확대 없음) · 폭·최대 높이에 맞춰
+    /// **비율 축소**(09-02 사용자 — 복사본마다 확대율이 제각각이던 문제).
+    fn rich_fit(&self, ow: i32, oh: i32, content_w: i32) -> (i32, i32) {
+        let max_h = self.px(200.0);
+        let mut dw = ow.max(1).min(content_w.max(40));
+        let mut dh = (oh.max(1) * dw / ow.max(1)).max(1);
+        if dh > max_h {
+            dw = (dw * max_h / dh).max(1);
+            dh = max_h;
+        }
+        (dw, dh)
+    }
+
+    /// 콘텐츠 폭(거터·여백 제외) — 높이 계산과 그리기가 같은 값을 쓴다.
+    fn content_w_of(&self, list_w: i32) -> i32 {
+        (list_w - self.px(10.0) * 2 - self.px(30.0)).max(40)
+    }
+
+    /// 행 높이 — Compact·Plain은 고정, ★ Rich는 내용 기반 가변(이미지 = 실치수 비율
+    /// 최대 200px · 텍스트 = 본문 줄 수 ≤5).
+    fn row_height_of(&self, row: &Row, content_w: i32) -> i32 {
+        if self.view != ViewMode::Rich {
+            return self.row_h();
+        }
+        if let Some(img) = &row.thumb {
+            #[allow(clippy::cast_possible_wrap)]
+            let (ow, oh) = row
+                .img_dims
+                .map_or((img.w.max(1) as i32, img.h.max(1) as i32), |(a, b)| {
+                    (a as i32, b as i32)
+                });
+            let (_, dh) = self.rich_fit(ow, oh, content_w);
+            dh + self.px(12.0)
+        } else {
+            let text = row.plain.as_deref().unwrap_or(row.label.as_str());
+            #[allow(clippy::cast_possible_wrap)]
+            let n = text.lines().take(5).count().max(1) as i32;
+            self.px(12.0) + self.px(22.0) * n
+        }
+    }
+
+    /// 누적합 재계산 — 매 paint(폭 의존) · O(n) 단순 산술.
+    fn rebuild_offsets(&mut self, list_w: i32) {
+        let cw = self.content_w_of(list_w);
+        let mut offs = Vec::with_capacity(self.rows.len() + 1);
+        offs.push(0i32);
+        let mut acc = 0i32;
+        for row in &self.rows {
+            acc += self.row_height_of(row, cw);
+            offs.push(acc);
+        }
+        self.row_offs = offs;
+    }
+
     fn row_at(&self, x: i32, y: i32, w: i32, h: i32) -> Option<usize> {
         let l = self.list_rect(w, h);
         if x < l.x || x >= l.x + l.w || y < l.y || y >= l.y + l.h {
             return None;
         }
-        let vi = ((y - l.y + self.scroll.max(0)) / self.row_h()) as usize;
+        let ly = y - l.y + self.scroll.max(0);
+        if self.row_offs.len() < 2 || ly >= *self.row_offs.last().unwrap_or(&0) {
+            return None;
+        }
+        let vi = self
+            .row_offs
+            .partition_point(|&o| o <= ly)
+            .saturating_sub(1);
         (vi < self.rows.len()).then_some(vi)
     }
 
@@ -1022,13 +1089,14 @@ impl MainWin {
 
     fn ensure_visible(&mut self, h: i32) {
         let l_h = (h - self.header_h() - self.status_h() - self.preview_h_of(h)).max(1);
-        let row_h = self.row_h();
-        #[allow(clippy::cast_possible_wrap)]
-        let sel_y = self.sel as i32 * row_h;
-        if sel_y < self.scroll {
-            self.scroll = sel_y;
-        } else if sel_y + row_h > self.scroll + l_h {
-            self.scroll = sel_y + row_h - l_h;
+        if self.sel + 1 >= self.row_offs.len() {
+            return; // 오프셋 미생성(첫 paint 전) — 다음 paint가 재계산.
+        }
+        let (top, bot) = (self.row_offs[self.sel], self.row_offs[self.sel + 1]);
+        if top < self.scroll {
+            self.scroll = top;
+        } else if bot > self.scroll + l_h {
+            self.scroll = bot - l_h;
         }
     }
 
@@ -1044,9 +1112,9 @@ impl MainWin {
         let (w, h) = (size.width as i32, size.height as i32);
         {
             let l = self.list_rect(w, h);
-            #[allow(clippy::cast_possible_wrap)]
-            let max_scroll = (self.rows.len() as i32 * self.row_h() - l.h).max(0);
-            self.scroll = self.scroll.clamp(0, max_scroll);
+            self.rebuild_offsets(l.w);
+            let total = *self.row_offs.last().unwrap_or(&0);
+            self.scroll = self.scroll.clamp(0, (total - l.h).max(0));
         }
         {
             let pad = (self.scale * 10.0).round() as i32;
@@ -1156,10 +1224,6 @@ impl MainWin {
         // ── ③ 목록(핀 구획 먼저) ──
         let list = self.list_rect(w, h);
         let row_h = self.row_h();
-        // 픽셀 스크롤 — 위·아래 **부분 행**까지 그린다(off = 첫 행이 가려진 픽셀).
-        let start = (self.scroll / row_h).max(0) as usize;
-        let off = self.scroll.rem_euclid(row_h);
-        let visible = ((list.h + off + row_h - 1) / row_h).max(1) as usize;
         if self.rows.is_empty() {
             let lang = current_lang();
             let msg = if self.search.display_text().is_empty() {
@@ -1170,14 +1234,26 @@ impl MainWin {
             dc.text(list.x + pad, list.y + px(12.0), full, msg, th.text_dim);
         }
         let mut pin_divider_done = false;
-        for (vi, row) in self.rows.iter().enumerate().skip(start).take(visible) {
-            let y = list.y - off + ((vi - start) as i32) * row_h;
+        // ★ 가변 행(누적합) — 첫 행은 이분 탐색, 밑으로 나가면 중단(09-02).
+        let first = self
+            .row_offs
+            .partition_point(|&o| o <= self.scroll)
+            .saturating_sub(1);
+        for (vi, row) in self.rows.iter().enumerate().skip(first) {
+            let y = list.y - self.scroll + self.row_offs[vi];
+            if y >= list.y + list.h {
+                break;
+            }
+            let rh = self
+                .row_offs
+                .get(vi + 1)
+                .map_or(row_h, |e| e - self.row_offs[vi]);
             let cy0 = y.max(list.y);
             let clip = Rect::new(
                 list.x,
                 cy0,
                 list.w,
-                ((y + row_h).min(list.y + list.h) - cy0).max(0),
+                ((y + rh).min(list.y + list.h) - cy0).max(0),
             );
             if vi == self.sel {
                 dc.fill_rect(clip, th.sel_bg);
@@ -1223,14 +1299,19 @@ impl MainWin {
                 let cx0 = tx + px(30.0);
                 let content_clip = Rect::new(cx0, clip.y, (right - cx0).max(0), clip.h);
                 if let Some(img) = &row.thumb {
-                    let zone_h = (row_h - px(12.0)).max(8);
-                    let (zw, zh) = (img.w.max(1) as i32, img.h.max(1) as i32);
-                    let dw = (zone_h * zw / zh).max(1);
-                    let dst = Rect::new(cx0, y + px(6.0), dw, zone_h);
+                    // ★ 원본 치수 기준 — 복사본마다 확대율이 같다(최대 높이만 비율 축소).
+                    #[allow(clippy::cast_possible_wrap)]
+                    let (ow, oh) = row
+                        .img_dims
+                        .map_or((img.w.max(1) as i32, img.h.max(1) as i32), |(a, b)| {
+                            (a as i32, b as i32)
+                        });
+                    let (dw, dh) = self.rich_fit(ow, oh, self.content_w_of(list.w));
+                    let dst = Rect::new(cx0, y + px(6.0), dw, dh);
                     dc.image_scaled(dst, img, content_clip);
                 } else {
                     let text = row.plain.as_deref().unwrap_or(row.label.as_str());
-                    for (k, line) in text.lines().take(3).enumerate() {
+                    for (k, line) in text.lines().take(5).enumerate() {
                         let one: String = line.chars().take(200).collect();
                         #[allow(clippy::cast_precision_loss)]
                         dc.text(
@@ -1865,6 +1946,29 @@ fn plain_of(reps: &[nclip_core::RawRep]) -> Option<String> {
     }
     let (_, r) = best?;
     decode_plain(&r.format, &r.data)
+}
+
+/// 라벨의 "W×H" 치수 파싱(언어 무관 — × 양쪽 숫자만 본다) — 섬네일은 축소본이라
+/// 절대 크기는 라벨이 유일한 출처다(09-02 가변 행).
+fn parse_dims(label: &str) -> Option<(u32, u32)> {
+    let x = label.find('×')?;
+    let w: u32 = label[..x]
+        .chars()
+        .rev()
+        .take_while(char::is_ascii_digit)
+        .collect::<String>()
+        .chars()
+        .rev()
+        .collect::<String>()
+        .parse()
+        .ok()?;
+    let h: u32 = label[x + '×'.len_utf8()..]
+        .chars()
+        .take_while(char::is_ascii_digit)
+        .collect::<String>()
+        .parse()
+        .ok()?;
+    (w > 0 && h > 0).then_some((w, h))
 }
 
 /// ★ 래스터 표현 없이 SVG만 오는 항목(PPT 글상자)의 텍스트 폴백(09-02 실기 —
