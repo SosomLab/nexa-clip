@@ -743,7 +743,11 @@ fn x11_backend_ready() -> bool {
         "/usr/local/lib",
     ]
     .iter()
-    .any(|d| std::path::Path::new(d).join("libxkbcommon-x11.so.0").exists())
+    .any(|d| {
+        std::path::Path::new(d)
+            .join("libxkbcommon-x11.so.0")
+            .exists()
+    })
 }
 
 pub(crate) fn run() {

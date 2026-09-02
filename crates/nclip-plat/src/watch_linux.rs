@@ -1,4 +1,5 @@
-//! Linux 클립보드 감시 1단 — **OS 기본 도구 파이프** (T-14 Linux 축).
+//! Linux 클립보드 감시 — ★ **본편 = [`crate::selection_x11`] 직접 구현**(x11rb+XFIXES · 09-02)
+//! 이 1순위이고, 이 파일의 **도구 파이프 1단은 폴백 계단**으로 남는다(연결 실패·특수 환경).
 //!
 //! 외부 crate 0(DR-8) — beep `nbeep-plat/clipboard.rs`의 Linux 선례를 따라
 //! `wl-paste`(Wayland · wl-clipboard) → `xclip`(X11) 사다리를 파이프로 쓴다.
@@ -28,6 +29,25 @@
 
 use nclip_core::{ClipSnapshot, RawRep, UnsupportedReason, WatchCapability, WatchError};
 use std::process::{Command, Stdio};
+
+// ★ 직접 구현(T-14 본편) — Linux 실빌드에서만. 다른 OS의 test 빌드(순수부 검증)는 스텁.
+#[cfg(all(unix, not(target_os = "macos")))]
+use crate::selection_x11 as native;
+#[cfg(not(all(unix, not(target_os = "macos"))))]
+mod native {
+    pub(crate) fn available() -> bool {
+        false
+    }
+    pub(crate) fn list_targets(_cap: usize) -> Option<Vec<String>> {
+        None
+    }
+    pub(crate) fn read_target(_t: &str, _cap: usize) -> Option<Vec<u8>> {
+        None
+    }
+    pub(crate) fn watch(_f: Box<dyn Fn() + Send>) -> Result<(), String> {
+        Err("스텁 — 이 타깃에는 없다".into())
+    }
+}
 
 /// 변화가 있을 때 부를 것 — 스레드를 건너가므로 `Send`.
 pub type Sink = Box<dyn Fn(ClipSnapshot) + Send>;
@@ -66,7 +86,9 @@ const KDE_PW_HINT: &str = "x-kde-passwordManagerHint";
 enum Backend {
     /// Wayland — `wl-paste`(wl-clipboard).
     Wayland,
-    /// X11 — `xclip`.
+    /// ★ X11/XWayland — 직접 구현(x11rb + XFIXES · T-14 본편). 도구 불요.
+    X11Native,
+    /// X11 — `xclip`(폴백 계단).
     X11,
 }
 
@@ -94,6 +116,10 @@ fn pick_backend() -> Result<Backend, UnsupportedReason> {
     if data_control && tool_exists("wl-paste") {
         return Ok(Backend::Wayland);
     }
+    // ★ 본편 — X11/XWayland면 직접 붙는다(도구·설치 불요). 연결 실패는 아래 계단으로.
+    if x11 && native::available() {
+        return Ok(Backend::X11Native);
+    }
     if x11 && tool_exists("xclip") {
         return Ok(Backend::X11);
     }
@@ -116,6 +142,13 @@ pub fn capability() -> WatchCapability {
     match pick_backend() {
         Ok(Backend::Wayland) => WatchCapability::Supported {
             backend: "wayland-wl-paste",
+        },
+        Ok(Backend::X11Native) => WatchCapability::Supported {
+            backend: if std::env::var_os("WAYLAND_DISPLAY").is_some() {
+                "xwayland-x11rb"
+            } else {
+                "x11-x11rb"
+            },
         },
         Ok(Backend::X11) => WatchCapability::Supported {
             backend: if std::env::var_os("WAYLAND_DISPLAY").is_some() {
@@ -172,6 +205,7 @@ fn run_bytes(cmd: &str, args: &[&str], cap: usize) -> Option<Vec<u8>> {
 /// 지금 클립보드가 내놓는 타깃(MIME/atom) 목록.
 fn list_targets(backend: Backend) -> Option<Vec<String>> {
     let raw = match backend {
+        Backend::X11Native => return native::list_targets(MAX_TARGETS_BYTES),
         Backend::Wayland => run_bytes("wl-paste", &["--list-types"], MAX_TARGETS_BYTES)?,
         Backend::X11 => run_bytes(
             "xclip",
@@ -192,6 +226,7 @@ fn list_targets(backend: Backend) -> Option<Vec<String>> {
 /// 타깃 하나의 날바이트.
 fn read_target(backend: Backend, target: &str) -> Option<Vec<u8>> {
     match backend {
+        Backend::X11Native => native::read_target(target, MAX_REP_BYTES),
         Backend::Wayland => run_bytes(
             "wl-paste",
             &["--no-newline", "--type", target],
@@ -236,6 +271,33 @@ fn normalize_target(t: &str) -> String {
     }
 }
 
+/// 텍스트 계열 타깃의 **신뢰 순위**(낮을수록 먼저) — `None`이면 텍스트 계열이 아니다.
+///
+/// TARGETS 순서를 믿지 않는다: Mutter XWayland 브리지는 charset 없는 `text/plain`을 선두에
+/// 두는데, GTK/glib은 그 타깃을 **ASCII**로 변환하며 비ASCII를 `\uXXXX`(Firefox 한글) ·
+/// `\E2\9E\9C`(VTE 프롬프트 화살표)로 이스케이프한다(09-03 실기). `STRING`은 Latin-1.
+/// UTF-8이 보장되는 `text/plain;charset=utf-8` · `UTF8_STRING`을 먼저 집는다.
+fn text_rank(t: &str) -> Option<u8> {
+    let base = t.split(';').next().unwrap_or(t);
+    let utf8 = t.to_ascii_lowercase().contains("charset=utf-8");
+    match base {
+        "text/plain" if utf8 => Some(0),
+        "UTF8_STRING" => Some(1),
+        "text/plain" => Some(2),
+        "TEXT" => Some(3),
+        "STRING" => Some(4),
+        _ => None,
+    }
+}
+
+/// 읽기 순서 — 텍스트 계열은 [`text_rank`] 순, 나머지는 TARGETS 순서 그대로.
+fn read_order(targets: &[String]) -> Vec<&String> {
+    let mut text: Vec<&String> = targets.iter().filter(|t| text_rank(t).is_some()).collect();
+    text.sort_by_key(|t| text_rank(t));
+    let others = targets.iter().filter(|t| text_rank(t).is_none());
+    text.into_iter().chain(others).collect()
+}
+
 /// FNV-1a — 내용 지문(변화 감지 전용 · 보안 아님).
 fn fnv1a(seed: u64, bytes: &[u8]) -> u64 {
     let mut h = if seed == 0 {
@@ -272,6 +334,7 @@ pub fn read_snapshot() -> Option<ClipSnapshot> {
 
 fn read_snapshot_with(backend: Backend) -> Option<ClipSnapshot> {
     let targets = list_targets(backend)?;
+    diag(&format!("TARGETS(원시 순서): {targets:?}"));
 
     // ★ 민감 표식 먼저 — 표식이 서면 내용은 읽지 않는다(fail-closed).
     let concealed = targets.iter().any(|t| t == KDE_PW_HINT)
@@ -280,23 +343,37 @@ fn read_snapshot_with(backend: Backend) -> Option<ClipSnapshot> {
 
     let mut reps = Vec::new();
     let mut seen: Vec<String> = Vec::new();
-    for t in &targets {
+    let ordered = read_order(&targets);
+    let mut text_left = ordered.iter().filter(|t| text_rank(t).is_some()).count();
+    for t in ordered {
         if is_meta_target(t) || t == KDE_PW_HINT {
             continue;
         }
+        let is_text = text_rank(t).is_some();
+        if is_text {
+            text_left -= 1;
+        }
         let name = normalize_target(t);
-        // 정규화로 겹친 이름(UTF8_STRING·STRING → text/plain)은 첫 것만 담는다.
+        // 정규화로 겹친 이름(UTF8_STRING·STRING → text/plain)은 **순위 첫 것**만 담는다.
         if seen.contains(&name) {
             continue;
         }
-        seen.push(name.clone());
         let data = if concealed {
             Vec::new()
         } else {
-            // 못 읽은 타깃(지연 제공·상한 초과)은 이름만 담는다
-            // — Windows 핸들 포맷과 같은 취급이다(분류는 이름만 본다).
-            read_target(backend, t).unwrap_or_default()
+            match read_target(backend, t) {
+                Some(d) => d,
+                // 텍스트 계열은 다음 순위로 물러난다(UTF8_STRING이 지연 제공이면 text/plain).
+                None if is_text && text_left > 0 => {
+                    diag(&format!("{t}: 읽기 실패 — 다음 순위 텍스트 타깃으로"));
+                    continue;
+                }
+                // 못 읽은 타깃(지연 제공·상한 초과)은 이름만 담는다
+                // — Windows 핸들 포맷과 같은 취급이다(분류는 이름만 본다).
+                None => Vec::new(),
+            }
         };
+        seen.push(name.clone());
         reps.push(RawRep { format: name, data });
     }
 
@@ -323,9 +400,54 @@ fn diag(msg: &str) {
 pub fn start(sink: Sink) -> Result<(), WatchError> {
     let backend = pick_backend().map_err(WatchError::Unsupported)?;
     diag(&format!("Linux 감시 시작 — 백엔드 {backend:?}"));
+    if backend == Backend::X11Native {
+        return native_event_loop(sink);
+    }
     std::thread::Builder::new()
         .name("nclip-watch-linux".into())
         .spawn(move || poll_loop(backend, &sink))
+        .map_err(|e| WatchError::Os(format!("감시 스레드 생성 실패: {e}")))?;
+    Ok(())
+}
+
+/// ★ 본편 감시 — XFIXES 이벤트가 깨우면 한 벌 읽는다. **유휴 비용 0**(폴링·spawn 소멸 · DR-9).
+///
+/// 몰린 이벤트(연속 복사)는 채널을 비워 한 번으로 합치고, [`settle`]이 부분 스냅숏을
+/// 다잡는다(08-29 결함 재발 방지 — 이벤트 직후에도 표현이 덜 올라온 순간이 있다).
+/// 지문 중복 제거는 유지한다 — 내용이 같은 소유자 교체(재게시)를 걸러 준다.
+fn native_event_loop(sink: Sink) -> Result<(), WatchError> {
+    let (tx, rx) = std::sync::mpsc::channel::<()>();
+    native::watch(Box::new(move || {
+        let _ = tx.send(());
+    }))
+    .map_err(WatchError::Os)?;
+    std::thread::Builder::new()
+        .name("nclip-watch-x11rb".into())
+        .spawn(move || {
+            // 시작 시점의 내용은 "새 복사"가 아니다 — 기준선.
+            let mut last = read_snapshot_with(Backend::X11Native).map(|s| fingerprint(&s));
+            while rx.recv().is_ok() {
+                while rx.try_recv().is_ok() {} // 몰린 이벤트 합치기.
+                let Some(snap) = read_snapshot_with(Backend::X11Native) else {
+                    continue;
+                };
+                if snap.reps.is_empty() && !snap.concealed {
+                    continue;
+                }
+                let fp = fingerprint(&snap);
+                if last == Some(fp) {
+                    continue;
+                }
+                let (snap, fp) = settle(Backend::X11Native, snap, fp);
+                last = Some(fp);
+                diag(&format!(
+                    "변화 감지(x11rb) — 표현 {}개 · 표식 {}",
+                    snap.reps.len(),
+                    snap.concealed
+                ));
+                sink(snap);
+            }
+        })
         .map_err(|e| WatchError::Os(format!("감시 스레드 생성 실패: {e}")))?;
     Ok(())
 }
@@ -463,6 +585,43 @@ mod tests {
             normalize_target("application/x-vnd.foo"),
             "application/x-vnd.foo"
         );
+    }
+
+    /// 텍스트 계열은 TARGETS 순서가 아니라 UTF-8 보장 순으로 읽는다 — Mutter 브리지가
+    /// `text/plain`(ASCII 이스케이프)을 선두에 두는 실제 순서(09-03 실기)를 그대로 넣는다.
+    #[test]
+    fn text_targets_read_in_utf8_first_order() {
+        let raw: Vec<String> = [
+            "TARGETS",
+            "TIMESTAMP",
+            "MULTIPLE",
+            "text/plain",
+            "UTF8_STRING",
+            "STRING",
+            "TEXT",
+            "text/plain;charset=utf-8",
+            "text/html",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        let order: Vec<&str> = read_order(&raw).iter().map(|s| s.as_str()).collect();
+        assert_eq!(
+            order,
+            [
+                "text/plain;charset=utf-8",
+                "UTF8_STRING",
+                "text/plain",
+                "TEXT",
+                "STRING",
+                "TARGETS",
+                "TIMESTAMP",
+                "MULTIPLE",
+                "text/html",
+            ]
+        );
+        assert_eq!(text_rank("text/plain;charset=UTF-8"), Some(0));
+        assert_eq!(text_rank("text/html"), None);
     }
 
     /// 셀렉션 기계 장치 타깃은 내용이 아니다 — 읽지 않는다.

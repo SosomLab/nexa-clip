@@ -2,6 +2,13 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-09-03 (1차) — ★ T-14 본편: Linux 클립보드 내재화(x11rb+XFIXES)
+
+- 5차 — ★ 결함: Firefox 한글 `\uXXXX` · 터미널 `\E2\9E\9C` — Mutter 브리지가 선두에 둔 charset 없는 `text/plain`(GTK = ASCII 이스케이프)을 집음 → 텍스트 타깃 **UTF-8 보장 순위**(`text_rank`) + 실패 시 다음 순위 · 원시 TARGETS 진단 · 사용자 재복사 검증 ⏳ → [journal 5차](journal/2026-09-03.md)
+- 4차 — ★ 결함: 로그인 자동 시작 무동작 — 등록 명령에 `tray` 인자 누락(beep 이식 가정 "무인수 = 상주" ≠ clip "무인수 = 점검") · **3-OS 공통** 수정(`TRAY_ARG`) · 다음 로그인 실기 검증 ☐ → [journal 4차](journal/2026-09-03.md)
+- 2차 — 기능별 시스템 패키지 SSOT([18 §9-1b](18-build-and-test.md)·[21 §1-0](21-manual-test.md)): ★ 클립보드 = 무설치(내재화) · 최상위 고정만 libxkbcommon-x11-0 · 도구 = 폴백 표기(watch 안내 포함) → [journal](journal/2026-09-03.md)
+- 브랜치 `feat/linux-clipboard-native`(롤백 태그 `rollback/pre-linux-clipboard-native`) — `selection_x11.rs` 신설(감시 이벤트化·INCR 양방향·다중 표현 게시·소유자 창 에코 차단) · 도구 파이프는 폴백 강등. ★ **xclip 없는 이 PC에서 E2E ✓**(외부 게시 → 수집 → 트레이·영속) · 실서버 1.5MB INCR 왕복 ✓ · clippy 3타깃 → [journal](journal/2026-09-03.md)
+
 ## 2026-09-02 (1·2차) — 검색 완전판 · 최상위 고정 · 동적 언어 · 실기 M 반영
 
 - 팝업 검색 = 메인과 동일(캐럿 깜밖임·×·우클릭 메뉴·IME) · 최상위 고정 · TextBox word-wrap(Alt+Z)·더블/트리플 클릭 · ★ i18n 29키 + **동적 언어**(app.lang 부팅 미적용 결함 발견) → [journal 1차](journal/2026-09-02.md)

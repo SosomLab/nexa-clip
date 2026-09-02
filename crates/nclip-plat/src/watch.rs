@@ -328,7 +328,17 @@ mod tests {
     fn capability_answers_honestly_on_linux() {
         match PlatformWatch::new().capability() {
             WatchCapability::Supported { backend } => {
-                assert!(backend == "wayland-wl-paste" || backend == "x11-xclip");
+                assert!(
+                    [
+                        "wayland-wl-paste",
+                        "x11-x11rb",
+                        "xwayland-x11rb",
+                        "x11-xclip",
+                        "xwayland-xclip",
+                    ]
+                    .contains(&backend),
+                    "{backend}"
+                );
             }
             WatchCapability::Unsupported { reason } => {
                 assert_ne!(

@@ -4,6 +4,31 @@
 
 ---
 
+## 2026-09-03 (2~5차) — 패키지 SSOT · VTE 판정 · ★ 자동 시작 결함 · ★ 텍스트 타깃 순위 결함 → 병합
+
+`feat/linux-clipboard-native` **main 병합(09-03)**. 사용자 실기로 잡은 결함 둘 해소:
+- ★ **로그인 자동 시작 무동작** — beep 이식 가정(무인수 = 상주) ≠ clip(무인수 = 점검) → 등록 명령에 `tray` 인자 누락, **3-OS 공통**(`TRAY_ARG`).
+  desktop 실행기 재현 ✓ · 로그인 실기 ⏳. 부수: 단일 인스턴스 가드 없음 → **T-12e4** 등재.
+- ★ **Firefox 한글 `\uXXXX` · 터미널 `\E2\9E\9C`** — Mutter XWayland 브리지가 charset 없는 `text/plain`(GTK = ASCII 이스케이프)을
+  선두에 두고, 우리는 TARGETS 순서의 첫 텍스트 타깃을 집었다 → **UTF-8 보장 순위**(`text_rank`: charset=utf-8 → UTF8_STRING → text/plain → TEXT → STRING) +
+  실패 시 다음 순위. GTK3-X11 실증 ✓ · 브리지 순서는 사용자 재복사 검증 ⏳.
+- 2차 [18 §9-1b](18-build-and-test.md)·[21 §1-0](21-manual-test.md) 기능별 시스템 패키지 SSOT(클립보드 = 무설치) · 3차 터미널 붙여넣기 = VTE Ctrl+V 관례(결함 아님 · **T-15c** 등재) ·
+  `scripts/dev-restart.sh`. ✅ 사용자 확인: **최상위 고정 실동작**.
+
+---
+
+## 2026-09-03 (1차) — ★ T-14 본편: Linux 클립보드 내재화 — xclip 의존 소멸
+
+`feat/linux-clipboard-native`(09-03 병합 · 롤백 태그 `rollback/pre-linux-clipboard-native`).
+[29 §6](29-linux-clipboard-access.md) 설계 그대로 — `selection_x11.rs`(연결 3개: XFIXES 감시 · INCR 수신 · 서빙+INCR 송신) ·
+감시 사다리 1순위 = `x11rb`(폴링·spawn 소멸) · ★ 쓰기 = **표현 전부 게시**(1단 1개 제약 해소 · 텍스트 별칭 광고) ·
+에코 = 소유자 창 비교 · 도구 파이프 = 폴백 계단. 새 crate 0(x11rb `xfixes` feature만).
+
+**실측**: 실서버 왕복(1.5MB INCR·상한 도중 집행) ✓ · ★ **xclip 전무한 PC에서 E2E ✓**(외부 게시 → 수집 →
+트레이 최근·영속 seg) · `watch: ok (xwayland-x11rb)` · clippy 3타깃 · 테스트 전부 통과. ⏳ 사용자 실기 → 병합.
+
+---
+
 ## 2026-09-02 (1·2차) — 검색 완전판 · ★ 동적 언어 · 실기 M 반영
 
 팝업 검색 = 메인과 동일 스택(캐럿 깜밖임 · ×지우기 · 우클릭 편집 메뉴 · IME) · 최상위 고정(툴바 · 영속) ·

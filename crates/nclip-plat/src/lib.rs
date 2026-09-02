@@ -34,6 +34,9 @@ pub mod wayland_probe;
 /// EMF → RGBA(GDI 래스터화 · 09-02 — PPT 글상자 렌더 미리보기).
 #[cfg(windows)]
 pub mod emf;
+/// Linux 클립보드 직접 구현(x11rb + XFIXES — T-14 본편 · docs/29 §6).
+#[cfg(all(unix, not(target_os = "macos")))]
+pub(crate) mod selection_x11;
 #[cfg(any(all(unix, not(target_os = "macos")), test))]
 pub mod watch_linux;
 #[cfg(target_os = "macos")]

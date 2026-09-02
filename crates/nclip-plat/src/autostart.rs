@@ -10,9 +10,16 @@
 //! **경로는 부팅마다 재동기화한다**(호출자 = `apply_boot_settings`) — 포터블 채널(DR-4)은
 //! 실행 파일 위치가 옮겨질 수 있어, 등록된 옛 경로가 조용히 죽는다. 켜져 있으면 현재
 //! `current_exe()`로 덮어쓰고, 꺼져 있으면 등록을 걷어낸다(멱등 — 없으면 no-op).
+//!
+//! ⚠️ **beep과의 차이 — 등록 명령에는 반드시 [`TRAY_ARG`]가 붙는다.** beep은 무인수 = 상주지만
+//! clip은 무인수 = 환경 점검(`status`)이라, 인자 없이 등록하면 로그인 시 배너만 찍고 끝난다
+//! (09-03 실기 "자동 시작이 되지 않았어").
 
 use std::io;
 use std::path::Path;
+
+/// 상주 진입 부명령 — 자동 시작 등록 명령의 인자(`nexa-clip tray`). 런처 `.desktop`과 동일.
+pub const TRAY_ARG: &str = "tray";
 
 /// Windows Run 값 이름.
 #[cfg(windows)]
@@ -68,14 +75,18 @@ pub fn boot_sync(want_on: bool, was_registered: bool, os_registered: bool) -> Bo
 
 #[cfg(windows)]
 fn register(exe: &Path) -> io::Result<()> {
-    // 경로에 공백이 있어도 하나의 명령으로 읽히게 따옴표로 감싼다.
-    let cmd = format!("\"{}\"", exe.display());
-    reg::set_run_value(APP_NAME, &cmd)
+    reg::set_run_value(APP_NAME, &run_value(&exe.display().to_string()))
 }
 
 #[cfg(windows)]
 fn unregister() -> io::Result<()> {
     reg::delete_run_value(APP_NAME)
+}
+
+/// Run 값 — 경로에 공백이 있어도 하나의 명령으로 읽히게 따옴표로 감싸고 `tray`를 붙인다.
+#[cfg(any(windows, test))]
+fn run_value(exe: &str) -> String {
+    format!("\"{exe}\" {TRAY_ARG}")
 }
 
 #[cfg(windows)]
@@ -280,7 +291,7 @@ fn plist_content(exe: &str) -> String {
 <dict>
     <key>Label</key><string>{MAC_LABEL}</string>
     <key>ProgramArguments</key>
-    <array><string>{}</string></array>
+    <array><string>{}</string><string>{TRAY_ARG}</string></array>
     <key>RunAtLoad</key><true/>
 </dict>
 </plist>
@@ -333,7 +344,7 @@ fn linux_desktop_path() -> io::Result<std::path::PathBuf> {
 #[cfg(any(all(unix, not(target_os = "macos")), test))]
 fn desktop_content(exe: &str) -> String {
     format!(
-        "[Desktop Entry]\nType=Application\nName=Nexa Clip\nExec={}\nTerminal=false\nX-GNOME-Autostart-enabled=true\n",
+        "[Desktop Entry]\nType=Application\nName=Nexa Clip\nExec={} {TRAY_ARG}\nTerminal=false\nX-GNOME-Autostart-enabled=true\n",
         exec_quote(exe)
     )
 }
@@ -418,7 +429,7 @@ pub fn install_launcher(icon_png: &[u8]) -> io::Result<()> {
 #[cfg(any(all(unix, not(target_os = "macos")), test))]
 fn launcher_content(exe: &str) -> String {
     format!(
-        "[Desktop Entry]\nType=Application\nName=Nexa Clip\nComment=Clipboard manager\nExec={} tray\nIcon=nexa-clip\nTerminal=false\nCategories=Utility;\nStartupWMClass=nexa-clip\n",
+        "[Desktop Entry]\nType=Application\nName=Nexa Clip\nComment=Clipboard manager\nExec={} {TRAY_ARG}\nIcon=nexa-clip\nTerminal=false\nCategories=Utility;\nStartupWMClass=nexa-clip\n",
         exec_quote(exe)
     )
 }
@@ -438,7 +449,9 @@ mod tests {
     #[test]
     fn plist_escapes_xml_and_carries_label() {
         let p = plist_content("/Users/a&b/nexa <clip>");
-        assert!(p.contains("<string>/Users/a&amp;b/nexa &lt;clip&gt;</string>"));
+        assert!(
+            p.contains("<string>/Users/a&amp;b/nexa &lt;clip&gt;</string><string>tray</string>")
+        );
         assert!(p.contains("<key>RunAtLoad</key><true/>"));
         assert!(p.contains(MAC_LABEL));
     }
@@ -446,12 +459,12 @@ mod tests {
     #[test]
     fn desktop_quotes_exec_with_spaces_and_reserved() {
         let d = desktop_content(r#"/opt/my apps/nexa"clip"#);
-        assert!(d.contains("Exec=\"/opt/my apps/nexa\\\"clip\""));
+        assert!(d.contains("Exec=\"/opt/my apps/nexa\\\"clip\" tray\n"));
         assert!(d.starts_with("[Desktop Entry]\n"));
         assert!(d.contains("X-GNOME-Autostart-enabled=true"));
     }
 
-    // 런처(.desktop)는 자동 시작 항목과 달리 **`tray` 인자와 `StartupWMClass`** 가 계약이다
+    // 런처(.desktop)는 `tray` 인자(자동 시작과 공통)에 더해 **`StartupWMClass`** 가 계약이다
     // (Dock 아이콘이 창에 붙는 근거 — 08-30 "톱니바퀴로 보인다").
     #[test]
     fn launcher_carries_tray_arg_and_wm_class() {
@@ -459,6 +472,15 @@ mod tests {
         assert!(l.contains("Exec=\"/opt/my apps/nexa\\\"clip\" tray"));
         assert!(l.contains("StartupWMClass=nexa-clip"));
         assert!(l.contains("Icon=nexa-clip"));
+    }
+
+    // Windows Run 값도 같은 계약 — 인자 없이 등록하면 로그인 시 환경 점검만 찍고 끝난다(09-03).
+    #[test]
+    fn run_value_quotes_path_and_carries_tray_arg() {
+        assert_eq!(
+            run_value(r"C:\Program Files\nexa-clip.exe"),
+            r#""C:\Program Files\nexa-clip.exe" tray"#
+        );
     }
 
     #[test]
