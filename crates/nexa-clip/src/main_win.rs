@@ -384,7 +384,7 @@ impl MainWin {
                 thumb: item.thumb.as_ref().map(|(w, h, rgba)| {
                     nclip_ctl::theme::IconImage::from_rgba(*w, *h, rgba.clone())
                 }),
-                img_dims: parse_dims(&item.label),
+                img_dims: display_dims(&item.reps).or_else(|| parse_dims(&item.label)),
                 plain: plain_of(&item.reps).or_else(|| svg_text(&item.reps)),
             };
             if row.pinned {
@@ -1948,8 +1948,50 @@ fn plain_of(reps: &[nclip_core::RawRep]) -> Option<String> {
     decode_plain(&r.format, &r.data)
 }
 
-/// 라벨의 "W×H" 치수 파싱(언어 무관 — × 양쪽 숫자만 본다) — 섬네일은 축소본이라
-/// 절대 크기는 라벨이 유일한 출처다(09-02 가변 행).
+/// ★ 표시 치수 = **문서 논리 크기**(09-02 사용자 — "CopyQ 배율 차용"):
+/// PPT 래스터(PNG/DIB)는 ~150dpi 렌더라 화소 수 그대로 그리면 실물보다 ~1.56배
+/// 크다. CopyQ(Qt)는 SVG **선언 크기**(예: 447×51)로 그려 실물과 비슷하다.
+/// 우선순위: SVG width/height → EMF 프레임(0.01mm→96dpi) → 없음(래스터 화소 폴백).
+fn display_dims(reps: &[nclip_core::RawRep]) -> Option<(u32, u32)> {
+    if let Some(r) = reps.iter().find(|r| r.format.starts_with("image/svg")) {
+        if let Ok(xml) = std::str::from_utf8(&r.data) {
+            if let (Some(w), Some(h)) = (svg_attr(xml, "width"), svg_attr(xml, "height")) {
+                return Some((w, h));
+            }
+        }
+    }
+    if let Some(r) = reps
+        .iter()
+        .find(|r| r.format == "CF_ENHMETAFILE" && r.data.len() >= 40)
+    {
+        let g = |o: usize| i32::from_le_bytes(r.data[o..o + 4].try_into().unwrap_or_default());
+        let (w01, h01) = (i64::from(g(32) - g(24)), i64::from(g(36) - g(28)));
+        let (w, h) = (
+            (w01 * 96 / 2540).max(0) as u32,
+            (h01 * 96 / 2540).max(0) as u32,
+        );
+        if w > 0 && h > 0 {
+            return Some((w, h));
+        }
+    }
+    None
+}
+
+/// 첫 `<svg>` 태그의 수치 속성(px 단위 가정 · `"100%"` 등은 실패 = 폴백).
+fn svg_attr(xml: &str, name: &str) -> Option<u32> {
+    let i = xml.find("<svg")?;
+    let tag = &xml[i..i + xml[i..].find('>')?];
+    let pat = format!("{name}=\"");
+    let j = tag.find(&pat)? + pat.len();
+    let v: f32 = tag[j..j + tag[j..].find('"')?]
+        .trim_end_matches("px")
+        .parse()
+        .ok()?;
+    (v >= 1.0).then(|| v.round() as u32)
+}
+
+/// 라벨의 "W×H" 치수 파싱(언어 무관 — × 양쪽 숫자만 본다) — 논리 크기를 못 얻는
+/// 항목(순수 래스터)의 폴백(09-02 가변 행).
 fn parse_dims(label: &str) -> Option<(u32, u32)> {
     let x = label.find('×')?;
     let w: u32 = label[..x]
