@@ -18,6 +18,9 @@ TextBox word-wrap(편집 시트 기본 켜짐 · Alt+Z + ★ 우상단 스위치
 19차: ★ 최상위 고정 Linux — 창만 XWayland(X11) 강제(`with_x11` · 환경변수 불변) · ★ HIDDEN_KEYS 누락으로
 창 상태 키 4종(최상위·미리보기·팝업 크기) 재시작 유실 발견·해소 · libxkbcommon-x11 선결 검사(미설치 = 정직 강등 + 안내).
 ⏳ 실기: `libxkbcommon-x11-0` 설치 후 최상위 실동작 · `wl-clipboard xclip` 설치로 감시 활성.
+20차: ★ **Linux 클립보드 접근 조사·설계 완료 → [29 신설](29-linux-clipboard-access.md)** — 경쟁 9종 실증(xclip 파이프 0/9 ·
+성숙 GUI 전원 직접 구현) · CopyQ 백엔드 정독(Qt 위임+방어층 · GNOME 셸 확장) · ★ EcoPaste **v1.0에서 Linux 철회** 발견(03 정정) ·
+구현 설계 권장안(29 §6 — x11rb 2연결 · XFIXES · INCR 양방향 · 다중 표현). ⏳ **확정 대기 3건**(폴백 유지 · PRIMARY 범위 · 종료 시 소멸) → 답 나오면 P1 착수.
 
 ---
 
