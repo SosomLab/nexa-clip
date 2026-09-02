@@ -1,4 +1,5 @@
-//! Linux 클립보드 감시 1단 — **OS 기본 도구 파이프** (T-14 Linux 축).
+//! Linux 클립보드 감시 — ★ **본편 = [`crate::selection_x11`] 직접 구현**(x11rb+XFIXES · 09-02)
+//! 이 1순위이고, 이 파일의 **도구 파이프 1단은 폴백 계단**으로 남는다(연결 실패·특수 환경).
 //!
 //! 외부 crate 0(DR-8) — beep `nbeep-plat/clipboard.rs`의 Linux 선례를 따라
 //! `wl-paste`(Wayland · wl-clipboard) → `xclip`(X11) 사다리를 파이프로 쓴다.
@@ -28,6 +29,25 @@
 
 use nclip_core::{ClipSnapshot, RawRep, UnsupportedReason, WatchCapability, WatchError};
 use std::process::{Command, Stdio};
+
+// ★ 직접 구현(T-14 본편) — Linux 실빌드에서만. 다른 OS의 test 빌드(순수부 검증)는 스텁.
+#[cfg(all(unix, not(target_os = "macos")))]
+use crate::selection_x11 as native;
+#[cfg(not(all(unix, not(target_os = "macos"))))]
+mod native {
+    pub(crate) fn available() -> bool {
+        false
+    }
+    pub(crate) fn list_targets(_cap: usize) -> Option<Vec<String>> {
+        None
+    }
+    pub(crate) fn read_target(_t: &str, _cap: usize) -> Option<Vec<u8>> {
+        None
+    }
+    pub(crate) fn watch(_f: Box<dyn Fn() + Send>) -> Result<(), String> {
+        Err("스텁 — 이 타깃에는 없다".into())
+    }
+}
 
 /// 변화가 있을 때 부를 것 — 스레드를 건너가므로 `Send`.
 pub type Sink = Box<dyn Fn(ClipSnapshot) + Send>;
@@ -66,7 +86,9 @@ const KDE_PW_HINT: &str = "x-kde-passwordManagerHint";
 enum Backend {
     /// Wayland — `wl-paste`(wl-clipboard).
     Wayland,
-    /// X11 — `xclip`.
+    /// ★ X11/XWayland — 직접 구현(x11rb + XFIXES · T-14 본편). 도구 불요.
+    X11Native,
+    /// X11 — `xclip`(폴백 계단).
     X11,
 }
 
@@ -94,6 +116,10 @@ fn pick_backend() -> Result<Backend, UnsupportedReason> {
     if data_control && tool_exists("wl-paste") {
         return Ok(Backend::Wayland);
     }
+    // ★ 본편 — X11/XWayland면 직접 붙는다(도구·설치 불요). 연결 실패는 아래 계단으로.
+    if x11 && native::available() {
+        return Ok(Backend::X11Native);
+    }
     if x11 && tool_exists("xclip") {
         return Ok(Backend::X11);
     }
@@ -116,6 +142,13 @@ pub fn capability() -> WatchCapability {
     match pick_backend() {
         Ok(Backend::Wayland) => WatchCapability::Supported {
             backend: "wayland-wl-paste",
+        },
+        Ok(Backend::X11Native) => WatchCapability::Supported {
+            backend: if std::env::var_os("WAYLAND_DISPLAY").is_some() {
+                "xwayland-x11rb"
+            } else {
+                "x11-x11rb"
+            },
         },
         Ok(Backend::X11) => WatchCapability::Supported {
             backend: if std::env::var_os("WAYLAND_DISPLAY").is_some() {
@@ -172,6 +205,7 @@ fn run_bytes(cmd: &str, args: &[&str], cap: usize) -> Option<Vec<u8>> {
 /// 지금 클립보드가 내놓는 타깃(MIME/atom) 목록.
 fn list_targets(backend: Backend) -> Option<Vec<String>> {
     let raw = match backend {
+        Backend::X11Native => return native::list_targets(MAX_TARGETS_BYTES),
         Backend::Wayland => run_bytes("wl-paste", &["--list-types"], MAX_TARGETS_BYTES)?,
         Backend::X11 => run_bytes(
             "xclip",
@@ -192,6 +226,7 @@ fn list_targets(backend: Backend) -> Option<Vec<String>> {
 /// 타깃 하나의 날바이트.
 fn read_target(backend: Backend, target: &str) -> Option<Vec<u8>> {
     match backend {
+        Backend::X11Native => native::read_target(target, MAX_REP_BYTES),
         Backend::Wayland => run_bytes(
             "wl-paste",
             &["--no-newline", "--type", target],
@@ -323,9 +358,54 @@ fn diag(msg: &str) {
 pub fn start(sink: Sink) -> Result<(), WatchError> {
     let backend = pick_backend().map_err(WatchError::Unsupported)?;
     diag(&format!("Linux 감시 시작 — 백엔드 {backend:?}"));
+    if backend == Backend::X11Native {
+        return native_event_loop(sink);
+    }
     std::thread::Builder::new()
         .name("nclip-watch-linux".into())
         .spawn(move || poll_loop(backend, &sink))
+        .map_err(|e| WatchError::Os(format!("감시 스레드 생성 실패: {e}")))?;
+    Ok(())
+}
+
+/// ★ 본편 감시 — XFIXES 이벤트가 깨우면 한 벌 읽는다. **유휴 비용 0**(폴링·spawn 소멸 · DR-9).
+///
+/// 몰린 이벤트(연속 복사)는 채널을 비워 한 번으로 합치고, [`settle`]이 부분 스냅숏을
+/// 다잡는다(08-29 결함 재발 방지 — 이벤트 직후에도 표현이 덜 올라온 순간이 있다).
+/// 지문 중복 제거는 유지한다 — 내용이 같은 소유자 교체(재게시)를 걸러 준다.
+fn native_event_loop(sink: Sink) -> Result<(), WatchError> {
+    let (tx, rx) = std::sync::mpsc::channel::<()>();
+    native::watch(Box::new(move || {
+        let _ = tx.send(());
+    }))
+    .map_err(WatchError::Os)?;
+    std::thread::Builder::new()
+        .name("nclip-watch-x11rb".into())
+        .spawn(move || {
+            // 시작 시점의 내용은 "새 복사"가 아니다 — 기준선.
+            let mut last = read_snapshot_with(Backend::X11Native).map(|s| fingerprint(&s));
+            while rx.recv().is_ok() {
+                while rx.try_recv().is_ok() {} // 몰린 이벤트 합치기.
+                let Some(snap) = read_snapshot_with(Backend::X11Native) else {
+                    continue;
+                };
+                if snap.reps.is_empty() && !snap.concealed {
+                    continue;
+                }
+                let fp = fingerprint(&snap);
+                if last == Some(fp) {
+                    continue;
+                }
+                let (snap, fp) = settle(Backend::X11Native, snap, fp);
+                last = Some(fp);
+                diag(&format!(
+                    "변화 감지(x11rb) — 표현 {}개 · 표식 {}",
+                    snap.reps.len(),
+                    snap.concealed
+                ));
+                sink(snap);
+            }
+        })
         .map_err(|e| WatchError::Os(format!("감시 스레드 생성 실패: {e}")))?;
     Ok(())
 }

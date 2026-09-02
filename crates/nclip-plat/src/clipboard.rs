@@ -268,6 +268,12 @@ mod imp {
         // 읽기와 같은 규칙(08-30): data-control 없는 Wayland(GNOME)는 wl-copy가 숨은 창으로
         // 포커스를 뺏는다 → XWayland xclip(Mutter가 Wayland 쪽으로 동기화).
         let data_control = wayland && crate::wayland_probe::has_data_control();
+        // ★ 직접 구현(T-14 본편 09-02) — X11/XWayland면 도구 없이 **표현 전부** 게시
+        //   (1단의 "표현 1개" 제약 해소). data-control 있는 Wayland(KWin·Sway)만
+        //   wl-copy를 계속 쓴다(P3에서 내재화 예정 · docs/29 §6).
+        if !(data_control && tool_exists("wl-copy")) && x11 && crate::selection_x11::available() {
+            return crate::selection_x11::set_reps(reps);
+        }
         let (cmd, args): (&str, Vec<&str>) = if data_control && tool_exists("wl-copy") {
             ("wl-copy", vec!["--type", &ty])
         } else if x11 && tool_exists("xclip") {

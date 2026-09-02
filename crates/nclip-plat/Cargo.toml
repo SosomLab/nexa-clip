@@ -25,7 +25,8 @@ memmap2 = "0.9"
 zbus = "5"
 # K-1 Linux(T-9b) — X11 `XTest` 키 주입 + 포커스 창 조회. RustConnection = 순수 Rust(libxcb 불요) ·
 # winit과 같은 판 0.13(Cargo.lock 동일 항목 · 트리 중복 0).
-x11rb = { version = "0.13", default-features = false, features = ["xtest"] }
+# xfixes = T-14 본편 셀렉션 감시(09-02 · docs/29 §6 — 원장 docs/10 §3).
+x11rb = { version = "0.13", default-features = false, features = ["xtest", "xfixes"] }
 # Wayland 정식 창 활성화(`wlactivate` — 트레이 "열기"가 창을 **앞으로**). GNOME appindicator
 # 확장이 넘기는 xdg_activation 토큰으로 `activate(token, surface)`를 직접 부른다(winit에 외부
 # 토큰 API 없음). winit/sctk와 같은 판(0.31/0.3/0.32 — lock 동일 항목 · 산출물 증가 미미).
