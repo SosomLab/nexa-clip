@@ -82,8 +82,10 @@ pub(crate) struct Popup {
     rows: Vec<Row>,
     /// 선택(rows 인덱스).
     sel: usize,
-    /// 스크롤 시작 행(선택을 따라간다).
-    top: usize,
+    /// ★ 목록 세로 스크롤(**픽셀** · 09-02 실기 — 메인과 동일 규약).
+    scroll: i32,
+    /// 휠 소수 델타 누적기(터치패드).
+    wheel_frac: f32,
     shift: bool,
     ctrl: bool,
     alt: bool,
@@ -172,7 +174,8 @@ impl Popup {
             caret_phase: true,
             rows: Vec::new(),
             sel: 0,
-            top: 0,
+            scroll: 0,
+            wheel_frac: 0.0,
             shift: false,
             ctrl: false,
             alt: false,
@@ -192,8 +195,13 @@ impl Popup {
         if x < 0 || x >= size.width as i32 || y < header_h || y >= list_bot {
             return None;
         }
-        let vi = self.top + ((y - header_h) / row_h) as usize;
+        let vi = ((y - header_h + self.scroll.max(0)) / row_h) as usize;
         (vi < self.rows.len()).then_some(vi)
+    }
+
+    /// 행 높이(px) — 레이아웃 공용 상수 30pt.
+    fn row_h(&self) -> i32 {
+        ((self.scale * 30.0).round() as i32).max(1)
     }
 
     /// 캐럿 깜빡임 위상(셸 타이머) — 바뀌면 다시 그린다.
@@ -278,7 +286,7 @@ impl Popup {
         self.search.set_text("");
         self.search.set_focused(true);
         self.sel = 0;
-        self.top = 0;
+        self.scroll = 0;
         self.was_focused = false;
         self.opened_at = std::time::Instant::now();
         self.refresh(hist);
@@ -345,14 +353,17 @@ impl Popup {
         if self.sel >= self.rows.len() {
             self.sel = self.rows.len().saturating_sub(1);
         }
-        self.top = self.top.min(self.sel);
+        #[allow(clippy::cast_possible_wrap)]
+        {
+            self.scroll = self.scroll.min(self.sel as i32 * self.row_h());
+        }
     }
 
     /// ★ 이력이 바뀌었다(새 복사·승격) — **커서를 맨 위로**(방금 것이 첫 줄이고
     /// 선택도 그걸 가리킨다 — 08-28 사용자 요청) + 다시 그린다.
     pub(crate) fn on_history_changed(&mut self, hist: &History) {
         self.sel = 0;
-        self.top = 0;
+        self.scroll = 0;
         self.refresh(hist);
         self.redraw();
     }
@@ -405,7 +416,7 @@ impl Popup {
                 };
                 if changed {
                     self.sel = 0;
-                    self.top = 0;
+                    self.scroll = 0;
                     self.refresh(hist);
                     self.redraw();
                 }
@@ -415,7 +426,7 @@ impl Popup {
                 let (x, y) = self.cursor;
                 if self.feed_search(&CtlEvent::MouseMove { x, y }) {
                     self.sel = 0;
-                    self.top = 0;
+                    self.scroll = 0;
                     self.refresh(hist);
                 }
             }
@@ -454,7 +465,7 @@ impl Popup {
                     if let Some(ev) = ev {
                         if self.feed_search(&ev) {
                             self.sel = 0;
-                            self.top = 0;
+                            self.scroll = 0;
                             self.refresh(hist);
                         }
                     }
@@ -476,7 +487,7 @@ impl Popup {
                             primary: self.ctrl,
                         }) {
                             self.sel = 0;
-                            self.top = 0;
+                            self.scroll = 0;
                             self.refresh(hist);
                         }
                         self.redraw();
@@ -494,15 +505,21 @@ impl Popup {
                     }
                 }
             }
-            // 휠 스크롤 — 3행 단위(목록 관례). 선택은 그대로 두고 화면만 움직인다.
+            // ★ 휠 = 픽셀 스크롤(09-02 실기 — 행 단위·정수 절단이 패드에서 뚝뚝 끊겼다).
+            //   선택은 그대로 두고 화면만 움직인다.
             WindowEvent::MouseWheel { delta, .. } => {
-                let step = match delta {
-                    winit::event::MouseScrollDelta::LineDelta(_, y) => -*y as i32 * 3,
-                    winit::event::MouseScrollDelta::PixelDelta(p) => -(p.y as i32) / 20,
+                let dy = match delta {
+                    winit::event::MouseScrollDelta::LineDelta(_, y) => {
+                        -y * (self.row_h() * 3) as f32
+                    }
+                    winit::event::MouseScrollDelta::PixelDelta(p) => -(p.y as f32),
                 };
-                if step != 0 {
-                    let max_top = self.rows.len().saturating_sub(1);
-                    self.top = self.top.saturating_add_signed(step as isize).min(max_top);
+                self.wheel_frac += dy;
+                #[allow(clippy::cast_possible_truncation)]
+                let d = self.wheel_frac as i32;
+                if d != 0 {
+                    self.wheel_frac -= d as f32;
+                    self.scroll += d; // 상한은 paint에서 죈다.
                     self.redraw();
                 }
             }
@@ -514,7 +531,10 @@ impl Popup {
                     Key::Named(NamedKey::Escape) => return PopupAction::Close,
                     Key::Named(NamedKey::ArrowUp) => {
                         self.sel = self.sel.saturating_sub(1);
-                        self.top = self.top.min(self.sel);
+                        #[allow(clippy::cast_possible_wrap)]
+                        {
+                            self.scroll = self.scroll.min(self.sel as i32 * self.row_h());
+                        }
                         self.redraw();
                     }
                     Key::Named(NamedKey::ArrowDown) => {
@@ -538,7 +558,7 @@ impl Popup {
                             now_ms: 0,
                         }) {
                             self.sel = 0;
-                            self.top = 0;
+                            self.scroll = 0;
                             self.refresh(hist);
                         }
                         self.redraw();
@@ -578,7 +598,7 @@ impl Popup {
                         if let Some(t) = self.search.cut_selection(&mut inv) {
                             crate::cliptext::set_text(&t);
                             self.sel = 0;
-                            self.top = 0;
+                            self.scroll = 0;
                             self.refresh(hist);
                             self.redraw();
                         }
@@ -590,7 +610,7 @@ impl Popup {
                             let mut inv = Invalidations::default();
                             self.search.paste(t.trim_end_matches('\n'), &mut inv);
                             self.sel = 0;
-                            self.top = 0;
+                            self.scroll = 0;
                             self.refresh(hist);
                             self.redraw();
                         }
@@ -610,7 +630,7 @@ impl Popup {
                             }
                             if changed {
                                 self.sel = 0;
-                                self.top = 0;
+                                self.scroll = 0;
                                 self.refresh(hist);
                                 self.redraw();
                             }
@@ -655,9 +675,15 @@ impl Popup {
         let (iw, ih) = (size.width as i32, size.height as i32);
         let px = |v: f32| (v * self.scale).round() as i32;
         let row_h = px(30.0).max(1);
-        let visible = (((ih - px(24.0)) - px(38.0)) / row_h).max(1) as usize;
-        if self.sel >= self.top + visible {
-            self.top = self.sel + 1 - visible;
+        let list_h = ((ih - px(24.0)) - px(38.0)).max(1);
+        #[allow(clippy::cast_possible_wrap)]
+        {
+            let max_scroll = (self.rows.len() as i32 * row_h - list_h).max(0);
+            self.scroll = self.scroll.clamp(0, max_scroll);
+            let sel_bot = (self.sel as i32 + 1) * row_h;
+            if sel_bot > self.scroll + list_h {
+                self.scroll = sel_bot - list_h;
+            }
         }
         let Ok(mut buf) = surface.buffer_mut() else {
             return;
@@ -676,7 +702,7 @@ impl Popup {
                 &self.search,
                 &self.rows,
                 self.sel,
-                self.top,
+                self.scroll,
             );
         }
         let _ = buf.present();
@@ -694,7 +720,7 @@ fn draw(
     search: &TextBox,
     rows: &[Row],
     sel: usize,
-    top: usize,
+    scroll: i32,
 ) {
     let px = |v: f32| (v * s).round() as i32;
     let full = Rect::new(0, 0, w, h);
@@ -720,7 +746,9 @@ fn draw(
     // ── 목록(간략 보기 화법) ──
     let list_top = header_h;
     let list_bot = h - footer_h;
-    let visible = ((list_bot - list_top) / row_h).max(1) as usize;
+    let start = (scroll / row_h).max(0) as usize;
+    let off = scroll.rem_euclid(row_h);
+    let visible = ((list_bot - list_top + off + row_h - 1) / row_h).max(1) as usize;
     if rows.is_empty() {
         let lang = current_lang();
         let msg = if search.display_text().is_empty() {
@@ -730,9 +758,10 @@ fn draw(
         };
         dc.text(pad, list_top + px(12.0), full, msg, th.text_dim);
     }
-    for (vi, row) in rows.iter().enumerate().skip(top).take(visible) {
-        let y = list_top + ((vi - top) as i32) * row_h;
-        let clip = Rect::new(0, y, w, row_h.min(list_bot - y));
+    for (vi, row) in rows.iter().enumerate().skip(start).take(visible) {
+        let y = list_top - off + ((vi - start) as i32) * row_h;
+        let cy0 = y.max(list_top);
+        let clip = Rect::new(0, cy0, w, ((y + row_h).min(list_bot) - cy0).max(0));
         if vi == sel {
             dc.fill_rect(clip, th.sel_bg);
         } else if vi % 2 == 1 {

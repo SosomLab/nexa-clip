@@ -676,7 +676,12 @@ impl Msg {
             Msg::TrayQuit => ["Quit", "종료", "退出", "終了"],
             Msg::TraySettings => ["Settings", "설정", "设置", "設定"],
             Msg::SearchHint => ["Search…", "검색…", "搜索…", "検索…"],
-            Msg::MainTitleSuffix => ["Clipboard", "클립보드", "剪贴板", "クリップボード"],
+            Msg::MainTitleSuffix => [
+                "Clipboard Manager",
+                "클립보드 관리자",
+                "剪贴板管理器",
+                "クリップボードマネージャー",
+            ],
             Msg::MainNoItems => [
                 "No items yet — copy something",
                 "항목이 없습니다 — 복사하면 여기 쌓입니다",

@@ -143,7 +143,10 @@ pub(crate) struct MainWin {
     always_top: bool,
     rows: Vec<Row>,
     sel: usize,
-    top: usize,
+    /// ★ 목록 세로 스크롤(**픽셀** · 09-02 실기 — 행 단위는 터치패드에서 뚝뚝 끊겼다).
+    scroll: i32,
+    /// 휠 소수 델타 누적기 — 패드의 0.1노치도 쌓여서 움직인다(절단 0 방지).
+    wheel_frac: f32,
     cursor: (i32, i32),
     shift: bool,
     primary: bool,
@@ -189,7 +192,8 @@ impl MainWin {
             always_top: false,
             rows: Vec::new(),
             sel: 0,
-            top: 0,
+            scroll: 0,
+            wheel_frac: 0.0,
             cursor: (0, 0),
             shift: false,
             primary: false,
@@ -295,7 +299,7 @@ impl MainWin {
         self.search.set_text("");
         self.search.set_focused(true);
         self.sel = 0;
-        self.top = 0;
+        self.scroll = 0;
         self.refresh(hist);
         let attrs = crate::settings_win::win_name(crate::icon::with_icon(
             Window::default_attributes()
@@ -388,7 +392,7 @@ impl MainWin {
         if self.sel >= self.rows.len() {
             self.sel = self.rows.len().saturating_sub(1);
         }
-        self.top = self.top.min(self.sel);
+        // 스크롤은 paint에서 최대값으로만 죄인다 — 휠 위치를 존중(09-02).
     }
 
     /// 이력이 바뀌었다(캡처·핀·삭제) — 열려 있으면 다시 채우고 그린다.
@@ -521,7 +525,7 @@ impl MainWin {
         if x < l.x || x >= l.x + l.w || y < l.y || y >= l.y + l.h {
             return None;
         }
-        let vi = self.top + ((y - l.y) / self.row_h()) as usize;
+        let vi = ((y - l.y + self.scroll.max(0)) / self.row_h()) as usize;
         (vi < self.rows.len()).then_some(vi)
     }
 
@@ -754,13 +758,17 @@ impl MainWin {
                         }
                     }
                 }
-                let step = match delta {
-                    MouseScrollDelta::LineDelta(_, y) => -*y as i32 * 3,
-                    MouseScrollDelta::PixelDelta(p) => -(p.y as i32) / 20,
+                // ★ 픽셀 스크롤(09-02 실기) — 노치 1 = 3행 상당 · 패드 픽셀 델타는 그대로.
+                let dy = match delta {
+                    MouseScrollDelta::LineDelta(_, y) => -y * (self.row_h() * 3) as f32,
+                    MouseScrollDelta::PixelDelta(p) => -(p.y as f32),
                 };
-                if step != 0 && !self.rows.is_empty() {
-                    let max_top = self.rows.len() - 1;
-                    self.top = self.top.saturating_add_signed(step as isize).min(max_top);
+                self.wheel_frac += dy;
+                #[allow(clippy::cast_possible_truncation)]
+                let d = self.wheel_frac as i32;
+                if d != 0 && !self.rows.is_empty() {
+                    self.wheel_frac -= d as f32;
+                    self.scroll += d; // 상한은 paint에서 죈다(rows 길이×행 높이).
                     self.redraw();
                 }
             }
@@ -1014,11 +1022,13 @@ impl MainWin {
 
     fn ensure_visible(&mut self, h: i32) {
         let l_h = (h - self.header_h() - self.status_h() - self.preview_h_of(h)).max(1);
-        let visible = (l_h / self.row_h()).max(1) as usize;
-        if self.sel < self.top {
-            self.top = self.sel;
-        } else if self.sel >= self.top + visible {
-            self.top = self.sel + 1 - visible;
+        let row_h = self.row_h();
+        #[allow(clippy::cast_possible_wrap)]
+        let sel_y = self.sel as i32 * row_h;
+        if sel_y < self.scroll {
+            self.scroll = sel_y;
+        } else if sel_y + row_h > self.scroll + l_h {
+            self.scroll = sel_y + row_h - l_h;
         }
     }
 
@@ -1032,6 +1042,12 @@ impl MainWin {
             return;
         };
         let (w, h) = (size.width as i32, size.height as i32);
+        {
+            let l = self.list_rect(w, h);
+            #[allow(clippy::cast_possible_wrap)]
+            let max_scroll = (self.rows.len() as i32 * self.row_h() - l.h).max(0);
+            self.scroll = self.scroll.clamp(0, max_scroll);
+        }
         {
             let pad = (self.scale * 10.0).round() as i32;
             let mut inv = Invalidations::default();
@@ -1144,7 +1160,10 @@ impl MainWin {
         // ── ③ 목록(핀 구획 먼저) ──
         let list = self.list_rect(w, h);
         let row_h = self.row_h();
-        let visible = (list.h / row_h).max(1) as usize;
+        // 픽셀 스크롤 — 위·아래 **부분 행**까지 그린다(off = 첫 행이 가려진 픽셀).
+        let start = (self.scroll / row_h).max(0) as usize;
+        let off = self.scroll.rem_euclid(row_h);
+        let visible = ((list.h + off + row_h - 1) / row_h).max(1) as usize;
         if self.rows.is_empty() {
             let lang = current_lang();
             let msg = if self.search.display_text().is_empty() {
@@ -1155,9 +1174,15 @@ impl MainWin {
             dc.text(list.x + pad, list.y + px(12.0), full, msg, th.text_dim);
         }
         let mut pin_divider_done = false;
-        for (vi, row) in self.rows.iter().enumerate().skip(self.top).take(visible) {
-            let y = list.y + ((vi - self.top) as i32) * row_h;
-            let clip = Rect::new(list.x, y, list.w, row_h.min(list.y + list.h - y));
+        for (vi, row) in self.rows.iter().enumerate().skip(start).take(visible) {
+            let y = list.y - off + ((vi - start) as i32) * row_h;
+            let cy0 = y.max(list.y);
+            let clip = Rect::new(
+                list.x,
+                cy0,
+                list.w,
+                ((y + row_h).min(list.y + list.h) - cy0).max(0),
+            );
             if vi == self.sel {
                 dc.fill_rect(clip, th.sel_bg);
             } else if vi % 2 == 1 {
@@ -1180,8 +1205,10 @@ impl MainWin {
             let show_glyph = self.view != ViewMode::Plain;
             if show_glyph {
                 if let Some(img) = &row.thumb {
+                    // ★ Rich = 행 높이만큼 인라인 미리보기(09-02 사용자 — Ctrl+1은 미리보기
+                    //   패널 없이도 내용이 보이게) · Compact는 작은 섬네일 유지.
                     let box_side = if self.view == ViewMode::Rich {
-                        px(40.0)
+                        px(64.0)
                     } else {
                         px(24.0)
                     };
@@ -1213,7 +1240,7 @@ impl MainWin {
                 + if self.view == ViewMode::Plain {
                     px(0.0)
                 } else if self.view == ViewMode::Rich {
-                    px(48.0)
+                    px(72.0)
                 } else {
                     px(30.0)
                 };
