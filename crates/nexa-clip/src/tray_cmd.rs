@@ -45,7 +45,8 @@ use crate::icon::{icon_rgba, ICON_SIDE};
 const MENU_LABEL_CHARS: usize = 44;
 
 /// 목록 썸네일 긴 변(px) — 팝업 행(30px)에 들어가는 크기의 2배(고DPI 여유).
-const THUMB_SIDE: u32 = 48;
+/// ★ 09-02: 48→160 — Rich 본문 존(≈행 높이)에 그려도 흐릿하지 않게.
+const THUMB_SIDE: u32 = 160;
 /// ★ 미리보기 원본 디코드 상한(09-02 K4) — 패널 표시용이라 이 이상은 낭비.
 const PREVIEW_SIDE: u32 = 1600;
 

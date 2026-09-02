@@ -379,7 +379,7 @@ impl MainWin {
                 thumb: item.thumb.as_ref().map(|(w, h, rgba)| {
                     nclip_ctl::theme::IconImage::from_rgba(*w, *h, rgba.clone())
                 }),
-                plain: plain_of(&item.reps),
+                plain: plain_of(&item.reps).or_else(|| svg_text(&item.reps)),
             };
             if row.pinned {
                 pinned.push(row);
@@ -1205,13 +1205,7 @@ impl MainWin {
             let show_glyph = self.view != ViewMode::Plain;
             if show_glyph {
                 if let Some(img) = &row.thumb {
-                    // ★ Rich = 행 높이만큼 인라인 미리보기(09-02 사용자 — Ctrl+1은 미리보기
-                    //   패널 없이도 내용이 보이게) · Compact는 작은 섬네일 유지.
-                    let box_side = if self.view == ViewMode::Rich {
-                        px(64.0)
-                    } else {
-                        px(24.0)
-                    };
+                    let box_side = px(24.0);
                     let (iw, ih) = (img.w.max(1) as i32, img.h.max(1) as i32);
                     let (dw, dh) = if iw >= ih {
                         (box_side, (box_side * ih / iw).max(1))
@@ -1240,7 +1234,7 @@ impl MainWin {
                 + if self.view == ViewMode::Plain {
                     px(0.0)
                 } else if self.view == ViewMode::Rich {
-                    px(72.0)
+                    px(48.0)
                 } else {
                     px(30.0)
                 };
@@ -1288,6 +1282,14 @@ impl MainWin {
                             th.text_dim,
                         );
                     }
+                } else if let Some(img) = &row.thumb {
+                    // ★ 본문 존 = 이미지(09-02 사용자 — Ctrl+1은 미리보기 내용이 행 높이만큼
+                    //   바로 보이게). 높이 기준 비율 — 왕가로 이미지가 슬리버가 되지 않는다.
+                    let zone_h = (row_h - px(34.0)).max(8);
+                    let (zw, zh) = (img.w.max(1) as i32, img.h.max(1) as i32);
+                    let dw = (zone_h * zw / zh).max(1);
+                    let dst = Rect::new(lx, y + px(28.0), dw, zone_h);
+                    dc.image_scaled(dst, img, label_clip);
                 }
                 dc.select_font(FontSlot::Base, false);
             }
@@ -1850,6 +1852,46 @@ fn plain_of(reps: &[nclip_core::RawRep]) -> Option<String> {
     }
     let (_, r) = best?;
     decode_plain(&r.format, &r.data)
+}
+
+/// ★ 래스터 표현 없이 SVG만 오는 항목(PPT 글상자)의 텍스트 폴백(09-02 실기 —
+/// 순위 선택 도입으로 SVG 마크업이 통째로 빠지자 크기·내용이 아예 안 보였다).
+/// `<text>` 요소 안의 글만 모은다 — 내부 태그(tspan) 제거 · 기본 엔티티 해제.
+fn svg_text(reps: &[nclip_core::RawRep]) -> Option<String> {
+    let r = reps.iter().find(|r| r.format.starts_with("image/svg"))?;
+    let xml = std::str::from_utf8(&r.data).ok()?;
+    let mut out = String::new();
+    let mut rest = xml;
+    while let Some(i) = rest.find("<text") {
+        let after = &rest[i..];
+        let Some(open_end) = after.find('>') else {
+            break;
+        };
+        let Some(close) = after.find("</text") else {
+            break;
+        };
+        if close > open_end {
+            let mut in_tag = false;
+            for ch in after[open_end + 1..close].chars() {
+                match ch {
+                    '<' => in_tag = true,
+                    '>' => in_tag = false,
+                    c if !in_tag => out.push(c),
+                    _ => {}
+                }
+            }
+            out.push(' ');
+        }
+        rest = &after[close + 6..];
+    }
+    let out = out
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+        .replace("&amp;", "&");
+    let t = out.trim();
+    (!t.is_empty()).then(|| t.to_string())
 }
 
 fn tool_label(t: Tool) -> &'static str {
