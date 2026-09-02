@@ -467,7 +467,7 @@ impl MainWin {
     fn tool_rect(&self, slot: usize) -> Rect {
         let side = self.px(28.0);
         let x = (self.toolbar_w() - side) / 2;
-        let mut y = self.header_h() + self.px(6.0);
+        let mut y = self.px(6.0); // ★ 전고 툴바(09-02) — 헤더와 무관하게 맨 위부터.
         for (k, t) in TOOLS_TOP.iter().enumerate() {
             if k == slot {
                 break;
@@ -1052,11 +1052,12 @@ impl MainWin {
             let pad = (self.scale * 10.0).round() as i32;
             let mut inv = Invalidations::default();
             self.search.set_scale(self.scale);
+            let tbw = self.toolbar_w();
             self.search.set_bounds(
                 Rect::new(
-                    pad,
+                    tbw + pad,
                     (self.scale * 7.0).round() as i32,
-                    (w - pad * 2).max(40),
+                    (w - tbw - pad * 2).max(40),
                     (self.scale * 24.0).round() as i32,
                 ),
                 &mut inv,
@@ -1122,23 +1123,18 @@ impl MainWin {
         dc.select_font(FontSlot::Base, false);
         dc.fill_rect(full, th.window_bg);
 
-        // ── ① 검색 1줄 — 정식 TextBox(캐럿·선택 표시 · 09-01) ──
+        // ── ② 좌측 세로 툴바 — ★ 전고(09-02 사용자 — 툴바가 먼저 서고
+        //    검색은 우측 영역 상단만 차지) ──
         let header_h = self.header_h();
-        dc.fill_rect(Rect::new(0, 0, w, header_h), th.chrome_bg);
         let pad = px(10.0);
-        self.search.paint(dc, &th);
-        dc.fill_rect(Rect::new(0, header_h - 1, w, 1), th.border);
-
-        // ── ② 좌측 세로 툴바 ──
         let tb_w = self.toolbar_w();
-        dc.fill_rect(
-            Rect::new(0, header_h, tb_w, h - header_h - self.status_h()),
-            th.chrome_bg,
-        );
-        dc.fill_rect(
-            Rect::new(tb_w - 1, header_h, 1, h - header_h - self.status_h()),
-            th.border,
-        );
+        dc.fill_rect(Rect::new(0, 0, tb_w, h - self.status_h()), th.chrome_bg);
+        dc.fill_rect(Rect::new(tb_w - 1, 0, 1, h - self.status_h()), th.border);
+
+        // ── ① 검색 1줄 — 툴바 오른쪽(정식 TextBox · 09-01) ──
+        dc.fill_rect(Rect::new(tb_w, 0, w - tb_w, header_h), th.chrome_bg);
+        self.search.paint(dc, &th);
+        dc.fill_rect(Rect::new(tb_w, header_h - 1, w - tb_w, 1), th.border);
         let has_sel = !self.rows.is_empty();
         for (k, t) in TOOLS_TOP.iter().enumerate() {
             match t {
@@ -1190,7 +1186,7 @@ impl MainWin {
             }
             // 핀 구획 경계 — 첫 비고정 행 위에 한 줄.
             if !pin_divider_done && !row.pinned && vi > 0 {
-                dc.fill_rect(Rect::new(list.x, y, list.w, 1), th.accent);
+                dc.fill_rect(Rect::new(list.x, cy0, list.w, 1), th.accent);
                 pin_divider_done = true;
             }
             let tx = list.x + pad;
@@ -1262,7 +1258,8 @@ impl MainWin {
                 dc.text(right, text_y, clip, &row.source, th.text_dim);
                 right -= px(8.0);
             }
-            let label_clip = Rect::new(lx, y, (right - lx).max(0), row_h);
+            // ★ 세로는 행 clip을 따른다 — 부분 행이 검색바/패널을 침범하지 않게(09-02).
+            let label_clip = Rect::new(lx, clip.y, (right - lx).max(0), clip.h);
             dc.text(lx, text_y, label_clip, &row.label, th.text);
             if self.view == ViewMode::Rich {
                 dc.select_font(FontSlot::Status, false);
