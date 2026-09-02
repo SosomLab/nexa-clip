@@ -535,9 +535,9 @@ impl MainWin {
     /// **비율 축소**(09-02 사용자 — 복사본마다 확대율이 제각각이던 문제).
     fn rich_fit(&self, ow: i32, oh: i32, content_w: i32) -> (i32, i32) {
         let max_h = self.px(200.0);
-        // ★ 기본 배율 80%(09-02 사용자 — "지금보다 20% 축소") — 목록은 훑기용이라
-        //   실물보다 살짝 작은 쪽이 보기 좋다(CopyQ도 유사).
-        let (ow, oh) = ((ow * 4 / 5).max(1), (oh * 4 / 5).max(1));
+        // ★ 기본 배율 64%(09-02 사용자 — 80%에서 "80% 수준으로 더" = 0.8×0.8) —
+        //   목록은 훑기용이라 실물보다 작은 쪽이 보기 좋다.
+        let (ow, oh) = ((ow * 16 / 25).max(1), (oh * 16 / 25).max(1));
         let mut dw = ow.max(1).min(content_w.max(40));
         let mut dh = (oh.max(1) * dw / ow.max(1)).max(1);
         if dh > max_h {
