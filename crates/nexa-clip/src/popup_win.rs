@@ -246,6 +246,22 @@ impl Popup {
     }
 
     /// ★ 보기 모드 적용(`ui.popup_view` — 열 때마다 셸이 읽어 넘긴다 · 09-02).
+    /// 선택 행을 화면 안으로 — 키 이동 몷(09-02 · paint 스냅 제거의 짝).
+    fn ensure_visible(&mut self) {
+        let Some(win) = &self.window else { return };
+        if self.sel + 1 >= self.row_offs.len() {
+            return;
+        }
+        let px = |v: f32| (v * self.scale).round() as i32;
+        let list_h = ((win.inner_size().height as i32 - px(24.0)) - px(38.0)).max(1);
+        let (top, bot) = (self.row_offs[self.sel], self.row_offs[self.sel + 1]);
+        if top < self.scroll {
+            self.scroll = top;
+        } else if bot > self.scroll + list_h {
+            self.scroll = bot - list_h;
+        }
+    }
+
     pub(crate) fn set_view_code(&mut self, code: &str) {
         self.view = ViewMode::from_code(code).unwrap_or(ViewMode::Rich);
     }
@@ -710,16 +726,14 @@ impl Popup {
                     Key::Named(NamedKey::Escape) => return PopupAction::Close,
                     Key::Named(NamedKey::ArrowUp) => {
                         self.sel = self.sel.saturating_sub(1);
-                        #[allow(clippy::cast_possible_wrap)]
-                        {
-                            self.scroll = self.scroll.min(self.sel as i32 * self.row_h());
-                        }
+                        self.ensure_visible();
                         self.redraw();
                     }
                     Key::Named(NamedKey::ArrowDown) => {
                         if self.sel + 1 < self.rows.len() {
                             self.sel += 1;
                         }
+                        self.ensure_visible();
                         self.redraw();
                     }
                     Key::Named(NamedKey::Enter) => {
@@ -859,16 +873,11 @@ impl Popup {
             return;
         }
         {
+            // ★ 상한 클램프만 — 매 프레임 선택 추종은 휠이 옮긴 위치를 되돌려
+            //   "선택 아래로 스크롤 불가"가 된다(09-02 실기 — 메인 4차와 같은 결함).
+            //   추종은 키 이동 몷(ensure_visible).
             let total = *self.row_offs.last().unwrap_or(&0);
             self.scroll = self.scroll.clamp(0, (total - list_h).max(0));
-            if self.sel + 1 < self.row_offs.len() {
-                let (top, bot) = (self.row_offs[self.sel], self.row_offs[self.sel + 1]);
-                if top < self.scroll {
-                    self.scroll = top;
-                } else if bot > self.scroll + list_h {
-                    self.scroll = bot - list_h;
-                }
-            }
         }
         let Ok(mut buf) = surface.buffer_mut() else {
             return;
