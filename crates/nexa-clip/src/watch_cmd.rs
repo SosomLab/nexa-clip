@@ -90,7 +90,7 @@ impl Gate {
 fn unsupported_hint(reason: &UnsupportedReason) -> String {
     match reason {
         UnsupportedReason::MissingTool(tool) => format!(
-            "{tool} 이(가) 없습니다. 설치하세요 — Ubuntu/Debian `sudo apt install wl-clipboard xclip` · \
+            "{tool} 이(가) 없습니다(도구는 ★ **폴백** — X11/XWayland에서는 내재 구현이 우선이고, 이 안내는 그마저 닿지 않는 환경이다). 설치하세요 — Ubuntu/Debian `sudo apt install wl-clipboard xclip` · \
              Fedora/RHEL `sudo dnf install wl-clipboard xclip` · Arch `sudo pacman -S wl-clipboard xclip` · \
              openSUSE `sudo zypper install wl-clipboard xclip` · Alpine `doas apk add wl-clipboard xclip`."
         ),
