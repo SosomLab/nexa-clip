@@ -46,10 +46,39 @@
 2. **P2 — 쓰기 서빙**: 소유권 상주 스레드 + TARGETS/MULTIPLE/INCR 송신 → xclip 완전 제거 + 다중 표현.
 3. **P3(선택) — Wayland 내재화**: `wayland-protocols 0.32(staging)`의 `ext-data-control-v1`로 KWin/Sway용 wl-clipboard 제거. **GNOME 부재만 불가항력** → XWayland 경로가 메운다(경쟁도 동일).
 
-## 4. 출처
+## 4. CopyQ 백엔드 평가 (2026-09-02 소스 정독)
+
+> 구조: `platform/x11/` = x11platform{,clipboard,window}.cpp + `systemclipboard/`(Wayland 폴백).
+
+**의외의 사실 — X11 "직접 구현"의 실체는 Qt 위임이다.** `x11platformclipboard.cpp`는 raw X11
+셀렉션 코드가 아니라 **QClipboard 신호 위에 방어층을 쌓은 것**이다: 변화 감지 = Qt `changed()`
+신호 + 적응 타이머(50→500ms) 재확인, 3회 재시도 백오프, TIMESTAMP 원자 비교(중복/낡음 판별),
+시퀀스 가드(ClipboardDataGuard — 읽는 동안 내용이 바뀌는 경합 탐지), `XQueryPointer`로
+"드래그 선택 중이면 대형 읽기 보류" 휴리스틱까지. **X11 셀렉션이 얼마나 경합투성이인지에 대한
+20년 치 흉터 목록**으로 읽어야 한다.
+
+**Wayland 폴백 = KDE 코드 사본.** `systemclipboard/waylandclipboard.cpp`는 KGuiAddons
+KSystemClipboard의 복제(저작권 헤더가 KDE 개발자)로, **zwlr_data_control만** 구현(ext는 KF6
+링크 시에만). 파이프+`poll()` 1초 타임아웃 동기 읽기, SIGPIPE 전용 스레드, **포커스 없을 때
+동기 요청 = 교착이라 포커스 감시자를 별도 바인딩**하는 우회가 핵심 복잡도다.
+
+**GNOME은 결국 셸 확장** — D-Bus 클라이언트(`GnomeClipboardExtensionClient`)로 자사 GNOME
+Shell 확장에 위임. 공식 알려진 문제: **Flatpak/AppImage에선 확장 등록 불가 = 수집 불가** ·
+`QT_QPA_PLATFORM=xcb` 강제 시 "창 닫으면 감시 실패" 부작용.
+
+| 평가 축 | 판정 |
+|---|---|
+| 견고성 | ★ 상 — 경합·낡음·재시도·보류 처리가 교과서적. 이식 가치 있는 목록 |
+| 구조 순수성 | 중 — Qt 의존이 곧 룩 의존(우리 DR-1과 상극) · Wayland는 3중 폴백(KF6 → 자체 zwlr → Qt) 짜깁기 |
+| GNOME 답 | 하 — 확장 요구 = 배포 형태 제약 + 사용자 설치 부담. **우리 XWayland 직결이 더 단순** |
+| 우리에게의 교훈 | ① 방어층(재시도·TIMESTAMP·읽는-동안-바뀜 가드·드래그 중 보류)은 **P1 설계에 수용** ② Qt층이 없는 우리는 그 버그 우회 3종이 애초에 불필요 ③ 확장 없이 XWayland로 가는 우리 판정이 배포 관점에서 우위 |
+
+
+## 5. 출처
 
 - CopyQ: [x11platformclipboard.cpp](https://github.com/hluk/CopyQ/blob/master/src/platform/x11/x11platformclipboard.cpp) · [Known Issues(GNOME 확장·Wayland)](https://copyq.readthedocs.io/en/latest/known-issues.html)
 - Klipper/KSystemClipboard: [KDE MR !1(Wayland 포팅)](https://invent.kde.org/plasma/plasma-workspace/-/merge_requests/1) · [wlr-data-control](https://wayland.app/protocols/wlr-data-control-unstable-v1)
 - GPaste: [Mutter MR !320(클립보드 매니저 논의)](https://gitlab.gnome.org/GNOME/mutter/-/merge_requests/320)
 - EcoPaste: [tauri-plugin-clipboard-x](https://github.com/ayangweb/tauri-plugin-clipboard-x) · [clipboard-rs](https://github.com/ChurchTao/clipboard-rs) · [x11-clipboard(x11rb+xfixes 실증)](https://github.com/quininer/x11-clipboard)
+- CopyQ Wayland 폴백: [waylandclipboard.cpp(KDE 사본·zwlr)](https://github.com/hluk/CopyQ/blob/master/src/platform/x11/systemclipboard/waylandclipboard.cpp)
 - 진영 지형: [ArchWiki Clipboard](https://wiki.archlinux.org/title/Clipboard) · [Hyprland Wiki(cliphist)](https://wiki.hypr.land/Useful-Utilities/Clipboard-Managers/)
