@@ -37,7 +37,7 @@
 | ✅ | ★ **붙여넣기 모드 4개**(원본/평문/객체로/경로만 · `PasteAs::applicable`) — [DR-35](10-decision-record.md) |
 | 🚧 | 남은 컨트롤에 hover 적용(스위치·색상·툴바·풀다운) |
 | 🚧 | 보관 정책 · 타입 판별 · 중복 승격 파이프라인 |
-| 🚧 | `nclip-plat` — 클립보드 감시: **Windows ✅**(이벤트) · mac 폴링 📐 · X11/Wayland 📐 |
+| ✅ | `nclip-plat` — 클립보드 감시: **Windows ✅**(이벤트) · **mac ✅**(08-29 changeCount 폴링) · **Linux ✅**(09-03 · x11rb+XFIXES 내재화 · Wayland = XWayland 브리지 · 텍스트 타깃 UTF-8 순위) — 잔여: KWin/Sway data-control 내재화(P3) |
 | ✅ | ★ **`watch`·`peek` 진단 명령** — 복사한 것이 무엇으로 잡히는지 실기로 본다 |
 | ✅ | ★ **실기 18건 회귀 박제**(PPT·Excel·Edge·VS Code·Greenshot·CopyQ) |
 | ✅ | ★ **캡처 파이프라인** — 종류 판정 · `Preview` · 용량 규칙([27](27-capture-cases.md) → `nclip-core::capture`) |

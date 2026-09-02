@@ -4,6 +4,7 @@
 
 | 브랜치 | 생성 | 병합 | 커밋 수 | 요약 |
 |---|---|---|---:|---|
+| `feat/linux-clipboard-native` | 2026-09-02 | 2026-09-03 | 11 | ★ **T-14 본편 — Linux 클립보드 내재화**(`selection_x11.rs` — x11rb+XFIXES 감시 · INCR 양방향 · 다중 표현 게시 · 소유자 창 에코 차단 · 도구 파이프 = 폴백) — **xclip 없는 PC E2E ✓** · [18·21] 기능별 패키지 SSOT · VTE Ctrl+V 판정(T-15c) · `dev-restart.sh` · ★ **자동 시작 `tray` 인자 누락(3-OS) 수정** · ★ **텍스트 타깃 UTF-8 순위**(Firefox `\uXXXX`·VTE `\E2\9E\9C`) · T-12e4 등재. 롤백 태그 `rollback/pre-linux-clipboard-native` |
 | `feat/store-persistence` | 2026-08-31 | 2026-08-31 | 4 | ★ **T-16 1단 — 암호화 영속**(DR-37·38 실구현) — `nclip-store`(sealed 봉투 이식 · 키 래핑 한 겹 · append-only 이벤트 로그+압축 · 내용 주소 blob 중복 제거) · 이력 id/★핀 기초/복원 · 셸 배선(복원·이벤트·clear_on_quit wipe). 스모크 "저장소: 2개 복원" ✓ · 368 테스트. 의존 +3(RustCrypto · beep 동일 판) |
 | `fix/linux-paste-order` | 2026-08-30 | 2026-08-30 | 7 | 실기 라운드 2 — **주입을 팝업 파괴 다음 루프 바퀴로**("첫 번만 붙음" · 사용자 확인 텍스트·이미지 ✅) · ★ **`ui.close_to_tray` 기본 켜짐**(사용자 확정: 닫기=트레이 · Quit만 종료) · **부분 게시 에코 = 원본 승격**(팝업 중복) · ★ **테마 시스템 추종**(beep `theme.rs` 이식 · 포털 실측). 352 테스트 |
 | `fix/linux-paste-portal` | 2026-08-30 | 2026-08-30 | 5 | 사용자 실기 셋 — ★ **Wayland 키 주입 = xdg 포털 RemoteDesktop**(ei-portal Xwayland에선 XTest 미도달 · 정정) · ★ **`wl-paste` 폴링 포커스 플랩**(GNOME data-control 부재) → `wayland_probe` + XWayland `xclip` · 타이틀바 두부 → ASCII · Dock 톱니바퀴 → 런처 `.desktop`+아이콘. 349 테스트 |
