@@ -18,7 +18,7 @@
 
 use nclip_core::history::History;
 use nclip_core::{current_lang, tr, ClipKind, Msg, PasteAs};
-use nclip_ctl::controls::{Control as _, TextBox};
+use nclip_ctl::controls::{Control as _, ScrollBars, TextBox};
 use nclip_ctl::draw::{DrawCtx, FontSlot};
 use nclip_ctl::event::{InputEvent as CtlEvent, Key as CtlKey};
 use nclip_ctl::geom::Rect;
@@ -86,6 +86,8 @@ pub(crate) struct Popup {
     scroll: i32,
     /// 휠 소수 델타 누적기(터치패드).
     wheel_frac: f32,
+    /// ★ 목록 오버레이 스크롤바(자동 숨김 · 09-02).
+    bars: ScrollBars,
     shift: bool,
     ctrl: bool,
     alt: bool,
@@ -176,6 +178,7 @@ impl Popup {
             sel: 0,
             scroll: 0,
             wheel_frac: 0.0,
+            bars: ScrollBars::new(),
             shift: false,
             ctrl: false,
             alt: false,
@@ -202,6 +205,54 @@ impl Popup {
     /// 행 높이(px) — 레이아웃 공용 상수 30pt.
     fn row_h(&self) -> i32 {
         ((self.scale * 30.0).round() as i32).max(1)
+    }
+
+    /// 목록 사각형(검색바 아래 · 힌트 줄 위).
+    fn list_vp(&self) -> Option<nclip_ctl::geom::Rect> {
+        let win = self.window.as_ref()?;
+        let sz = win.inner_size();
+        let px = |v: f32| (v * self.scale).round() as i32;
+        Some(nclip_ctl::geom::Rect::new(
+            0,
+            px(38.0),
+            sz.width as i32,
+            (sz.height as i32 - px(24.0) - px(38.0)).max(1),
+        ))
+    }
+
+    /// ★ 스크롤바 우선 라우팅(썸 드래그) — 소비되면 true(09-02).
+    fn feed_bars(&mut self, event: &WindowEvent) -> bool {
+        let Some(vp) = self.list_vp() else {
+            return false;
+        };
+        let Some(ev) = crate::main_win::to_ctl_event(event, self.cursor) else {
+            return false;
+        };
+        if !matches!(
+            ev,
+            CtlEvent::MouseDown { .. } | CtlEvent::MouseMove { .. } | CtlEvent::MouseUp { .. }
+        ) {
+            return false;
+        }
+        #[allow(clippy::cast_possible_wrap)]
+        let total = self.rows.len() as i32 * self.row_h();
+        let (_, oy, consumed) =
+            self.bars
+                .on_event(&ev, vp, vp.w, total, 0, self.scroll, self.scale);
+        if oy != self.scroll {
+            self.scroll = oy;
+            self.redraw();
+        } else if consumed {
+            self.redraw();
+        }
+        consumed
+    }
+
+    /// 스크롤바 페이드 틱(셸 500ms).
+    pub(crate) fn tick_ui(&mut self, now_ms: u64) {
+        if self.bars.tick(now_ms) {
+            self.redraw();
+        }
     }
 
     /// 캐럿 깜빡임 위상(셸 타이머) — 바뀌면 다시 그린다.
@@ -423,6 +474,9 @@ impl Popup {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 self.cursor = (position.x as i32, position.y as i32);
+                if self.feed_bars(event) {
+                    return PopupAction::None;
+                }
                 let (x, y) = self.cursor;
                 if self.feed_search(&CtlEvent::MouseMove { x, y }) {
                     self.sel = 0;
@@ -433,6 +487,9 @@ impl Popup {
             // ★ 클릭 = 선택 + 붙여넣기(Maccy 관례 — 08-28 사용자 실기 "클릭 선택 안 됨").
             //   `⇧` 클릭 = 평문. 목록 밖 클릭은 무시(닫기는 Esc·바깥 포커스가 담당).
             WindowEvent::MouseInput { state, button, .. } => {
+                if self.feed_bars(event) {
+                    return PopupAction::None;
+                }
                 let (x, y) = self.cursor;
                 // 우클릭 = 검색창 편집 메뉴(09-02) — 메뉴가 열려 있는 동안은 전부 검색 몫.
                 if *state == ElementState::Pressed
@@ -520,6 +577,7 @@ impl Popup {
                 if d != 0 {
                     self.wheel_frac -= d as f32;
                     self.scroll += d; // 상한은 paint에서 죈다.
+                    self.bars.show();
                     self.redraw();
                 }
             }
@@ -703,6 +761,19 @@ impl Popup {
                 &self.rows,
                 self.sel,
                 self.scroll,
+            );
+            #[allow(clippy::cast_possible_wrap)]
+            let total = self.rows.len() as i32 * row_h;
+            let vp = nclip_ctl::geom::Rect::new(0, px(38.0), iw, (ih - px(24.0) - px(38.0)).max(1));
+            self.bars.paint(
+                &mut dc,
+                &self.theme,
+                vp,
+                vp.w,
+                total,
+                0,
+                self.scroll,
+                self.scale,
             );
         }
         let _ = buf.present();

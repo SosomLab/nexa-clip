@@ -243,8 +243,8 @@ impl<'a> Surface<'a> {
         self.buf[idx] = (mix(bg.0, fg.0) << 16) | (mix(bg.1, fg.1) << 8) | mix(bg.2, fg.2);
     }
 
-    /// RGBA 이미지를 `dst`(x,y,w,h)로 **스케일**해 알파 블렌드한다(nearest 샘플링 · 큰 이미지 축소용).
-    /// `clip`(반열림) 밖은 건너뛴다.
+    /// RGBA 이미지를 `dst`(x,y,w,h)로 **스케일**해 알파 블렌드한다(★ bilinear ·
+    /// 09-02 실기 "픽셀 깨짐" — nearest 계단 해소). `clip`(반열림) 밖은 건너뛴다.
     #[allow(clippy::too_many_arguments)]
     pub fn blend_image_scaled(
         &mut self,
@@ -258,22 +258,49 @@ impl<'a> Surface<'a> {
         if dw <= 0 || dh <= 0 || img.w == 0 || img.h == 0 {
             return;
         }
+        let (iw, ih) = (img.w as i32, img.h as i32);
+        let at = |x: i32, y: i32| -> [u8; 4] {
+            let i = ((y.clamp(0, ih - 1) * iw + x.clamp(0, iw - 1)) * 4) as usize;
+            [
+                img.rgba[i],
+                img.rgba[i + 1],
+                img.rgba[i + 2],
+                img.rgba[i + 3],
+            ]
+        };
+        #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
         for row in 0..dh {
             for col in 0..dw {
                 let (px, py) = (dx + col, dy + row);
                 if px < clip.0 || px >= clip.2 || py < clip.1 || py >= clip.3 {
                     continue;
                 }
-                // 목적 픽셀 → 원본 픽셀(nearest).
-                let sx = (col * img.w as i32 / dw).clamp(0, img.w as i32 - 1);
-                let sy = (row * img.h as i32 / dh).clamp(0, img.h as i32 - 1);
-                let i = ((sy * img.w as i32 + sx) * 4) as usize;
-                let a = img.rgba[i + 3];
-                if a == 0 {
+                // 목적 픽셀 중심 → 원본 좌표 — 이웃 4점 가중 평균(bilinear).
+                let fx = (col as f32 + 0.5) * iw as f32 / dw as f32 - 0.5;
+                let fy = (row as f32 + 0.5) * ih as f32 / dh as f32 - 0.5;
+                let (x0, y0) = (fx.floor() as i32, fy.floor() as i32);
+                let (tx, ty) = (fx - x0 as f32, fy - y0 as f32);
+                let (p00, p10, p01, p11) = (
+                    at(x0, y0),
+                    at(x0 + 1, y0),
+                    at(x0, y0 + 1),
+                    at(x0 + 1, y0 + 1),
+                );
+                let lerp = |k: usize| -> f32 {
+                    let top = f32::from(p00[k]) * (1.0 - tx) + f32::from(p10[k]) * tx;
+                    let bot = f32::from(p01[k]) * (1.0 - tx) + f32::from(p11[k]) * tx;
+                    top * (1.0 - ty) + bot * ty
+                };
+                let a = lerp(3) / 255.0;
+                if a <= 0.003 {
                     continue;
                 }
-                let color = Color::from_rgb(img.rgba[i], img.rgba[i + 1], img.rgba[i + 2]);
-                self.blend_px(px, py, color, f32::from(a) / 255.0);
+                let color = Color::from_rgb(
+                    (lerp(0) + 0.5) as u8,
+                    (lerp(1) + 0.5) as u8,
+                    (lerp(2) + 0.5) as u8,
+                );
+                self.blend_px(px, py, color, a.min(1.0));
             }
         }
     }

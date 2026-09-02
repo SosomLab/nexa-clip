@@ -629,7 +629,14 @@ impl ApplicationHandler<ShellEvent> for Shell {
                     }
                     Pushed::Promoted => {
                         if let Some(front) = self.history.get(0) {
-                            self.store.touch(front.id);
+                            // ★ 승격이 램 섬네일을 채웠을 수 있다(무섬네일 세대 항목 재복사 —
+                            //   09-02 실기: TOUCH만 남기면 재시작 후 텍스트로 퇴행). 섬네일이
+                            //   있으면 ADD로 온전히 재기록 — 블롭은 내용 주소라 비용 미미.
+                            if front.thumb.is_some() {
+                                self.store.add(&to_stored(front));
+                            } else {
+                                self.store.touch(front.id);
+                            }
                         }
                     }
                 }
@@ -662,6 +669,9 @@ impl ApplicationHandler<ShellEvent> for Shell {
             let phase = (now_ms / 500) % 2 == 0;
             self.main.set_caret_phase(phase);
             self.popup.set_caret_phase(phase);
+            // ★ 스크롤바 자동 숨김 페이드(09-02) — 같은 박동에 얹는다.
+            self.main.tick_ui(now_ms);
+            self.popup.tick_ui(now_ms);
             let rem = 500 - (now_ms % 500);
             el.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(
                 std::time::Instant::now() + std::time::Duration::from_millis(rem.max(30)),

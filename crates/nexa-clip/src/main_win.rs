@@ -15,7 +15,9 @@
 use nclip_core::capture::decode_plain;
 use nclip_core::history::History;
 use nclip_core::{current_lang, tr, ClipKind, Msg, PasteAs};
-use nclip_ctl::controls::{ContextMenu, Control as _, CtxItem, LabelSide, Switch, TextBox};
+use nclip_ctl::controls::{
+    ContextMenu, Control as _, CtxItem, LabelSide, ScrollBars, Switch, TextBox,
+};
 use nclip_ctl::draw::{DrawCtx, FontSlot};
 use nclip_ctl::event::{InputEvent as CtlEvent, Key as CtlKey};
 use nclip_ctl::geom::Rect;
@@ -151,6 +153,8 @@ pub(crate) struct MainWin {
     wheel_frac: f32,
     /// ★ 행 시작 y 누적합(len = rows+1 · 마지막 = 총 높이) — Rich 가변 행(09-02 CopyQ 화법).
     row_offs: Vec<i32>,
+    /// ★ 목록 오버레이 스크롤바(설정창과 동일 부품 · 자동 숨김 — 09-02 사용자 요청).
+    bars: ScrollBars,
     cursor: (i32, i32),
     shift: bool,
     primary: bool,
@@ -199,6 +203,7 @@ impl MainWin {
             scroll: 0,
             wheel_frac: 0.0,
             row_offs: Vec::new(),
+            bars: ScrollBars::new(),
             cursor: (0, 0),
             shift: false,
             primary: false,
@@ -622,6 +627,42 @@ impl MainWin {
         }
     }
 
+    /// ★ 스크롤바에 마우스 사건을 먼저 준다(썸 드래그 · 09-02) — 소비되면 true.
+    fn feed_bars(&mut self, event: &WindowEvent) -> bool {
+        let Some(win) = &self.window else {
+            return false;
+        };
+        let Some(ev) = to_ctl_event(event, self.cursor) else {
+            return false;
+        };
+        if !matches!(
+            ev,
+            CtlEvent::MouseDown { .. } | CtlEvent::MouseMove { .. } | CtlEvent::MouseUp { .. }
+        ) {
+            return false;
+        }
+        let sz = win.inner_size();
+        let list = self.list_rect(sz.width as i32, sz.height as i32);
+        let total = *self.row_offs.last().unwrap_or(&0);
+        let (_, oy, consumed) =
+            self.bars
+                .on_event(&ev, list, list.w, total, 0, self.scroll, self.scale);
+        if oy != self.scroll {
+            self.scroll = oy;
+            self.redraw();
+        } else if consumed {
+            self.redraw();
+        }
+        consumed
+    }
+
+    /// 스크롤바 자동 숨김 페이드 틱(셸 500ms 심장 박동).
+    pub(crate) fn tick_ui(&mut self, now_ms: u64) {
+        if self.bars.tick(now_ms) {
+            self.redraw();
+        }
+    }
+
     /// ★ 미리보기 내용을 현재 선택과 동기(09-02 K4) — id 비교만이라 매 사건 호출해도 값싸다.
     fn sync_preview(&mut self) {
         if !self.preview_open {
@@ -784,6 +825,9 @@ impl MainWin {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 self.cursor = (position.x as i32, position.y as i32);
+                if self.feed_bars(event) {
+                    return MainAction::None;
+                }
                 // 드래그 선택 추적 — 캡처 없이 흘려도 TextBox가 자기 상태로 판단한다.
                 let mut inv = Invalidations::default();
                 self.search.on_event(
@@ -839,10 +883,14 @@ impl MainWin {
                 if d != 0 && !self.rows.is_empty() {
                     self.wheel_frac -= d as f32;
                     self.scroll += d; // 상한은 paint에서 죈다(rows 길이×행 높이).
+                    self.bars.show();
                     self.redraw();
                 }
             }
             WindowEvent::MouseInput { state, button, .. } => {
+                if self.feed_bars(event) {
+                    return MainAction::None;
+                }
                 let (sx, sy) = self.cursor;
                 // ★ 검색 우클릭 = 편집 메뉴(09-02) · 메뉴 열림 동안은 전부 검색 몫.
                 if *state == ElementState::Pressed
@@ -1392,6 +1440,18 @@ impl MainWin {
             dc.text(lx, text_y, label_clip, &row.label, th.text);
         }
 
+        // 목록 오버레이 스크롤바(자동 숨김 · 설정창과 동일 화법).
+        self.bars.paint(
+            dc,
+            &th,
+            list,
+            list.w,
+            *self.row_offs.last().unwrap_or(&0),
+            0,
+            self.scroll,
+            self.scale,
+        );
+
         // ── ③b 미리보기 패널(09-02 K4) — 텍스트 전문(wrap·휠) / 이미지 원본(비율 유지) ──
         if self.preview_open {
             let pr = self.preview_rect(w, h);
@@ -1874,7 +1934,7 @@ impl MainWin {
 
 /// winit 이벤트 → nclip-ctl [`CtlEvent`] 최소 변환(메뉴·입력 상자용) —
 /// 메인창은 winit을 직접 다루지만 이식 컨트롤은 ctl 이벤트를 말한다.
-fn to_ctl_event(event: &WindowEvent, cursor: (i32, i32)) -> Option<CtlEvent> {
+pub(crate) fn to_ctl_event(event: &WindowEvent, cursor: (i32, i32)) -> Option<CtlEvent> {
     let (x, y) = cursor;
     let key = |key: CtlKey| CtlEvent::Key {
         key,

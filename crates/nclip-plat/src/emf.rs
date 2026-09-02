@@ -127,17 +127,16 @@ unsafe fn raster(hemf: Handle, max_side: u32) -> Option<(u32, u32, Vec<u8>)> {
         if nw <= 0 || nh <= 0 {
             return None;
         }
-        // 배율 — 긴 변 ≤ max_side · ★ 짧은 변 ≥ 96(벡터 확대 무손실) · 총화소 ≤ 4M.
-        let (long, short) = (nw.max(nh) as f64, nw.min(nh) as f64);
-        let mut scale = if long > f64::from(max_side) {
+        // 배율 — 긴 변 ≤ max_side · 총화소 ≤ 4M. ★ 확대 보정 없음(09-02 실기 —
+        //   표시가 문서 논리 크기 기준이 된 뒤로는 키웠다 줄이는 이중 왜곡만 남는다.
+        //   논리 크기로 "작게 다시 그리는" 쪽이 GDI 글자 힌팅도 살아 선명하다).
+        let long = nw.max(nh) as f64;
+        let scale = if long > f64::from(max_side) {
             f64::from(max_side) / long
         } else {
             1.0
         };
-        let min_scale = (96.0 / short).min(4.0);
-        if scale < min_scale {
-            scale = min_scale;
-        }
+        let mut scale = scale;
         let cap = (PIXELS_MAX as f64 / (nw as f64 * nh as f64)).sqrt();
         if scale > cap {
             scale = cap;
