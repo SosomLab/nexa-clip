@@ -260,27 +260,6 @@ impl Popup {
         self.last_size
     }
 
-    /// 가장자리 리사이즈 방향(장식 없는 창 · 6px 마진) — 없으면 None.
-    fn resize_dir_at(&self, x: i32, y: i32) -> Option<winit::window::ResizeDirection> {
-        use winit::window::ResizeDirection as D;
-        let win = self.window.as_ref()?;
-        let sz = win.inner_size();
-        let (w, h) = (sz.width as i32, sz.height as i32);
-        let m = ((self.scale * 6.0).round() as i32).max(4);
-        let (l, r, t, b) = (x < m, x >= w - m, y < m, y >= h - m);
-        Some(match (l, r, t, b) {
-            (true, _, true, _) => D::NorthWest,
-            (_, true, true, _) => D::NorthEast,
-            (true, _, _, true) => D::SouthWest,
-            (_, true, _, true) => D::SouthEast,
-            (true, ..) => D::West,
-            (_, true, ..) => D::East,
-            (_, _, true, _) => D::North,
-            (_, _, _, true) => D::South,
-            _ => return None,
-        })
-    }
-
     /// Rich 이미지 표시 크기 — 메인과 같은 규약(논리 크기 64% · 폭/최대 200px 비율 축소).
     fn rich_fit(&self, ow: i32, oh: i32, content_w: i32) -> (i32, i32) {
         let px = |v: f32| (v * self.scale).round() as i32;
@@ -470,8 +449,8 @@ impl Popup {
         let mut attrs = crate::settings_win::win_name(crate::icon::with_icon(
             Window::default_attributes()
                 .with_title("Nexa Clip")
-                .with_decorations(false)
-                .with_resizable(true) // ★ 가장자리 드래그 리사이즈(09-02).
+                // ★ 타이틀바 표시(09-02 사용자) — 리사이즈도 OS 테두리가 맡는다.
+                .with_resizable(true)
                 .with_min_inner_size(LogicalSize::new(260.0, 200.0))
                 .with_window_level(WindowLevel::AlwaysOnTop)
                 .with_inner_size(LogicalSize::new(POPUP_W, POPUP_H)),
@@ -616,20 +595,6 @@ impl Popup {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 self.cursor = (position.x as i32, position.y as i32);
-                // ★ 가장자리 = 리사이즈 커서(장식 없는 창 · 09-02).
-                if let Some(win) = &self.window {
-                    use winit::window::{CursorIcon, ResizeDirection as D};
-                    let icon = match self.resize_dir_at(self.cursor.0, self.cursor.1) {
-                        Some(D::East | D::West) => Some(CursorIcon::EwResize),
-                        Some(D::North | D::South) => Some(CursorIcon::NsResize),
-                        Some(D::NorthWest | D::SouthEast) => Some(CursorIcon::NwseResize),
-                        Some(D::NorthEast | D::SouthWest) => Some(CursorIcon::NeswResize),
-                        None => None,
-                    };
-                    win.set_cursor(winit::window::Cursor::Icon(
-                        icon.unwrap_or(CursorIcon::Default),
-                    ));
-                }
                 if self.feed_bars(event) {
                     return PopupAction::None;
                 }
@@ -643,15 +608,6 @@ impl Popup {
             // ★ 클릭 = 선택 + 붙여넣기(Maccy 관례 — 08-28 사용자 실기 "클릭 선택 안 됨").
             //   `⇧` 클릭 = 평문. 목록 밖 클릭은 무시(닫기는 Esc·바깥 포커스가 담당).
             WindowEvent::MouseInput { state, button, .. } => {
-                // ★ 가장자리 눌림 = OS 리사이즈 시작(09-02).
-                if *state == ElementState::Pressed && *button == winit::event::MouseButton::Left {
-                    if let Some(dir) = self.resize_dir_at(self.cursor.0, self.cursor.1) {
-                        if let Some(win) = &self.window {
-                            let _ = win.drag_resize_window(dir);
-                        }
-                        return PopupAction::None;
-                    }
-                }
                 if self.feed_bars(event) {
                     return PopupAction::None;
                 }
@@ -982,11 +938,6 @@ fn draw(
     .max(1);
 
     dc.fill_rect(full, th.window_bg);
-    // 팝업 테두리 — 장식 없는 창이라 우리가 그린다.
-    dc.fill_rect(Rect::new(0, 0, w, 1), th.border);
-    dc.fill_rect(Rect::new(0, h - 1, w, 1), th.border);
-    dc.fill_rect(Rect::new(0, 0, 1, h), th.border);
-    dc.fill_rect(Rect::new(w - 1, 0, 1, h), th.border);
 
     // ── 헤더: 검색 필드(정식 TextBox — 캐럿·선택·×· 09-02) ──
     dc.fill_rect(Rect::new(0, 0, w, header_h), th.chrome_bg);
