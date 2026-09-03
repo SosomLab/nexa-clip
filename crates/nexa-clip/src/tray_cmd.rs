@@ -96,6 +96,8 @@ fn decode_one(r: &RawRep, side: u32) -> Option<(u32, u32, Vec<u8>)> {
 enum ShellEvent {
     /// 트레이 좌클릭·메뉴 "열기" — 설정 창을 연다(있으면 앞으로).
     Open,
+    /// ★ 붙여넣기 스택(09-03 ③) — 팝업이 닫힌 다음 바퀴에 순차 주입.
+    PasteStack(Vec<u64>),
     /// 트레이 메뉴 "종료".
     Quit,
     /// 감시가 항목을 잡았다 — 게이트를 지나면 이력에 넣는다.
@@ -404,6 +406,39 @@ impl Shell {
         }
     }
 
+    /// ★ 순차 붙여넣기(09-03 ③ — Ditto 화법): 스택 순서대로 게시→주입을 반복한다.
+    ///
+    /// 게시/주입 사이 짧은 간격은 대상 앱이 각 붙여넣기를 처리할 시간(실측 보수치).
+    /// 각 게시는 같은 내용 재복사와 같아 이력에선 **승격**으로 흡수된다(항목 증식 없음).
+    fn paste_stack(&mut self, ids: &[u64]) {
+        if !self.paste_auto {
+            eprintln!("순차 붙여넣기는 자동 붙여넣기(paste.auto)가 켜져 있어야 합니다");
+            return;
+        }
+        let n = ids.len();
+        for (k, id) in ids.iter().enumerate() {
+            let Some(item) = (0..self.history.len())
+                .filter_map(|i| self.history.get(i))
+                .find(|it| it.id == *id)
+            else {
+                continue;
+            };
+            let reps = item.reps.clone();
+            if let Err(e) = nclip_plat::clipboard::set_reps(&reps) {
+                eprintln!("스택 게시 실패({id}): {e}");
+                continue;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(60));
+            if let Err(e) = self.paste.restore_and_paste(PasteAs::Original) {
+                eprintln!("스택 주입 실패({id}): {e:?}");
+            }
+            if k + 1 < n {
+                std::thread::sleep(std::time::Duration::from_millis(160));
+            }
+        }
+        println!("순차 붙여넣기: {n}개");
+    }
+
     /// 팝업이 닫힌 다음 바퀴 — 포커스 복원 + 키 주입.
     fn paste_now(&mut self, as_: PasteAs) {
         match self.paste.restore_and_paste(as_) {
@@ -561,6 +596,10 @@ impl ApplicationHandler<ShellEvent> for Shell {
                 PopupAction::None => {}
                 PopupAction::Close => self.close_popup(),
                 PopupAction::Pick { index, as_ } => self.pick(index, as_),
+                PopupAction::PickStack(ids) => {
+                    self.close_popup();
+                    let _ = self.proxy.send_event(ShellEvent::PasteStack(ids));
+                }
             }
             return;
         }
@@ -601,6 +640,7 @@ impl ApplicationHandler<ShellEvent> for Shell {
             }
             ShellEvent::Hotkey => self.toggle_popup(el),
             ShellEvent::PasteAfterClose(as_) => self.paste_now(as_),
+            ShellEvent::PasteStack(ids) => self.paste_stack(&ids),
             ShellEvent::SystemTheme => {
                 self.app.apply_theme();
                 self.popup.set_theme(self.app.theme());
@@ -1003,7 +1043,7 @@ pub(crate) fn run() {
         eprintln!("이벤트 루프 오류: {e}");
     }
     // single_guard는 여기까지 살아 있다 — 프로세스 수명만큼 인스턴스 소유 유지.
-                        // ★ 종료 직전 강제 수거 — "바꾸고 바로 종료하면 안 저장됨"을 막는다.
+    // ★ 종료 직전 강제 수거 — "바꾸고 바로 종료하면 안 저장됨"을 막는다.
     if shell.app.conf.flush() {
         println!("설정 저장: {}", shell.app.conf.path().display());
     }

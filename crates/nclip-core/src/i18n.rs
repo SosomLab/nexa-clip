@@ -332,6 +332,8 @@ pub enum Msg {
     MenuDelete,
     /// 컨텍스트 메뉴: 이미지로 복사(렌더 · 09-03).
     MenuCopyImage,
+    /// 팝업 푸터: 스택 순차 붙여넣기 힌트(09-03 ③ — `{}` = 개수).
+    HintStack,
     EditorHint,
     HintFiles,
     HintRich,
@@ -740,6 +742,12 @@ impl Msg {
                 "复制为图片",
                 "画像としてコピー",
             ],
+            Msg::HintStack => [
+                "Enter pastes {} in order · Ctrl+Click/Ctrl+Space toggles · Esc",
+                "Enter = {}개 순차 붙여넣기 · Ctrl+클릭/Ctrl+Space 선택 · Esc",
+                "Enter 按序粘贴 {} 项 · Ctrl+点击/Ctrl+Space 选择 · Esc",
+                "Enter で {} 件を順に貼り付け · Ctrl+クリック/Ctrl+Space 選択 · Esc",
+            ],
             Msg::EditorHint => [
                 "Ctrl+Enter save · Esc cancel · Alt+Z wrap (saved as plain text)",
                 "Ctrl+Enter 저장 · Esc 취소 · Alt+Z 줄 바꿈 (평문으로 저장됩니다)",
@@ -867,7 +875,7 @@ mod tests {
     use super::*;
 
     /// 카탈로그 전수 — 새 `Msg`를 더하면 여기도 더한다(빈칸 검사가 그걸 강제한다).
-    const ALL_MSG: [Msg; 157] = [
+    const ALL_MSG: [Msg; 158] = [
         Msg::AppName,
         Msg::SearchPlaceholder,
         Msg::EmptyHistory,
@@ -994,6 +1002,7 @@ mod tests {
         Msg::MenuEdit,
         Msg::MenuDelete,
         Msg::MenuCopyImage,
+        Msg::HintStack,
         Msg::EditorHint,
         Msg::HintFiles,
         Msg::HintRich,

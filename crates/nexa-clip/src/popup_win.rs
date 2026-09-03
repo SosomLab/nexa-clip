@@ -48,6 +48,8 @@ pub(crate) enum PopupAction {
     None,
     /// 닫아 달라(Esc·포커스 잃음·X) — 붙여넣기 없음.
     Close,
+    /// ★ 붙여넣기 스택(09-03 ③ — Ditto 화법): 표시 순서대로 **순차** 붙여넣기.
+    PickStack(Vec<u64>),
     /// ★ 항목 선택 — `index`는 **이력 인덱스**(필터를 통과해 되돌린 값).
     Pick {
         /// 이력 인덱스(0 = 최신).
@@ -60,6 +62,8 @@ pub(crate) enum PopupAction {
 /// 목록 한 행(그리기용 사본) — 이력을 빌리지 않고 스냅숏으로 들어 수명을 끊는다.
 struct Row {
     hist_index: usize,
+    /// 항목 id — ★ 스택 표시가 인덱스 흔들림 없이 붙게(09-03 ③).
+    id: u64,
     /// ★ 핀 — 메인창과 같은 구획·표시(09-02 사용자 "메인과 동일하게").
     pinned: bool,
     kind: ClipKind,
@@ -99,6 +103,8 @@ pub(crate) struct Popup {
     bars: ScrollBars,
     /// ★ 보기 모드(`ui.popup_view` · 기본 Rich — 09-02 사용자 확정).
     view: ViewMode,
+    /// ★ 스택 선택(id · 선택 순서 유지 — 09-03 ③): Enter = 순서대로 붙여넣기.
+    marked: Vec<u64>,
     /// ★ 열 때 쓸 크기(물리 px · `ui.popup_w/h` — 09-02 "마지막 크기 기억").
     pref_size: Option<(u32, u32)>,
     /// 마지막 실측 크기(Resized에서 갱신) — 닫을 때 셸이 저장.
@@ -206,6 +212,7 @@ impl Popup {
             wheel_frac: 0.0,
             bars: ScrollBars::new(),
             view: ViewMode::Rich,
+            marked: Vec::new(),
             pref_size: None,
             last_size: None,
             row_offs: Vec::new(),
@@ -251,6 +258,18 @@ impl Popup {
 
     /// ★ 보기 모드 적용(`ui.popup_view` — 열 때마다 셸이 읽어 넘긴다 · 09-02).
     /// 선택 행을 화면 안으로 — 키 이동 몷(09-02 · paint 스냅 제거의 짝).
+    /// ★ 스택 표시 토글(09-03 ③) — 이미 있으면 빼고, 없으면 **선택 순서대로** 뒤에 붙인다.
+    fn toggle_mark(&mut self, vi: usize) {
+        let Some(row) = self.rows.get(vi) else { return };
+        let id = row.id;
+        if let Some(pos) = self.marked.iter().position(|&m| m == id) {
+            self.marked.remove(pos);
+        } else {
+            self.marked.push(id);
+        }
+        self.redraw();
+    }
+
     fn ensure_visible(&mut self) {
         let Some(win) = &self.window else { return };
         if self.sel + 1 >= self.row_offs.len() {
@@ -472,6 +491,7 @@ impl Popup {
         self.search.set_text("");
         self.search.set_focused(true);
         self.scroll = 0;
+        self.marked.clear();
         self.was_focused = false;
         self.opened_at = std::time::Instant::now();
         self.refresh(hist);
@@ -538,6 +558,7 @@ impl Popup {
             if q.is_empty() || item.label.to_lowercase().contains(&q) {
                 let row = Row {
                     hist_index: i,
+                    id: item.id,
                     pinned: item.pinned,
                     kind: item.kind,
                     label: item.label.clone(),
@@ -723,6 +744,12 @@ impl Popup {
                         return PopupAction::None;
                     }
                     if let Some(vi) = self.row_at(x, y) {
+                        // ★ Ctrl+클릭 = 스택 토글(09-03 ③ — 즉시 붙여넣기 대신 선택만).
+                        if self.ctrl {
+                            self.sel = vi;
+                            self.toggle_mark(vi);
+                            return PopupAction::None;
+                        }
                         self.sel = vi;
                         self.redraw();
                         if let Some(row) = self.rows.get(vi) {
@@ -772,6 +799,10 @@ impl Popup {
                         self.redraw();
                     }
                     Key::Named(NamedKey::Enter) => {
+                        // ★ 스택이 쌓여 있으면 Enter = 순차 붙여넣기(09-03 ③).
+                        if !self.marked.is_empty() {
+                            return PopupAction::PickStack(std::mem::take(&mut self.marked));
+                        }
                         if let Some(row) = self.rows.get(self.sel) {
                             return PopupAction::Pick {
                                 index: row.hist_index,
@@ -779,6 +810,11 @@ impl Popup {
                             };
                         }
                         return PopupAction::Close;
+                    }
+                    // ★ Ctrl+Space = 현재 행 스택 토글(Space 단독은 검색어 몫 · 09-03 ③).
+                    Key::Named(NamedKey::Space) if self.ctrl => {
+                        self.toggle_mark(self.sel);
+                        return PopupAction::None;
                     }
                     Key::Named(NamedKey::Backspace) => {
                         if self.feed_search(&CtlEvent::Char {
@@ -934,6 +970,7 @@ impl Popup {
                 self.scroll,
                 self.view,
                 &self.row_offs,
+                &self.marked,
             );
             let total = *self.row_offs.last().unwrap_or(&0);
             let vp = nclip_ctl::geom::Rect::new(0, px(38.0), iw, (ih - px(24.0) - px(38.0)).max(1));
@@ -966,6 +1003,7 @@ fn draw(
     scroll: i32,
     view: ViewMode,
     offs: &[i32],
+    marked: &[u64],
 ) {
     let px = |v: f32| (v * s).round() as i32;
     let full = Rect::new(0, 0, w, h);
@@ -1034,6 +1072,15 @@ fn draw(
                     th.accent,
                 );
             }
+        }
+        // ★ 스택 표시(09-03 ③) — 좌측 accent 바 + 선택 순번.
+        if let Some(pos) = marked.iter().position(|&m| m == row.id) {
+            dc.fill_rect(Rect::new(0, clip.y, px(3.0).max(2), clip.h), th.accent);
+            dc.select_font(FontSlot::Status, false);
+            let tag = format!("{}", pos + 1);
+            let tw = dc.text_width(&tag);
+            dc.text(w - pad - tw, y + rh - px(16.0), clip, &tag, th.accent);
+            dc.select_font(FontSlot::Base, false);
         }
         // 우측 ×n — 모든 모드 공통.
         let mut right = w - pad;
@@ -1153,22 +1200,21 @@ fn draw(
     let fy = h - footer_h;
     dc.fill_rect(Rect::new(0, fy, w, footer_h), th.chrome_bg);
     dc.fill_rect(Rect::new(0, fy, w, 1), th.border);
-    dc.text(
-        pad,
-        fy + px(5.0),
-        full,
-        // ★ 힌트는 선택 항목 종류를 따른다(DR-35 · 09-01 키 배치 확정).
-        {
-            let lang = current_lang();
-            match rows.get(sel).map(|r| r.kind) {
-                Some(ClipKind::Files) => tr(lang, Msg::HintFiles),
-                Some(ClipKind::RichText) => tr(lang, Msg::HintRich),
-                Some(ClipKind::Image | ClipKind::Object) => tr(lang, Msg::HintImage),
-                _ => tr(lang, Msg::HintDefault),
-            }
-        },
-        th.text_dim,
-    );
+    // ★ 힌트: 스택이 쌓이면 스택 힌트(09-03 ③) · 아니면 항목 종류(DR-35).
+    let lang = current_lang();
+    let stack_hint: String;
+    let hint: &str = if marked.is_empty() {
+        match rows.get(sel).map(|r| r.kind) {
+            Some(ClipKind::Files) => tr(lang, Msg::HintFiles),
+            Some(ClipKind::RichText) => tr(lang, Msg::HintRich),
+            Some(ClipKind::Image | ClipKind::Object) => tr(lang, Msg::HintImage),
+            _ => tr(lang, Msg::HintDefault),
+        }
+    } else {
+        stack_hint = tr(lang, Msg::HintStack).replacen("{}", &marked.len().to_string(), 1);
+        &stack_hint
+    };
+    dc.text(pad, fy + px(5.0), full, hint, th.text_dim);
 
     // 검색 우클릭 편집 메뉴 — 맨 위 레이어(z = 그리는 순서).
     search.paint_popup(dc, &th);
