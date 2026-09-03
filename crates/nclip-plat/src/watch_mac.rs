@@ -279,6 +279,8 @@ fn frontmost_app() -> Option<String> {
 /// `public.file-url`이 항목 수만큼 반복되고, [`ClipSnapshot::file_paths`]가 모아 준다.
 #[must_use]
 pub fn read_snapshot() -> Option<ClipSnapshot> {
+    // ★ 쓰기(`clipboard::set_reps`)와 같은 잠금(09-04 — 병렬 set/read SIGSEGV 실측).
+    let _serial = crate::clipboard::clip_serial();
     // SAFETY: 반환 객체는 전부 autorelease — 풀을 짝 맞춰 닫는다.
     unsafe {
         let pool = objc_autoreleasePoolPush();

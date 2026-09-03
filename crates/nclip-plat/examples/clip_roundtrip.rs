@@ -143,7 +143,80 @@ fn main() {
     println!("지금 클립보드 = 재게시본 — 대상 앱에 Ctrl+V로 증상을 재현해 보세요.");
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+fn main() {
+    // mac 본편(09-04) — Windows와 같은 왕복 진단: 스냅숏 A → set_reps 재게시 → 스냅숏 B → 비교.
+    use nclip_plat::{clipboard, watch_mac};
+
+    let Some(a) = watch_mac::read_snapshot() else {
+        eprintln!("클립보드를 읽지 못했습니다");
+        std::process::exit(1);
+    };
+    println!(
+        "A: 표현 {}개 · 출처 {} · seq {}",
+        a.reps.len(),
+        a.source_app.as_deref().unwrap_or("?"),
+        a.seq
+    );
+    match clipboard::set_reps(&a.reps) {
+        Ok(n) => println!("재게시: {n}개 (팝업 Enter와 같은 경로)"),
+        Err(e) => {
+            eprintln!("재게시 실패: {e}");
+            std::process::exit(1);
+        }
+    }
+    let Some(b) = watch_mac::read_snapshot() else {
+        eprintln!("재게시본을 읽지 못했습니다");
+        std::process::exit(1);
+    };
+    println!("\n{:-^72}", " A(원본) → B(재게시) ");
+    let mut used = vec![false; b.reps.len()];
+    let mut lost = 0usize;
+    for ra in &a.reps {
+        let hit = b
+            .reps
+            .iter()
+            .enumerate()
+            .find(|(j, rb)| !used[*j] && rb.format == ra.format);
+        match hit {
+            Some((j, rb)) => {
+                used[j] = true;
+                let verdict = if ra.data == rb.data {
+                    "= 동일"
+                } else {
+                    lost += 1;
+                    "★ 다름"
+                };
+                println!(
+                    "{:<44} {:>8}B → {:>8}B  {}",
+                    ra.format,
+                    ra.data.len(),
+                    rb.data.len(),
+                    verdict
+                );
+            }
+            None => {
+                lost += 1;
+                println!("{:<44} {:>8}B → (사라짐)", ra.format, ra.data.len());
+            }
+        }
+    }
+    for (j, rb) in b.reps.iter().enumerate() {
+        if !used[j] {
+            println!("{:<44} (새로 생김) → {:>8}B", rb.format, rb.data.len());
+        }
+    }
+    println!(
+        "\n판정: {}",
+        if lost == 0 {
+            "✓ 전부 동일 — 에코 승격·원본 붙여넣기 토대 성립"
+        } else {
+            "★ 유실/변형 있음 — 위 표 확인"
+        }
+    );
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 fn main() {
     eprintln!("이 진단은 Windows 전용입니다(결함이 Windows에서 보고됨).");
 }

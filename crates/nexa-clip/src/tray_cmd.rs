@@ -537,6 +537,16 @@ impl Shell {
         // ★ 재적재로 되돌아온 우리 게시도 여기로 온다 — 승격(맨 위로)이
         //   곧 에코 처리다(항목이 늘지 않는다).
         let pushed: Pushed = self.history.push(&snap, kind, label, thumb);
+        // ★ push 판정 가시화(09-04 mac 실기 "더블클릭 승격 안 됨" 진단) — 에코가
+        //   승격(Promoted)으로 흡수됐는지 새 항목(New)으로 늘었는지 로그로 판정한다.
+        if let Some(front) = self.history.get(0) {
+            println!(
+                "이력: {:?} — \"{}\" (표현 {}개)",
+                pushed,
+                front.label,
+                snap.reps.len()
+            );
+        }
         // ★ 영속(T-16) — 이력 변화를 그대로 이벤트로 흘린다(id가 짝이다).
         match pushed {
             Pushed::New | Pushed::Replaced => {

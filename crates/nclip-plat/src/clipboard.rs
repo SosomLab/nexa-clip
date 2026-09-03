@@ -55,6 +55,18 @@ pub fn plain_text_reps(text: &str) -> Vec<RawRep> {
     }
 }
 
+/// ★ mac 파스텔보드 접근 직렬화(09-04 실측 — 병렬 set/read = SIGSEGV · beep의
+/// "동시 clearContents/set = SIGABRT" 실측의 확장): 쓰기(`set_reps`)와 감시 읽기
+/// (`watch_mac::read_snapshot`)가 **같은 잠금**을 쓴다. 프로세스 밖(다른 앱)과의
+/// 동시성은 파스텔보드 서버가 중재하므로 프로세스 안만 직렬화하면 된다.
+#[cfg(target_os = "macos")]
+pub(crate) fn clip_serial() -> std::sync::MutexGuard<'static, ()> {
+    static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    SERIAL
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 #[cfg(windows)]
 // Win32 타입 이름은 원문 그대로(MSDN 대조) — FFI 선언부에 한해 린트를 끈다.
 #[allow(clippy::upper_case_acronyms)]
@@ -360,17 +372,13 @@ mod imp {
     use objc2::rc::autoreleasepool;
     use objc2_app_kit::NSPasteboard;
     use objc2_foundation::{NSData, NSString};
-    use std::sync::{Mutex, PoisonError};
-
-    /// 프로세스 안 클립보드 접근 직렬화.
-    static SERIAL: Mutex<()> = Mutex::new(());
 
     pub(super) fn set_reps(reps: &[RawRep]) -> Result<usize, String> {
         let postable: Vec<&RawRep> = reps.iter().filter(|r| !r.data.is_empty()).collect();
         if postable.is_empty() {
             return Err("게시할 표현이 없습니다(핸들 포맷뿐)".into());
         }
-        let _g = SERIAL.lock().unwrap_or_else(PoisonError::into_inner);
+        let _g = super::clip_serial();
         // SAFETY: generalPasteboard는 프로세스 전역 싱글턴 — 접근은 위 뮤텍스로 직렬화.
         // clear 없이 set하면 소유권 미확보로 실패한다(짝 필수 · beep 실측).
         let posted = autoreleasepool(|_| unsafe {
@@ -435,5 +443,94 @@ mod tests {
         };
         assert_eq!(snap.plain_text().as_deref(), Some("왕복"));
         assert_eq!(get("NexaClipTest").data, b"vendor-bytes");
+    }
+}
+
+/// ★ mac 실 파스텔보드 왕복(09-04 — "Windows 기준 동작이 mac에서도 도는지 자동 검사").
+///
+/// beep `macclip` 테스트 선례를 따라 **실제 클립보드**를 만진다(헤드리스 세션에서도
+/// generalPasteboard는 동작). `cargo test`가 클립보드를 덮으므로 실행 후 내용이 바뀐다.
+/// 핵심 단언 = **에코 부분집합 성질**: `set_reps`로 게시한 표현 전부가 감시(`watch_mac`)
+/// 읽기에서 **같은 이름·같은 바이트**로 돌아온다 — 이력의 에코 승격(`is_subset`)과
+/// 재적재 붙여넣기(P-2)가 서는 토대다.
+#[cfg(all(test, target_os = "macos"))]
+mod mac_tests {
+    use super::*;
+    use crate::watch_mac;
+
+    /// 게시한 표현 전부가 같은 이름·같은 바이트로 스냅숏에 있는가(history::is_subset과 동일 판정).
+    fn echo_subset(posted: &[RawRep], snap: &[RawRep]) -> bool {
+        posted.iter().all(|r| {
+            snap.iter()
+                .any(|s| s.format == r.format && s.data == r.data)
+        })
+    }
+
+    /// 테스트끼리 직렬화 — set/read 짝이 섞이면 내용 단언이 흔들린다.
+    /// (`clip_serial`과는 **별도 잠금** — 같은 것을 잡으면 set_reps에서 재진입 교착.)
+    fn test_serial() -> std::sync::MutexGuard<'static, ()> {
+        static T: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        T.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// 텍스트(한글·이모지) — `plain_text_reps` 이름 그대로 왕복.
+    #[test]
+    fn text_roundtrip_echoes_identically() {
+        let _t = test_serial();
+        let reps = plain_text_reps("nexa-clip mac 왕복 ✓ 한글·이모지 📋");
+        assert_eq!(set_reps(&reps).expect("게시"), 1);
+        let snap = watch_mac::read_snapshot().expect("읽기");
+        assert!(
+            echo_subset(&reps, &snap.reps),
+            "게시본이 그대로 돌아와야 에코 승격이 선다 — 읽힌 표현: {:?}",
+            snap.reps.iter().map(|r| &r.format).collect::<Vec<_>>()
+        );
+    }
+
+    /// ★ 다중 표현(표준 UTI + 앱 사설 타입) — Windows 등록 포맷과 같은 계약.
+    #[test]
+    fn multi_rep_roundtrip_keeps_both() {
+        let _t = test_serial();
+        let reps = vec![
+            RawRep {
+                format: "public.utf8-plain-text".into(),
+                data: "multi".into(),
+            },
+            RawRep {
+                format: "com.sosomlab.nexa-clip.test".into(),
+                data: vec![1, 2, 3, 250],
+            },
+        ];
+        assert_eq!(set_reps(&reps).expect("게시"), 2);
+        let snap = watch_mac::read_snapshot().expect("읽기");
+        assert!(
+            echo_subset(&reps, &snap.reps),
+            "사설 타입까지 이름째 돌아와야 원본 붙여넣기(P-2)가 선다 — 읽힌 표현: {:?}",
+            snap.reps.iter().map(|r| &r.format).collect::<Vec<_>>()
+        );
+    }
+
+    /// 이미지(public.png) — 동기화 수신 게시(T-27)와 같은 표현.
+    #[test]
+    fn png_roundtrip_echoes_identically() {
+        let _t = test_serial();
+        // 1×1 투명 PNG(최소 유효 서명 + IHDR/IDAT/IEND).
+        let png: Vec<u8> = vec![
+            0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0x0D, b'I', b'H', b'D', b'R',
+            0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0, 0x1F, 0x15, 0xC4, 0x89, 0, 0, 0, 0x0D, b'I',
+            b'D', b'A', b'T', 0x78, 0x9C, 0x62, 0, 1, 0, 0, 5, 0, 1, 0x0D, 0x0A, 0x2D, 0xB4, 0, 0,
+            0, 0, b'I', b'E', b'N', b'D', 0xAE, 0x42, 0x60, 0x82,
+        ];
+        let reps = vec![RawRep {
+            format: "public.png".into(),
+            data: png,
+        }];
+        assert_eq!(set_reps(&reps).expect("게시"), 1);
+        let snap = watch_mac::read_snapshot().expect("읽기");
+        assert!(
+            echo_subset(&reps, &snap.reps),
+            "PNG가 그대로 돌아와야 이미지 전파 수신 게시가 선다 — 읽힌 표현: {:?}",
+            snap.reps.iter().map(|r| &r.format).collect::<Vec<_>>()
+        );
     }
 }
