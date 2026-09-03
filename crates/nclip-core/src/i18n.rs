@@ -344,6 +344,28 @@ pub enum Msg {
     SetSyncPassDesc,
     /// 동기화: 릴레이 서버 주소 라벨.
     SetSyncRelay,
+    /// 릴레이 기본 옵션 라벨(공식 서버).
+    SyncRelayDefault,
+    /// 릴레이 포트 설정 라벨.
+    SetSyncPort,
+    /// 릴레이 포트 설명.
+    SetSyncPortDesc,
+    /// 포트 47300 옵션 라벨(실값 표기 — beep 08-22 교훈).
+    SyncPort47300,
+    /// 연결 테스트 라벨.
+    SyncTest,
+    /// 연결 테스트 설명.
+    SyncTestDesc,
+    /// 연결 테스트 버튼 동사.
+    SyncTestVerb,
+    /// 상태: 접속 중.
+    StSyncTesting,
+    /// 상태: 접속 성공(`{}` = 서버 · `{}` = 핀 앞 8자).
+    StSyncTestOk,
+    /// 상태: 접속 실패(`{}` = 사유).
+    StSyncTestFail,
+    /// 상태: 패스프레이즈 추천됨.
+    StSyncPassSuggested,
     /// 동기화: 릴레이 주소 설명.
     SetSyncRelayDesc,
     EditorHint,
@@ -769,6 +791,57 @@ impl Msg {
                 "待ち合わせ地点の導出のみに使う秘密 — サーバーへは送られません",
             ],
             Msg::SetSyncRelay => ["Relay server", "릴레이 서버", "中继服务器", "リレーサーバー"],
+            Msg::SyncRelayDefault => [
+                "beepd.sosomlab.com (official)",
+                "beepd.sosomlab.com (공식)",
+                "beepd.sosomlab.com（官方）",
+                "beepd.sosomlab.com（公式）",
+            ],
+            Msg::SetSyncPort => ["Relay port", "릴레이 포트", "中继端口", "リレーポート"],
+            Msg::SetSyncPortDesc => [
+                "TCP control port of the relay",
+                "릴레이의 TCP 제어 포트",
+                "中继的 TCP 控制端口",
+                "リレーの TCP 制御ポート",
+            ],
+            Msg::SyncPort47300 => [
+                "47300 (default)",
+                "47300 (기본)",
+                "47300（默认）",
+                "47300（既定）",
+            ],
+            Msg::SyncTest => ["Connection test", "연결 테스트", "连接测试", "接続テスト"],
+            Msg::SyncTestDesc => [
+                "Try connecting to the relay with the current settings",
+                "지금 설정값으로 릴레이에 실제 접속해 봅니다",
+                "使用当前设置实际连接中继",
+                "現在の設定でリレーへ実際に接続します",
+            ],
+            Msg::SyncTestVerb => ["Test", "테스트", "测试", "テスト"],
+            Msg::StSyncTesting => [
+                "Connecting…",
+                "접속 중…",
+                "连接中…",
+                "接続中…",
+            ],
+            Msg::StSyncTestOk => [
+                "Connected — {} · server pin {}",
+                "접속 성공 — {} · 서버 핀 {}",
+                "连接成功 — {} · 服务器指纹 {}",
+                "接続成功 — {} · サーバーピン {}",
+            ],
+            Msg::StSyncTestFail => [
+                "Failed — {}",
+                "실패 — {}",
+                "失败 — {}",
+                "失敗 — {}",
+            ],
+            Msg::StSyncPassSuggested => [
+                "Suggested a passphrase — press the eye to view",
+                "패스프레이즈를 추천해 채웠습니다 — 눈 버튼으로 확인",
+                "已生成推荐口令——点眼睛图标查看",
+                "パスフレーズを提案しました — 目のボタンで確認",
+            ],
             Msg::SetSyncRelayDesc => [
                 "host:port of the beep relay (empty = default)",
                 "beep 릴레이의 host:port (비우면 기본값)",
@@ -908,7 +981,7 @@ mod tests {
     use super::*;
 
     /// 카탈로그 전수 — 새 `Msg`를 더하면 여기도 더한다(빈칸 검사가 그걸 강제한다).
-    const ALL_MSG: [Msg; 164] = [
+    const ALL_MSG: [Msg; 175] = [
         Msg::AppName,
         Msg::SearchPlaceholder,
         Msg::EmptyHistory,
@@ -1041,6 +1114,17 @@ mod tests {
         Msg::SetSyncPass,
         Msg::SetSyncPassDesc,
         Msg::SetSyncRelay,
+        Msg::SyncRelayDefault,
+        Msg::SetSyncPort,
+        Msg::SetSyncPortDesc,
+        Msg::SyncPort47300,
+        Msg::SyncTest,
+        Msg::SyncTestDesc,
+        Msg::SyncTestVerb,
+        Msg::StSyncTesting,
+        Msg::StSyncTestOk,
+        Msg::StSyncTestFail,
+        Msg::StSyncPassSuggested,
         Msg::SetSyncRelayDesc,
         Msg::EditorHint,
         Msg::HintFiles,

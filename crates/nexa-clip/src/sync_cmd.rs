@@ -25,10 +25,16 @@ pub(crate) fn spawn_if_enabled(conf: &crate::conf::Settings) {
     }
     let relay_raw = {
         let r = conf.state.get("sync.relay").trim().to_string();
-        if r.is_empty() {
+        let a = if r.is_empty() {
             DEFAULT_RELAY.to_string()
         } else {
             r
+        };
+        let p = conf.state.get("sync.port").trim().to_string();
+        if p.is_empty() || a.contains(':') {
+            a
+        } else {
+            format!("{a}:{p}")
         }
     };
     let dir = crate::conf::data_dir();

@@ -111,6 +111,9 @@ const RADIO_DEFAULTS: &[(&str, &str)] = &[
     ("ui.view_mode", "compact"),
     // ★ 팝업은 리치가 기본(09-02 사용자 확정 — "기본은 1").
     ("ui.popup_view", "rich"),
+    // ★ 동기화 서버(09-03) — beep 공식 릴레이·기본 포트(같은 서버 공유 · DP-1).
+    ("sync.relay", "beepd.sosomlab.com"),
+    ("sync.port", "47300"),
     ("ui.theme", "system"),
     ("ui.tray_recent_n", "8"),
     ("store.max_items", "1000"),
@@ -177,6 +180,8 @@ pub enum SettingKind {
     Text {
         /// 빈 값일 때 안내(placeholder).
         hint: Msg,
+        /// ★ 비밀 값(09-03) — ●로 가리고 우측 눈 버튼으로 보기 토글.
+        secret: bool,
     },
 }
 
@@ -987,10 +992,11 @@ impl SettingsWidget {
                     family.set_scale(self.scale);
                     RowCtl::Face(family)
                 }
-                SettingKind::Text { hint } => {
+                SettingKind::Text { hint, secret } => {
                     let mut t = TextBox::new(tr(lang, hint))
                         .with_text(self.values.get(e.key).map_or("", String::as_str));
                     t.set_scale(self.scale);
+                    t.set_masked(secret); // 기본 은닉(09-03) — 눈 버튼으로 보기.
                     RowCtl::Face(t)
                 }
                 SettingKind::PositionGrid => {
@@ -1370,9 +1376,15 @@ impl SettingsWidget {
                 }
                 RowCtl::Face(family) => {
                     // 크기 콤보가 없다 — 얼굴만 지정하고 크기는 Base UI를 따른다.
+                    // ★ 비밀 행(09-03)은 우측 눈 버튼 자리(ctl_h+6)를 비워 둔다.
+                    let eye = if matches!(e.kind, SettingKind::Text { secret: true, .. }) {
+                        ctl_h + gap10 / 2
+                    } else {
+                        0
+                    };
                     family.set_bounds(
                         Rect::new(
-                            rx + rw - family_w - pad,
+                            rx + rw - family_w - pad - eye,
                             top + (h - ctl_h) / 2,
                             family_w,
                             ctl_h,
@@ -1589,6 +1601,21 @@ impl Widget for SettingsWidget {
         //    포커스된 글꼴명 밖을 클릭하면 미확정 텍스트를 그 자리에서 확정 보고한다
         //    (Enter의 take_committed와 같은 경로 · Esc는 취소라 여기 안 온다).
         if let &InputEvent::MouseDown { x, y, .. } = ev {
+            // ★ 비밀 행 눈 버튼(09-03) — 마스킹 보기 토글(값·포커스 불변).
+            for r in &mut self.rows {
+                let e = &registry()[r.idx];
+                if let (RowCtl::Face(f), SettingKind::Text { secret: true, .. }) =
+                    (&mut r.ctl, e.kind)
+                {
+                    let b = f.bounds();
+                    let er = Rect::new(b.right() + b.h / 4, b.y, b.h, b.h);
+                    if er.contains(nclip_ctl::geom::Point { x, y }) {
+                        f.set_masked(!f.masked());
+                        inv.push(self.bounds);
+                        return;
+                    }
+                }
+            }
             let mut got: Vec<(&'static str, String)> = Vec::new();
             for r in &mut self.rows {
                 let e = &registry()[r.idx];
@@ -2136,7 +2163,28 @@ impl Widget for SettingsWidget {
                 RowCtl::Act(b) => b.paint(ctx, theme),
                 RowCtl::Pos(g) => g.paint(ctx, theme),
                 RowCtl::List(l) => l.paint(ctx, theme),
-                RowCtl::Face(f) => f.paint(ctx, theme),
+                RowCtl::Face(f) => {
+                    f.paint(ctx, theme);
+                    // ★ 비밀 행 눈 버튼(09-03) — 보임 = accent · 가림 = 흐림.
+                    if matches!(e.kind, SettingKind::Text { secret: true, .. }) {
+                        let b = f.bounds();
+                        let er = Rect::new(b.right() + b.h / 4, b.y, b.h, b.h);
+                        let ink = if f.masked() {
+                            theme.text_dim
+                        } else {
+                            theme.accent
+                        };
+                        let (cx, cy) = (er.x + er.w / 2, er.y + er.h / 2);
+                        let (ew, eh) = (er.w * 2 / 5, er.h / 5);
+                        ctx.fill_ellipse(Rect::new(cx - ew, cy - eh, ew * 2, eh * 2), ink);
+                        ctx.fill_ellipse(
+                            Rect::new(cx - ew * 2 / 3, cy - eh * 2 / 3, ew * 4 / 3, eh * 4 / 3),
+                            theme.panel_bg,
+                        );
+                        let r3 = er.h / 8;
+                        ctx.fill_ellipse(Rect::new(cx - r3, cy - r3, r3 * 2, r3 * 2), ink);
+                    }
+                }
                 RowCtl::Color(c) => c.paint(ctx, theme),
                 RowCtl::Font { family, size } => {
                     family.paint(ctx, theme);

@@ -330,6 +330,7 @@ pub(crate) const REGISTRY: &[Entry] = &[
         Msg::SetSyncHandleDesc,
         SettingKind::Text {
             hint: Msg::SetSyncHandle,
+            secret: false,
         },
         "sync.handle",
     ),
@@ -339,17 +340,34 @@ pub(crate) const REGISTRY: &[Entry] = &[
         Msg::SetSyncPassDesc,
         SettingKind::Text {
             hint: Msg::SetSyncPass,
+            secret: true,
         },
         "sync.passphrase",
     ),
+    // ★ beep과 같은 화법(09-03 사용자) — 기본 옵션 + 직접 입력. "미선택" = sync.enabled off.
     e(
         Msg::CatSync,
         Msg::SetSyncRelay,
         Msg::SetSyncRelayDesc,
-        SettingKind::Text {
-            hint: Msg::SetSyncRelayDesc,
-        },
+        SettingKind::RadioInput(&[("beepd.sosomlab.com", Msg::SyncRelayDefault)], ""),
         "sync.relay",
+    ),
+    e(
+        Msg::CatSync,
+        Msg::SetSyncPort,
+        Msg::SetSyncPortDesc,
+        // 라벨 = 실값(beep 08-22 교훈 — 라벨·값이 갈릴 자리엔 값을 라벨로).
+        SettingKind::RadioInput(&[("47300", Msg::SyncPort47300)], ""),
+        "sync.port",
+    ),
+    e(
+        Msg::CatSync,
+        Msg::SyncTest,
+        Msg::SyncTestDesc,
+        SettingKind::Action {
+            verb: Msg::SyncTestVerb,
+        },
+        "sync.test",
     ),
     // ── 고급 ────────────────────────────────────────────────
     e(
@@ -379,6 +397,10 @@ mod tests {
     #[test]
     fn every_entry_has_defaults() {
         for e in REGISTRY {
+            // 행위 항목(Action)은 값 키가 없다 — 설계상 기본값 예외(09-03 sync.test).
+            if matches!(e.kind, SettingKind::Action { .. }) {
+                continue;
+            }
             assert!(!e.default_values().is_empty(), "기본값 없음: {}", e.key);
         }
     }

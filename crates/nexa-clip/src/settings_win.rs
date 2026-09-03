@@ -37,6 +37,9 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{Key, ModifiersState, NamedKey};
 use winit::window::{CursorIcon, Window, WindowId};
 
+/// 동기화 테스트 결과 슬롯 — (주소, 핀 앞 8자) 또는 실패 사유.
+type SyncTestSlot = std::sync::Arc<std::sync::Mutex<Option<Result<(String, String), String>>>>;
+
 pub(crate) struct App {
     window: Option<Rc<Window>>,
     ctx: Option<softbuffer::Context<Rc<Window>>>,
@@ -47,6 +50,8 @@ pub(crate) struct App {
     /// 값 + 파일 — ★ 즉시 적용이 **디스크까지** 간다([`crate::conf`]).
     pub(crate) conf: Settings,
     widget: SettingsWidget,
+    /// ★ 동기화 연결 테스트 결과(09-03) — 스레드가 채우고 tick이 소비한다.
+    sync_test: Option<SyncTestSlot>,
     mods: ModifiersState,
     started: Instant,
     /// 마지막으로 준 크기 — 바뀔 때만 `set_bounds`를 부른다.
@@ -75,6 +80,7 @@ impl App {
             scale: 1.0,
             conf,
             widget,
+            sync_test: None,
             mods: ModifiersState::empty(),
             started: Instant::now(),
             laid_out: (0, 0),
@@ -191,6 +197,80 @@ impl App {
         }
     }
 
+    /// ★ 동기화 연결 테스트(09-03) — 지금 설정값으로 릴레이에 실제 접속(스레드).
+    fn start_sync_test(&mut self) {
+        let lang = nclip_core::current_lang();
+        let mut inv = Invalidations::default();
+        self.widget.set_row_note_toned(
+            "sync.test",
+            nclip_core::tr(lang, nclip_core::Msg::StSyncTesting),
+            nclip_ui::NoteTone::Info,
+            &mut inv,
+        );
+        self.redraw();
+        let addr = {
+            let a = self.conf.state.get("sync.relay").trim().to_string();
+            if a.is_empty() {
+                "beepd.sosomlab.com".to_string()
+            } else {
+                a
+            }
+        };
+        let port = {
+            let p = self.conf.state.get("sync.port").trim().to_string();
+            if p.is_empty() {
+                "47300".to_string()
+            } else {
+                p
+            }
+        };
+        let raw = format!("{addr}:{port}");
+        let dir = crate::conf::data_dir();
+        let slot: SyncTestSlot = std::sync::Arc::new(std::sync::Mutex::new(None));
+        self.sync_test = Some(slot.clone());
+        std::thread::Builder::new()
+            .name("nclip-sync-test".into())
+            .spawn(move || {
+                let out = sync_test_once(&raw, &dir);
+                if let Ok(mut g) = slot.lock() {
+                    *g = Some(out);
+                }
+            })
+            .ok();
+    }
+
+    /// 테스트 결과 소비 — tick 경로에서 부른다(끝났으면 노트 갱신).
+    fn poll_sync_test(&mut self) {
+        let Some(slot) = &self.sync_test else { return };
+        let done = slot.lock().ok().and_then(|mut g| g.take());
+        let Some(res) = done else { return };
+        self.sync_test = None;
+        let lang = nclip_core::current_lang();
+        let mut inv = Invalidations::default();
+        match res {
+            Ok((raw, pin8)) => {
+                let msg = nclip_core::tr(lang, nclip_core::Msg::StSyncTestOk)
+                    .replacen("{}", &raw, 1)
+                    .replacen("{}", &pin8, 1);
+                self.widget
+                    .set_row_note_toned("sync.test", &msg, nclip_ui::NoteTone::Ok, &mut inv);
+                println!("동기화 테스트: 성공 — {raw} · 핀 {pin8}");
+            }
+            Err(e) => {
+                let msg =
+                    nclip_core::tr(lang, nclip_core::Msg::StSyncTestFail).replacen("{}", &e, 1);
+                self.widget.set_row_note_toned(
+                    "sync.test",
+                    &msg,
+                    nclip_ui::NoteTone::Warn,
+                    &mut inv,
+                );
+                eprintln!("동기화 테스트: 실패 — {e}");
+            }
+        }
+        self.redraw();
+    }
+
     fn now_ms(&self) -> u64 {
         self.started.elapsed().as_millis() as u64
     }
@@ -256,6 +336,31 @@ impl App {
             }
             // ★ 자동 시작은 값만 저장하면 아무 일도 안 일어난다 — **OS 등록까지 즉시**.
             //   실패해도 값은 유지된다(다음 부팅 동기화·재토글에서 재시도 — beep 규약).
+            // ★ 핸들 입력 → 패스프레이즈 추천(09-03 사용자) — 비어 있을 때만 채운다.
+            if key == "sync.handle" && !val.trim().is_empty() {
+                let cur = self.conf.state.get("sync.passphrase").trim().to_string();
+                if cur.is_empty() {
+                    let sug = suggest_passphrase();
+                    self.conf.set("sync.passphrase", sug, now);
+                    // 위젯 재구성으로 값 반영(마스킹 유지) + 안내 노트.
+                    self.widget = SettingsWidget::new(&self.conf.state);
+                    let mut inv2 = Invalidations::default();
+                    self.widget.set_scale(self.scale, &mut inv2);
+                    self.laid_out = (0, 0);
+                    let lang = nclip_core::current_lang();
+                    self.widget.set_row_note_toned(
+                        "sync.passphrase",
+                        nclip_core::tr(lang, nclip_core::Msg::StSyncPassSuggested),
+                        nclip_ui::NoteTone::Info,
+                        &mut inv2,
+                    );
+                    self.redraw();
+                }
+            }
+            // ★ 연결 테스트(09-03 — beep 화법: 진행/성공/실패를 행 노트로).
+            if key == "sync.test" && val == "run" {
+                self.start_sync_test();
+            }
             if key == "app.autostart" {
                 let on = val == "on";
                 match nclip_plat::autostart::apply(on) {
@@ -434,6 +539,7 @@ impl ApplicationHandler for App {
     fn about_to_wait(&mut self, el: &ActiveEventLoop) {
         // 캐럿 깜빡임·툴팁·★ 상태 페이드 — 위젯이 "다시 그려야 한다"고 할 때만.
         let now = self.now_ms();
+        self.poll_sync_test(); // ★ 동기화 테스트 결과 소비(09-03).
         let animating = self.widget.tick(now);
         if animating {
             self.redraw();
@@ -550,4 +656,50 @@ fn wayland_activate(w: &Window, token: &str) -> bool {
         }
         _ => false,
     }
+}
+
+/// ★ 패스프레이즈 추천(09-03) — OS 난수 시드 해시(`RandomState`) 2회 → base32풍 12자
+/// (xxxx-xxxx-xxxx). 계정 비밀번호가 아니라 **만남 지점 재료**(docs/09 §6-2)라 이 강도면
+/// 스캔 방어 목적을 충족한다 — 더 강하게 쓰고 싶으면 직접 입력.
+fn suggest_passphrase() -> String {
+    use std::hash::{BuildHasher as _, Hasher as _};
+    let mut bits = [0u64; 2];
+    for b in &mut bits {
+        let mut h = std::collections::hash_map::RandomState::new().build_hasher();
+        h.write_u64(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.subsec_nanos().into()),
+        );
+        *b = h.finish();
+    }
+    const AL: &[u8] = b"abcdefghjkmnpqrstuvwxyz23456789"; // 혼동 글자(i·l·o·0·1) 제외
+    let mut out = String::new();
+    let mut v = u128::from(bits[0]) << 64 | u128::from(bits[1]);
+    for i in 0..12 {
+        if i > 0 && i % 4 == 0 {
+            out.push('-');
+        }
+        out.push(AL[(v % AL.len() as u128) as usize] as char);
+        v /= AL.len() as u128;
+    }
+    out
+}
+
+/// 릴레이 1회 접속(테스트) — 성공 = (주소, 서버 핀 앞 8자). 핀은 TOFU로 고정한다.
+fn sync_test_once(raw: &str, dir: &std::path::Path) -> Result<(String, String), String> {
+    let (addr_str, addr) =
+        nclip_sync::relay::resolve_server(raw).ok_or_else(|| format!("주소 해석 실패: {raw}"))?;
+    let (id, _) = nclip_sync::keyfile::load_or_generate(&dir.join("identity.key"))
+        .map_err(|e| format!("신원 키: {e}"))?;
+    let rids = nclip_sync::relay::rids_around(&id.peer_id());
+    let pin_path = dir.join("server.pin");
+    let expected = nclip_sync::relay::pinfile::lookup(&pin_path, &addr_str);
+    let client = nclip_sync::relay::RelayClient::connect(addr, &id, &rids, expected)
+        .map_err(|e| format!("{e:?}"))?;
+    let pin = nclip_sync::relay::peer_hex(&client.server_peer());
+    if expected.is_none() {
+        let _ = nclip_sync::relay::pinfile::store(&pin_path, &addr_str, &client.server_peer());
+    }
+    Ok((addr_str, pin[..8].to_string()))
 }

@@ -54,6 +54,9 @@ pub struct TextBox {
     /// 멀티라인(소개글) 모드(08-17) — Enter가 확정 대신 개행, 세로 여러 줄 렌더.
     /// 단일 라인 경로는 이 플래그가 꺼져 있어 종전 그대로다.
     multiline: bool,
+    /// ★ 마스킹(●) — 비밀 값 표시용(09-03 동기화 패스프레이즈). 값·편집은 불변,
+    ///   **표시 문자열만** 바꾼다(캐럿·히트테스트는 같은 마스킹 문자열을 재서 일관).
+    masked: bool,
     /// ★ 멀티라인 **줄 바꿈**(09-02 사용자 요청 — 편집 시트 Alt+Z 토글). 표시 레이아웃만
     ///   접는다 — 세로 이동(↑↓)·Home/End는 **논리 줄** 기준 유지(1단 · 시각 줄 nav는 후속).
     wrap: bool,
@@ -118,6 +121,7 @@ impl TextBox {
             char_filter: None,
             max_chars: 0,
             multiline: false,
+            masked: false,
             wrap: false,
             vscroll: std::cell::Cell::new(0),
             mhscroll: std::cell::Cell::new(0),
@@ -165,6 +169,17 @@ impl TextBox {
     pub fn with_multiline(mut self) -> Self {
         self.multiline = true;
         self
+    }
+
+    /// ★ 마스킹 토글(단일행) — 비밀 값을 ●로 가린다(09-03).
+    pub fn set_masked(&mut self, on: bool) {
+        self.masked = on;
+    }
+
+    /// 현재 마스킹 상태.
+    #[must_use]
+    pub fn masked(&self) -> bool {
+        self.masked
     }
 
     /// ★ 줄 바꿈 토글(멀티라인 전용) — 켜면 가로 스크롤 대신 폭에 맞춰 접는다.
@@ -1051,24 +1066,37 @@ impl Widget for TextBox {
         // 텍스트/placeholder는 고정 시작점(tx)에서 그리되, 폭을 넘으면 **가로 스크롤**로
         // 캐럿을 따라간다(① 08-13 — 그전엔 긴 텍스트에서 캐럿이 화면 밖으로 사라졌다).
         ctx.select_font(FontSlot::Base, false);
-        let text = self.edit.text();
+        // ★ 마스킹(09-03) — 값·preedit을 ●로 치환한 **표시 문자열**로 재고 그린다:
+        //   폭 측정·캐럿·히트테스트가 전부 같은 문자열을 쓰므로 좌표가 어긋나지 않는다.
+        let mask = |n: usize| "•".repeat(n);
+        let raw_text = self.edit.text();
+        let text = if self.masked {
+            mask(raw_text.chars().count())
+        } else {
+            raw_text
+        };
         let chars: Vec<char> = text.chars().collect();
         let caret_i = self.edit.caret().min(chars.len());
         let before: String = chars[..caret_i].iter().collect();
+        let preedit_disp = if self.masked {
+            mask(self.edit.preedit().chars().count())
+        } else {
+            self.edit.preedit().to_string()
+        };
         // 조합 중 문자열(preedit)은 캐럿 자리에 끼워 **표시만** 한다(편집 상태 불변).
-        let shown = if self.edit.preedit().is_empty() {
+        let shown = if preedit_disp.is_empty() {
             text.clone()
         } else {
             let after: String = chars[caret_i..].iter().collect();
-            format!("{before}{}{after}", self.edit.preedit())
+            format!("{before}{preedit_disp}{after}")
         };
         // 문자 경계 누적 폭 — 단일 패스(08-14 성능 · 값은 접두사 재측정과 동일 계약.
         // 캐럿 깜빡임이 포커스 창을 상시 리페인트해 매 프레임 O(n²) 측정이 비쌌다).
         let mut w = Vec::new();
         ctx.text_prefix_widths(&text, &mut w);
         let pre_start_px = w.get(caret_i).copied().unwrap_or(0);
-        let caret_px = pre_start_px + ctx.text_width(self.edit.preedit()); // 조합 뒤가 캐럿
-        let total_px = if self.edit.preedit().is_empty() {
+        let caret_px = pre_start_px + ctx.text_width(&preedit_disp); // 조합 뒤가 캐럿
+        let total_px = if preedit_disp.is_empty() {
             w.last().copied().unwrap_or(0) // shown == text — 같은 값(계약)
         } else {
             ctx.text_width(&shown) // 조합 중 한정 — 종전 그대로
