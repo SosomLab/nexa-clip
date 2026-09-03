@@ -22,6 +22,7 @@ mod popup_win;
 mod render_img;
 mod settings_win;
 mod sync_cmd;
+mod syncitem;
 mod tray_cmd;
 mod watch_cmd;
 

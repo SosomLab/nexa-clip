@@ -85,6 +85,23 @@ const DIAL_EVERY: Duration = Duration::from_secs(10);
 const PEER_PING: Duration = Duration::from_secs(15);
 const PEER_DEAD: Duration = Duration::from_secs(45);
 
+/// ★ 피어별 송신 채널(09-04) — 세션 스레드가 등록·해제, `broadcast`가 밀어 넣는다.
+type PeerTx = std::sync::mpsc::Sender<std::sync::Arc<Vec<u8>>>;
+static PEER_TX: std::sync::Mutex<Vec<(String, PeerTx)>> = std::sync::Mutex::new(Vec::new());
+static ITEM_SEQ: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
+
+/// ★ 클립보드 항목 전파(DR-6) — **승인된** 온라인 기기 전부에 보낸다. 반환 = 보낸 기기 수.
+pub(crate) fn broadcast(payload: Vec<u8>) -> usize {
+    let arc = std::sync::Arc::new(payload);
+    let Ok(g) = PEER_TX.lock() else {
+        return 0;
+    };
+    g.iter()
+        .filter(|(hex, _)| crate::devices::is_approved(hex) && crate::devices::is_online(hex))
+        .filter(|(_, tx)| tx.send(arc.clone()).is_ok())
+        .count()
+}
+
 fn wake(proxy: &winit::event_loop::EventLoopProxy<crate::tray_cmd::ShellEvent>) {
     let _ = proxy.send_event(crate::tray_cmd::ShellEvent::SyncTick);
 }
@@ -112,12 +129,20 @@ fn run_peer(
     if s.send(&PeerMsg::Hello(hello).encode()).is_err() {
         return;
     }
-    s.set_recv_timeout(Some(Duration::from_secs(1)));
+    // ★ 송신 채널 등록(09-04) — 셸의 broadcast가 여기로 항목을 민다.
+    let (tx, rx) = std::sync::mpsc::channel::<std::sync::Arc<Vec<u8>>>();
+    if let Ok(mut g) = PEER_TX.lock() {
+        g.retain(|(h, _)| h != &hex);
+        g.push((hex.clone(), tx));
+    }
+    s.set_recv_timeout(Some(Duration::from_millis(250)));
     let devices_path = dir.join("devices.txt");
     let mut last_ping = std::time::Instant::now();
     let mut last_rx = std::time::Instant::now();
     let mut greeted = false;
-    loop {
+    let mut peer_name = String::new();
+    let mut asm = nclip_sync::hello::Assembler::default();
+    'session: loop {
         if PEER_GEN.load(std::sync::atomic::Ordering::Relaxed) != gen {
             break;
         }
@@ -125,7 +150,29 @@ fn run_peer(
             Ok(m) => {
                 last_rx = std::time::Instant::now();
                 match PeerMsg::decode(&m) {
+                    Some(PeerMsg::Item {
+                        seq,
+                        idx,
+                        total,
+                        data,
+                    }) => {
+                        if let Some(payload) = asm.push(seq, idx, total, data) {
+                            if crate::devices::is_approved(&hex) {
+                                let _ = proxy.send_event(crate::tray_cmd::ShellEvent::SyncItem {
+                                    from: peer_name.clone(),
+                                    payload,
+                                });
+                            } else {
+                                println!(
+                                    "동기화: {}({}…)의 클립보드 항목 — 승인 전이라 버림(설정 → 동기화 → 승인)",
+                                    peer_name,
+                                    &hex[..8]
+                                );
+                            }
+                        }
+                    }
                     Some(PeerMsg::Hello(h)) => {
+                        peer_name = h.name.as_str().to_string();
                         let new = crate::devices::upsert_online(&hex, h.name.as_str(), &h.os);
                         if let Err(e) = crate::devices::save(&devices_path) {
                             eprintln!("동기화: 기기 목록 저장 실패({e})");
@@ -151,6 +198,21 @@ fn run_peer(
             Err(SessionError::TimedOut) => {}
             Err(_) => break,
         }
+        // ★ 송신 — 셸이 민 항목을 조각내 보낸다(승인 판정은 broadcast가 이미 했다).
+        while let Ok(payload) = rx.try_recv() {
+            let seq = ITEM_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            for m in PeerMsg::chunks(seq, &payload) {
+                if s.send(&m.encode()).is_err() {
+                    break 'session;
+                }
+            }
+            println!(
+                "동기화: → {}({}…) 항목 {}KB",
+                peer_name,
+                &hex[..8],
+                payload.len() / 1024
+            );
+        }
         if last_ping.elapsed() >= PEER_PING {
             if s.send(&PeerMsg::Ping.encode()).is_err() {
                 break;
@@ -160,6 +222,9 @@ fn run_peer(
         if last_rx.elapsed() > PEER_DEAD {
             break;
         }
+    }
+    if let Ok(mut g) = PEER_TX.lock() {
+        g.retain(|(h, _)| h != &hex);
     }
     if greeted {
         crate::devices::set_offline(&hex);

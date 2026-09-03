@@ -361,13 +361,22 @@ impl App {
             } else {
                 d.hex.as_str()
             };
+            let appr = nclip_core::tr(
+                lang,
+                if d.approved {
+                    nclip_core::Msg::StSyncDevApproved
+                } else {
+                    nclip_core::Msg::StSyncDevNeedsApproval
+                },
+            );
             if d.online {
                 lines.push(format!(
-                    "*{} · {} · {} · {}",
+                    "*{} · {} · {} · {} · {}",
                     d.name,
                     short,
                     d.os,
-                    nclip_core::tr(lang, nclip_core::Msg::StSyncDevOnline)
+                    nclip_core::tr(lang, nclip_core::Msg::StSyncDevOnline),
+                    appr
                 ));
             } else {
                 let ago = now.saturating_sub(d.last_seen);
@@ -379,11 +388,12 @@ impl App {
                     format!("{}d", ago / 86_400)
                 };
                 lines.push(format!(
-                    "{} · {} · {} · {}",
+                    "{} · {} · {} · {} · {}",
                     d.name,
                     short,
                     d.os,
-                    nclip_core::tr(lang, nclip_core::Msg::StSyncDevAgo).replacen("{}", &ago, 1)
+                    nclip_core::tr(lang, nclip_core::Msg::StSyncDevAgo).replacen("{}", &ago, 1),
+                    appr
                 ));
             }
         }
@@ -551,6 +561,40 @@ impl App {
                     );
                     self.redraw();
                 }
+            }
+            // ★ 기기 승인(09-04) — 지금 연결된 기기 전부(기기당 1회 · 파일에 남는다).
+            if key == "sync.approve" && val == "run" {
+                let n = crate::devices::approve_online();
+                let lang = nclip_core::current_lang();
+                let mut inv2 = Invalidations::default();
+                if n > 0 {
+                    if let Err(e) =
+                        crate::devices::save(&crate::conf::data_dir().join("devices.txt"))
+                    {
+                        eprintln!("동기화: 기기 목록 저장 실패({e})");
+                    }
+                    let msg = nclip_core::tr(lang, nclip_core::Msg::StSyncApproved).replacen(
+                        "{}",
+                        &n.to_string(),
+                        1,
+                    );
+                    self.widget.set_row_note_toned(
+                        "sync.approve",
+                        &msg,
+                        nclip_ui::NoteTone::Ok,
+                        &mut inv2,
+                    );
+                    println!("동기화: 기기 {n}대 승인");
+                } else {
+                    self.widget.set_row_note_toned(
+                        "sync.approve",
+                        nclip_core::tr(lang, nclip_core::Msg::StSyncApproveNone),
+                        nclip_ui::NoteTone::Warn,
+                        &mut inv2,
+                    );
+                }
+                self.devices_text.clear(); // 목록의 승인 표기 갱신
+                self.redraw();
             }
             // ★ 기기 이름(09-03) — 다음 세션부터 새 이름으로 인사한다.
             if key == "sync.device_name" {

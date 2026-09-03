@@ -308,6 +308,13 @@ pub enum Msg {
     TraySettings,
     /// ★ Dock 아이콘 표시(T-12e mac · 09-03).
     SetDockIcon,
+    SyncApprove,
+    SyncApproveDesc,
+    SyncApproveVerb,
+    StSyncApproved,
+    StSyncApproveNone,
+    StSyncDevApproved,
+    StSyncDevNeedsApproval,
     /// 위 설명.
     SetDockIconDesc,
     // ── 메인창·팝업 표시 문자열(09-02 i18n 스윕 — "기본 언어 en인데 한글이 보인다").
@@ -756,6 +763,28 @@ impl Msg {
                 "显示 Dock 图标",
                 "Dock アイコンを表示",
             ],
+            Msg::SyncApprove => ["Approve devices", "기기 승인", "批准设备", "端末を承認"],
+            Msg::SyncApproveDesc => [
+                "Allow clipboard sharing with the devices connected right now — once per device. Unapproved devices only appear in the list.",
+                "지금 연결된 기기와 클립보드를 주고받도록 허용합니다 — 기기당 한 번. 승인 전 기기는 목록에만 보입니다.",
+                "允许与当前已连接的设备共享剪贴板——每台设备一次。未批准的设备只出现在列表中。",
+                "現在接続中の端末とクリップボードを共有できるようにします — 端末ごとに一度。未承認の端末は一覧にのみ表示されます。",
+            ],
+            Msg::SyncApproveVerb => ["Approve", "승인", "批准", "承認"],
+            Msg::StSyncApproved => [
+                "Approved {} device(s) — clipboard now syncs",
+                "{}대 승인 — 이제 클립보드가 동기화됩니다",
+                "已批准 {} 台设备——剪贴板现在会同步",
+                "{} 台を承認 — クリップボードが同期されます",
+            ],
+            Msg::StSyncApproveNone => [
+                "No connected device to approve",
+                "승인할 연결된 기기가 없습니다",
+                "没有可批准的已连接设备",
+                "承認できる接続中の端末がありません",
+            ],
+            Msg::StSyncDevApproved => ["approved", "승인됨", "已批准", "承認済み"],
+            Msg::StSyncDevNeedsApproval => ["approval needed", "승인 필요", "需要批准", "要承認"],
             Msg::SetDockIconDesc => [
                 "macOS only: off hides the app from Dock and Cmd+Tab — open it from the menu bar icon",
                 "macOS 전용: 끄면 Dock·Cmd+Tab에서 사라지고 메뉴 막대 아이콘에서만 엽니다",
@@ -1051,7 +1080,7 @@ mod tests {
     use super::*;
 
     /// 카탈로그 전수 — 새 `Msg`를 더하면 여기도 더한다(빈칸 검사가 그걸 강제한다).
-    const ALL_MSG: [Msg; 189] = [
+    const ALL_MSG: [Msg; 196] = [
         Msg::AppName,
         Msg::SearchPlaceholder,
         Msg::EmptyHistory,
@@ -1157,6 +1186,13 @@ mod tests {
         Msg::TrayQuit,
         Msg::TraySettings,
         Msg::SetDockIcon,
+        Msg::SyncApprove,
+        Msg::SyncApproveDesc,
+        Msg::SyncApproveVerb,
+        Msg::StSyncApproved,
+        Msg::StSyncApproveNone,
+        Msg::StSyncDevApproved,
+        Msg::StSyncDevNeedsApproval,
         Msg::SetDockIconDesc,
         Msg::SearchHint,
         Msg::MainTitleSuffix,

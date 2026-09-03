@@ -407,6 +407,16 @@ pub(crate) const REGISTRY: &[Entry] = &[
         SettingKind::Report,
         "sync.devices",
     ),
+    // ★ 승인(09-04 · docs/09 §6-3) — 지금 연결된 기기를 승인해야 클립보드가 오간다(기기당 1회).
+    e(
+        Msg::CatSync,
+        Msg::SyncApprove,
+        Msg::SyncApproveDesc,
+        SettingKind::Action {
+            verb: Msg::SyncApproveVerb,
+        },
+        "sync.approve",
+    ),
     // ── 고급 ────────────────────────────────────────────────
     e(
         Msg::CatAdvanced,

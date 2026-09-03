@@ -25,6 +25,8 @@ pub(crate) struct DeviceEntry {
     pub last_seen: u64,
     /// 지금 종단 세션이 살아 있는가.
     pub online: bool,
+    /// ★ 사용자가 승인한 기기(09-04 — docs/09 §6-3: 승인 전엔 클립보드를 주고받지 않는다).
+    pub approved: bool,
 }
 
 static DEVICES: Mutex<Vec<DeviceEntry>> = Mutex::new(Vec::new());
@@ -79,9 +81,31 @@ pub(crate) fn upsert_online(hex: &str, name: &str, os: &str) -> bool {
             first_seen: now,
             last_seen: now,
             online: true,
+            approved: false,
         });
         true
     }
+}
+
+/// 승인됐는가(전파 게이트 — 보낼 때·받을 때 모두).
+pub(crate) fn is_approved(hex: &str) -> bool {
+    DEVICES
+        .lock()
+        .map(|g| g.iter().any(|d| d.hex == hex && d.approved))
+        .unwrap_or(false)
+}
+
+/// ★ 지금 연결된 기기를 전부 승인(설정 버튼) — 반환 = 새로 승인된 수.
+pub(crate) fn approve_online() -> usize {
+    let Ok(mut g) = DEVICES.lock() else {
+        return 0;
+    };
+    let mut n = 0;
+    for d in g.iter_mut().filter(|d| d.online && !d.approved) {
+        d.approved = true;
+        n += 1;
+    }
+    n
 }
 
 /// 세션 종료.
@@ -112,15 +136,21 @@ pub(crate) fn load(path: &std::path::Path) {
     };
     let mut v = Vec::new();
     for line in text.lines() {
-        let mut it = line.splitn(6, ' ');
-        if it.next() != Some("v1") {
-            continue;
-        }
+        // v2 = 승인 필드 추가(09-04) · v1(09-03)은 미승인으로 읽는다.
+        let ver = line.split(' ').next().unwrap_or("");
+        let (nfields, approved_field) = match ver {
+            "v1" => (6, false),
+            "v2" => (7, true),
+            _ => continue,
+        };
+        let mut it = line.splitn(nfields, ' ');
+        it.next();
         let (Some(hex), Some(first), Some(last), Some(os)) =
             (it.next(), it.next(), it.next(), it.next())
         else {
             continue;
         };
+        let approved = approved_field && it.next() == Some("A");
         let name = it.next().unwrap_or("").to_string();
         if hex.len() != 64 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
             continue;
@@ -132,6 +162,7 @@ pub(crate) fn load(path: &std::path::Path) {
             first_seen: first.parse().unwrap_or(0),
             last_seen: last.parse().unwrap_or(0),
             online: false,
+            approved,
         });
     }
     if let Ok(mut g) = DEVICES.lock() {
@@ -147,11 +178,12 @@ pub(crate) fn save(path: &std::path::Path) -> std::io::Result<()> {
             g.iter()
                 .map(|d| {
                     format!(
-                        "v1 {} {} {} {} {}",
+                        "v2 {} {} {} {} {} {}",
                         d.hex,
                         d.first_seen,
                         d.last_seen,
                         if d.os.is_empty() { "-" } else { &d.os },
+                        if d.approved { "A" } else { "-" },
                         d.name
                     )
                 })
@@ -192,6 +224,13 @@ mod tests {
         assert_eq!(d.name, "작업용 PC 2");
         assert_eq!(d.os, "windows");
         assert!(!d.online);
+        assert!(!d.approved, "v2 미승인 필드");
+        // 승인은 온라인 기기만 · 파일을 왕복해도 남는다.
+        assert!(!upsert_online(&hex, "작업용 PC 2", "windows"));
+        assert_eq!(approve_online(), 1);
+        save(&path).expect("저장");
+        load(&path);
+        assert!(is_approved(&hex));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -102,6 +102,8 @@ pub(crate) enum ShellEvent {
     SyncState(bool),
     /// ★ 러너 상태만 바뀜(접속 중·실패·중단) — 루프를 깨워 설정 창 폴링을 돌린다(09-03).
     SyncTick,
+    /// ★ 다른 기기의 클립보드 항목(09-04 · DR-6) — 승인된 기기에서 온 휴대 페이로드.
+    SyncItem { from: String, payload: Vec<u8> },
     /// 트레이 메뉴 "종료".
     Quit,
     /// 감시가 항목을 잡았다 — 게이트를 지나면 이력에 넣는다.
@@ -264,6 +266,9 @@ struct Shell {
     paste_auto: bool,
     /// ★ 동기화 연결 상태(09-03) — None = 기능 꺼짐 · Some(on) = 켜짐/연결 여부.
     sync_on: Option<bool>,
+    /// ★ 원격 항목 에코 차단(09-04) — 방금 적용한 항목의 페이로드 지문·시각. 감시가 우리
+    ///   게시를 다시 잡아 승격시켜도 **되돌려 보내지 않는다**(핑퐁 방지).
+    sync_skip: Option<(u64, std::time::Instant)>,
     /// 루프에 되돌려 보내는 통로(`PasteAfterClose`).
     proxy: winit::event_loop::EventLoopProxy<ShellEvent>,
     /// ★ 창 레벨(최상위)이 지금 창 백엔드에서 실제로 먹는가 — Wayland 네이티브 창이면
@@ -452,6 +457,168 @@ impl Shell {
                 self.history.expect_echo(i);
             }
             Err(e) => eprintln!("재적재 실패: {e}"),
+        }
+    }
+
+    /// 캡처(감시) 또는 원격 항목(`remote = Some(기기명)`)을 이력에 넣는다 — 게이트·요약·썸네일·
+    /// 영속·화면 갱신은 공용. ★ 우리 복사만 다른 기기로 전파한다(09-04 · DR-6).
+    fn on_captured(&mut self, mut snap: Box<ClipSnapshot>, remote: Option<&str>) {
+        // ★ CF_HTML 정제(T-14d · D-62 1단) — 캡처 때 한 번만(재적재·저장은 이미 깨끗).
+        for r in &mut snap.reps {
+            if r.format == "HTML Format" {
+                if let Some(clean) = nclip_core::capture::sanitize_cf_html(&r.data) {
+                    println!(
+                        "HTML 정제: {}B → {}B (script/이벤트 속성 제거)",
+                        r.data.len(),
+                        clean.len()
+                    );
+                    r.data = clean;
+                }
+            }
+        }
+        // ★ 설정 즉시 반영 — 설정 창에서 바꾼 값이 다음 캡처부터 산다
+        //   (게이트·상한·메뉴 개수·자동 붙여넣기 — 재시작 불요).
+        self.gate = Gate::from_state(&self.app.conf);
+        self.history.set_cap(
+            self.app
+                .conf
+                .state
+                .get("store.max_items")
+                .parse()
+                .unwrap_or(1000),
+        );
+        // ★ 보관 예산(T-13 · 09-01 확정: 기본 기간 무제한 + 500MB).
+        let mb: u64 = self
+            .app
+            .conf
+            .state
+            .get("store.max_total_mb")
+            .parse()
+            .unwrap_or(500);
+        let days: u64 = self
+            .app
+            .conf
+            .state
+            .get("store.max_age_days")
+            .parse()
+            .unwrap_or(0);
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        self.history
+            .set_budget(mb * 1_000_000, days * 86_400_000, now_ms);
+        self.tray_n = self
+            .app
+            .conf
+            .state
+            .get("ui.tray_recent_n")
+            .parse()
+            .unwrap_or(8);
+        self.paste_auto = self.app.conf.state.get("paste.auto") == "on";
+        // 게이트 — `watch`와 같은 정책. 막힌 것은 이력에도 안 들어간다.
+        if self.gate.blocks(&snap).is_some() {
+            return;
+        }
+        let (kind, line) = summarize(&snap);
+        let label = clip_text(&line, MENU_LABEL_CHARS);
+        // ★ 이미지 썸네일(08-28 사용자 요청) — 설정이 켜졌을 때만 만든다.
+        let thumb = (matches!(
+            kind,
+            nclip_core::ClipKind::Image | nclip_core::ClipKind::Object
+        ) && self.app.conf.state.get("ui.image_preview") == "on")
+            .then(|| make_thumb(&snap.reps))
+            .flatten();
+        // ★ 재적재로 되돌아온 우리 게시도 여기로 온다 — 승격(맨 위로)이
+        //   곧 에코 처리다(항목이 늘지 않는다).
+        let pushed: Pushed = self.history.push(&snap, kind, label, thumb);
+        // ★ 영속(T-16) — 이력 변화를 그대로 이벤트로 흘린다(id가 짝이다).
+        match pushed {
+            Pushed::New | Pushed::Replaced => {
+                if let Some(front) = self.history.get(0) {
+                    self.store.add(&to_stored(front));
+                }
+            }
+            Pushed::Promoted => {
+                if let Some(front) = self.history.get(0) {
+                    // ★ 승격이 램 섬네일을 채웠을 수 있다(무섬네일 세대 항목 재복사 —
+                    //   09-02 실기: TOUCH만 남기면 재시작 후 텍스트로 퇴행). 섬네일이
+                    //   있으면 ADD로 온전히 재기록 — 블롭은 내용 주소라 비용 미미.
+                    if front.thumb.is_some() {
+                        self.store.add(&to_stored(front));
+                    } else {
+                        self.store.touch(front.id);
+                    }
+                }
+            }
+        }
+        for id in self.history.drain_evicted() {
+            self.store.remove(id);
+        }
+        self.refresh_tray();
+        self.main.on_history_changed(&self.history);
+        if self.popup.is_open() {
+            self.popup.on_history_changed(&self.history);
+        }
+        if remote.is_none() {
+            self.maybe_broadcast(&snap);
+        }
+    }
+
+    /// ★ 전파(DR-6) — 릴레이에 붙어 있고 승인된 기기가 있을 때, 휴대 페이로드로 보낸다.
+    ///   방금 원격에서 받아 게시한 항목의 에코(같은 페이로드 지문)는 보내지 않는다.
+    fn maybe_broadcast(&mut self, snap: &ClipSnapshot) {
+        if !crate::sync_cmd::is_connected() {
+            return;
+        }
+        let Some(payload) = crate::syncitem::from_reps(&snap.reps) else {
+            return;
+        };
+        let h = crate::syncitem::hash(&payload);
+        if let Some((sh, t)) = self.sync_skip {
+            if sh == h && t.elapsed() < std::time::Duration::from_secs(10) {
+                return; // 원격 항목의 에코 — 되돌려 보내지 않는다.
+            }
+        }
+        let n = crate::sync_cmd::broadcast(payload);
+        if n > 0 {
+            println!("동기화: 항목 전파 → 기기 {n}대");
+        }
+    }
+
+    /// ★ 원격 항목 적용(09-04) — 이력 등재(출처 = 기기명) + **클립보드 게시**(다른 기기에서
+    ///   바로 Ctrl+V) + 에코 흡수(감시가 다시 잡으면 승격 · 되돌려 보내지 않음).
+    fn apply_remote(&mut self, from: &str, payload: &[u8]) {
+        let Some(parts) = crate::syncitem::decode(payload) else {
+            eprintln!("동기화: {from}의 항목 형식 오류 — 버림");
+            return;
+        };
+        let reps = crate::syncitem::to_local_reps(&parts);
+        if reps.is_empty() {
+            eprintln!("동기화: {from}의 항목에 이 OS로 옮길 표현이 없음 — 버림");
+            return;
+        }
+        // 에코 지문은 **우리가 게시할 표현**으로 계산한다 — 감시가 다시 읽어 오는 것이 이것이다.
+        if let Some(p) = crate::syncitem::from_reps(&reps) {
+            self.sync_skip = Some((crate::syncitem::hash(&p), std::time::Instant::now()));
+        }
+        println!(
+            "동기화: ← {from} 항목 수신 — {}",
+            crate::syncitem::describe(&parts)
+        );
+        let snap = ClipSnapshot {
+            reps: reps.clone(),
+            source_app: Some(format!("⇄ {from}")),
+            concealed: false,
+            seq: 0,
+        };
+        self.on_captured(Box::new(snap), Some(from));
+        match nclip_plat::clipboard::set_reps(&reps) {
+            Ok(n) => {
+                println!("동기화: 클립보드 게시 — 표현 {n}개(이 PC에서 바로 붙여넣기 가능)");
+                self.history.expect_echo(0);
+            }
+            Err(e) => eprintln!("동기화: 클립보드 게시 실패({e}) — 이력에는 들어갔습니다"),
         }
     }
 
@@ -762,107 +929,8 @@ impl ApplicationHandler<ShellEvent> for Shell {
                     );
                 }
             }
-            ShellEvent::Captured(mut snap) => {
-                // ★ CF_HTML 정제(T-14d · D-62 1단) — 캡처 때 한 번만(재적재·저장은 이미 깨끗).
-                for r in &mut snap.reps {
-                    if r.format == "HTML Format" {
-                        if let Some(clean) = nclip_core::capture::sanitize_cf_html(&r.data) {
-                            println!(
-                                "HTML 정제: {}B → {}B (script/이벤트 속성 제거)",
-                                r.data.len(),
-                                clean.len()
-                            );
-                            r.data = clean;
-                        }
-                    }
-                }
-                // ★ 설정 즉시 반영 — 설정 창에서 바꾼 값이 다음 캡처부터 산다
-                //   (게이트·상한·메뉴 개수·자동 붙여넣기 — 재시작 불요).
-                self.gate = Gate::from_state(&self.app.conf);
-                self.history.set_cap(
-                    self.app
-                        .conf
-                        .state
-                        .get("store.max_items")
-                        .parse()
-                        .unwrap_or(1000),
-                );
-                // ★ 보관 예산(T-13 · 09-01 확정: 기본 기간 무제한 + 500MB).
-                let mb: u64 = self
-                    .app
-                    .conf
-                    .state
-                    .get("store.max_total_mb")
-                    .parse()
-                    .unwrap_or(500);
-                let days: u64 = self
-                    .app
-                    .conf
-                    .state
-                    .get("store.max_age_days")
-                    .parse()
-                    .unwrap_or(0);
-                let now_ms = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_millis() as u64)
-                    .unwrap_or(0);
-                self.history
-                    .set_budget(mb * 1_000_000, days * 86_400_000, now_ms);
-                self.tray_n = self
-                    .app
-                    .conf
-                    .state
-                    .get("ui.tray_recent_n")
-                    .parse()
-                    .unwrap_or(8);
-                self.paste_auto = self.app.conf.state.get("paste.auto") == "on";
-                // 게이트 — `watch`와 같은 정책. 막힌 것은 이력에도 안 들어간다.
-                if self.gate.blocks(&snap).is_some() {
-                    return;
-                }
-                let (kind, line) = summarize(&snap);
-                let label = clip_text(&line, MENU_LABEL_CHARS);
-                // ★ 이미지 썸네일(08-28 사용자 요청) — 설정이 켜졌을 때만 만든다.
-                let thumb = (matches!(
-                    kind,
-                    nclip_core::ClipKind::Image | nclip_core::ClipKind::Object
-                ) && self.app.conf.state.get("ui.image_preview") == "on")
-                    .then(|| make_thumb(&snap.reps))
-                    .flatten();
-                // ★ 재적재로 되돌아온 우리 게시도 여기로 온다 — 승격(맨 위로)이
-                //   곧 에코 처리다(항목이 늘지 않는다).
-                let pushed: Pushed = self.history.push(&snap, kind, label, thumb);
-                // ★ 영속(T-16) — 이력 변화를 그대로 이벤트로 흘린다(id가 짝이다).
-                match pushed {
-                    Pushed::New | Pushed::Replaced => {
-                        if let Some(front) = self.history.get(0) {
-                            self.store.add(&to_stored(front));
-                        }
-                    }
-                    Pushed::Promoted => {
-                        if let Some(front) = self.history.get(0) {
-                            // ★ 승격이 램 섬네일을 채웠을 수 있다(무섬네일 세대 항목 재복사 —
-                            //   09-02 실기: TOUCH만 남기면 재시작 후 텍스트로 퇴행). 섬네일이
-                            //   있으면 ADD로 온전히 재기록 — 블롭은 내용 주소라 비용 미미.
-                            if front.thumb.is_some() {
-                                self.store.add(&to_stored(front));
-                            } else {
-                                self.store.touch(front.id);
-                            }
-                        }
-                    }
-                }
-                for id in self.history.drain_evicted() {
-                    self.store.remove(id);
-                }
-                self.refresh_tray();
-                self.main.on_history_changed(&self.history);
-                if self.popup.is_open() {
-                    // ★ 복사(중복 포함)가 들어오면 커서를 맨 위로 — 방금 것이
-                    //   항상 첫 줄이고 선택도 그걸 가리킨다(08-28 사용자 요청).
-                    self.popup.on_history_changed(&self.history);
-                }
-            }
+            ShellEvent::Captured(snap) => self.on_captured(snap, None),
+            ShellEvent::SyncItem { from, payload } => self.apply_remote(&from, &payload),
             ShellEvent::Recent(i) => self.repost(i),
         }
         self.pump_preview();
@@ -1144,6 +1212,7 @@ pub(crate) fn run() {
         paste: PlatformPaste::new(),
         paste_auto,
         sync_on: None,
+        sync_skip: None,
         proxy: el.create_proxy(),
         atop_effective,
     };
