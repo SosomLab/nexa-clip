@@ -227,6 +227,7 @@ General 안내문 그대로:
 | `ui.show_footer` | Checkbox | on | 하단 바 표시 | M |
 | `ui.tray_recent_n` | RadioInput | 8 | ★ **트레이 메뉴 최근 항목 수(5~10)** | N |
 | `ui.tray_show_recent` | Checkbox | on | ★ 트레이 아이콘 옆 최근 항목 표시 | M |
+| `ui.dock_icon` | Checkbox | on | ★ **Dock 아이콘 표시**(mac 전용 — 끔 = Accessory·메뉴바에서만 · 09-04) | N |
 | `ui.font.*` | 폰트 슬롯 | — | 글꼴·크기(beep 슬롯 구조 그대로) | B |
 
 ### 3-8. 검색 (Search)

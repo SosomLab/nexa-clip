@@ -2,6 +2,10 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-09-04 (mac 1차) — ★ T-12e mac: 메뉴바 상주(NSStatusItem) + Dock 정책 — mac에서 셸 전체 첫 가동
+
+- ★ **mac 트레이 이식**(beep `tray.rs::mac` + 최근·설정 메뉴 확장 · objc2 = winit 동판 — 원장 10 §3) · ★ **연결 배지**(기존 녹색 점 RGBA 합성 그대로 — update 한 번 = 아이콘 변경) · ★ **`ui.dock_icon`**(끔 = Accessory: Dock·⌘Tab 숨김 — 기동 빌더 정책 + 즉시 반영 + 열기 `activate_front`) → 트레이 셸이 mac에서 돌아 **동기화 러너 자동 가동**: 릴레이 접속 ✓ · ★ **kiros33@windows 첫 만남 ✓**(devices.txt — mac↔Win 실전 첫 동작) → [journal](journal/2026-09-04.md)
+
 ## 2026-09-03 (Windows 9~13차) — 추천 3종 · ★ 지연 로드 · ★ M2 동기화 기반 · 연결 수명 계약 · ★ 기기 목록
 
 - 13차 — ★ **기기 표시 이름 + 종단 세션 + 기기 목록**(같은 핸들의 기기 구별): name.rs·host.rs(beep 이식) · hello 프레임(Noise 안) · accept_via/connect_via/★connect_rid(페어링 첫 만남) · 타이브레이크(작은 키가 건다) · devices.txt · 설정 `Report` 행 · 연결 중 Test 잠금 → [journal 13차](journal/2026-09-03.md)
