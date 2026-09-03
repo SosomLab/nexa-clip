@@ -179,6 +179,8 @@ pub(crate) struct MainWin {
     total: usize,
     /// ★ 동기화 연결 상태(09-03) — None = 꺼짐 · Some(on) = 릴레이 연결 여부.
     sync_on: Option<bool>,
+    /// 연결 아이콘 틴트 캐시 — (연결 여부, 색) 키(96² 재틴트를 매 프레임 안 하게).
+    sync_icon: std::cell::RefCell<Option<(bool, u32, nclip_ctl::theme::IconImage)>>,
     /// ★ 미리보기 패널 열림(09-02 K4 · `ui.preview_open` 영속 — 기본 접힘).
     preview_open: bool,
     /// 미리보기 텍스트 — (항목 id, 읽기용 멀티라인 · wrap · 휠 스크롤만 라우팅).
@@ -232,6 +234,7 @@ impl MainWin {
             wrap_sw: None,
             total: 0,
             sync_on: None,
+            sync_icon: std::cell::RefCell::new(None),
             preview_open: false,
             preview_tb: None,
             preview_scroll: 0,
@@ -517,6 +520,17 @@ impl MainWin {
     }
 
     /// ★ 최상위 고정 — ⚙ 바로 위(바닥 구역 · 09-02).
+    /// ★ 연결 아이콘 자리(09-03 — Always on top 위) — 표시 전용(버튼 아님).
+    fn sync_icon_rect(&self, h: i32) -> Rect {
+        let side = self.px(28.0);
+        Rect::new(
+            (self.toolbar_w() - side) / 2,
+            h - self.status_h() - side * 3 - self.px(18.0),
+            side,
+            side,
+        )
+    }
+
     fn always_top_rect(&self, h: i32) -> Rect {
         let side = self.px(28.0);
         Rect::new(
@@ -1404,6 +1418,40 @@ impl MainWin {
         }
         self.draw_tool(dc, self.always_top_rect(h), Tool::AlwaysTop, true);
         self.draw_tool(dc, self.settings_rect(h), Tool::Settings, true);
+        // ★ 동기화 연결 아이콘(09-03 — beep Lucide 자산 동일: cable=연결 · unplug=끊김).
+        if let Some(on) = self.sync_on {
+            let col = if on {
+                nclip_ctl::theme::Color::from_rgb(46, 204, 64)
+            } else {
+                th.text_dim
+            };
+            let need = (on, col.0);
+            let mut cache = self.sync_icon.borrow_mut();
+            let fresh = !matches!(cache.as_ref(), Some((o, c, _)) if (*o, *c) == need);
+            if fresh {
+                let alpha: &[u8] = if on {
+                    LINK_CABLE_ALPHA
+                } else {
+                    LINK_UNPLUG_ALPHA
+                };
+                let (r, g, b) = ((col.0 >> 16) as u8, (col.0 >> 8) as u8, col.0 as u8);
+                let mut rgba = Vec::with_capacity(alpha.len() * 4);
+                for &a in alpha {
+                    rgba.extend_from_slice(&[r, g, b, a]);
+                }
+                *cache = Some((
+                    on,
+                    col.0,
+                    nclip_ctl::theme::IconImage::from_rgba(LINK_ICON_SIDE, LINK_ICON_SIDE, rgba),
+                ));
+            }
+            if let Some((_, _, img)) = cache.as_ref() {
+                let r0 = self.sync_icon_rect(h);
+                let ins = px(4.0);
+                let dst = Rect::new(r0.x + ins, r0.y + ins, r0.w - ins * 2, r0.h - ins * 2);
+                dc.image_scaled(dst, img, r0);
+            }
+        }
 
         // ── ③ 목록(핀 구획 먼저) ──
         let list = self.list_rect(w, h);
@@ -2296,6 +2344,13 @@ fn svg_attr(xml: &str, name: &str) -> Option<u32> {
         .ok()?;
     (v >= 1.0).then(|| v.round() as u32)
 }
+
+/// ★ 연결 아이콘 자산(09-03) — beep과 동일(Lucide · ISC · 96² 알파 마스크 사본).
+const LINK_CABLE_ALPHA: &[u8] = include_bytes!("../assets/icon-cable-96.alpha");
+/// 끓김 = 뽑힌 두 플러그(beep Lost 동일).
+const LINK_UNPLUG_ALPHA: &[u8] = include_bytes!("../assets/icon-unplug-96.alpha");
+/// 자산 변 크기(px).
+const LINK_ICON_SIDE: u32 = 96;
 
 /// 라벨의 "W×H" 치수 파싱(언어 무관 — × 양쪽 숫자만 본다) — 논리 크기를 못 얻는
 /// 항목(순수 래스터)의 폴백(09-02 가변 행).

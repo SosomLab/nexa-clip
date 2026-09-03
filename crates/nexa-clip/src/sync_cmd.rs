@@ -12,6 +12,20 @@ const BACKOFF_MS: [u64; 4] = [5_000, 15_000, 60_000, 300_000];
 /// 기본 릴레이 — beep 공식 서버(같은 서버 공유 · DP-1 · 포트 기본 47300).
 const DEFAULT_RELAY: &str = "beepd.sosomlab.com";
 
+/// ★ 연결 해제 요청(09-03 — 설정 창 Disconnect) · 현재 연결 여부(표시·판정용).
+static STOP_REQ: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static CONNECTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// 지금 릴레이에 연결돼 있는가.
+pub(crate) fn is_connected() -> bool {
+    CONNECTED.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// ★ 연결 해제 요청 — 러너가 세션을 끊고 스레드를 마친다(재연결 = 다음 시작).
+pub(crate) fn request_disconnect() {
+    STOP_REQ.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
 /// `sync.enabled`가 켜져 있으면 접속 스레드를 띄운다(부팅 시 1회 — 동적 반영은 후속).
 pub(crate) fn spawn_if_enabled(
     conf: &crate::conf::Settings,
@@ -57,8 +71,10 @@ fn run(
 ) {
     // ★ 연결 상태 통지(09-03) — 트레이 녹색 점·메인창 인디케이터가 이 신호를 그린다.
     let notify = |on: bool| {
+        CONNECTED.store(on, std::sync::atomic::Ordering::Relaxed);
         let _ = proxy.send_event(crate::tray_cmd::ShellEvent::SyncState(on));
     };
+    STOP_REQ.store(false, std::sync::atomic::Ordering::Relaxed);
     // ① 기기 신원(NCK1) — 없으면 생성(포터블: data/ 아래).
     let key_path = dir.join("identity.key");
     let (id, fresh) = match nclip_sync::keyfile::load_or_generate(&key_path) {
@@ -121,6 +137,13 @@ fn run(
                         );
                         drop(inc);
                     }
+                    // ★ 사용자 해제(09-03) — 세션을 버리고 스레드를 마친다.
+                    if STOP_REQ.swap(false, std::sync::atomic::Ordering::Relaxed) {
+                        drop(client);
+                        notify(false);
+                        println!("동기화: 사용자 요청으로 연결 해제 — 다음 시작 때 재연결");
+                        return;
+                    }
                     if !client.is_alive() {
                         eprintln!("동기화: 릴레이 세션 끊김 — 재접속");
                         notify(false);
@@ -135,6 +158,10 @@ fn run(
                     BACKOFF_MS[stage] / 1000
                 );
             }
+        }
+        if STOP_REQ.swap(false, std::sync::atomic::Ordering::Relaxed) {
+            println!("동기화: 사용자 요청으로 중단");
+            return;
         }
         std::thread::sleep(Duration::from_millis(BACKOFF_MS[stage]));
         stage = (stage + 1).min(BACKOFF_MS.len() - 1);

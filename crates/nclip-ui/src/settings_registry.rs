@@ -369,6 +369,16 @@ pub(crate) const REGISTRY: &[Entry] = &[
         },
         "sync.test",
     ),
+    // ★ 연결 해제(09-03 사용자) — 성공 노트 아래쪽 자리(테스트 다음 행).
+    e(
+        Msg::CatSync,
+        Msg::SyncDisconnect,
+        Msg::SyncDisconnectDesc,
+        SettingKind::Action {
+            verb: Msg::SyncDisconnectVerb,
+        },
+        "sync.disconnect",
+    ),
     // ── 고급 ────────────────────────────────────────────────
     e(
         Msg::CatAdvanced,

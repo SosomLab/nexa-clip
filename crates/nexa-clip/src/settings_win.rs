@@ -361,6 +361,28 @@ impl App {
             if key == "sync.test" && val == "run" {
                 self.start_sync_test();
             }
+            // ★ 연결 해제(09-03) — 상주 세션을 끕는다(재연결 = 다음 시작).
+            if key == "sync.disconnect" && val == "run" {
+                let lang = nclip_core::current_lang();
+                let mut inv2 = Invalidations::default();
+                if crate::sync_cmd::is_connected() {
+                    crate::sync_cmd::request_disconnect();
+                    self.widget.set_row_note_toned(
+                        "sync.disconnect",
+                        nclip_core::tr(lang, nclip_core::Msg::StSyncDisconnected),
+                        nclip_ui::NoteTone::Info,
+                        &mut inv2,
+                    );
+                } else {
+                    self.widget.set_row_note_toned(
+                        "sync.disconnect",
+                        nclip_core::tr(lang, nclip_core::Msg::StSyncNotConnected),
+                        nclip_ui::NoteTone::Warn,
+                        &mut inv2,
+                    );
+                }
+                self.redraw();
+            }
             if key == "app.autostart" {
                 let on = val == "on";
                 match nclip_plat::autostart::apply(on) {

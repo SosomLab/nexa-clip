@@ -131,7 +131,8 @@ fn tooltip(held: usize) -> String {
 
 /// ★ 좌상단 녹색 점 오버레이(09-03 — beep 화법: 연결됨 배지).
 fn overlay_sync_dot(rgba: &mut [u8], side: u32) {
-    let r = (side as i32) * 9 / 32; // 32px 기준 반지름 9 — 시인성.
+    // ★ 09-03 실기: 아이콘을 가리지 않게 더 작게(5/32) · 좌상단 밀착(중심 = 반지름).
+    let r = ((side as i32) * 5 / 32).max(3);
     let (cx, cy) = (r, r);
     for y in 0..side as i32 {
         for x in 0..side as i32 {

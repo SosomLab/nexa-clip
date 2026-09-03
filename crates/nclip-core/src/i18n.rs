@@ -366,6 +366,16 @@ pub enum Msg {
     StSyncTestFail,
     /// 상태: 패스프레이즈 추천됨.
     StSyncPassSuggested,
+    /// 연결 해제 라벨.
+    SyncDisconnect,
+    /// 연결 해제 설명.
+    SyncDisconnectDesc,
+    /// 연결 해제 버튼 동사.
+    SyncDisconnectVerb,
+    /// 상태: 해제됨.
+    StSyncDisconnected,
+    /// 상태: 연결 안 됨.
+    StSyncNotConnected,
     /// 동기화: 릴레이 주소 설명.
     SetSyncRelayDesc,
     EditorHint,
@@ -836,6 +846,26 @@ impl Msg {
                 "失败 — {}",
                 "失敗 — {}",
             ],
+            Msg::SyncDisconnect => ["Disconnect", "연결 해제", "断开连接", "切断"],
+            Msg::SyncDisconnectDesc => [
+                "Drop the current relay session (reconnects on next start)",
+                "지금 릴레이 세션을 끊습니다 (다음 시작 때 다시 연결)",
+                "断开当前中继会话（下次启动时重新连接）",
+                "現在のリレーセッションを切断（次回起動時に再接続）",
+            ],
+            Msg::SyncDisconnectVerb => ["Disconnect", "해제", "断开", "切断"],
+            Msg::StSyncDisconnected => [
+                "Disconnected — will reconnect on next start",
+                "해제됨 — 다음 시작 때 다시 연결합니다",
+                "已断开——下次启动时重新连接",
+                "切断しました — 次回起動時に再接続します",
+            ],
+            Msg::StSyncNotConnected => [
+                "Not connected",
+                "연결되어 있지 않습니다",
+                "未连接",
+                "接続されていません",
+            ],
             Msg::StSyncPassSuggested => [
                 "Suggested a passphrase — press the eye to view",
                 "패스프레이즈를 추천해 채웠습니다 — 눈 버튼으로 확인",
@@ -981,7 +1011,7 @@ mod tests {
     use super::*;
 
     /// 카탈로그 전수 — 새 `Msg`를 더하면 여기도 더한다(빈칸 검사가 그걸 강제한다).
-    const ALL_MSG: [Msg; 175] = [
+    const ALL_MSG: [Msg; 180] = [
         Msg::AppName,
         Msg::SearchPlaceholder,
         Msg::EmptyHistory,
@@ -1125,6 +1155,11 @@ mod tests {
         Msg::StSyncTestOk,
         Msg::StSyncTestFail,
         Msg::StSyncPassSuggested,
+        Msg::SyncDisconnect,
+        Msg::SyncDisconnectDesc,
+        Msg::SyncDisconnectVerb,
+        Msg::StSyncDisconnected,
+        Msg::StSyncNotConnected,
         Msg::SetSyncRelayDesc,
         Msg::EditorHint,
         Msg::HintFiles,
