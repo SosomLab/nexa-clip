@@ -9,6 +9,10 @@
 - 2차 — 기능별 시스템 패키지 SSOT([18 §9-1b](18-build-and-test.md)·[21 §1-0](21-manual-test.md)): ★ 클립보드 = 무설치(내재화) · 최상위 고정만 libxkbcommon-x11-0 · 도구 = 폴백 표기(watch 안내 포함) → [journal](journal/2026-09-03.md)
 - 브랜치 `feat/linux-clipboard-native`(롤백 태그 `rollback/pre-linux-clipboard-native`) — `selection_x11.rs` 신설(감시 이벤트化·INCR 양방향·다중 표현 게시·소유자 창 에코 차단) · 도구 파이프는 폴백 강등. ★ **xclip 없는 이 PC에서 E2E ✓**(외부 게시 → 수집 → 트레이·영속) · 실서버 1.5MB INCR 왕복 ✓ · clippy 3타깃 → [journal](journal/2026-09-03.md)
 
+## 2026-09-03 (Windows 6~8차) — 탭 두부 해소 · ★ T-18d 1단(리치 런·탭 스톱·이미지로 복사)
+
+- gfx 제어 문자 규칙(탭=4칸 폭) · ★ richtext 파서 신설 + Ctrl+1 리치 런 렌더(색·굵기·pre 개행·탭 스톱 열맞춤) · ★ "이미지로 복사"(PNG+CF_DIB — PPT에 그림) → [journal](journal/2026-09-03.md)
+
 ## 2026-09-02 (1·2차) — 검색 완전판 · 최상위 고정 · 동적 언어 · 실기 M 반영
 
 - 팝업 검색 = 메인과 동일(캐럿 깜밖임·×·우클릭 메뉴·IME) · 최상위 고정 · TextBox word-wrap(Alt+Z)·더블/트리플 클릭 · ★ i18n 29키 + **동적 언어**(app.lang 부팅 미적용 결함 발견) → [journal 1차](journal/2026-09-02.md)
