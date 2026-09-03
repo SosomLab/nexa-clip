@@ -28,6 +28,9 @@ struct Style {
     color: Option<[u8; 3]>,
     bold: bool,
     italic: bool,
+    /// ★ 공백 보존(`<pre>`·`white-space: pre*` · 09-03 실기 — Sublime계 HTML은
+    /// 블록 태그 없이 **원시 개행**으로 줄을 나눈다): 켜지면 개행 = 줄 바꿈.
+    pre: bool,
 }
 
 /// 표현 목록에서 HTML을 찾아 줄×런으로 푼다 — 없거나 못 풀면 `None`(평문 폴백).
@@ -111,8 +114,28 @@ fn parse(frag: &str, max_lines: usize) -> Vec<Vec<Run>> {
                     last_ws = true;
                 }
                 // 블록 시작·끝 = 줄 바꿈(빈 줄 중복은 만들지 않는다).
-                (_, "div" | "p" | "li" | "tr" | "h1" | "h2" | "h3" | "pre") => {
+                (_, "div" | "p" | "li" | "tr" | "h1" | "h2" | "h3") => {
                     flush!();
+                    if !lines.last().is_none_or(Vec::is_empty) {
+                        lines.push(Vec::new());
+                    }
+                    last_ws = true;
+                }
+                // ★ pre = 공백 보존 구간(09-03) — 스타일 스택으로 복원된다.
+                (false, "pre") => {
+                    flush!();
+                    if !lines.last().is_none_or(Vec::is_empty) {
+                        lines.push(Vec::new());
+                    }
+                    stack.push(cur);
+                    cur.pre = true;
+                    last_ws = true;
+                }
+                (true, "pre") => {
+                    flush!();
+                    if let Some(prev) = stack.pop() {
+                        cur = prev;
+                    }
                     if !lines.last().is_none_or(Vec::is_empty) {
                         lines.push(Vec::new());
                     }
@@ -147,6 +170,16 @@ fn parse(frag: &str, max_lines: usize) -> Vec<Vec<Run>> {
             for ch in decode_entities(&frag[i..next]).chars() {
                 match ch {
                     '\r' => {}
+                    // ★ pre 구간: 개행 = 줄 바꿈 · 공백 그대로(09-03 — Sublime계 HTML).
+                    '\n' if cur.pre => {
+                        flush!();
+                        lines.push(Vec::new());
+                        last_ws = true;
+                    }
+                    ' ' if cur.pre => {
+                        text.push(' ');
+                        last_ws = false;
+                    }
                     ' ' | '\n' => {
                         if !last_ws {
                             text.push(' ');
@@ -208,6 +241,14 @@ fn apply_attrs(tag: &str, st: &mut Style) {
                         st.bold = true;
                     } else if val.eq_ignore_ascii_case("normal") || (1..600).contains(&n) {
                         st.bold = false;
+                    }
+                }
+                "white-space" => {
+                    let v = val.to_ascii_lowercase();
+                    if v.starts_with("pre") {
+                        st.pre = true;
+                    } else if v == "normal" || v == "nowrap" {
+                        st.pre = false;
                     }
                 }
                 "font-style" => {
@@ -380,6 +421,18 @@ mod tests {
     fn plain_html_is_none() {
         assert!(html_runs_of(&[rep("CF_HTML", "<div>hi</div>")], 6).is_none());
         assert!(html_runs_of(&[rep("CF_UNICODETEXT", "x")], 6).is_none());
+    }
+
+    /// ★ pre 구간 — 원시 개행 = 줄 바꿈 · 공백 보존(Sublime계 · 09-03 실기).
+    #[test]
+    fn pre_newlines_become_lines() {
+        let html = "<pre><span style=\"color:#ff0000\">SELECT</span>\n    *\nFROM t</pre>";
+        let runs = html_runs_of(&[rep("CF_HTML", html)], 9).expect("리치 런");
+        assert_eq!(runs.len(), 3, "{runs:?}");
+        assert_eq!(runs[1][0].text, "    *", "들여쓰기 보존: {runs:?}");
+        let html2 = "<span style=\"white-space: pre-wrap; color:#111\">a\nb</span>";
+        let runs2 = html_runs_of(&[rep("text/html", html2)], 9).expect("리치 런");
+        assert_eq!(runs2.len(), 2, "{runs2:?}");
     }
 
     /// style 본문은 글로 새지 않는다.
