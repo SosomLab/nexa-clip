@@ -108,6 +108,9 @@ const PW_EYE_SIDE: u32 = 96;
 
 /// ★ 비밀 행 버튼 자리(09-03 사용자 — "두 버튼은 좌측에") — 상자 왼쪽 바깥에
 /// [생성][미리보기(눈)] 순서로, 버튼 크기 = 상자 높이 · 간격 = 높이/8(절반 간격).
+/// 생성 버튼 무장 유지 시간(09-03 사용자 — "2초 내에 다시 누르지 않으면 원복").
+const PW_ARM_WINDOW: std::time::Duration = std::time::Duration::from_secs(2);
+
 fn pw_btn_rects(b: Rect) -> (Rect, Rect) {
     // ★ 09-03 사용자: "두 버튼을 텍스트 우상단으로" — 상자 위 한 줄, 오른쪽 끝 정렬.
     let eye = Rect::new(b.right() - b.h, b.y - b.h / 8 - b.h, b.h, b.h);
@@ -650,6 +653,9 @@ pub struct SettingsWidget {
     pw_eye: std::cell::RefCell<Option<(u32, nclip_ctl::theme::IconImage)>>,
     /// 비밀번호 생성 아이콘 틴트 캐시(색 키).
     pw_regen: std::cell::RefCell<Option<(u32, nclip_ctl::theme::IconImage)>>,
+    /// ★ 생성 2단 확인(09-03 사용자) — 첫 클릭 = 무장(빨강) · 2초 안 재클릭 = 생성 ·
+    ///   지나면 원복. 호스트 시계에 안 기대고 자체 Instant(유휴 뒤 첫 클릭 오판 방지).
+    pw_arm: Option<std::time::Instant>,
 }
 
 /// 행 노트의 시각 톤(08-22 — "검증됨"이 눈에 띄어야 한다는 사용자 요청).
@@ -704,6 +710,7 @@ impl SettingsWidget {
             notes: HashMap::new(),
             pw_eye: std::cell::RefCell::new(None),
             pw_regen: std::cell::RefCell::new(None),
+            pw_arm: None,
         };
         let mut inv = Invalidations::default();
         w.rebuild(&mut inv);
@@ -1261,6 +1268,13 @@ impl SettingsWidget {
     /// 그 컨트롤의 페이드가 멈춘다. 전부 `|`로 묶는다.
     pub fn tick(&mut self, now_ms: u64) -> bool {
         let mut dirty = self.bars.tick(now_ms) | self.tree.tick(now_ms);
+        // ★ 생성 무장 타이머 — 무장 중엔 계속 깨워 만료를 제때 잡는다(≤ 2초).
+        if let Some(t) = self.pw_arm {
+            if t.elapsed() > PW_ARM_WINDOW {
+                self.pw_arm = None;
+            }
+            dirty = true;
+        }
         self.split_fade.set(self.split_hover || self.split_drag);
         dirty |= self.split_fade.tick(now_ms);
         // 행 컨트롤 — 콤보(닫힌 박스)와 버튼이 각자 자기 페이드를 옮긴다.
@@ -1690,8 +1704,17 @@ impl Widget for SettingsWidget {
                     // ★ 비밀번호 생성(09-03) — 값 생성은 호스트(설정 창) 몫이라
                     //   가짜 키로 요청만 올린다(sync.test = run 문법).
                     if rr.contains(nclip_ctl::geom::Point { x, y }) {
-                        self.changes
-                            .push(("sync.passphrase.regen", "run".to_string()));
+                        match self.pw_arm {
+                            // 2초 안 재클릭 = 생성 — 새 암호는 **반드시 보이게**(가림 해제).
+                            Some(t) if t.elapsed() <= PW_ARM_WINDOW => {
+                                self.pw_arm = None;
+                                f.set_masked(false);
+                                self.changes
+                                    .push(("sync.passphrase.regen", "run".to_string()));
+                            }
+                            // 첫 클릭 = 무장(빨강) — 실수 클릭으로 암호가 바뀌지 않게.
+                            _ => self.pw_arm = Some(std::time::Instant::now()),
+                        }
                         inv.push(self.bounds);
                         return;
                     }
@@ -2258,8 +2281,13 @@ impl Widget for SettingsWidget {
                         };
                         tint_icon(&self.pw_eye, PW_EYE_ALPHA, ink.0);
                         draw_icon(&self.pw_eye, er, ctx);
-                        // 생성 — 항상 흐림 톤(눌림 상태가 없다).
-                        tint_icon(&self.pw_regen, PW_REGEN_ALPHA, theme.text_dim.0);
+                        // 생성 — 평소 흐림 · 무장(첫 클릭 뒤 2초) = 빨강.
+                        let rink = if self.pw_arm.is_some() {
+                            theme.danger
+                        } else {
+                            theme.text_dim
+                        };
+                        tint_icon(&self.pw_regen, PW_REGEN_ALPHA, rink.0);
                         draw_icon(&self.pw_regen, rr, ctx);
                     }
                 }
