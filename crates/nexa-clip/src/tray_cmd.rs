@@ -802,6 +802,15 @@ pub(crate) fn run() {
 
     sync_autostart(&mut conf);
 
+    // ★ T-12e4 단일 인스턴스(09-03) — 이미 상주 중이면 "열기"만 위임하고 조용히 끝낸다
+    //   (자동 시작 상주 + 런처 재실행 = 감시 2중·트레이 2개이던 관찰의 처방).
+    let single_guard = nclip_plat::single::acquire(&crate::conf::data_dir().join("instance.lock"));
+    if single_guard.is_none() {
+        nclip_plat::single::signal_open();
+        println!("이미 실행 중 — 기존 인스턴스에 열기를 위임했습니다");
+        return;
+    }
+
     // ★ 최상위 고정이 지금 백엔드에서 실제로 먹는가 — Wayland 네이티브 창이면 false.
     #[cfg(all(unix, not(target_os = "macos")))]
     let x11_windows = want_x11_windows(&conf) && x11_backend_ready();
@@ -964,6 +973,14 @@ pub(crate) fn run() {
 
     // 메인창 폰트 — 팝업과 같은 이유로 자기 것을 따로 든다(mmap 정적 데이터).
     let main_font = font.clone();
+    {
+        // ★ 둘째 실행의 "열기" 신호 → 메인창(Windows · 09-03).
+        let proxy = el.create_proxy();
+        nclip_plat::single::watch_open_requests(move || {
+            let _ = proxy.send_event(ShellEvent::Open);
+        });
+    }
+
     let mut shell = Shell {
         font: font.clone(),
         app: App::new(font, conf, true),
@@ -985,7 +1002,8 @@ pub(crate) fn run() {
     if let Err(e) = el.run_app(&mut shell) {
         eprintln!("이벤트 루프 오류: {e}");
     }
-    // ★ 종료 직전 강제 수거 — "바꾸고 바로 종료하면 안 저장됨"을 막는다.
+    // single_guard는 여기까지 살아 있다 — 프로세스 수명만큼 인스턴스 소유 유지.
+                        // ★ 종료 직전 강제 수거 — "바꾸고 바로 종료하면 안 저장됨"을 막는다.
     if shell.app.conf.flush() {
         println!("설정 저장: {}", shell.app.conf.path().display());
     }

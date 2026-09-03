@@ -37,6 +37,8 @@ pub mod emf;
 /// Linux 클립보드 직접 구현(x11rb + XFIXES — T-14 본편 · docs/29 §6).
 #[cfg(all(unix, not(target_os = "macos")))]
 pub(crate) mod selection_x11;
+/// ★ T-12e4 — 단일 인스턴스 가드(뮤텍스/flock · 둘째 실행 = 열기 위임).
+pub mod single;
 #[cfg(any(all(unix, not(target_os = "macos")), test))]
 pub mod watch_linux;
 #[cfg(target_os = "macos")]
