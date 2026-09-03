@@ -1017,6 +1017,7 @@ pub(crate) fn run() {
         // ★ 둘째 실행의 "열기" 신호 → 메인창(Windows · 09-03).
         let proxy = el.create_proxy();
         nclip_plat::single::watch_open_requests(move || {
+            println!("단일 인스턴스: 열기 위임 수신 — 메인창을 앞으로");
             let _ = proxy.send_event(ShellEvent::Open);
         });
     }
