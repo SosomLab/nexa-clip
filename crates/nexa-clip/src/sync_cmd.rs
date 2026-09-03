@@ -18,6 +18,29 @@ static CONNECTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool:
 /// 러너 스레드 생존 여부 — 재기동(Test 성공) 때 이중 접속을 막는다(09-03).
 static RUNNING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+/// ★ 러너 상태(09-03 사용자 — "실행 시 자동으로 Test가 눌린 것처럼"): 설정 창이 폴링해
+///   Test 행 노트를 자동 갱신한다. 동기화 꺼짐 = 러너 없음 = `Off`(노트 없음).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum SyncStatus {
+    Off,
+    Connecting,
+    Connected,
+    Failed(String),
+    Stopped,
+}
+static STATUS: std::sync::Mutex<SyncStatus> = std::sync::Mutex::new(SyncStatus::Off);
+
+fn set_status(st: SyncStatus) {
+    if let Ok(mut g) = STATUS.lock() {
+        *g = st;
+    }
+}
+
+/// 현재 러너 상태.
+pub(crate) fn status() -> SyncStatus {
+    STATUS.lock().map(|g| g.clone()).unwrap_or(SyncStatus::Off)
+}
+
 /// 러너 스레드가 살아 있는가(테스트가 RID 충돌을 피해 기다리는 데 쓴다).
 pub(crate) fn is_running() -> bool {
     RUNNING.load(std::sync::atomic::Ordering::Relaxed)
@@ -130,6 +153,10 @@ fn run(
         CONNECTED.store(on, std::sync::atomic::Ordering::Relaxed);
         let _ = proxy.send_event(crate::tray_cmd::ShellEvent::SyncState(on));
     };
+    // 상태만 바뀐 경우(접속 중·실패·중단) 이벤트 루프를 깨워 설정 창이 폴링하게 한다.
+    let tick = || {
+        let _ = proxy.send_event(crate::tray_cmd::ShellEvent::SyncTick);
+    };
     STOP_REQ.store(false, std::sync::atomic::Ordering::Relaxed);
     // ① 기기 신원(NCK1) — 없으면 생성(포터블: data/ 아래).
     let key_path = dir.join("identity.key");
@@ -137,6 +164,8 @@ fn run(
         Ok(v) => v,
         Err(e) => {
             eprintln!("동기화: 신원 키 실패({e}) — 중단");
+            set_status(SyncStatus::Failed(format!("identity: {e}")));
+            tick();
             return;
         }
     };
@@ -151,6 +180,8 @@ fn run(
     // ② 서버 주소·핀 준비.
     let Some((addr_str, addr)) = nclip_sync::relay::resolve_server(relay_raw) else {
         eprintln!("동기화: 릴레이 주소 해석 실패 — {relay_raw}");
+        set_status(SyncStatus::Failed(format!("resolve: {relay_raw}")));
+        tick();
         return;
     };
     let pin_path = dir.join("server.pin");
@@ -158,6 +189,8 @@ fn run(
     // ③ 등록할 RID — 기기 3(에폭 오차) + ★ 페어링 3(같은 핸들·암호 기기가 만나는 지점).
     let mut stage = 0usize;
     loop {
+        set_status(SyncStatus::Connecting);
+        tick();
         let mut rids: Vec<nclip_sync::relay::Rid> =
             nclip_sync::relay::rids_around(&id.peer_id()).to_vec();
         if !handle.is_empty() && !pass.is_empty() {
@@ -168,6 +201,7 @@ fn run(
         match nclip_sync::relay::RelayClient::connect(addr, &id, &rids, expected) {
             Ok(client) => {
                 stage = 0;
+                set_status(SyncStatus::Connected);
                 notify(true);
                 note_last_ok(
                     &addr_str,
@@ -202,6 +236,7 @@ fn run(
                     // ★ 사용자 해제(09-03) — 세션을 버리고 스레드를 마친다.
                     if STOP_REQ.swap(false, std::sync::atomic::Ordering::Relaxed) {
                         drop(client);
+                        set_status(SyncStatus::Stopped);
                         notify(false);
                         println!("동기화: 사용자 요청으로 연결 해제 — 다음 시작 때 재연결");
                         return;
@@ -214,6 +249,7 @@ fn run(
                 }
             }
             Err(e) => {
+                set_status(SyncStatus::Failed(format!("{e:?}")));
                 notify(false);
                 eprintln!(
                     "동기화: 접속 실패({e:?}) — {}s 뒤 재시도",
@@ -223,6 +259,8 @@ fn run(
         }
         if STOP_REQ.swap(false, std::sync::atomic::Ordering::Relaxed) {
             println!("동기화: 사용자 요청으로 중단");
+            set_status(SyncStatus::Stopped);
+            tick();
             return;
         }
         std::thread::sleep(Duration::from_millis(BACKOFF_MS[stage]));

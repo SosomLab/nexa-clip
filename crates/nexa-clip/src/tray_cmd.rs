@@ -100,6 +100,8 @@ pub(crate) enum ShellEvent {
     PasteStack(Vec<u64>),
     /// ★ 동기화 릴레이 연결 상태(09-03) — 트레이 점·메인 인디케이터 갱신.
     SyncState(bool),
+    /// ★ 러너 상태만 바뀜(접속 중·실패·중단) — 루프를 깨워 설정 창 폴링을 돌린다(09-03).
+    SyncTick,
     /// 트레이 메뉴 "종료".
     Quit,
     /// 감시가 항목을 잡았다 — 게이트를 지나면 이력에 넣는다.
@@ -724,6 +726,7 @@ impl ApplicationHandler<ShellEvent> for Shell {
             ShellEvent::Hotkey => self.toggle_popup(el),
             ShellEvent::PasteAfterClose(as_) => self.paste_now(as_),
             ShellEvent::PasteStack(ids) => self.paste_stack(&ids),
+            ShellEvent::SyncTick => {}
             ShellEvent::SyncState(on) => {
                 if self.sync_on != Some(on) {
                     self.sync_on = Some(on);

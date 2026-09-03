@@ -109,8 +109,9 @@ const PW_EYE_SIDE: u32 = 96;
 /// ★ 비밀 행 버튼 자리(09-03 사용자 — "두 버튼은 좌측에") — 상자 왼쪽 바깥에
 /// [생성][미리보기(눈)] 순서로, 버튼 크기 = 상자 높이 · 간격 = 높이/8(절반 간격).
 fn pw_btn_rects(b: Rect) -> (Rect, Rect) {
-    let eye = Rect::new(b.x - b.h / 8 - b.h, b.y, b.h, b.h);
-    let regen = Rect::new(eye.x - b.h / 8 - b.h, b.y, b.h, b.h);
+    // ★ 09-03 사용자: "두 버튼을 텍스트 우상단으로" — 상자 위 한 줄, 오른쪽 끝 정렬.
+    let eye = Rect::new(b.right() - b.h, b.y - b.h / 8 - b.h, b.h, b.h);
+    let regen = Rect::new(eye.x - b.h / 8 - b.h, eye.y, b.h, b.h);
     (eye, regen)
 }
 
@@ -1159,6 +1160,8 @@ impl SettingsWidget {
                 RowCtl::List(l) => l.set_value(value),
                 // 토글도 역반영(08-15 — 쌍방 동기화: 다른 경로가 켠/끈 것을 표시).
                 RowCtl::Check(c) => c.set_on(value == "on"),
+                // ★ 텍스트 입력도(09-03 — 패스프레이즈 추천/생성을 재구성 없이 반영).
+                RowCtl::Face(f) => f.set_text(value),
                 _ => {}
             }
         }
@@ -1333,6 +1336,8 @@ impl SettingsWidget {
                     (RowCtl::List(l), _) => dy32 + l.preferred_height() + pad,
                     (_, SettingKind::FontSection { .. }) => h_font,
                     (_, SettingKind::PositionGrid) => h_pos,
+                    // ★ 비밀 행(09-03) — 상자 위 버튼 줄(ctl_h + 간격)만큼 더 높다.
+                    (_, SettingKind::Text { secret: true, .. }) => h_entry + ctl_h + ctl_h / 8,
                     _ => h_entry,
                 };
                 let ctl_w = match &row.ctl {
@@ -1389,6 +1394,7 @@ impl SettingsWidget {
                 (RowCtl::List(l), _) => dy32 + l.preferred_height() + pad,
                 (_, SettingKind::FontSection { .. }) => h_font,
                 (_, SettingKind::PositionGrid) => h_pos,
+                (_, SettingKind::Text { secret: true, .. }) => h_entry + ctl_h + ctl_h / 8,
                 _ => h_entry,
             } + (row.desc_lines - 1) * desc_line_h
                 + note_hs[ri];
@@ -1438,10 +1444,11 @@ impl SettingsWidget {
                     //   버튼은 상자 **왼쪽 바깥**에 그린다([`pw_btn_rects`]).
                     let is_text = matches!(e.kind, SettingKind::Text { .. });
                     let base_w = if is_text { combo_w } else { family_w };
-                    family.set_bounds(
-                        Rect::new(rx + rw - base_w - pad, top + (h - ctl_h) / 2, base_w, ctl_h),
-                        inv,
-                    );
+                    // 비밀 행: [버튼 줄][간격][상자] 스택을 행 중앙에 — 상자는 스택 아래.
+                    let secret = matches!(e.kind, SettingKind::Text { secret: true, .. });
+                    let y =
+                        top + (h - ctl_h) / 2 + if secret { (ctl_h + ctl_h / 8) / 2 } else { 0 };
+                    family.set_bounds(Rect::new(rx + rw - base_w - pad, y, base_w, ctl_h), inv);
                 }
                 RowCtl::Pos(p) => {
                     p.set_scale(self.scale);

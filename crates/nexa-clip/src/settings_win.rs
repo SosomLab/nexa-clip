@@ -54,6 +54,8 @@ pub(crate) struct App {
     sync_test: Option<SyncTestSlot>,
     /// ★ Test 성공 → 러너 재기동 요청(09-03) — 셸이 소비한다(`take_sync_respawn`).
     sync_respawn: bool,
+    /// 마지막으로 노트에 반영한 러너 상태(변화 때만 갱신 — 자동 Test 표시).
+    sync_shown: Option<crate::sync_cmd::SyncStatus>,
     mods: ModifiersState,
     started: Instant,
     /// 마지막으로 준 크기 — 바뀔 때만 `set_bounds`를 부른다.
@@ -71,18 +73,8 @@ pub(crate) struct App {
 
 impl App {
     pub(crate) fn new(font: Font, conf: Settings, resident: bool) -> Self {
-        let mut widget = SettingsWidget::new(&conf.state);
-        // ★ 연결 상태 노트 시드(09-03) — 지금 연결돼 있으면 성공 메시지를 그대로 복원.
-        if crate::sync_cmd::is_connected() {
-            if let Some((raw, pin8)) = crate::sync_cmd::last_ok() {
-                let lang = nclip_core::current_lang();
-                let msg = nclip_core::tr(lang, nclip_core::Msg::StSyncTestOk)
-                    .replacen("{}", &raw, 1)
-                    .replacen("{}", &pin8, 1);
-                let mut inv0 = Invalidations::default();
-                widget.set_row_note_toned("sync.test", &msg, nclip_ui::NoteTone::Ok, &mut inv0);
-            }
-        }
+        // 연결 상태 노트는 `poll_sync_status`가 첫 틱에 채운다(09-03 — 자동 Test 표시).
+        let widget = SettingsWidget::new(&conf.state);
         let theme = crate::conf::current_theme(conf.state.get("ui.theme"));
         Self {
             window: None,
@@ -95,6 +87,7 @@ impl App {
             widget,
             sync_test: None,
             sync_respawn: false,
+            sync_shown: None,
             mods: ModifiersState::empty(),
             started: Instant::now(),
             laid_out: (0, 0),
@@ -290,11 +283,55 @@ impl App {
     }
 
     /// 테스트 결과 소비 — tick 경로에서 부른다(끝났으면 노트 갱신).
+    /// ★ 러너 상태 → Test 행 노트 자동 반영(09-03 사용자 — "실행 시 자동 Test").
+    ///   수동 Test가 진행 중이면 그 결과가 우선(끝나면 러너 상태가 이어받는다).
+    fn poll_sync_status(&mut self) {
+        if self.sync_test.is_some() {
+            return;
+        }
+        let st = crate::sync_cmd::status();
+        if self.sync_shown.as_ref() == Some(&st) {
+            return;
+        }
+        use crate::sync_cmd::SyncStatus as S;
+        let lang = nclip_core::current_lang();
+        let mut inv = Invalidations::default();
+        let (msg, tone) = match &st {
+            S::Off => (String::new(), nclip_ui::NoteTone::Plain),
+            S::Connecting => (
+                nclip_core::tr(lang, nclip_core::Msg::StSyncTesting).to_string(),
+                nclip_ui::NoteTone::Info,
+            ),
+            S::Connected => {
+                let (raw, pin8) = crate::sync_cmd::last_ok().unwrap_or_default();
+                (
+                    nclip_core::tr(lang, nclip_core::Msg::StSyncTestOk)
+                        .replacen("{}", &raw, 1)
+                        .replacen("{}", &pin8, 1),
+                    nclip_ui::NoteTone::Ok,
+                )
+            }
+            S::Failed(e) => (
+                nclip_core::tr(lang, nclip_core::Msg::StSyncTestFail).replacen("{}", e, 1),
+                nclip_ui::NoteTone::Warn,
+            ),
+            S::Stopped => (
+                nclip_core::tr(lang, nclip_core::Msg::StSyncDisconnected).to_string(),
+                nclip_ui::NoteTone::Info,
+            ),
+        };
+        self.widget
+            .set_row_note_toned("sync.test", &msg, tone, &mut inv);
+        self.sync_shown = Some(st);
+        self.redraw();
+    }
+
     fn poll_sync_test(&mut self) {
         let Some(slot) = &self.sync_test else { return };
         let done = slot.lock().ok().and_then(|mut g| g.take());
         let Some(res) = done else { return };
         self.sync_test = None;
+        self.sync_shown = None;
         let lang = nclip_core::current_lang();
         let mut inv = Invalidations::default();
         match res {
@@ -313,16 +350,8 @@ impl App {
                 if self.conf.state.get("sync.enabled") != "on" {
                     self.conf
                         .set("sync.enabled", "on".to_string(), Instant::now());
-                    self.widget = SettingsWidget::new(&self.conf.state);
-                    let mut inv3 = Invalidations::default();
-                    self.widget.set_scale(self.scale, &mut inv3);
-                    self.laid_out = (0, 0);
-                    self.widget.set_row_note_toned(
-                        "sync.test",
-                        &msg,
-                        nclip_ui::NoteTone::Ok,
-                        &mut inv3,
-                    );
+                    // 토글 역반영(재구성하면 첫 카테고리로 튄다 — 09-03 실기).
+                    self.widget.set_value("sync.enabled", "on", &mut inv);
                     println!("동기화: 테스트 성공 → 자동 접속 켜짐(sync.enabled = on)");
                 }
             }
@@ -411,12 +440,10 @@ impl App {
                 let cur = self.conf.state.get("sync.passphrase").trim().to_string();
                 if cur.is_empty() {
                     let sug = suggest_passphrase();
-                    self.conf.set("sync.passphrase", sug, now);
-                    // 위젯 재구성으로 값 반영(마스킹 유지) + 안내 노트.
-                    self.widget = SettingsWidget::new(&self.conf.state);
+                    self.conf.set("sync.passphrase", sug.clone(), now);
+                    // 값 역반영(마스킹 유지 · 카테고리·스크롤 유지) + 안내 노트.
                     let mut inv2 = Invalidations::default();
-                    self.widget.set_scale(self.scale, &mut inv2);
-                    self.laid_out = (0, 0);
+                    self.widget.set_value("sync.passphrase", &sug, &mut inv2);
                     let lang = nclip_core::current_lang();
                     self.widget.set_row_note_toned(
                         "sync.passphrase",
@@ -430,11 +457,10 @@ impl App {
             // ★ 비밀번호 생성 버튼(09-03 사용자) — 새 패스프레이즈로 교체 + 안내.
             if key == "sync.passphrase.regen" && val == "run" {
                 let sug = suggest_passphrase();
-                self.conf.set("sync.passphrase", sug, now);
-                self.widget = SettingsWidget::new(&self.conf.state);
+                self.conf.set("sync.passphrase", sug.clone(), now);
+                // 값 역반영 — 재구성하면 첫 카테고리로 튀었다(09-03 실기 결함).
                 let mut inv2 = Invalidations::default();
-                self.widget.set_scale(self.scale, &mut inv2);
-                self.laid_out = (0, 0);
+                self.widget.set_value("sync.passphrase", &sug, &mut inv2);
                 let lang = nclip_core::current_lang();
                 self.widget.set_row_note_toned(
                     "sync.passphrase",
@@ -656,6 +682,7 @@ impl ApplicationHandler for App {
         // 캐럿 깜빡임·툴팁·★ 상태 페이드 — 위젯이 "다시 그려야 한다"고 할 때만.
         let now = self.now_ms();
         self.poll_sync_test(); // ★ 동기화 테스트 결과 소비(09-03).
+        self.poll_sync_status(); // ★ 러너 상태 → 노트(자동 Test 표시).
         let animating = self.widget.tick(now);
         if animating {
             self.redraw();
