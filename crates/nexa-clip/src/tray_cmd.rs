@@ -44,6 +44,11 @@ use crate::icon::{icon_rgba, ICON_SIDE};
 /// 트레이 메뉴 라벨 최대 글자 수 — 길면 메뉴가 화면을 덮는다(문자 경계 절단).
 const MENU_LABEL_CHARS: usize = 44;
 
+/// ★ 원격 수신 표식(09-04 사용자 "전송 받은 클립보드는 플래그를 달고 재전송 금지") —
+/// `source_app` 접두가 곧 영속 플래그다: 저장·복원·목록 우측 출처 표시(main_win)까지
+/// 스키마 변경 없이 함께 온다. 이 표식이 붙은 항목은 승격 에코라도 **되돌려 보내지 않는다**.
+const REMOTE_MARK: &str = "⇄ ";
+
 /// 목록 썸네일 긴 변(px) — 팝업 행(30px)에 들어가는 크기의 2배(고DPI 여유).
 /// ★ 09-02: 48→160 — Rich 본문 존(≈행 높이)에 그려도 흐릿하지 않게.
 const THUMB_SIDE: u32 = 512; // ★ 09-02 가변 행 — 실치수 표시(최대 높이 200px)에도 선명하게.
@@ -560,7 +565,15 @@ impl Shell {
         if self.popup.is_open() {
             self.popup.on_history_changed(&self.history);
         }
-        if remote.is_none() {
+        // ★ 재전송 금지(09-04 사용자) — 방금 push된 항목(맨 앞)이 원격 수신 표식(⇄)을
+        //   달고 있으면 에코·재복사·승격 어느 경로든 되돌려 보내지 않는다(핑퐁 원천 차단 ·
+        //   페이로드 지문 10초 가드는 보조로 유지).
+        let front_remote = self.history.get(0).is_some_and(|it| {
+            it.source_app
+                .as_deref()
+                .is_some_and(|s| s.starts_with(REMOTE_MARK))
+        });
+        if remote.is_none() && !front_remote {
             self.maybe_broadcast(&snap);
         }
     }
@@ -608,7 +621,7 @@ impl Shell {
         );
         let snap = ClipSnapshot {
             reps: reps.clone(),
-            source_app: Some(format!("⇄ {from}")),
+            source_app: Some(format!("{REMOTE_MARK}{from}")),
             concealed: false,
             seq: 0,
         };

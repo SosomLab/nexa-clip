@@ -412,6 +412,36 @@ fn diag(msg: &str) {
     }
 }
 
+/// ★ 안정화 읽기(09-04 mac 실기 — "한 번 복사가 두 항목") — 앱이 표현을 **여러 단계로
+/// 게시**하면(`changeCount` 연쇄 +N) 첫 단계를 읽은 부분 스냅숏과 최종본이 서로 달라
+/// 같은 복사가 두 항목이 된다(Windows Sublime 연타 증식 09-01과 동일 계열).
+/// `watch_win::read_settled`와 같은 문법 — **두 번 연속 같게 읽힐 때까지**(30ms × 최대 4회).
+fn read_settled() -> Option<ClipSnapshot> {
+    let mut cur = read_snapshot()?;
+    for _ in 0..4 {
+        std::thread::sleep(std::time::Duration::from_millis(30));
+        let Some(next) = read_snapshot() else {
+            return Some(cur); // 재읽기 실패 — 지금 것을 쓴다(없는 것보다 낫다).
+        };
+        let same = next.seq == cur.seq
+            && cur.reps.len() == next.reps.len()
+            && cur
+                .reps
+                .iter()
+                .zip(&next.reps)
+                .all(|(a, b)| a.format == b.format && a.data == b.data);
+        if same {
+            return Some(next);
+        }
+        diag(&format!(
+            "아직 자리 잡는 중(seq {} → {}) — 재확인",
+            cur.seq, next.seq
+        ));
+        cur = next;
+    }
+    Some(cur)
+}
+
 fn poll_loop(sink: &Sink) {
     // 시작 시점의 내용은 "새 복사"가 아니다 — 지금 번호를 기준선으로 삼는다.
     let mut last = change_count();
@@ -424,8 +454,8 @@ fn poll_loop(sink: &Sink) {
             continue;
         }
         diag(&format!("changeCount {last} → {cc}"));
-        // 변화 감지 — 내용을 읽는다.
-        match read_snapshot() {
+        // 변화 감지 — 내용을 읽는다(★ 자리 잡은 최종본만 — 아래 read_settled).
+        match read_settled() {
             // ★ 결함 ⑫의 교훈: **내용 없는 스냅숏은 미처리** — 번호를 올리지 않고
             //   다음 틱에 다시 읽는다(비우고→채우는 틈을 읽었을 수 있다).
             //   표식(concealed)이 있는 것은 이름만 있어도 **처리된 것**이다 — 게이트가 버린다.

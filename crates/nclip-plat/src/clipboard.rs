@@ -347,7 +347,53 @@ mod imp {
     }
 }
 
-#[cfg(not(any(windows, target_os = "linux")))]
+#[cfg(target_os = "macos")]
+mod imp {
+    //! macOS — `NSPasteboard` 직접 게시(09-04 — mac 더블클릭 승격·수신 게시 불능의 근인).
+    //! 이식 원본: `nexa-beep` `nbeep-plat/src/macclip.rs`(set 경로 · 08-30) +
+    //! **다중 표현 확장** — `clearContents` 뒤 표현마다 `setData:forType:`(이름 = UTI 그대로 —
+    //! 감시(`watch_mac`)가 읽는 이름과 같아 에코 승격 판정이 맞물린다).
+    //!
+    //! ⚠ **프로세스 안 직렬화**(beep 08-30 실측): 동시 `clearContents`/`set…`은 AppKit
+    //! abort(SIGABRT). 호출마다 `autoreleasepool` — 메인 루프 밖 스레드에서도 누수 없음.
+    use super::RawRep;
+    use objc2::rc::autoreleasepool;
+    use objc2_app_kit::NSPasteboard;
+    use objc2_foundation::{NSData, NSString};
+    use std::sync::{Mutex, PoisonError};
+
+    /// 프로세스 안 클립보드 접근 직렬화.
+    static SERIAL: Mutex<()> = Mutex::new(());
+
+    pub(super) fn set_reps(reps: &[RawRep]) -> Result<usize, String> {
+        let postable: Vec<&RawRep> = reps.iter().filter(|r| !r.data.is_empty()).collect();
+        if postable.is_empty() {
+            return Err("게시할 표현이 없습니다(핸들 포맷뿐)".into());
+        }
+        let _g = SERIAL.lock().unwrap_or_else(PoisonError::into_inner);
+        // SAFETY: generalPasteboard는 프로세스 전역 싱글턴 — 접근은 위 뮤텍스로 직렬화.
+        // clear 없이 set하면 소유권 미확보로 실패한다(짝 필수 · beep 실측).
+        let posted = autoreleasepool(|_| unsafe {
+            let pb = NSPasteboard::generalPasteboard();
+            pb.clearContents();
+            let mut n = 0usize;
+            for r in postable {
+                let data = NSData::with_bytes(&r.data);
+                let ty = NSString::from_str(&r.format);
+                if pb.setData_forType(Some(&data), &ty) {
+                    n += 1;
+                }
+            }
+            n
+        });
+        if posted == 0 {
+            return Err("표현 게시에 전부 실패했습니다".into());
+        }
+        Ok(posted)
+    }
+}
+
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
 mod imp {
     use super::RawRep;
 

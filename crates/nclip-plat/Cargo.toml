@@ -55,6 +55,8 @@ objc2-app-kit = { version = "0.2", features = [
     "NSBitmapImageRep",
     "NSCell",
     "NSApplication",
+    # 클립보드 쓰기(09-04 — beep `macclip` 선례 · set_reps 다중 표현).
+    "NSPasteboard",
     "NSRunningApplication",
 ] }
-objc2-foundation = { version = "0.2", features = ["NSString", "NSGeometry", "NSThread"] }
+objc2-foundation = { version = "0.2", features = ["NSString", "NSGeometry", "NSThread", "NSData"] }

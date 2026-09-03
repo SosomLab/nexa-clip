@@ -1339,6 +1339,10 @@ mod mac {
             apply(mtm, &state, &content);
             STATE.with(|s| *s.borrow_mut() = Some(state));
         }
+        // ★ 전역 단축키(T-15 mac · 09-04 사용자 "Ctrl+Shift+V가 안 됨") — Carbon
+        //   `RegisterEventHotKey`(시스템 전역 · 손쉬운 사용 권한 불요). Windows
+        //   `RegisterHotKey`와 같은 자리 — 결과를 한 번 알린다.
+        emit(TrayEvent::HotkeyStatus(hotkey::register()));
         Some(TrayHandle { _priv: () })
     }
 
@@ -1357,5 +1361,92 @@ mod mac {
 
         /// 알림 — 미배선(정식 = UNUserNotificationCenter · .app 번들 필요 — 후속). 표식만.
         pub fn notify(&self, _title: &str, _body: &str, _silent: bool, _target: &str) {}
+    }
+
+    /// ★ Carbon 전역 단축키(T-15 mac) — `Ctrl+Shift+V` = 퀵 팝업(Windows·Linux와 동일 계약).
+    ///
+    /// Carbon Hot Key API는 **보조 접근 권한 없이** 시스템 전역으로 동작하는 유일한
+    /// 공개 경로다(NSEvent 전역 모니터는 손쉬운 사용 권한 필요 · CGEventTap도 동일).
+    /// deprecated이지만 arm64 포함 현행 macOS에서 지원되며 대체 API가 없다
+    /// (Rust 생태 `global-hotkey` crate가 같은 선언을 쓴다 — 선언만 차용 · 의존 추가 없음).
+    /// 이벤트는 애플리케이션 이벤트 타깃으로 오므로 winit(NSApplication) 루프가 배달한다.
+    mod hotkey {
+        use super::{emit, TrayEvent};
+        use std::ffi::c_void;
+
+        type OSStatus = i32;
+
+        #[repr(C)]
+        struct EventTypeSpec {
+            class: u32,
+            kind: u32,
+        }
+
+        #[repr(C)]
+        struct EventHotKeyID {
+            signature: u32,
+            id: u32,
+        }
+
+        #[link(name = "Carbon", kind = "framework")]
+        extern "C" {
+            fn GetApplicationEventTarget() -> *mut c_void;
+            fn InstallEventHandler(
+                target: *mut c_void,
+                handler: extern "C" fn(*mut c_void, *mut c_void, *mut c_void) -> OSStatus,
+                num_types: u32,
+                list: *const EventTypeSpec,
+                user_data: *mut c_void,
+                out: *mut *mut c_void,
+            ) -> OSStatus;
+            fn RegisterEventHotKey(
+                key_code: u32,
+                modifiers: u32,
+                id: EventHotKeyID,
+                target: *mut c_void,
+                options: u32,
+                out: *mut *mut c_void,
+            ) -> OSStatus;
+        }
+
+        extern "C" fn on_hotkey(_: *mut c_void, _: *mut c_void, _: *mut c_void) -> OSStatus {
+            emit(TrayEvent::Hotkey);
+            0 // noErr
+        }
+
+        /// `Ctrl+Shift+V` 등록 — 성공 여부(실패 = 다른 앱 선점 등 · 호스트가 알린다).
+        pub(super) fn register() -> bool {
+            const KEYBOARD: u32 = u32::from_be_bytes(*b"keyb"); // kEventClassKeyboard
+            const HOTKEY_PRESSED: u32 = 5; // kEventHotKeyPressed
+            const SHIFT: u32 = 0x200; // shiftKey
+            const CONTROL: u32 = 0x1000; // controlKey
+            const VK_V: u32 = 0x09; // kVK_ANSI_V
+            let spec = EventTypeSpec {
+                class: KEYBOARD,
+                kind: HOTKEY_PRESSED,
+            };
+            // SAFETY: 출력 포인터만 받는 등록 호출 — 핸들은 앱 수명 전체 유지(해제 없음 · 의도).
+            unsafe {
+                let target = GetApplicationEventTarget();
+                let mut handler: *mut c_void = std::ptr::null_mut();
+                if InstallEventHandler(
+                    target,
+                    on_hotkey,
+                    1,
+                    &spec,
+                    std::ptr::null_mut(),
+                    &mut handler,
+                ) != 0
+                {
+                    return false;
+                }
+                let id = EventHotKeyID {
+                    signature: u32::from_be_bytes(*b"nclp"),
+                    id: 1,
+                };
+                let mut hotkey: *mut c_void = std::ptr::null_mut();
+                RegisterEventHotKey(VK_V, SHIFT | CONTROL, id, target, 0, &mut hotkey) == 0
+            }
+        }
     }
 }
