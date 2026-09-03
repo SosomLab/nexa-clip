@@ -792,10 +792,10 @@ impl Msg {
             ],
             Msg::SetSyncRelay => ["Relay server", "릴레이 서버", "中继服务器", "リレーサーバー"],
             Msg::SyncRelayDefault => [
-                "beepd.sosomlab.com (official)",
-                "beepd.sosomlab.com (공식)",
-                "beepd.sosomlab.com（官方）",
-                "beepd.sosomlab.com（公式）",
+                "beepd.sosomlab.com",
+                "beepd.sosomlab.com",
+                "beepd.sosomlab.com",
+                "beepd.sosomlab.com",
             ],
             Msg::SetSyncPort => ["Relay port", "릴레이 포트", "中继端口", "リレーポート"],
             Msg::SetSyncPortDesc => [
@@ -843,10 +843,10 @@ impl Msg {
                 "パスフレーズを提案しました — 目のボタンで確認",
             ],
             Msg::SetSyncRelayDesc => [
-                "host:port of the beep relay (empty = default)",
-                "beep 릴레이의 host:port (비우면 기본값)",
-                "beep 中继的 host:port（留空 = 默认）",
-                "beep リレーの host:port（空 = 既定）",
+                "Relay address — beepd.sosomlab.com is the official SosomLab relay (default)",
+                "릴레이 주소 — beepd.sosomlab.com은 SosomLab 공식 릴레이(기본값)",
+                "中继地址 — beepd.sosomlab.com 为 SosomLab 官方中继（默认）",
+                "リレーアドレス — beepd.sosomlab.com は SosomLab 公式リレー（既定）",
             ],
             Msg::HintStack => [
                 "Enter pastes {} in order · Ctrl+Click/Ctrl+Space toggles · Esc",

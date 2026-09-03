@@ -177,6 +177,8 @@ pub(crate) struct MainWin {
     wrap_sw: Option<Switch>,
     /// 상태줄에 보일 전체 개수(필터 전).
     total: usize,
+    /// ★ 동기화 연결 상태(09-03) — None = 꺼짐 · Some(on) = 릴레이 연결 여부.
+    sync_on: Option<bool>,
     /// ★ 미리보기 패널 열림(09-02 K4 · `ui.preview_open` 영속 — 기본 접힘).
     preview_open: bool,
     /// 미리보기 텍스트 — (항목 id, 읽기용 멀티라인 · wrap · 휠 스크롤만 라우팅).
@@ -229,6 +231,7 @@ impl MainWin {
             editor: None,
             wrap_sw: None,
             total: 0,
+            sync_on: None,
             preview_open: false,
             preview_tb: None,
             preview_scroll: 0,
@@ -828,6 +831,14 @@ impl MainWin {
     pub(crate) fn set_preview_failed(&mut self, id: u64) {
         self.preview_img = Some((id, None));
         self.redraw();
+    }
+
+    /// ★ 동기화 연결 상태(09-03) — 셸이 릴레이 스레드 신호를 전달한다.
+    pub(crate) fn set_sync_state(&mut self, on: Option<bool>) {
+        if self.sync_on != on {
+            self.sync_on = on;
+            self.redraw();
+        }
     }
 
     /// ★ 미리보기 열림 상태 적용(토글 셸 왕복 · 09-02 K4).
@@ -1718,6 +1729,18 @@ impl MainWin {
         dc.select_font(FontSlot::Status, false);
         dc.text(pad, sy + px(4.0), full, &status, th.text_dim);
         dc.select_font(FontSlot::Base, false);
+        // ★ 동기화 인디케이터(09-03 — beep 화법) — 상태줄 우측: 녹 = 연결 · 흐림 = 끊김.
+        if let Some(on) = self.sync_on {
+            let r = px(4.0);
+            let cxp = w - pad - r;
+            let cyp = sy + self.status_h() / 2;
+            let col = if on {
+                nclip_ctl::theme::Color::from_rgb(46, 204, 64)
+            } else {
+                th.text_dim
+            };
+            dc.fill_ellipse(Rect::new(cxp - r, cyp - r, r * 2, r * 2), col);
+        }
 
         // ★ 툴팁 — **반드시 맨 끝**(09-01 실기 "일부만 보임" = 목록이 덤어버렸다).
         //   글자는 본문 크기(Base) — Status는 작다는 사용자 피드백.

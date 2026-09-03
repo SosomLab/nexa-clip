@@ -13,7 +13,10 @@ const BACKOFF_MS: [u64; 4] = [5_000, 15_000, 60_000, 300_000];
 const DEFAULT_RELAY: &str = "beepd.sosomlab.com";
 
 /// `sync.enabled`가 켜져 있으면 접속 스레드를 띄운다(부팅 시 1회 — 동적 반영은 후속).
-pub(crate) fn spawn_if_enabled(conf: &crate::conf::Settings) {
+pub(crate) fn spawn_if_enabled(
+    conf: &crate::conf::Settings,
+    proxy: winit::event_loop::EventLoopProxy<crate::tray_cmd::ShellEvent>,
+) {
     if conf.state.get("sync.enabled") != "on" {
         return;
     }
@@ -40,12 +43,22 @@ pub(crate) fn spawn_if_enabled(conf: &crate::conf::Settings) {
     let dir = crate::conf::data_dir();
     std::thread::Builder::new()
         .name("nclip-sync".into())
-        .spawn(move || run(&relay_raw, &handle, &pass, &dir))
+        .spawn(move || run(&relay_raw, &handle, &pass, &dir, &proxy))
         .ok();
 }
 
 /// 상주 루프 — 실패는 백오프 후 재시도(상주 앱: 조용히 버티고 로그로 알린다).
-fn run(relay_raw: &str, handle: &str, pass: &str, dir: &std::path::Path) {
+fn run(
+    relay_raw: &str,
+    handle: &str,
+    pass: &str,
+    dir: &std::path::Path,
+    proxy: &winit::event_loop::EventLoopProxy<crate::tray_cmd::ShellEvent>,
+) {
+    // ★ 연결 상태 통지(09-03) — 트레이 녹색 점·메인창 인디케이터가 이 신호를 그린다.
+    let notify = |on: bool| {
+        let _ = proxy.send_event(crate::tray_cmd::ShellEvent::SyncState(on));
+    };
     // ① 기기 신원(NCK1) — 없으면 생성(포터블: data/ 아래).
     let key_path = dir.join("identity.key");
     let (id, fresh) = match nclip_sync::keyfile::load_or_generate(&key_path) {
@@ -81,6 +94,7 @@ fn run(relay_raw: &str, handle: &str, pass: &str, dir: &std::path::Path) {
         match nclip_sync::relay::RelayClient::connect(addr, &id, &rids, expected) {
             Ok(client) => {
                 stage = 0;
+                notify(true);
                 let info = client.register_info();
                 println!(
                     "동기화: 릴레이 접속 ok — {addr_str} · 관측 주소 {:?} · UDP 포트 {}",
@@ -109,11 +123,13 @@ fn run(relay_raw: &str, handle: &str, pass: &str, dir: &std::path::Path) {
                     }
                     if !client.is_alive() {
                         eprintln!("동기화: 릴레이 세션 끊김 — 재접속");
+                        notify(false);
                         break;
                     }
                 }
             }
             Err(e) => {
+                notify(false);
                 eprintln!(
                     "동기화: 접속 실패({e:?}) — {}s 뒤 재시도",
                     BACKOFF_MS[stage] / 1000

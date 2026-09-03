@@ -93,11 +93,13 @@ fn decode_one(r: &RawRep, side: u32) -> Option<(u32, u32, Vec<u8>)> {
 
 /// 다른 스레드(트레이·감시)에서 메인 루프로 쏘는 사건.
 #[derive(Debug)]
-enum ShellEvent {
+pub(crate) enum ShellEvent {
     /// 트레이 좌클릭·메뉴 "열기" — 설정 창을 연다(있으면 앞으로).
     Open,
     /// ★ 붙여넣기 스택(09-03 ③) — 팝업이 닫힌 다음 바퀴에 순차 주입.
     PasteStack(Vec<u64>),
+    /// ★ 동기화 릴레이 연결 상태(09-03) — 트레이 점·메인 인디케이터 갱신.
+    SyncState(bool),
     /// 트레이 메뉴 "종료".
     Quit,
     /// 감시가 항목을 잡았다 — 게이트를 지나면 이력에 넣는다.
@@ -127,10 +129,42 @@ fn tooltip(held: usize) -> String {
     }
 }
 
-fn content(held: usize, recent: Vec<String>) -> TrayContent {
+/// ★ 좌상단 녹색 점 오버레이(09-03 — beep 화법: 연결됨 배지).
+fn overlay_sync_dot(rgba: &mut [u8], side: u32) {
+    let r = (side as i32) * 9 / 32; // 32px 기준 반지름 9 — 시인성.
+    let (cx, cy) = (r, r);
+    for y in 0..side as i32 {
+        for x in 0..side as i32 {
+            let dx = x - cx;
+            let dy = y - cy;
+            let d2 = dx * dx + dy * dy;
+            if d2 > r * r {
+                continue;
+            }
+            let i = ((y * side as i32 + x) * 4) as usize;
+            // 테두리(짙은 녹) + 본체(밝은 녹) — 어두운 배경에서도 또렷하게.
+            let rim = d2 > (r - 2) * (r - 2);
+            let (cr, cg, cb) = if rim {
+                (16u8, 96u8, 40u8)
+            } else {
+                (46u8, 204u8, 64u8)
+            };
+            rgba[i] = cr;
+            rgba[i + 1] = cg;
+            rgba[i + 2] = cb;
+            rgba[i + 3] = 0xFF;
+        }
+    }
+}
+
+fn content(held: usize, recent: Vec<String>, sync_on: bool) -> TrayContent {
     let lang = current_lang();
+    let mut rgba = icon_rgba();
+    if sync_on {
+        overlay_sync_dot(&mut rgba, ICON_SIDE);
+    }
     TrayContent {
-        rgba: icon_rgba(),
+        rgba,
         side: ICON_SIDE,
         tooltip: tooltip(held),
         name: tr(lang, Msg::AppName).to_string(),
@@ -225,6 +259,8 @@ struct Shell {
     paste: PlatformPaste,
     /// `paste.auto` — 꺼져 있으면 재적재까지만(주입 없음).
     paste_auto: bool,
+    /// ★ 동기화 연결 상태(09-03) — None = 기능 꺼짐 · Some(on) = 켜짐/연결 여부.
+    sync_on: Option<bool>,
     /// 루프에 되돌려 보내는 통로(`PasteAfterClose`).
     proxy: winit::event_loop::EventLoopProxy<ShellEvent>,
     /// ★ 창 레벨(최상위)이 지금 창 백엔드에서 실제로 먹는가 — Wayland 네이티브 창이면
@@ -238,6 +274,7 @@ impl Shell {
         self.tray.update(content(
             self.history.len(),
             self.history.recent_labels(self.tray_n),
+            self.sync_on == Some(true),
         ));
     }
 
@@ -686,6 +723,14 @@ impl ApplicationHandler<ShellEvent> for Shell {
             ShellEvent::Hotkey => self.toggle_popup(el),
             ShellEvent::PasteAfterClose(as_) => self.paste_now(as_),
             ShellEvent::PasteStack(ids) => self.paste_stack(&ids),
+            ShellEvent::SyncState(on) => {
+                if self.sync_on != Some(on) {
+                    self.sync_on = Some(on);
+                    self.refresh_tray();
+                    self.main.set_sync_state(self.sync_on);
+                    println!("동기화 상태: {}", if on { "연결됨" } else { "끊김" });
+                }
+            }
             ShellEvent::SystemTheme => {
                 self.app.apply_theme();
                 self.popup.set_theme(self.app.theme());
@@ -887,9 +932,6 @@ pub(crate) fn run() {
 
     sync_autostart(&mut conf);
 
-    // ★ M2 동기화 기반(09-03) — 켜져 있으면 릴레이 접속 스레드 상주.
-    crate::sync_cmd::spawn_if_enabled(&conf);
-
     // ★ T-12e4 단일 인스턴스(09-03) — 이미 상주 중이면 "열기"만 위임하고 조용히 끝낸다
     //   (자동 시작 상주 + 런처 재실행 = 감시 2중·트레이 2개이던 관찰의 처방).
     let single_guard = nclip_plat::single::acquire(&crate::conf::data_dir().join("instance.lock"));
@@ -965,7 +1007,7 @@ pub(crate) fn run() {
     //   ★ 복원을 먼저 끝내 첫 우클릭부터 최근이 보인다(09-01 D1 — 예전엔 빈 메뉴로 떴다).
     let proxy = el.create_proxy();
     let Some(tray) = spawn(
-        content(history.len(), history.recent_labels(tray_n)),
+        content(history.len(), history.recent_labels(tray_n), false),
         move |ev| {
             let _ = proxy.send_event(match ev {
                 TrayEvent::Quit => ShellEvent::Quit,
@@ -1061,6 +1103,9 @@ pub(crate) fn run() {
 
     // 메인창 폰트 — 팝업과 같은 이유로 자기 것을 따로 든다(mmap 정적 데이터).
     let main_font = font.clone();
+    // ★ M2 동기화 기반(09-03) — 켜져 있으면 릴레이 접속 스레드 상주(상태는 proxy로 통지).
+    crate::sync_cmd::spawn_if_enabled(&conf, el.create_proxy());
+
     {
         // ★ 둘째 실행의 "열기" 신호 → 메인창(Windows · 09-03).
         let proxy = el.create_proxy();
@@ -1082,6 +1127,7 @@ pub(crate) fn run() {
         tray_n,
         paste: PlatformPaste::new(),
         paste_auto,
+        sync_on: None,
         proxy: el.create_proxy(),
         atop_effective,
     };
