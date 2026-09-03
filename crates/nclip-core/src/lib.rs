@@ -16,6 +16,8 @@ pub mod img;
 pub mod item;
 pub mod paste;
 pub mod ports;
+/// ★ T-18d 1단 — 제한 리치텍스트 런 파서(09-03).
+pub mod richtext;
 
 pub use capture::{
     capture, classify, classify_with_text, decode_plain, has_content, parse_hdrop, parse_uri_list,

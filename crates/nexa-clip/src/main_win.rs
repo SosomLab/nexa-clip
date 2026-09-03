@@ -77,6 +77,8 @@ pub(crate) enum MainAction {
     ToggleAlwaysTop,
     /// ★ 미리보기 패널 토글(09-02 K4) — 셸이 `ui.preview_open` 영속.
     TogglePreview,
+    /// ★ 이미지로 복사(09-03 — 렌더 비트맵을 PNG+DIB로 게시 · "PPT에 이미지처럼").
+    CopyImage(u64),
     /// ★ 보기 모드 변경(Ctrl+1/2/3) — 셸이 `ui.view_mode`에 영속한다.
     SetViewMode(&'static str),
     /// ★ 편집 저장(S4 평문화 · 09-01 확정).
@@ -102,6 +104,8 @@ struct Row {
     thumb: Option<nclip_ctl::theme::IconImage>,
     /// 원본 화소 치수(라벨 "W×H" 파싱 · 09-02 가변 행 — 섬네일은 축소본이라 절대 크기를 모른다).
     img_dims: Option<(u32, u32)>,
+    /// ★ 리치 런(색·굵기 — T-18d 1단 · 09-03): HTML 표현이 서식을 품을 때만 Some.
+    rich: Option<Vec<Vec<nclip_core::richtext::Run>>>,
     /// 첫 평문 표현(편집 시드 · Rich 보기 둘째 줄) — 없으면 None.
     plain: Option<String>,
 }
@@ -391,6 +395,7 @@ impl MainWin {
                 }),
                 img_dims: display_dims(&item.reps).or_else(|| parse_dims(&item.label)),
                 plain: plain_of(&item.reps).or_else(|| svg_text(&item.reps)),
+                rich: nclip_core::richtext::html_runs_of(&item.reps, 6),
             };
             if row.pinned {
                 pinned.push(row);
@@ -568,9 +573,19 @@ impl MainWin {
             let (_, dh) = self.rich_fit(ow, oh, content_w);
             dh + self.px(12.0)
         } else {
-            let text = row.plain.as_deref().unwrap_or(row.label.as_str());
+            let n = row.rich.as_ref().map_or_else(
+                || {
+                    row.plain
+                        .as_deref()
+                        .unwrap_or(row.label.as_str())
+                        .lines()
+                        .take(5)
+                        .count()
+                },
+                |r| r.len().min(5),
+            );
             #[allow(clippy::cast_possible_wrap)]
-            let n = text.lines().take(5).count().max(1) as i32;
+            let n = n.max(1) as i32;
             self.px(12.0) + self.px(22.0) * n
         }
     }
@@ -1360,6 +1375,31 @@ impl MainWin {
                     let (dw, dh) = self.rich_fit(ow, oh, self.content_w_of(list.w));
                     let dst = Rect::new(cx0, y + px(6.0), dw, dh);
                     dc.image_scaled(dst, img, content_clip);
+                } else if let Some(rich) = &row.rich {
+                    // ★ T-18d 1단(09-03) — 원본 편집기의 색·굵기 그대로 + ★ 탭 스톱
+                    //   열맞춤(공백 4칸 격자 — CopyQ 비교 실기의 "열이 안 맞는다" 해소).
+                    let tab_w = dc.text_width("    ").max(8);
+                    for (k, line) in rich.iter().take(5).enumerate() {
+                        #[allow(clippy::cast_precision_loss)]
+                        let ly = y + px(6.0 + 22.0 * k as f32);
+                        let mut xoff = 0i32;
+                        for run in line {
+                            dc.select_font(FontSlot::Base, run.bold);
+                            let col = run.color.map_or(th.text, |c| {
+                                nclip_ctl::theme::Color::from_rgb(c[0], c[1], c[2])
+                            });
+                            for (ti, seg) in run.text.split('\t').enumerate() {
+                                if ti > 0 {
+                                    xoff = (xoff / tab_w + 1) * tab_w;
+                                }
+                                if !seg.is_empty() {
+                                    dc.text(cx0 + xoff, ly, content_clip, seg, col);
+                                    xoff += dc.text_width(seg);
+                                }
+                            }
+                        }
+                    }
+                    dc.select_font(FontSlot::Base, false);
                 } else {
                     let text = row.plain.as_deref().unwrap_or(row.label.as_str());
                     for (k, line) in text.lines().take(5).enumerate() {
@@ -1765,6 +1805,12 @@ impl MainWin {
         ));
         let editable = matches!(row.kind, ClipKind::Text | ClipKind::RichText);
         items.push(CtxItem::maybe("edit", tr(lang, Msg::MenuEdit), editable));
+        // ★ 이미지로 복사(09-03) — 텍스트 계열만(이미지 항목은 이미 이미지).
+        items.push(CtxItem::maybe(
+            "image",
+            tr(lang, Msg::MenuCopyImage),
+            editable,
+        ));
         items.push(CtxItem::item("delete", tr(lang, Msg::MenuDelete)));
         self.menu.set_scale(self.scale);
         // 라벨 폭 추정 — 페인트 전이라 실측 불가(한글 13px 기준 넉넉하게).
@@ -1795,6 +1841,7 @@ impl MainWin {
                 id: item_id,
                 as_: PasteAs::PathOnly,
             },
+            "image" => MainAction::CopyImage(item_id),
             "pin" => MainAction::TogglePin(item_id),
             "delete" => MainAction::Delete(item_id),
             "edit" => {

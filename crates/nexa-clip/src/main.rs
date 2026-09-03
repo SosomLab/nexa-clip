@@ -15,6 +15,7 @@ mod demo;
 mod icon;
 mod main_win;
 mod popup_win;
+mod render_img;
 mod settings_win;
 mod tray_cmd;
 mod watch_cmd;

@@ -201,6 +201,8 @@ fn to_history(it: StoredItem) -> HistoryItem {
 /// 상주 셸 — 창·트레이·감시·이력·팝업을 winit 한 루프로.
 struct Shell {
     app: App,
+    /// ★ 렌더 공용 폰트(09-03 — "이미지로 복사"가 창 없이도 그린다).
+    font: nclip_gfx::Font,
     popup: Popup,
     /// ★ S2 메인창(T-18b0) — 항목 관리(핀·삭제·검색·복사). 트레이 좌클릭/"열기"의 목적지.
     main: MainWin,
@@ -410,6 +412,44 @@ impl Shell {
         }
     }
 
+    /// ★ 이미지로 복사(09-03) — 리치 런(색·굵기)을 흰 바탕 비트맵으로 렌더해
+    /// PNG+`CF_DIB`로 게시한다. PPT·Word에 Ctrl+V 하면 그림으로 붙는다.
+    fn copy_as_image(&mut self, id: u64) {
+        let Some(item) = (0..self.history.len())
+            .filter_map(|i| self.history.get(i))
+            .find(|it| it.id == id)
+        else {
+            return;
+        };
+        let lines = nclip_core::richtext::html_runs_of(&item.reps, 500).unwrap_or_else(|| {
+            let text = crate::main_win::plain_of(&item.reps)
+                .or_else(|| nclip_core::capture::svg_text(&item.reps))
+                .unwrap_or_else(|| item.label.clone());
+            crate::render_img::plain_runs(&text)
+        });
+        let Some((w, h, rgba)) = crate::render_img::render_runs(&self.font, &lines) else {
+            eprintln!("이미지 렌더 실패 — 내용이 비었거나 너무 큽니다");
+            return;
+        };
+        let mut reps = vec![nclip_core::RawRep {
+            format: "CF_DIB".to_string(),
+            data: crate::render_img::dib_from_rgba(w, h, &rgba),
+        }];
+        if let Some(png) = nclip_plat::imgdec::encode_raw_isolated(w, h, &rgba) {
+            reps.insert(
+                0,
+                nclip_core::RawRep {
+                    format: "PNG".to_string(),
+                    data: png,
+                },
+            );
+        }
+        match nclip_plat::clipboard::set_reps(&reps) {
+            Ok(n) => println!("이미지로 복사: {w}×{h} — 표현 {n}개 게시"),
+            Err(e) => eprintln!("이미지로 복사 실패: {e}"),
+        }
+    }
+
     /// 팝업을 닫으며 마지막 크기를 저장한다(09-02 — 다음 열기가 이어받는다).
     fn close_popup(&mut self) {
         if let Some((w, h)) = self.popup.last_size() {
@@ -488,6 +528,7 @@ impl ApplicationHandler<ShellEvent> for Shell {
                     );
                     self.main.apply_preview(on);
                 }
+                MainAction::CopyImage(id) => self.copy_as_image(id),
                 MainAction::Delete(id) => {
                     if self.history.remove(id) {
                         self.store.remove(id);
@@ -924,6 +965,7 @@ pub(crate) fn run() {
     // 메인창 폰트 — 팝업과 같은 이유로 자기 것을 따로 든다(mmap 정적 데이터).
     let main_font = font.clone();
     let mut shell = Shell {
+        font: font.clone(),
         app: App::new(font, conf, true),
         popup: Popup::new(popup_font),
         main: MainWin::new(main_font),

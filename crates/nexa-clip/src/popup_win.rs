@@ -71,6 +71,8 @@ struct Row {
     plain: Option<String>,
     /// 표시 치수(문서 논리 크기 · 09-02 — 메인과 같은 배율 규약).
     img_dims: Option<(u32, u32)>,
+    /// ★ 리치 런(T-18d 1단 · 메인과 동일).
+    rich: Option<Vec<Vec<nclip_core::richtext::Run>>>,
 }
 
 pub(crate) struct Popup {
@@ -312,9 +314,19 @@ impl Popup {
             let (_, dh) = self.rich_fit(ow, oh, content_w);
             dh + px(12.0)
         } else {
-            let text = row.plain.as_deref().unwrap_or(row.label.as_str());
+            let n = row.rich.as_ref().map_or_else(
+                || {
+                    row.plain
+                        .as_deref()
+                        .unwrap_or(row.label.as_str())
+                        .lines()
+                        .take(5)
+                        .count()
+                },
+                |r| r.len().min(5),
+            );
             #[allow(clippy::cast_possible_wrap)]
-            let n = text.lines().take(5).count().max(1) as i32;
+            let n = n.max(1) as i32;
             px(12.0) + px(22.0) * n
         }
     }
@@ -537,6 +549,7 @@ impl Popup {
                         .or_else(|| nclip_core::capture::svg_text(&item.reps)),
                     img_dims: crate::main_win::display_dims(&item.reps)
                         .or_else(|| crate::main_win::parse_dims(&item.label)),
+                    rich: nclip_core::richtext::html_runs_of(&item.reps, 6),
                 };
                 // ★ 핀 먼저(각 구획 최신순) — 메인창의 정렬 계약과 동일(09-02).
                 if row.pinned {
@@ -1058,6 +1071,30 @@ fn draw(
                 }
                 let dst = Rect::new(cx0, y + px(6.0), dw, dh);
                 dc.image_scaled(dst, img, content_clip);
+            } else if let Some(rich) = &row.rich {
+                // ★ T-18d 1단 — 메인과 동일(색·굵기 · 탭 스톱 열맞춤).
+                let tab_w = dc.text_width("    ").max(8);
+                for (k, line) in rich.iter().take(5).enumerate() {
+                    #[allow(clippy::cast_precision_loss)]
+                    let ly = y + px(6.0 + 22.0 * k as f32);
+                    let mut xoff = 0i32;
+                    for run in line {
+                        dc.select_font(FontSlot::Base, run.bold);
+                        let col = run.color.map_or(th.text, |c| {
+                            nclip_ctl::theme::Color::from_rgb(c[0], c[1], c[2])
+                        });
+                        for (ti, seg) in run.text.split('\t').enumerate() {
+                            if ti > 0 {
+                                xoff = (xoff / tab_w + 1) * tab_w;
+                            }
+                            if !seg.is_empty() {
+                                dc.text(cx0 + xoff, ly, content_clip, seg, col);
+                                xoff += dc.text_width(seg);
+                            }
+                        }
+                    }
+                }
+                dc.select_font(FontSlot::Base, false);
             } else {
                 let text = row.plain.as_deref().unwrap_or(row.label.as_str());
                 for (k, line) in text.lines().take(5).enumerate() {

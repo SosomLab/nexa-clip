@@ -330,6 +330,8 @@ pub enum Msg {
     MenuUnpin,
     MenuEdit,
     MenuDelete,
+    /// 컨텍스트 메뉴: 이미지로 복사(렌더 · 09-03).
+    MenuCopyImage,
     EditorHint,
     HintFiles,
     HintRich,
@@ -732,6 +734,12 @@ impl Msg {
             Msg::MenuUnpin => ["Unpin", "고정 해제", "取消固定", "固定解除"],
             Msg::MenuEdit => ["Edit (as plain text)", "편집(평문화)", "编辑(纯文本)", "編集(プレーン化)"],
             Msg::MenuDelete => ["Delete", "삭제", "删除", "削除"],
+            Msg::MenuCopyImage => [
+                "Copy as image",
+                "이미지로 복사",
+                "复制为图片",
+                "画像としてコピー",
+            ],
             Msg::EditorHint => [
                 "Ctrl+Enter save · Esc cancel · Alt+Z wrap (saved as plain text)",
                 "Ctrl+Enter 저장 · Esc 취소 · Alt+Z 줄 바꿈 (평문으로 저장됩니다)",
@@ -859,7 +867,7 @@ mod tests {
     use super::*;
 
     /// 카탈로그 전수 — 새 `Msg`를 더하면 여기도 더한다(빈칸 검사가 그걸 강제한다).
-    const ALL_MSG: [Msg; 156] = [
+    const ALL_MSG: [Msg; 157] = [
         Msg::AppName,
         Msg::SearchPlaceholder,
         Msg::EmptyHistory,
@@ -985,6 +993,7 @@ mod tests {
         Msg::MenuUnpin,
         Msg::MenuEdit,
         Msg::MenuDelete,
+        Msg::MenuCopyImage,
         Msg::EditorHint,
         Msg::HintFiles,
         Msg::HintRich,
