@@ -583,6 +583,8 @@ struct RowUi {
     head: Option<Msg>,
     /// 헤더까지 포함한 이 행의 시작 y(레이아웃이 채운다) — 밴드 판정에 쓴다.
     head_h: i32,
+    /// ★ 비밀 행(09-03) — 제목·설명·상자를 이만큼 아래로 내리고 그 위에 버튼 줄을 둔다.
+    top_inset: i32,
     /// 설명에 예약된 줄 수(1~3 · 레이아웃이 추정) — 워드랩이 이 안에서 그린다(08-11).
     desc_lines: i32,
     /// 설명 워드랩 가용 폭(물리 px — 컨트롤 왼쪽까지). 레이아웃·페인트가 같은 값을 쓴다.
@@ -1140,6 +1142,7 @@ impl SettingsWidget {
                 group,
                 head,
                 head_h: 0,
+                top_inset: 0,
                 desc_lines: 1,
                 desc_avail: 0,
             });
@@ -1400,6 +1403,13 @@ impl SettingsWidget {
                 + note_hs[ri];
             // 하위 섹션 제목 자리를 행 **위에** 비워 둔다.
             row.head_h = if row.head.is_some() { head_h } else { 0 };
+            // ★ 비밀 행: 버튼 줄이 **제목 위**에 — 제목·설명·상자가 그만큼 내려간다(09-03 사용자:
+            //   "입력칸은 버튼 자리로, 버튼은 그 위로").
+            row.top_inset = if matches!(e.kind, SettingKind::Text { secret: true, .. }) {
+                ctl_h + ctl_h / 8
+            } else {
+                0
+            };
             top += row.head_h;
             row.rect = Rect::new(rx, top, rw, h);
             // ★ 컨트롤은 **노트를 뺀** 높이 중앙에(09-03 실기 — 노트가 붙어도 컨트롤이 안 밀린다;
@@ -1447,10 +1457,10 @@ impl SettingsWidget {
                     //   버튼은 상자 **왼쪽 바깥**에 그린다([`pw_btn_rects`]).
                     let is_text = matches!(e.kind, SettingKind::Text { .. });
                     let base_w = if is_text { combo_w } else { family_w };
-                    // 비밀 행: [버튼 줄][간격][상자] 스택을 행 중앙에 — 상자는 스택 아래.
-                    let secret = matches!(e.kind, SettingKind::Text { secret: true, .. });
-                    let y =
-                        top + (hc - ctl_h) / 2 + if secret { (ctl_h + ctl_h / 8) / 2 } else { 0 };
+                    // 비밀 행: 상자는 inset 아래 영역의 중앙(= Handle 상자처럼 제목·설명 옆) ·
+                    //   버튼 줄은 그 위(pw_btn_rects).
+                    let ins = row.top_inset;
+                    let y = top + ins + (hc - ins - ctl_h) / 2;
                     family.set_bounds(Rect::new(rx + rw - base_w - pad, y, base_w, ctl_h), inv);
                 }
                 RowCtl::Pos(p) => {
@@ -2171,7 +2181,7 @@ impl Widget for SettingsWidget {
                     ctx.select_font(FontSlot::Base, false);
                     ctx.text(
                         r.x + self.s(PAD),
-                        r.y + self.s(6),
+                        r.y + row.top_inset + self.s(6),
                         r,
                         tr(lang, e.label),
                         theme.text,
@@ -2187,7 +2197,7 @@ impl Widget for SettingsWidget {
                     );
                     for (i, line) in lines.iter().enumerate() {
                         #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
-                        let dy = self.s(30) + i as i32 * self.s(DESC_LINE_H);
+                        let dy = row.top_inset + self.s(30) + i as i32 * self.s(DESC_LINE_H);
                         ctx.text(r.x + self.s(PAD), r.y + dy, r, line, theme.text_dim);
                     }
                 }
