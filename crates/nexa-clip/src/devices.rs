@@ -1,0 +1,197 @@
+//! ★ 기기 레지스트리(09-03 — "Display name으로 같은 UserId의 기기를 구별"):
+//! 종단 세션으로 **인증된 PeerId**와 상대가 보낸 표시 이름을 기억하고, 연결 여부를 표시한다.
+//!
+//! 영속 = `data/devices.txt`(자체 직렬화 · DR-37): 한 줄 = `v1 <peer_hex> <first> <last> <os> <name…>`.
+//! 이름은 마지막 필드라 공백을 품을 수 있다. 미지 줄은 버린다(전방 호환).
+//!
+//! ⚠️ 여기 있다고 **신뢰된** 기기는 아니다(docs/09 §6-3 — 승인은 DeviceList 단계). 지금 단계는
+//! "만났고 이름을 안다"까지이며, 클립보드 전파는 승인 전까지 열지 않는다.
+
+use std::sync::Mutex;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+/// 알려진 기기 하나.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct DeviceEntry {
+    /// PeerId 16진(64자).
+    pub hex: String,
+    /// 상대가 보낸 표시 이름(무해화됨).
+    pub name: String,
+    /// OS 태그.
+    pub os: String,
+    /// 처음 만난 시각(unix 초).
+    pub first_seen: u64,
+    /// 마지막으로 살아 있던 시각(unix 초).
+    pub last_seen: u64,
+    /// 지금 종단 세션이 살아 있는가.
+    pub online: bool,
+}
+
+static DEVICES: Mutex<Vec<DeviceEntry>> = Mutex::new(Vec::new());
+
+fn now_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// 목록 스냅숏(표시용 — 온라인 먼저, 그다음 최근 순).
+pub(crate) fn list() -> Vec<DeviceEntry> {
+    let mut v = DEVICES.lock().map(|g| g.clone()).unwrap_or_default();
+    v.sort_by(|a, b| b.online.cmp(&a.online).then(b.last_seen.cmp(&a.last_seen)));
+    v
+}
+
+/// 알려진 기기의 PeerId 16진 목록(다이얼 대상).
+pub(crate) fn known_hex() -> Vec<String> {
+    DEVICES
+        .lock()
+        .map(|g| g.iter().map(|d| d.hex.clone()).collect())
+        .unwrap_or_default()
+}
+
+/// 지금 온라인인가.
+pub(crate) fn is_online(hex: &str) -> bool {
+    DEVICES
+        .lock()
+        .map(|g| g.iter().any(|d| d.hex == hex && d.online))
+        .unwrap_or(false)
+}
+
+/// 세션 성립 + 인사 수신 — 있으면 갱신, 없으면 추가. 반환 = 새 기기였는가.
+pub(crate) fn upsert_online(hex: &str, name: &str, os: &str) -> bool {
+    let now = now_secs();
+    let Ok(mut g) = DEVICES.lock() else {
+        return false;
+    };
+    if let Some(d) = g.iter_mut().find(|d| d.hex == hex) {
+        d.name = name.to_string();
+        d.os = os.to_string();
+        d.last_seen = now;
+        d.online = true;
+        false
+    } else {
+        g.push(DeviceEntry {
+            hex: hex.to_string(),
+            name: name.to_string(),
+            os: os.to_string(),
+            first_seen: now,
+            last_seen: now,
+            online: true,
+        });
+        true
+    }
+}
+
+/// 세션 종료.
+pub(crate) fn set_offline(hex: &str) {
+    if let Ok(mut g) = DEVICES.lock() {
+        if let Some(d) = g.iter_mut().find(|d| d.hex == hex) {
+            d.online = false;
+            d.last_seen = now_secs();
+        }
+    }
+}
+
+/// 러너 종료 — 전부 오프라인(세션 스레드도 곧 끝난다).
+pub(crate) fn all_offline() {
+    if let Ok(mut g) = DEVICES.lock() {
+        let now = now_secs();
+        for d in g.iter_mut().filter(|d| d.online) {
+            d.online = false;
+            d.last_seen = now;
+        }
+    }
+}
+
+/// 파일에서 복원(부팅 1회) — 전부 오프라인으로 시작.
+pub(crate) fn load(path: &std::path::Path) {
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return;
+    };
+    let mut v = Vec::new();
+    for line in text.lines() {
+        let mut it = line.splitn(6, ' ');
+        if it.next() != Some("v1") {
+            continue;
+        }
+        let (Some(hex), Some(first), Some(last), Some(os)) =
+            (it.next(), it.next(), it.next(), it.next())
+        else {
+            continue;
+        };
+        let name = it.next().unwrap_or("").to_string();
+        if hex.len() != 64 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+            continue;
+        }
+        v.push(DeviceEntry {
+            hex: hex.to_string(),
+            name,
+            os: os.to_string(),
+            first_seen: first.parse().unwrap_or(0),
+            last_seen: last.parse().unwrap_or(0),
+            online: false,
+        });
+    }
+    if let Ok(mut g) = DEVICES.lock() {
+        *g = v;
+    }
+}
+
+/// 파일로 저장(temp 쓰기 후 rename — pinfile과 같은 원자성).
+pub(crate) fn save(path: &std::path::Path) -> std::io::Result<()> {
+    let lines: Vec<String> = DEVICES
+        .lock()
+        .map(|g| {
+            g.iter()
+                .map(|d| {
+                    format!(
+                        "v1 {} {} {} {} {}",
+                        d.hex,
+                        d.first_seen,
+                        d.last_seen,
+                        if d.os.is_empty() { "-" } else { &d.os },
+                        d.name
+                    )
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    if let Some(dir) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+        std::fs::create_dir_all(dir)?;
+    }
+    let tmp = path.with_extension(format!("tmp.{}", std::process::id()));
+    std::fs::write(&tmp, lines.join("\n") + "\n")?;
+    if let Err(e) = std::fs::rename(&tmp, path) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e);
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn roundtrip_file_keeps_name_with_spaces() {
+        let dir = std::env::temp_dir().join(format!("nclip-devices-{}", std::process::id()));
+        let path = dir.join("devices.txt");
+        let hex = "ab".repeat(32);
+        assert!(upsert_online(&hex, "작업용 PC 2", "windows"));
+        assert!(
+            !upsert_online(&hex, "작업용 PC 2", "windows"),
+            "두 번째는 갱신"
+        );
+        save(&path).expect("저장");
+        all_offline();
+        load(&path);
+        let l = list();
+        let d = l.iter().find(|d| d.hex == hex).expect("복원된 기기");
+        assert_eq!(d.name, "작업용 PC 2");
+        assert_eq!(d.os, "windows");
+        assert!(!d.online);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

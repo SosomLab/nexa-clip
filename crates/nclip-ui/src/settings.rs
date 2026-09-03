@@ -111,6 +111,12 @@ const PW_EYE_SIDE: u32 = 96;
 /// 생성 버튼 무장 유지 시간(09-03 사용자 — "2초 내에 다시 누르지 않으면 원복").
 const PW_ARM_WINDOW: std::time::Duration = std::time::Duration::from_secs(2);
 
+/// 보고 행 줄 수(빈 값 = 설명 1줄).
+fn report_lines(v: Option<&String>) -> i32 {
+    let n = v.map_or(0, |s| s.lines().filter(|l| !l.trim().is_empty()).count());
+    i32::try_from(n.max(1)).unwrap_or(i32::MAX)
+}
+
 fn pw_btn_rects(b: Rect) -> (Rect, Rect) {
     // ★ 09-03 사용자: "두 버튼을 텍스트 우상단으로" — 상자 위 한 줄, 오른쪽 끝 정렬.
     let eye = Rect::new(b.right() - b.h, b.y - b.h / 8 - b.h, b.h, b.h);
@@ -221,6 +227,9 @@ pub enum SettingKind {
     /// ★ **문자열 목록**(08-31 사용자 요청 — 차단 페이지·제외 앱) — ListBox +
     /// 추가/삭제 + 행 인라인 편집([`ListEditor`]). 값 = `;` 구분 한 줄(저장 형식 불변).
     ListEdit,
+    /// ★ **보고 행**(09-03 — 기기 목록) — 컨트롤 없이 호스트가 `set_value`로 채우는 읽기 전용
+    /// 줄들(개행 구분 · 줄 앞 `*` = 강조). 비면 설명이 대신 보인다.
+    Report,
     /// 실행 버튼 — 값이 아니라 **행위**(백업·복원 등). 클릭 = `(key, "run")` 변경 방출.
     /// 값 키가 없어(`default_values` 빈 목록) 영속 파일에 실리지 않는다.
     Action {
@@ -289,6 +298,8 @@ impl Entry {
                 .collect(),
             // 목록 — 기본 표(차단 URL 기본 목록)에 있으면 그 값, 없으면 **빈 값으로 키 등록**
             // (RadioInput과 같은 이유 — 키가 없으면 저장값이 미지 키로 증발한다 · 08-22).
+            // 보고 행 — 키는 등록(호스트 set_value 대상), 값은 비어 시작.
+            SettingKind::Report => vec![(self.key, String::new())],
             SettingKind::ListEdit => vec![(
                 self.key,
                 RADIO_DEFAULTS
@@ -429,7 +440,7 @@ impl SettingsState {
             // 직접 입력 허용 — 빈 값만 거른다(빈 문자열은 기본값 의미가 아니다).
             SettingKind::RadioInput(..) => !value.is_empty(),
             // 목록은 빈 것도 유효(제외 앱 기본 = 비어 있음).
-            SettingKind::ListEdit => true,
+            SettingKind::ListEdit | SettingKind::Report => true,
             // ★ 숫자 항목 — 파일에서 온 값도 **숫자여야** 받는다. 범위는 validate가 본다.
             SettingKind::Number { .. } => value.parse::<u64>().is_ok(),
             SettingKind::Toggle => value == "on" || value == "off",
@@ -569,6 +580,8 @@ enum RowCtl {
     Pos(PositionPicker),
     /// ★ 문자열 목록(ListBox + 추가/삭제 + 인라인 편집) — 큼직해 Box(변형 크기 격차 린트).
     List(Box<ListEditor>),
+    /// ★ 보고 행(09-03) — 컨트롤 없음(줄들은 values에서 읽어 그린다).
+    Report,
     /// 글꼴 **얼굴만**(고정폭 — 크기는 Base UI를 따른다).
     Face(TextBox),
     /// 색상(스와치 + hex + 프리셋 · 08-10).
@@ -1079,6 +1092,7 @@ impl SettingsWidget {
                     c.set_scale(self.scale);
                     RowCtl::Color(c)
                 }
+                SettingKind::Report => RowCtl::Report,
                 SettingKind::ListEdit => {
                     let mut l = ListEditor::new(
                         self.values.get(e.key).map_or("", String::as_str),
@@ -1354,6 +1368,9 @@ impl SettingsWidget {
                 let base = match (&row.ctl, e.kind) {
                     // 목록은 제목 줄 아래 전폭으로 눈는다(FontSection 문법).
                     (RowCtl::List(l), _) => dy32 + l.preferred_height() + pad,
+                    (RowCtl::Report, _) => {
+                        dy32 + report_lines(self.values.get(e.key)) * desc_line_h + pad
+                    }
                     (_, SettingKind::FontSection { .. }) => h_font,
                     (_, SettingKind::PositionGrid) => h_pos,
                     // ★ 비밀 행(09-03) — 상자 위 버튼 줄(ctl_h + 간격)만큼 더 높다.
@@ -1367,7 +1384,7 @@ impl SettingsWidget {
                     RowCtl::Face(_) => family_w,
                     RowCtl::Pos(p) => p.preferred_size().0,
                     RowCtl::Color(c) => c.preferred_width().min(rw - pad * 2),
-                    RowCtl::Font { .. } | RowCtl::List(_) => 0,
+                    RowCtl::Font { .. } | RowCtl::List(_) | RowCtl::Report => 0,
                 };
                 let desc_avail = (rw - pad * 2 - ctl_w - gap10).max(min_avail);
                 let est_logical: i32 = tr(lang, e.desc)
@@ -1400,7 +1417,7 @@ impl SettingsWidget {
                 RowCtl::Pos(p) => p.preferred_size().0,
                 RowCtl::Color(c) => c.preferred_width().min(rw - pad * 2),
                 // 설명이 전폭을 쓴다(컨트롤이 아래 줄).
-                RowCtl::Font { .. } | RowCtl::List(_) => 0,
+                RowCtl::Font { .. } | RowCtl::List(_) | RowCtl::Report => 0,
             };
             row.desc_avail = (rw - pad * 2 - ctl_w - gap10).max(min_avail);
             let est_logical: i32 = tr(lang, e.desc)
@@ -1412,6 +1429,9 @@ impl SettingsWidget {
             row.desc_lines = ((est_px + row.desc_avail - 1) / row.desc_avail).clamp(1, 3);
             let h = match (&row.ctl, e.kind) {
                 (RowCtl::List(l), _) => dy32 + l.preferred_height() + pad,
+                (RowCtl::Report, _) => {
+                    dy32 + report_lines(self.values.get(e.key)) * desc_line_h + pad
+                }
                 (_, SettingKind::FontSection { .. }) => h_font,
                 (_, SettingKind::PositionGrid) => h_pos,
                 (_, SettingKind::Text { secret: true, .. }) => h_entry + ctl_h + ctl_h / 8,
@@ -1513,6 +1533,7 @@ impl SettingsWidget {
                     let lh = l.preferred_height();
                     l.set_bounds(Rect::new(rx + pad, top + dy32, rw - pad * 2, lh), inv);
                 }
+                RowCtl::Report => {}
             }
             top += h;
         }
@@ -1557,6 +1578,7 @@ impl SettingsWidget {
                         got.push((e.key, v));
                     }
                 }
+                RowCtl::Report => {}
                 RowCtl::Face(family) => {
                     // ★ 글자마다 폰트를 찾으면 낭비다 — **Enter로 확정할 때만** 보고한다
                     //   (사용자 지적 08-09: 입력해도 적용되지 않는다).
@@ -1950,6 +1972,7 @@ impl Widget for SettingsWidget {
                         RowCtl::Combo(c) => c.set_focused(c.bounds().contains(p)),
                         RowCtl::Check(c) => c.set_focused(c.bounds().contains(p)),
                         RowCtl::Act(b) => b.set_focused(b.bounds().contains(p)),
+                        RowCtl::Report => {}
                     }
                 }
                 // 사이드바 트리 — ★트리 영역 안의 클릭만 전달한다(08-22 실기: 우측
@@ -1990,6 +2013,7 @@ impl Widget for SettingsWidget {
                         RowCtl::Face(f) => f.on_event(ev, inv),
                         RowCtl::Color(c) => c.on_event(ev, inv),
                         RowCtl::Act(b) => b.on_event(ev, inv),
+                        RowCtl::Report => {}
                     }
                 }
                 self.drain_changes(inv);
@@ -2227,6 +2251,39 @@ impl Widget for SettingsWidget {
                         ctx.text(r.x + self.s(PAD), r.y + dy, r, line, theme.text_dim);
                     }
                 }
+                RowCtl::Report => {
+                    ctx.select_font(FontSlot::Base, true);
+                    ctx.text(
+                        r.x + self.s(PAD),
+                        r.y + self.s(6),
+                        r,
+                        tr(lang, e.label),
+                        theme.text,
+                    );
+                    ctx.select_font(FontSlot::Status, false);
+                    let v = self.values.get(e.key).map_or("", String::as_str);
+                    if v.trim().is_empty() {
+                        ctx.text(
+                            r.x + self.s(PAD),
+                            r.y + self.s(30),
+                            r,
+                            tr(lang, e.desc),
+                            theme.text_dim,
+                        );
+                    } else {
+                        let dlh = self.s(DESC_LINE_H);
+                        let mut y = r.y + self.s(30);
+                        for line in v.lines() {
+                            // 줄 앞 `*` = 강조(온라인·이 기기) — 본문색, 나머지는 흐림.
+                            let (txt, col) = match line.strip_prefix('*') {
+                                Some(rest) => (rest, theme.text),
+                                None => (line, theme.text_dim),
+                            };
+                            ctx.text(r.x + self.s(PAD), y, r, txt, col);
+                            y += dlh;
+                        }
+                    }
+                }
                 RowCtl::List(_) => {
                     ctx.select_font(FontSlot::Base, true);
                     ctx.text(
@@ -2262,6 +2319,7 @@ impl Widget for SettingsWidget {
                 }
             }
             match &row.ctl {
+                RowCtl::Report => {}
                 RowCtl::Combo(c) => c.paint(ctx, theme),
                 RowCtl::Check(c) => c.paint(ctx, theme),
                 RowCtl::Act(b) => b.paint(ctx, theme),

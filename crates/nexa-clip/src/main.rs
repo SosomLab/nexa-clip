@@ -15,6 +15,7 @@
 mod cliptext;
 mod conf;
 mod demo;
+mod devices;
 mod icon;
 mod main_win;
 mod popup_win;

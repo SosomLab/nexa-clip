@@ -41,6 +41,151 @@ pub(crate) fn status() -> SyncStatus {
     STATUS.lock().map(|g| g.clone()).unwrap_or(SyncStatus::Off)
 }
 
+/// ★ 기기 표시 이름 원시값(설정 `sync.device_name` — 비면 호스트명 정제/지문 라벨).
+static DEVICE_NAME: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+
+/// 설정에서 이름이 바뀔 때(다음 세션부터 반영 — 기존 세션은 재접속 때).
+pub(crate) fn set_device_name(raw: &str) {
+    if let Ok(mut g) = DEVICE_NAME.lock() {
+        *g = raw.to_string();
+    }
+}
+
+/// 지금 쓸 표시 이름 — 설정값 무해화, 실패/빈 값이면 호스트명 정제 → `clip-{지문4}`.
+pub(crate) fn display_name(me: &nclip_sync::PeerId) -> nclip_sync::name::DisplayName {
+    let raw = DEVICE_NAME.lock().map(|g| g.clone()).unwrap_or_default();
+    if let Ok(n) = nclip_sync::name::DisplayName::parse(&raw) {
+        return n;
+    }
+    nclip_sync::name::default_display_name(nclip_plat::host::hostname().as_deref(), me)
+}
+
+/// 이 기기의 PeerId 16진(설정 창 "이 기기" 표시) — 러너가 신원을 읽은 뒤 채운다.
+static MY_HEX: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+
+/// 이 기기의 PeerId 16진(아직 모르면 빈 문자열).
+pub(crate) fn my_hex() -> String {
+    MY_HEX.lock().map(|g| g.clone()).unwrap_or_default()
+}
+
+/// 이 기기의 표시 이름(신원을 아직 모르면 빈 문자열).
+pub(crate) fn my_display_name() -> String {
+    nclip_sync::relay::parse_peer_hex(&my_hex())
+        .map(|p| display_name(&p).to_string())
+        .unwrap_or_default()
+}
+
+/// 피어 세션 세대 — 러너가 끊기거나 재접속하면 올린다(옛 세션 스레드가 스스로 물러난다).
+static PEER_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+/// 동시 다이얼 상한(스레드 폭주 방지).
+static DIALING: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+/// 알려진 기기 재다이얼·페어링 탐색 주기.
+const DIAL_EVERY: Duration = Duration::from_secs(10);
+/// 세션 핑 주기 · 무응답 한계.
+const PEER_PING: Duration = Duration::from_secs(15);
+const PEER_DEAD: Duration = Duration::from_secs(45);
+
+fn wake(proxy: &winit::event_loop::EventLoopProxy<crate::tray_cmd::ShellEvent>) {
+    let _ = proxy.send_event(crate::tray_cmd::ShellEvent::SyncTick);
+}
+
+/// ★ 종단 세션 하나의 수명(09-03) — 인사 교환 → 목록 등재 → 핑/퐁 상주 → 종료 시 오프라인.
+///   같은 기기와 세션이 이미 있으면 새 것을 버린다(글레어·중복 다이얼 흡수).
+fn run_peer(
+    mut s: nclip_sync::NoiseSession<Box<dyn nclip_sync::Link>>,
+    me: nclip_sync::PeerId,
+    gen: u64,
+    proxy: winit::event_loop::EventLoopProxy<crate::tray_cmd::ShellEvent>,
+    dir: std::path::PathBuf,
+) {
+    use nclip_sync::hello::{Hello, PeerMsg};
+    use nclip_sync::session::{Session as _, SessionError};
+    let hex = nclip_sync::relay::peer_hex(&s.peer());
+    if hex == nclip_sync::relay::peer_hex(&me) {
+        return; // 자기 자신(서버가 막지만 이중 방어)
+    }
+    if crate::devices::is_online(&hex) {
+        println!("동기화: 기기 {}… 세션 중복 — 새 것을 버림", &hex[..8]);
+        return;
+    }
+    let hello = Hello::local(display_name(&me));
+    if s.send(&PeerMsg::Hello(hello).encode()).is_err() {
+        return;
+    }
+    s.set_recv_timeout(Some(Duration::from_secs(1)));
+    let devices_path = dir.join("devices.txt");
+    let mut last_ping = std::time::Instant::now();
+    let mut last_rx = std::time::Instant::now();
+    let mut greeted = false;
+    loop {
+        if PEER_GEN.load(std::sync::atomic::Ordering::Relaxed) != gen {
+            break;
+        }
+        match s.recv() {
+            Ok(m) => {
+                last_rx = std::time::Instant::now();
+                match PeerMsg::decode(&m) {
+                    Some(PeerMsg::Hello(h)) => {
+                        let new = crate::devices::upsert_online(&hex, h.name.as_str(), &h.os);
+                        if let Err(e) = crate::devices::save(&devices_path) {
+                            eprintln!("동기화: 기기 목록 저장 실패({e})");
+                        }
+                        println!(
+                            "동기화: ★ 기기 연결 — {} ({}… · {}){}",
+                            h.name,
+                            &hex[..8],
+                            h.os,
+                            if new { " · 새 기기" } else { "" }
+                        );
+                        greeted = true;
+                        wake(&proxy);
+                    }
+                    Some(PeerMsg::Ping) => {
+                        if s.send(&PeerMsg::Pong.encode()).is_err() {
+                            break;
+                        }
+                    }
+                    Some(PeerMsg::Pong) | None => {}
+                }
+            }
+            Err(SessionError::TimedOut) => {}
+            Err(_) => break,
+        }
+        if last_ping.elapsed() >= PEER_PING {
+            if s.send(&PeerMsg::Ping.encode()).is_err() {
+                break;
+            }
+            last_ping = std::time::Instant::now();
+        }
+        if last_rx.elapsed() > PEER_DEAD {
+            break;
+        }
+    }
+    if greeted {
+        crate::devices::set_offline(&hex);
+        let _ = crate::devices::save(&devices_path);
+        println!("동기화: 기기 {}… 세션 종료", &hex[..8]);
+        wake(&proxy);
+    }
+}
+
+/// 다이얼 스레드 하나(상한 안에서) — 성립하면 세션 상주로 이어진다.
+fn spawn_dial<F>(label: String, f: F)
+where
+    F: FnOnce() -> Option<nclip_sync::NoiseSession<Box<dyn nclip_sync::Link>>> + Send + 'static,
+    F: FnOnce() -> Option<nclip_sync::NoiseSession<Box<dyn nclip_sync::Link>>>,
+{
+    if DIALING.load(std::sync::atomic::Ordering::Relaxed) >= 4 {
+        return;
+    }
+    DIALING.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let _ = std::thread::Builder::new().name(label).spawn(move || {
+        let out = f();
+        DIALING.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+        drop(out);
+    });
+}
+
 /// 러너 스레드가 살아 있는가(테스트가 RID 충돌을 피해 기다리는 데 쓴다).
 pub(crate) fn is_running() -> bool {
     RUNNING.load(std::sync::atomic::Ordering::Relaxed)
@@ -96,6 +241,7 @@ pub(crate) fn spawn_if_enabled(
     }
     let handle = conf.state.get("sync.handle").trim().to_string();
     let pass = conf.state.get("sync.passphrase").trim().to_string();
+    set_device_name(conf.state.get("sync.device_name"));
     // ★ 핸들/암호 없이도 접속은 한다(09-03 — 연결 상태 유지 계약: Test 성공 시 자동 켬).
     //   페어링 랑데부만 생략되고, 기기 RID 등록·상태 표시는 그대로다.
     if handle.is_empty() || pass.is_empty() {
@@ -170,12 +316,18 @@ fn run(
         }
     };
     let me = nclip_sync::relay::peer_hex(&id.peer_id());
+    if let Ok(mut g) = MY_HEX.lock() {
+        *g = me.clone();
+    }
     println!(
-        "동기화: 기기 신원 {}{} — {}",
+        "동기화: 기기 신원 {}{} — {} · 표시 이름 {}",
         &me[..16],
         if fresh { " (새로 생성)" } else { "" },
-        key_path.display()
+        key_path.display(),
+        display_name(&id.peer_id())
     );
+    let id = std::sync::Arc::new(id);
+    crate::devices::load(&dir.join("devices.txt"));
 
     // ② 서버 주소·핀 준비.
     let Some((addr_str, addr)) = nclip_sync::relay::resolve_server(relay_raw) else {
@@ -223,19 +375,105 @@ fn run(
                         println!("동기화: 서버 핀 고정(TOFU) — {}", pin_path.display());
                     }
                 }
-                // ④ 상주 — 인바운드 랑데부 감지(승인·전파는 다음 단).
+                // ④ 상주 — ★ 인바운드 수락(종단 세션 → 이름 교환) + 알려진 기기 다이얼 +
+                //   페어링 랑데부 탐색(09-03). 승인(DeviceList)·클립보드 전파는 다음 단.
+                let client = std::sync::Arc::new(client);
+                let gen = PEER_GEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+                let me_peer = id.peer_id();
+                let pair_rids: Vec<nclip_sync::relay::Rid> = if handle.is_empty() || pass.is_empty()
+                {
+                    Vec::new()
+                } else {
+                    nclip_sync::rid::rids_around(handle, pass).to_vec()
+                };
+                let mut last_dial = std::time::Instant::now() - DIAL_EVERY;
                 loop {
                     if let Some(inc) = client.accept_incoming(Duration::from_secs(1)) {
                         println!(
-                            "동기화: ★ 인바운드 랑데부 — 같은 만남 지점의 기기가 접속 시도 \
-(src RID {:02x}{:02x}… · 승인 체계는 다음 단이라 아직 연결하지 않습니다)",
+                            "동기화: 인바운드 랑데부(src RID {:02x}{:02x}…) — 종단 수락 시도",
                             inc.src[0], inc.src[1]
                         );
-                        drop(inc);
+                        let (c, i, p, d) =
+                            (client.clone(), id.clone(), proxy.clone(), dir.to_path_buf());
+                        let _ = std::thread::Builder::new()
+                            .name("nclip-peer-in".into())
+                            .spawn(move || {
+                                match nclip_sync::relay::accept_via(
+                                    &c,
+                                    inc,
+                                    &i,
+                                    true,
+                                    Duration::from_secs(10),
+                                ) {
+                                    Ok(via) => run_peer(via.session, me_peer, gen, p, d),
+                                    Err(e) => eprintln!("동기화: 인바운드 수락 실패({e:?})"),
+                                }
+                            });
+                    }
+                    if last_dial.elapsed() >= DIAL_EVERY {
+                        last_dial = std::time::Instant::now();
+                        // 알려진 기기 — 오프라인이고 **내 키가 작은 쪽**만 건다(글레어 회피 타이브레이크).
+                        for hex in crate::devices::known_hex() {
+                            if crate::devices::is_online(&hex) || me >= hex {
+                                continue;
+                            }
+                            let Some(peer) = nclip_sync::relay::parse_peer_hex(&hex) else {
+                                continue;
+                            };
+                            let (c, i, p, d) =
+                                (client.clone(), id.clone(), proxy.clone(), dir.to_path_buf());
+                            spawn_dial(format!("nclip-peer-dial-{}", &hex[..8]), move || {
+                                match nclip_sync::relay::connect_via(
+                                    &c,
+                                    &i,
+                                    &peer,
+                                    true,
+                                    Duration::from_secs(3),
+                                ) {
+                                    Ok(via) => run_peer(via.session, me_peer, gen, p, d),
+                                    Err(nclip_sync::relay::ViaError::NotFound) => {}
+                                    Err(e) => {
+                                        eprintln!("동기화: 기기 {}… 다이얼 실패({e:?})", &hex[..8])
+                                    }
+                                }
+                                None
+                            });
+                        }
+                        // 페어링 랑데부 — 아직 아무와도 안 붙었을 때만 만남 지점을 연다
+                        //   (서버는 최신 등록자에게 잇고, 내가 등록자면 "대상 없음"으로 돌아온다).
+                        let any_online = crate::devices::list().iter().any(|d| d.online);
+                        if !pair_rids.is_empty() && !any_online {
+                            let (c, i, p, d) =
+                                (client.clone(), id.clone(), proxy.clone(), dir.to_path_buf());
+                            let rids = pair_rids.clone();
+                            spawn_dial("nclip-peer-pair".into(), move || {
+                                for rid in rids {
+                                    match nclip_sync::relay::connect_rid(
+                                        &c,
+                                        &i,
+                                        rid,
+                                        Duration::from_secs(3),
+                                    ) {
+                                        Ok(session) => {
+                                            run_peer(session, me_peer, gen, p, d);
+                                            break;
+                                        }
+                                        Err(nclip_sync::relay::ViaError::NotFound) => {}
+                                        Err(e) => {
+                                            eprintln!("동기화: 페어링 랑데부 실패({e:?})");
+                                            break;
+                                        }
+                                    }
+                                }
+                                None
+                            });
+                        }
                     }
                     // ★ 사용자 해제(09-03) — 세션을 버리고 스레드를 마친다.
                     if STOP_REQ.swap(false, std::sync::atomic::Ordering::Relaxed) {
                         drop(client);
+                        PEER_GEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        crate::devices::all_offline();
                         set_status(SyncStatus::Stopped);
                         notify(false);
                         println!("동기화: 사용자 요청으로 연결 해제 — 다음 시작 때 재연결");
@@ -243,6 +481,8 @@ fn run(
                     }
                     if !client.is_alive() {
                         eprintln!("동기화: 릴레이 세션 끊김 — 재접속");
+                        PEER_GEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        crate::devices::all_offline();
                         notify(false);
                         break;
                     }

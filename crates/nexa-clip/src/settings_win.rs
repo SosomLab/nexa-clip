@@ -56,6 +56,8 @@ pub(crate) struct App {
     sync_respawn: bool,
     /// 마지막으로 노트에 반영한 러너 상태(변화 때만 갱신 — 자동 Test 표시).
     sync_shown: Option<crate::sync_cmd::SyncStatus>,
+    /// 마지막으로 그린 기기 목록 텍스트(변화 때만 set_value).
+    devices_text: String,
     mods: ModifiersState,
     started: Instant,
     /// 마지막으로 준 크기 — 바뀔 때만 `set_bounds`를 부른다.
@@ -88,6 +90,7 @@ impl App {
             sync_test: None,
             sync_respawn: false,
             sync_shown: None,
+            devices_text: String::new(),
             mods: ModifiersState::empty(),
             started: Instant::now(),
             laid_out: (0, 0),
@@ -286,6 +289,7 @@ impl App {
     /// ★ 러너 상태 → Test 행 노트 자동 반영(09-03 사용자 — "실행 시 자동 Test").
     ///   수동 Test가 진행 중이면 그 결과가 우선(끝나면 러너 상태가 이어받는다).
     fn poll_sync_status(&mut self) {
+        self.refresh_devices();
         if self.sync_test.is_some() {
             return;
         }
@@ -296,6 +300,14 @@ impl App {
         use crate::sync_cmd::SyncStatus as S;
         let lang = nclip_core::current_lang();
         let mut inv = Invalidations::default();
+        // ★ 활성 규칙(09-03 사용자): 연결 중엔 Test 잠금(정보 변경 = 해제 → 다시 열림) ·
+        //   Disconnect는 연결 중에만.
+        let locked: &[&'static str] = if st == S::Connected {
+            &["sync.test"]
+        } else {
+            &["sync.disconnect"]
+        };
+        self.widget.set_disabled(locked, &mut inv);
         let (msg, tone) = match &st {
             S::Off => (String::new(), nclip_ui::NoteTone::Plain),
             S::Connecting => (
@@ -324,6 +336,65 @@ impl App {
             .set_row_note_toned("sync.test", &msg, tone, &mut inv);
         self.sync_shown = Some(st);
         self.redraw();
+    }
+
+    /// ★ 기기 목록 행(09-03) — 이 기기 + 만난 기기(이름 · 지문 8자 · OS · 연결/마지막 접속).
+    fn refresh_devices(&mut self) {
+        let lang = nclip_core::current_lang();
+        let mut lines = Vec::new();
+        let me = crate::sync_cmd::my_hex();
+        if me.len() >= 8 {
+            lines.push(format!(
+                "*{}: {} · {}",
+                nclip_core::tr(lang, nclip_core::Msg::StSyncDevMe),
+                crate::sync_cmd::my_display_name(),
+                &me[..8]
+            ));
+        }
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        for d in crate::devices::list() {
+            let short = if d.hex.len() >= 8 {
+                &d.hex[..8]
+            } else {
+                d.hex.as_str()
+            };
+            if d.online {
+                lines.push(format!(
+                    "*{} · {} · {} · {}",
+                    d.name,
+                    short,
+                    d.os,
+                    nclip_core::tr(lang, nclip_core::Msg::StSyncDevOnline)
+                ));
+            } else {
+                let ago = now.saturating_sub(d.last_seen);
+                let ago = if ago < 3600 {
+                    format!("{}m", ago / 60)
+                } else if ago < 86_400 {
+                    format!("{}h", ago / 3600)
+                } else {
+                    format!("{}d", ago / 86_400)
+                };
+                lines.push(format!(
+                    "{} · {} · {} · {}",
+                    d.name,
+                    short,
+                    d.os,
+                    nclip_core::tr(lang, nclip_core::Msg::StSyncDevAgo).replacen("{}", &ago, 1)
+                ));
+            }
+        }
+        let text = lines.join("\n");
+        if text != self.devices_text {
+            self.devices_text = text.clone();
+            let mut inv = Invalidations::default();
+            self.widget.set_value("sync.devices", &text, &mut inv);
+            self.laid_out = (0, 0); // 줄 수가 바뀌면 행 높이도 바뀐다.
+            self.redraw();
+        }
     }
 
     fn poll_sync_test(&mut self) {
@@ -481,6 +552,10 @@ impl App {
                     self.redraw();
                 }
             }
+            // ★ 기기 이름(09-03) — 다음 세션부터 새 이름으로 인사한다.
+            if key == "sync.device_name" {
+                crate::sync_cmd::set_device_name(&val);
+            }
             // ★ 비밀번호 생성 버튼(09-03 사용자) — 새 패스프레이즈로 교체 + 안내.
             if key == "sync.passphrase.regen" && val == "run" {
                 let sug = suggest_passphrase();
@@ -516,19 +591,7 @@ impl App {
             }
             // ★ 연결 해제(09-03) — **즉시** 끊고 Connected 자리(sync.test)에 표시.
             if key == "sync.disconnect" && val == "run" {
-                if crate::sync_cmd::is_connected() {
-                    self.sync_drop_now();
-                } else {
-                    let lang = nclip_core::current_lang();
-                    let mut inv2 = Invalidations::default();
-                    self.widget.set_row_note_toned(
-                        "sync.disconnect",
-                        nclip_core::tr(lang, nclip_core::Msg::StSyncNotConnected),
-                        nclip_ui::NoteTone::Warn,
-                        &mut inv2,
-                    );
-                    self.redraw();
-                }
+                self.sync_drop_now(); // 버튼은 연결 중에만 활성 — 별도 안내 노트 없음(09-03).
             }
             if key == "app.autostart" {
                 let on = val == "on";

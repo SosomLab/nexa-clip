@@ -17,6 +17,8 @@ pub mod autostart;
 pub mod clipboard;
 pub mod console;
 pub mod font;
+/// ★ 호스트명(09-03 — 기기 표시 이름 기본값 원료 · beep host.rs 이식).
+pub mod host;
 #[cfg(target_os = "linux")]
 pub mod hotkey_linux;
 pub mod imgdec;

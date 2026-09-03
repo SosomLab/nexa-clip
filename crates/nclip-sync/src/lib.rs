@@ -16,9 +16,13 @@
 
 pub mod arq;
 pub mod endpoint;
+/// ★ 종단 인사 프레임(09-03 — 기기 이름 교환).
+pub mod hello;
 pub mod identity;
 pub mod keyfile;
 pub mod link;
+/// ★ 표시 이름 무해화(09-03 — beep name.rs 이식).
+pub mod name;
 pub mod noise;
 pub mod path;
 pub mod relay;

@@ -324,6 +324,17 @@ pub(crate) const REGISTRY: &[Entry] = &[
         SettingKind::Toggle,
         "sync.enabled",
     ),
+    // ★ 기기 표시 이름(09-03 사용자) — 같은 핸들의 기기를 구별. 비면 호스트명 정제/지문 라벨.
+    e(
+        Msg::CatSync,
+        Msg::SetSyncDeviceName,
+        Msg::SetSyncDeviceNameDesc,
+        SettingKind::Text {
+            hint: Msg::SetSyncDeviceName,
+            secret: false,
+        },
+        "sync.device_name",
+    ),
     e(
         Msg::CatSync,
         Msg::SetSyncHandle,
@@ -378,6 +389,14 @@ pub(crate) const REGISTRY: &[Entry] = &[
             verb: Msg::SyncDisconnectVerb,
         },
         "sync.disconnect",
+    ),
+    // ★ 기기 목록(09-03 사용자) — 만난 기기(인증된 PeerId + 표시 이름)를 읽기 전용으로.
+    e(
+        Msg::CatSync,
+        Msg::SetSyncDevices,
+        Msg::SetSyncDevicesDesc,
+        SettingKind::Report,
+        "sync.devices",
     ),
     // ── 고급 ────────────────────────────────────────────────
     e(

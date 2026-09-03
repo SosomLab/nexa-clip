@@ -336,6 +336,13 @@ pub enum Msg {
     HintStack,
     /// 동기화: 핸들(내 아이디) 설정 라벨(09-03 기반).
     SetSyncHandle,
+    SetSyncDeviceName,
+    SetSyncDeviceNameDesc,
+    SetSyncDevices,
+    SetSyncDevicesDesc,
+    StSyncDevMe,
+    StSyncDevOnline,
+    StSyncDevAgo,
     /// 동기화: 핸들 설명.
     SetSyncHandleDesc,
     /// 동기화: 페어링 패스프레이즈 라벨.
@@ -793,6 +800,23 @@ impl Msg {
                 "您的设备共享的简短公开名称（例如 kiros33）",
                 "端末間で共有する短い公開名（例: kiros33）",
             ],
+            Msg::SetSyncDeviceName => ["Device name", "기기 이름", "设备名称", "デバイス名"],
+            Msg::SetSyncDeviceNameDesc => [
+                "Shown to your other devices to tell them apart (blank = computer name)",
+                "다른 기기에 보이는 이 기기의 이름 — 같은 아이디의 기기를 구별합니다 (비우면 컴퓨터 이름)",
+                "显示给其他设备以区分本机（留空 = 计算机名）",
+                "他の端末に表示されるこの端末の名前（空欄 = コンピューター名）",
+            ],
+            Msg::SetSyncDevices => ["Devices", "기기 목록", "设备", "端末一覧"],
+            Msg::SetSyncDevicesDesc => [
+                "No devices met yet — enter the same handle and passphrase on another device, then Test",
+                "아직 만난 기기가 없습니다 — 다른 기기에 같은 아이디·페어링 암호를 넣고 Test",
+                "尚未遇到设备——在另一台设备输入相同的账号和配对口令后按 Test",
+                "まだ端末に出会っていません — 別の端末に同じ ID とパスフレーズを入れて Test",
+            ],
+            Msg::StSyncDevMe => ["This device", "이 기기", "本机", "この端末"],
+            Msg::StSyncDevOnline => ["connected", "연결됨", "已连接", "接続中"],
+            Msg::StSyncDevAgo => ["last seen {} ago", "마지막 접속 {} 전", "上次 {} 前", "最終 {} 前"],
             Msg::SetSyncPass => ["Pairing passphrase", "페어링 암호", "配对口令", "ペアリングパスフレーズ"],
             Msg::SetSyncPassDesc => [
                 "Secret used only to derive the meeting point — never sent to the server",
@@ -1011,7 +1035,7 @@ mod tests {
     use super::*;
 
     /// 카탈로그 전수 — 새 `Msg`를 더하면 여기도 더한다(빈칸 검사가 그걸 강제한다).
-    const ALL_MSG: [Msg; 180] = [
+    const ALL_MSG: [Msg; 187] = [
         Msg::AppName,
         Msg::SearchPlaceholder,
         Msg::EmptyHistory,
@@ -1140,6 +1164,13 @@ mod tests {
         Msg::MenuCopyImage,
         Msg::HintStack,
         Msg::SetSyncHandle,
+        Msg::SetSyncDeviceName,
+        Msg::SetSyncDeviceNameDesc,
+        Msg::SetSyncDevices,
+        Msg::SetSyncDevicesDesc,
+        Msg::StSyncDevMe,
+        Msg::StSyncDevOnline,
+        Msg::StSyncDevAgo,
         Msg::SetSyncHandleDesc,
         Msg::SetSyncPass,
         Msg::SetSyncPassDesc,

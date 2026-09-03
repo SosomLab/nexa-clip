@@ -1386,6 +1386,37 @@ pub fn connect_via(
     Err(ViaError::NotFound)
 }
 
+/// ★ nclip 추가(09-03) — **임의 RID**(핸들·암호 파생 페어링 랑데부)로 열고 종단 세션을 맺는다.
+/// 상대 PeerId를 모르는 첫 만남이라 [`connect_via`]의 키 대조 대신 **세션이 확정한 키를 그대로**
+/// 돌려준다(호출자가 이름 교환·목록 등재). 릴레이 단만 탄다(홀펀칭은 알려진 기기 재접속 몫).
+///
+/// # Errors
+/// 대상 없음(`Err(1)` — 미등록 또는 **내가 등록자**) → [`ViaError::NotFound`] · 상한 · 서버 죽음 ·
+/// 핸드셰이크 실패.
+pub fn connect_rid(
+    client: &RelayClient,
+    id: &Identity,
+    dst: Rid,
+    open_timeout: Duration,
+) -> Result<NoiseSession<Box<dyn Link>>, ViaError> {
+    let (mut relay, _peer_udp) = match client.open(dst, open_timeout) {
+        Ok(v) => v,
+        Err(1) => return Err(ViaError::NotFound),
+        Err(2) => return Err(ViaError::Limit),
+        Err(_) => return Err(ViaError::Dead),
+    };
+    let _ = relay.set_recv_timeout(Some(HS_TIMEOUT_RELAY));
+    let boxed: Box<dyn Link> = Box::new(relay);
+    match NoiseSession::initiate_with_prologue(boxed, id, E2E_PROLOGUE) {
+        Ok(mut session) => {
+            use crate::Session as _;
+            session.set_recv_timeout(None);
+            Ok(session)
+        }
+        Err(_) => Err(ViaError::Handshake),
+    }
+}
+
 fn finish_via(
     mut session: NoiseSession<Box<dyn Link>>,
     taken: PathTaken,
