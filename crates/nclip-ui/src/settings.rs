@@ -1402,12 +1402,15 @@ impl SettingsWidget {
             row.head_h = if row.head.is_some() { head_h } else { 0 };
             top += row.head_h;
             row.rect = Rect::new(rx, top, rw, h);
+            // ★ 컨트롤은 **노트를 뺀** 높이 중앙에(09-03 실기 — 노트가 붙어도 컨트롤이 안 밀린다;
+            //   노트는 행 바닥에 따로 그린다).
+            let hc = h - note_hs[ri];
             match &mut row.ctl {
                 RowCtl::Combo(c) => {
                     c.set_bounds(
                         Rect::new(
                             rx + rw - combo_w - pad,
-                            top + (h - ctl_h) / 2,
+                            top + (hc - ctl_h) / 2,
                             combo_w,
                             ctl_h,
                         ),
@@ -1421,7 +1424,7 @@ impl SettingsWidget {
                     c.set_bounds(
                         Rect::new(
                             rx + rw - check_w - pad,
-                            top + (h - ctl_h) / 2,
+                            top + (hc - ctl_h) / 2,
                             check_w,
                             ctl_h,
                         ),
@@ -1447,14 +1450,14 @@ impl SettingsWidget {
                     // 비밀 행: [버튼 줄][간격][상자] 스택을 행 중앙에 — 상자는 스택 아래.
                     let secret = matches!(e.kind, SettingKind::Text { secret: true, .. });
                     let y =
-                        top + (h - ctl_h) / 2 + if secret { (ctl_h + ctl_h / 8) / 2 } else { 0 };
+                        top + (hc - ctl_h) / 2 + if secret { (ctl_h + ctl_h / 8) / 2 } else { 0 };
                     family.set_bounds(Rect::new(rx + rw - base_w - pad, y, base_w, ctl_h), inv);
                 }
                 RowCtl::Pos(p) => {
                     p.set_scale(self.scale);
                     let (pw, ph) = p.preferred_size();
                     p.set_bounds(
-                        Rect::new(rx + rw - pw - pad, top + (h - ph) / 2, pw, ph),
+                        Rect::new(rx + rw - pw - pad, top + (hc - ph) / 2, pw, ph),
                         inv,
                     );
                 }
@@ -1462,7 +1465,7 @@ impl SettingsWidget {
                     c.set_scale(self.scale);
                     let cw = c.preferred_width().min(rw - pad * 2);
                     c.set_bounds(
-                        Rect::new(rx + rw - cw - pad, top + (h - ctl_h) / 2, cw, ctl_h),
+                        Rect::new(rx + rw - cw - pad, top + (hc - ctl_h) / 2, cw, ctl_h),
                         inv,
                     );
                 }
@@ -1471,7 +1474,7 @@ impl SettingsWidget {
                     b.set_bounds(
                         Rect::new(
                             rx + rw - combo_w - pad,
-                            top + (h - ctl_h) / 2,
+                            top + (hc - ctl_h) / 2,
                             combo_w,
                             ctl_h,
                         ),
