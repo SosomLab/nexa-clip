@@ -1,0 +1,13 @@
+[package]
+name = "nclip-sync"
+description = "동기화 기반 — 신원·랑데부 파생·릴레이 클라이언트 (M2 · docs/07·09)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+# 랑데부 파생(PBKDF2-HMAC-SHA256) — 저장소와 같은 원장 항목(sha2 · DR-8).
+sha2 = "0.10"
+
+[lints]
+workspace = true
