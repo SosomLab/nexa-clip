@@ -384,9 +384,36 @@ impl App {
     fn feed(&mut self, ev: InputEvent) {
         let mut inv = Invalidations::default();
         self.widget.on_event(&ev, &mut inv);
+        self.drain_edit_ctx(&mut inv);
         self.drain_changes();
         if !inv.is_empty() {
             self.redraw();
+        }
+    }
+
+    /// ★ 텍스트 입력 우클릭 메뉴의 선택을 실행한다(09-03 사용자 — 암호 입력란 편집 기능):
+    ///   클립보드 접근은 호스트 몫(main_win `drain_search_edit_ctx`와 같은 경로).
+    fn drain_edit_ctx(&mut self, inv: &mut Invalidations) {
+        if let Some(act) = self.widget.take_edit_ctx() {
+            use nclip_ctl::controls::EditCtxAction as A;
+            match act {
+                A::Copy => {
+                    if let Some(t) = self.widget.clipboard_copy() {
+                        crate::cliptext::set_text(&t);
+                    }
+                }
+                A::Cut => {
+                    if let Some(t) = self.widget.clipboard_cut(inv) {
+                        crate::cliptext::set_text(&t);
+                    }
+                }
+                A::Paste => {
+                    if let Some(t) = crate::cliptext::get_text() {
+                        self.widget.clipboard_paste(t.trim_end_matches('\n'), inv);
+                    }
+                }
+            }
+            inv.push(nclip_ctl::geom::Rect::new(0, 0, 1, 1)); // 다시 그리기 보장
         }
     }
 
@@ -584,10 +611,19 @@ impl ApplicationHandler for App {
             WindowEvent::ThemeChanged(_) => self.apply_theme(),
 
             WindowEvent::MouseInput { state, button, .. } => {
+                let (x, y) = self.cursor;
+                // ★ 우클릭 = 텍스트 입력 편집 메뉴(09-03) — 위젯이 포커스된 입력 안일 때만 연다.
+                if button == winit::event::MouseButton::Right {
+                    if state == ElementState::Pressed {
+                        self.widget
+                            .set_clipboard_has_text(crate::cliptext::has_text());
+                        self.feed(InputEvent::RightDown { x, y });
+                    }
+                    return;
+                }
                 if button != winit::event::MouseButton::Left {
                     return;
                 }
-                let (x, y) = self.cursor;
                 let ev = if state == ElementState::Pressed {
                     InputEvent::MouseDown {
                         x,
@@ -663,6 +699,29 @@ impl ApplicationHandler for App {
                     }
                     Key::Character(t) if primary && t.eq_ignore_ascii_case("a") => {
                         self.feed(InputEvent::SelectAll);
+                    }
+                    // ★ 클립보드 단축(09-03 — 암호·핸들 입력란): 복사·잘라내기·붙여넣기.
+                    Key::Character(t) if primary && t.eq_ignore_ascii_case("c") => {
+                        if let Some(s) = self.widget.clipboard_copy() {
+                            crate::cliptext::set_text(&s);
+                        }
+                    }
+                    Key::Character(t) if primary && t.eq_ignore_ascii_case("x") => {
+                        let mut inv = Invalidations::default();
+                        if let Some(s) = self.widget.clipboard_cut(&mut inv) {
+                            crate::cliptext::set_text(&s);
+                        }
+                        self.drain_changes();
+                        self.redraw();
+                    }
+                    Key::Character(t) if primary && t.eq_ignore_ascii_case("v") => {
+                        if let Some(s) = crate::cliptext::get_text() {
+                            let mut inv = Invalidations::default();
+                            self.widget
+                                .clipboard_paste(s.trim_end_matches('\n'), &mut inv);
+                            self.drain_changes();
+                            self.redraw();
+                        }
                     }
                     _ => {
                         if let Some(txt) = event.text.as_ref() {
