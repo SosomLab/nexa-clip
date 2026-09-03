@@ -1,13 +1,17 @@
 [package]
 name = "nclip-sync"
-description = "동기화 기반 — 신원·랑데부 파생·릴레이 클라이언트 (M2 · docs/07·09)"
+description = "동기화 기반 — 신원·랑데부·릴레이 클라이언트·홀펀칭 (M2 · docs/07·09 · beep 이식)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
-# 랑데부 파생(PBKDF2-HMAC-SHA256) — 저장소와 같은 원장 항목(sha2 · DR-8).
+# 랑데부 파생 + RID 유도 — 저장소와 같은 원장 항목(DR-8).
 sha2 = "0.10"
+# ★ Noise_XX(서버·종단 암호 세션) — beep과 동일 버전 고정(와이어 호환 · docs/10 원장 기록).
+snow = "0.9.6"
+# TCP 소켓 옵션(keepalive 등) — beep nbeep-net과 동일.
+socket2 = { version = "0.5", features = ["all"] }
 
 [lints]
 workspace = true
