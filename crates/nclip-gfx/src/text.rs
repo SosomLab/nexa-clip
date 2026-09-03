@@ -111,10 +111,23 @@ impl Font {
     pub fn measure(&self, text: &str, size: f32) -> f32 {
         text.chars()
             .map(|c| {
-                let face = self.face_for(c);
-                face.as_scaled(size).h_advance(face.glyph_id(c))
+                self.control_advance(c, size).unwrap_or_else(|| {
+                    let face = self.face_for(c);
+                    face.as_scaled(size).h_advance(face.glyph_id(c))
+                })
             })
             .sum()
+    }
+
+    /// ★ 제어 문자 표시 규칙(09-03 실기 — 탭이 두부(□)로 그려졌다):
+    /// 탭 = **공백 4칸 폭**(글리프는 그리지 않음) · 그 외 제어(CR 등) = 폭 0.
+    /// 측정과 그리기가 같은 규칙을 쓰므로 캐럿 좌표도 일관된다.
+    fn control_advance(&self, c: char, size: f32) -> Option<f32> {
+        if c == '\t' {
+            let face = self.face_for(' ');
+            return Some(face.as_scaled(size).h_advance(face.glyph_id(' ')) * 4.0);
+        }
+        c.is_control().then_some(0.0)
     }
 
     /// `size`에서의 어센트(베이스라인 위 높이, px) — 상단 기준 배치를 베이스라인으로 변환.
@@ -185,6 +198,11 @@ impl Font {
         let bold_pass = if style.bold { 2 } else { 1 };
         let mut pen = x;
         for ch in text.chars() {
+            // ★ 제어 문자 = 폭만 옮기고 글리프 없음(탭 두부 차단 · 09-03).
+            if let Some(adv) = self.control_advance(ch, size) {
+                pen += adv;
+                continue;
+            }
             let face = self.face_for(ch);
             let scaled = face.as_scaled(size);
             let gid = face.glyph_id(ch);
@@ -227,6 +245,10 @@ impl Font {
     ) -> f32 {
         let mut pen = x;
         for ch in text.chars() {
+            if let Some(adv) = self.control_advance(ch, size) {
+                pen += adv;
+                continue;
+            }
             let face = self.face_for(ch);
             let scaled = face.as_scaled(size);
             let gid = face.glyph_id(ch);
