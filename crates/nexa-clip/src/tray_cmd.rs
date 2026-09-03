@@ -183,6 +183,8 @@ fn to_stored(it: &HistoryItem) -> StoredItem {
         pinned: it.pinned,
         thumb: it.thumb.clone(),
         created_ms: it.created_ms,
+        // ★ 미적재 참조 전달(09-03 지연 로드) — 재기록이 본문 없이도 안전한 근거.
+        blobs: it.blob_refs.clone(),
     }
 }
 
@@ -197,6 +199,7 @@ fn to_history(it: StoredItem) -> HistoryItem {
         it.pinned,
         it.thumb,
         it.created_ms,
+        it.blobs,
     )
 }
 
@@ -239,9 +242,44 @@ impl Shell {
     }
 
     /// 메인창 닫기 — `ui.close_to_tray` 정책 공유(설정 창과 동일 계약).
+    /// ★ blob 지연 로드(09-03) — 미적재 본문을 접근 시점에 복호해 채운다.
+    /// 성공 = true. 손상/부재는 채우지 않고 false(있는 척 금지 · DR-31).
+    fn ensure_loaded(&mut self, id: u64) -> bool {
+        let Some(item) = self.history.get_by_id_mut(id) else {
+            return false;
+        };
+        if item.blob_refs.is_empty() {
+            return true;
+        }
+        let refs = std::mem::take(&mut item.blob_refs);
+        let mut fetched = Vec::with_capacity(refs.len());
+        for (ri, bid, len) in &refs {
+            match self.store.read_blob_by_id(bid) {
+                Some(plain) if plain.len() as u64 == *len => fetched.push((*ri, plain)),
+                _ => {
+                    // 복구 불능 — 참조를 되돌려 미적재 상태 유지(재시도 가능).
+                    if let Some(item) = self.history.get_by_id_mut(id) {
+                        item.blob_refs = refs;
+                    }
+                    eprintln!("항목 {id}: blob 복호 실패 — 본문을 채울 수 없음");
+                    return false;
+                }
+            }
+        }
+        if let Some(item) = self.history.get_by_id_mut(id) {
+            for (ri, plain) in fetched {
+                if let Some(rep) = item.reps.get_mut(ri as usize) {
+                    rep.data = plain;
+                }
+            }
+        }
+        true
+    }
+
     /// ★ K4 미리보기 펌프 — 메인창이 원본 이미지를 원하면 지연 디코드해 넘긴다.
     fn pump_preview(&mut self) {
         if let Some(pid) = self.main.take_preview_request() {
+            let _ = self.ensure_loaded(pid); // 이미지 본문(blob) 지연 로드(09-03).
             let img = self
                 .history
                 .get_by_id(pid)
@@ -285,6 +323,7 @@ impl Shell {
     /// ★ 메인창 복사 — 재적재만(주입 없음 · 관리 화면). 에코는 승격으로.
     /// ★ 편집 저장(S4 평문화 · 09-01 확정) — 같은 id로 평문 교체 + 저장소 Add(재생 교체).
     fn save_edit(&mut self, id: u64, text: &str) {
+        let _ = self.ensure_loaded(id);
         let trimmed = text.trim_end();
         if trimmed.is_empty() {
             eprintln!("빈 내용은 저장하지 않습니다 — 삭제를 쓰세요");
@@ -338,6 +377,7 @@ impl Shell {
     }
 
     fn copy_from_main(&mut self, id: u64, as_: PasteAs) {
+        let _ = self.ensure_loaded(id); // 본문 지연 로드(09-03).
         let Some(pos) =
             (0..self.history.len()).find(|&i| self.history.get(i).is_some_and(|it| it.id == id))
         else {
@@ -378,6 +418,9 @@ impl Shell {
     /// ★ 팝업 선택 — 재적재 후 **기억해 둔 창으로 복원 + `Ctrl+V` 주입**(K-1 실물 경로).
     /// 4모드(T-15b)는 **클립보드 내용 선별**로 구현한다 — 주입 키는 항상 Ctrl+V.
     fn pick(&mut self, index: usize, as_: PasteAs) {
+        if let Some(id) = self.history.get(index).map(|it| it.id) {
+            let _ = self.ensure_loaded(id); // 본문 지연 로드(09-03).
+        }
         let Some(item) = self.history.get(index) else {
             return;
         };
@@ -417,6 +460,7 @@ impl Shell {
         }
         let n = ids.len();
         for (k, id) in ids.iter().enumerate() {
+            let _ = self.ensure_loaded(*id); // 본문 지연 로드(09-03).
             let Some(item) = (0..self.history.len())
                 .filter_map(|i| self.history.get(i))
                 .find(|it| it.id == *id)
@@ -450,6 +494,7 @@ impl Shell {
     /// ★ 이미지로 복사(09-03) — 리치 런(색·굵기)을 흰 바탕 비트맵으로 렌더해
     /// PNG+`CF_DIB`로 게시한다. PPT·Word에 Ctrl+V 하면 그림으로 붙는다.
     fn copy_as_image(&mut self, id: u64) {
+        let _ = self.ensure_loaded(id);
         let Some(item) = (0..self.history.len())
             .filter_map(|i| self.history.get(i))
             .find(|it| it.id == id)

@@ -55,6 +55,10 @@ pub struct StoredItem {
     pub thumb: Option<(u32, u32, Vec<u8>)>,
     /// 생성 시각(epoch ms · T-13 기간 정책) — 구본(EV_ADD)은 0.
     pub created_ms: u64,
+    /// ★ 미적재 blob 참조(09-03 지연 로드) — `(reps 인덱스, blob id, 평문 길이)`.
+    /// 비어 있으면 전부 적재된 항목. 재기록(add)은 이 참조를 **그대로** 다시 쓴다
+    /// — 핀/승격 재기록이 본문을 읽지 않아도 데이터가 안전하다.
+    pub blobs: Vec<(u32, [u8; 32], u64)>,
 }
 
 /// 이력 영속 포트(DR-37f) — 셸은 이것만 안다.
@@ -71,6 +75,8 @@ pub trait HistoryStore {
     fn wipe(&mut self);
     /// 저장이 한 번이라도 실패했는가(상태 표시용 — DR-31).
     fn degraded(&self) -> bool;
+    /// ★ blob 하나 복호(09-03 지연 로드) — 접근 시 본문 채움. 없거나 손상이면 `None`.
+    fn read_blob_by_id(&self, id: &[u8; 32]) -> Option<Vec<u8>>;
 }
 
 /// 저장 없이 도는 자리(열기 실패·테스트) — 전부 no-op.
@@ -87,6 +93,9 @@ impl HistoryStore for NullStore {
     fn wipe(&mut self) {}
     fn degraded(&self) -> bool {
         false
+    }
+    fn read_blob_by_id(&self, _: &[u8; 32]) -> Option<Vec<u8>> {
+        None
     }
 }
 
@@ -266,8 +275,16 @@ impl FileStore {
         }
         w.u32(u32::try_from(item.reps.len()).unwrap_or(0));
         let mut ids = Vec::new();
-        for r in &item.reps {
+        for (ri, r) in item.reps.iter().enumerate() {
             w.str(&r.format);
+            // ★ 미적재 참조(지연 로드) — blob은 이미 실재: 참조만 다시 쓴다(09-03).
+            if let Some(&(_, bid, len)) = item.blobs.iter().find(|(bi, _, _)| *bi as usize == ri) {
+                w.u8(1);
+                w.0.extend_from_slice(&bid);
+                w.u64(len);
+                ids.push(bid);
+                continue;
+            }
             if r.data.len() >= BLOB_MIN {
                 if let Some(id) = self.write_blob(&r.data) {
                     w.u8(1);
@@ -305,7 +322,8 @@ impl FileStore {
         let n = r.u32()? as usize;
         let mut reps = Vec::with_capacity(n.min(1024));
         let mut ids = Vec::new();
-        for _ in 0..n {
+        let mut blobs = Vec::new();
+        for ri in 0..n {
             let format = r.str()?;
             let data = match r.u8()? {
                 1 => {
@@ -313,13 +331,13 @@ impl FileStore {
                     r.0 = rest;
                     let mut bid = [0u8; 32];
                     bid.copy_from_slice(idb);
-                    let len = usize::try_from(r.u64()?).ok()?;
-                    let plain = self.read_blob(&bid)?;
-                    if plain.len() != len {
-                        return None; // blob 손상 — 항목째 버린다(반쪽 항목은 거짓말이다)
-                    }
+                    let len = r.u64()?;
+                    // ★ 지연 로드(09-03) — 여기서 복호하지 않는다: 참조만 수집.
+                    //   (기동 = 인덱스 14.5MB만 · 본문 254MB는 접근 시 · 실측 근거)
                     ids.push(bid);
-                    plain
+                    #[allow(clippy::cast_possible_truncation)]
+                    blobs.push((ri as u32, bid, len));
+                    Vec::new()
                 }
                 _ => r.bytes()?.to_vec(),
             };
@@ -335,6 +353,7 @@ impl FileStore {
                 copies,
                 pinned,
                 thumb,
+                blobs,
                 created_ms,
             },
             ids,
@@ -542,6 +561,10 @@ impl HistoryStore for FileStore {
     fn degraded(&self) -> bool {
         self.degraded
     }
+
+    fn read_blob_by_id(&self, id: &[u8; 32]) -> Option<Vec<u8>> {
+        self.read_blob(id)
+    }
 }
 
 #[cfg(test)]
@@ -569,6 +592,7 @@ mod tests {
             pinned: false,
             thumb: None,
             created_ms: 1_700_000_000_000,
+            blobs: Vec::new(),
         }
     }
 
@@ -627,7 +651,13 @@ mod tests {
         assert_eq!(count, 1, "같은 평문 = 같은 blob_id = 한 파일");
         let mut s = FileStore::open(&d).unwrap().store;
         let items = s.load();
-        assert_eq!(items[0].reps[0].data, big, "blob이 되살아난다");
+        // ★ 지연 로드(09-03) — 기동은 참조만, 본문은 접근 시 복호.
+        assert!(items[0].reps[0].data.is_empty(), "기동 때 본문 미적재");
+        let (ri, bid, len) = items[0].blobs[0];
+        assert_eq!(ri, 0);
+        let plain = s.read_blob_by_id(&bid).expect("접근 시 복호");
+        assert_eq!(plain.len() as u64, len);
+        assert_eq!(plain, big, "blob이 되살아난다(지연)");
         // 한 항목을 지워도 파일은 남고(공유), 둘 다 지우면 사라진다.
         s.remove(1);
         assert_eq!(walk_files(&d.join("blob")), 1);

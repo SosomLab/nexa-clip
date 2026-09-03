@@ -38,6 +38,9 @@ pub struct HistoryItem {
     /// ★ 목록용 썸네일(w, h, RGBA) — 호출자가 만든다(이력은 디코더를 모른다).
     ///   `None` = 이미지 아님·미리보기 꺼짐·디코드 실패(목록은 글리프 폴백).
     pub thumb: Option<(u32, u32, Vec<u8>)>,
+    /// ★ 미적재 blob 참조(09-03 지연 로드 — `(reps 인덱스, blob id, 길이)`).
+    /// 비어 있으면 본문까지 적재된 항목. 셸이 접근 시 채운다.
+    pub blob_refs: Vec<(u32, [u8; 32], u64)>,
     /// ★ 생성 시각(epoch ms) — 보관 기간 정책(T-13)의 근거. 구본 복원은 0(= 기간 면제 —
     ///   모르는 나이로 지우지 않는다 · fail-soft).
     pub created_ms: u64,
@@ -76,9 +79,11 @@ impl HistoryItem {
         pinned: bool,
         thumb: Option<(u32, u32, Vec<u8>)>,
         created_ms: u64,
+        blob_refs: Vec<(u32, [u8; 32], u64)>,
     ) -> Self {
         let fingerprint = fingerprint(&reps);
-        let bytes = reps_bytes(&reps);
+        // ★ 예산 회계는 미적재 본문 길이까지(09-03) — RAM이 아니라 보관량 기준.
+        let bytes = reps_bytes(&reps) + blob_refs.iter().map(|(_, _, l)| *l).sum::<u64>();
         Self {
             id,
             pinned,
@@ -91,7 +96,14 @@ impl HistoryItem {
             created_ms,
             bytes,
             fingerprint,
+            blob_refs,
         }
+    }
+
+    /// 본문까지 적재됐는가 — 미적재면 붙여넣기/디코드 전에 셸이 채워야 한다.
+    #[must_use]
+    pub fn is_loaded(&self) -> bool {
+        self.blob_refs.is_empty()
     }
 }
 
@@ -229,6 +241,11 @@ impl History {
 
     /// id로 찾기(S2 메인창 — 필터된 뷰가 인덱스 대신 id로 말한다).
     #[must_use]
+    /// id로 가변 참조 — ★ 지연 로드가 본문을 채울 때(09-03).
+    pub fn get_by_id_mut(&mut self, id: u64) -> Option<&mut HistoryItem> {
+        self.items.iter_mut().find(|it| it.id == id)
+    }
+
     pub fn get_by_id(&self, id: u64) -> Option<&HistoryItem> {
         self.items.iter().find(|it| it.id == id)
     }
@@ -247,6 +264,7 @@ impl History {
                 it.fingerprint = fingerprint(&reps);
                 it.bytes = reps_bytes(&reps);
                 it.reps = reps;
+                it.blob_refs.clear(); // 새 내용으로 대체 — 옛 참조는 무의미.
                 it.kind = kind;
                 it.label = label;
                 it.thumb = None;
@@ -361,6 +379,7 @@ impl History {
                     copies,
                     thumb,
                     created_ms,
+                    blob_refs: Vec::new(), // 신선 캡처 = 전부 적재.
                 };
                 return Pushed::Replaced;
             }
@@ -410,6 +429,7 @@ impl History {
             copies: 1,
             thumb,
             created_ms: now_ms,
+            blob_refs: Vec::new(),
         });
         self.evict_over_cap();
         self.evict_over_budget(now_ms);
@@ -681,6 +701,7 @@ mod budget_tests {
                 pinned,
                 None,
                 created,
+                Vec::new(),
             )
         };
         // 최신이 앞: [신품, 구본(0), 핀 낡음, 낡음]
