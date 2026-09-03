@@ -181,6 +181,8 @@ pub(crate) struct MainWin {
     sync_on: Option<bool>,
     /// 연결 아이콘 틴트 캐시 — (연결 여부, 색) 키(96² 재틴트를 매 프레임 안 하게).
     sync_icon: std::cell::RefCell<Option<(bool, u32, nclip_ctl::theme::IconImage)>>,
+    /// 미리보기 아이콘 틴트 캐시(색 키 · 09-03 사용자 지정 아이콘).
+    preview_icon: std::cell::RefCell<Option<(u32, nclip_ctl::theme::IconImage)>>,
     /// ★ 미리보기 패널 열림(09-02 K4 · `ui.preview_open` 영속 — 기본 접힘).
     preview_open: bool,
     /// 미리보기 텍스트 — (항목 id, 읽기용 멀티라인 · wrap · 휠 스크롤만 라우팅).
@@ -235,6 +237,7 @@ impl MainWin {
             total: 0,
             sync_on: None,
             sync_icon: std::cell::RefCell::new(None),
+            preview_icon: std::cell::RefCell::new(None),
             preview_open: false,
             preview_tb: None,
             preview_scroll: 0,
@@ -1949,14 +1952,26 @@ impl MainWin {
                 );
             }
             Tool::Preview => {
-                // Material `visibility` — 눈 윤곽(타원 링) + 홍채. 켜짐 = accent.
+                // ★ Material `preview`(09-03 사용자 지정 SVG를 구운 알파) — 켜짐 = accent.
                 let c = if self.preview_open { th.accent } else { ink };
-                dc.fill_ellipse(Rect::new(cx - px(9.0), cy - px(5.5), px(18.0), px(11.0)), c);
-                dc.fill_ellipse(
-                    Rect::new(cx - px(7.0), cy - px(3.8), px(14.0), px(7.6)),
-                    th.chrome_bg,
-                );
-                dc.fill_ellipse(Rect::new(cx - px(3.0), cy - px(3.0), px(6.0), px(6.0)), c);
+                let mut cache = self.preview_icon.borrow_mut();
+                let stale = !matches!(cache.as_ref(), Some((k, _)) if *k == c.0);
+                if stale {
+                    let (r0, g0, b0) = ((c.0 >> 16) as u8, (c.0 >> 8) as u8, c.0 as u8);
+                    let mut rgba = Vec::with_capacity(PREVIEW_ALPHA.len() * 4);
+                    for &a in PREVIEW_ALPHA {
+                        rgba.extend_from_slice(&[r0, g0, b0, a]);
+                    }
+                    *cache = Some((
+                        c.0,
+                        nclip_ctl::theme::IconImage::from_rgba(PREVIEW_SIDE, PREVIEW_SIDE, rgba),
+                    ));
+                }
+                if let Some((_, img)) = cache.as_ref() {
+                    let half = px(10.0);
+                    let dst = Rect::new(cx - half, cy - half, half * 2, half * 2);
+                    dc.image_scaled(dst, img, r);
+                }
             }
             Tool::AlwaysTop => {
                 // ★ Material `layers`(09-02 사용자 시안) — 꺼짐 = 윗장 윤곽선 + 밴드 1,
@@ -2344,6 +2359,11 @@ fn svg_attr(xml: &str, name: &str) -> Option<u32> {
         .ok()?;
     (v >= 1.0).then(|| v.round() as u32)
 }
+
+/// ★ 미리보기 툴바 아이콘(09-03 사용자 지정 — Material `preview` 96² 알파).
+const PREVIEW_ALPHA: &[u8] = include_bytes!("../assets/icon-preview-96.alpha");
+/// 미리보기 자산 변(px).
+const PREVIEW_SIDE: u32 = 96;
 
 /// ★ 연결 아이콘 자산(09-03) — beep과 동일(Lucide · ISC · 96² 알파 마스크 사본).
 const LINK_CABLE_ALPHA: &[u8] = include_bytes!("../assets/icon-cable-96.alpha");

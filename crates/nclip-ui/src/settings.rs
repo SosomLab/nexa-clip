@@ -99,6 +99,11 @@ const TOGGLE_DEFAULT_OFF: &[&str] = &[
 
 /// Radio 기본값 예외 — 표시 순서(오름차순 등)와 기본값이 다른 키만 등록.
 /// 미등록 키의 기본은 첫 옵션(기존 규약).
+/// ★ 암호 미리보기 아이콘(09-03 사용자 지정 — Material `password visibility` 96² 알파).
+const PW_EYE_ALPHA: &[u8] = include_bytes!("../assets/icon-pw-eye-96.alpha");
+/// 자산 변 크기(px).
+const PW_EYE_SIDE: u32 = 96;
+
 const RADIO_DEFAULTS: &[(&str, &str)] = &[
     ("app.lang", "en"),
     // ★ 차단 출처 기본값 = 코어 기본 접두 목록(레지스트리 테스트가 동기화를 강제).
@@ -591,6 +596,8 @@ pub struct SettingsWidget {
     disabled: std::collections::HashSet<&'static str>,
     /// 특정 설정 행 **바로 아래**에 붙는 한 줄 정보(자리 고정 — 호스트가 채운다).
     notes: HashMap<&'static str, (String, NoteTone)>,
+    /// 암호 눈 아이콘 틴트 캐시(색 키 — 96² 재틴트 방지).
+    pw_eye: std::cell::RefCell<Option<(u32, nclip_ctl::theme::IconImage)>>,
 }
 
 /// 행 노트의 시각 톤(08-22 — "검증됨"이 눈에 띄어야 한다는 사용자 요청).
@@ -643,6 +650,7 @@ impl SettingsWidget {
             split_fade: Fade::hover(),
             disabled: std::collections::HashSet::new(),
             notes: HashMap::new(),
+            pw_eye: std::cell::RefCell::new(None),
         };
         let mut inv = Invalidations::default();
         w.rebuild(&mut inv);
@@ -2165,7 +2173,8 @@ impl Widget for SettingsWidget {
                 RowCtl::List(l) => l.paint(ctx, theme),
                 RowCtl::Face(f) => {
                     f.paint(ctx, theme);
-                    // ★ 비밀 행 눈 버튼(09-03) — 보임 = accent · 가림 = 흐림.
+                    // ★ 비밀 행 눈 버튼(09-03 — 사용자 지정 Material 아이콘):
+                    //   보임 = accent · 가림 = 흐림.
                     if matches!(e.kind, SettingKind::Text { secret: true, .. }) {
                         let b = f.bounds();
                         let er = Rect::new(b.right() + b.h / 4, b.y, b.h, b.h);
@@ -2174,15 +2183,29 @@ impl Widget for SettingsWidget {
                         } else {
                             theme.accent
                         };
-                        let (cx, cy) = (er.x + er.w / 2, er.y + er.h / 2);
-                        let (ew, eh) = (er.w * 2 / 5, er.h / 5);
-                        ctx.fill_ellipse(Rect::new(cx - ew, cy - eh, ew * 2, eh * 2), ink);
-                        ctx.fill_ellipse(
-                            Rect::new(cx - ew * 2 / 3, cy - eh * 2 / 3, ew * 4 / 3, eh * 4 / 3),
-                            theme.panel_bg,
-                        );
-                        let r3 = er.h / 8;
-                        ctx.fill_ellipse(Rect::new(cx - r3, cy - r3, r3 * 2, r3 * 2), ink);
+                        let mut cache = self.pw_eye.borrow_mut();
+                        let stale = !matches!(cache.as_ref(), Some((c, _)) if *c == ink.0);
+                        if stale {
+                            let (r, g, bl) = ((ink.0 >> 16) as u8, (ink.0 >> 8) as u8, ink.0 as u8);
+                            let mut rgba = Vec::with_capacity(PW_EYE_ALPHA.len() * 4);
+                            for &a in PW_EYE_ALPHA {
+                                rgba.extend_from_slice(&[r, g, bl, a]);
+                            }
+                            *cache = Some((
+                                ink.0,
+                                nclip_ctl::theme::IconImage::from_rgba(
+                                    PW_EYE_SIDE,
+                                    PW_EYE_SIDE,
+                                    rgba,
+                                ),
+                            ));
+                        }
+                        if let Some((_, img)) = cache.as_ref() {
+                            let ins = er.h / 8;
+                            let dst =
+                                Rect::new(er.x + ins, er.y + ins, er.w - ins * 2, er.h - ins * 2);
+                            ctx.image_scaled(dst, img, er);
+                        }
                     }
                 }
                 RowCtl::Color(c) => c.paint(ctx, theme),
