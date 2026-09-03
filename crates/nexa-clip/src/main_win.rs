@@ -181,6 +181,10 @@ pub(crate) struct MainWin {
     preview_open: bool,
     /// 미리보기 텍스트 — (항목 id, 읽기용 멀티라인 · wrap · 휠 스크롤만 라우팅).
     preview_tb: Option<(u64, TextBox)>,
+    /// ★ 리치 미리보기 줄 스크롤(09-03 ② — 리치 항목은 TextBox 대신 런을 직접 그린다).
+    preview_scroll: i32,
+    /// 리치 미리보기 대상 id — 선택이 바뀌면 스크롤을 되돌린다.
+    preview_rich_id: Option<u64>,
     /// 미리보기 이미지 원본 — (항목 id, 셸이 지연 디코드해 넘긴 RGBA ·
     /// `None` = 디코드 실패 → 텍스트 폴백 · 09-02 실기 P).
     preview_img: Option<(u64, Option<nclip_ctl::theme::IconImage>)>,
@@ -221,6 +225,8 @@ impl MainWin {
             total: 0,
             preview_open: false,
             preview_tb: None,
+            preview_scroll: 0,
+            preview_rich_id: None,
             preview_img: None,
         }
     }
@@ -395,7 +401,8 @@ impl MainWin {
                 }),
                 img_dims: display_dims(&item.reps).or_else(|| parse_dims(&item.label)),
                 plain: plain_of(&item.reps).or_else(|| svg_text(&item.reps)),
-                rich: nclip_core::richtext::html_runs_of(&item.reps, 6),
+                // 행은 앞 5줄만 그리지만 ★ 미리보기 패널이 전문을 쓴다(09-03 ② — 400줄 상한).
+                rich: nclip_core::richtext::html_runs_of(&item.reps, 400),
             };
             if row.pinned {
                 pinned.push(row);
@@ -710,6 +717,16 @@ impl MainWin {
         } else {
             self.preview_img = None;
         }
+        // ★ 리치 항목(09-03 ②) — 런을 직접 그린다: TextBox 없이 줄 스크롤만.
+        if row.rich.is_some() {
+            self.preview_tb = None;
+            if self.preview_rich_id != Some(row.id) {
+                self.preview_rich_id = Some(row.id);
+                self.preview_scroll = 0;
+            }
+            return;
+        }
+        self.preview_rich_id = None;
         if self.preview_tb.as_ref().map(|(id, _)| *id) != Some(row.id) {
             let text = row.plain.clone().unwrap_or_else(|| row.label.clone());
             let mut tb = TextBox::new("").with_multiline().with_text(&text);
@@ -874,6 +891,26 @@ impl MainWin {
                         let pr = self.preview_rect(sz.width as i32, sz.height as i32);
                         let (cx, cy) = self.cursor;
                         if pr.contains(nclip_ctl::geom::Point { x: cx, y: cy }) {
+                            // ★ 리치 미리보기(09-03 ②) — 줄 단위 스크롤.
+                            if let Some(nl) = self
+                                .rows
+                                .get(self.sel)
+                                .and_then(|r| r.rich.as_ref())
+                                .map(Vec::len)
+                            {
+                                let step = match delta {
+                                    MouseScrollDelta::LineDelta(_, y) => -*y as i32 * 3,
+                                    MouseScrollDelta::PixelDelta(p) => -(p.y as i32) / 20,
+                                };
+                                #[allow(clippy::cast_possible_wrap)]
+                                let max = (nl as i32 - 1).max(0);
+                                let ns = (self.preview_scroll + step).clamp(0, max);
+                                if ns != self.preview_scroll {
+                                    self.preview_scroll = ns;
+                                    self.redraw();
+                                }
+                                return MainAction::None;
+                            }
                             if let (Some((_, tb)), Some(ev)) =
                                 (self.preview_tb.as_mut(), to_ctl_event(event, self.cursor))
                             {
@@ -1535,6 +1572,40 @@ impl MainWin {
                     );
                     dc.image_scaled(dst, img, inner);
                 }
+            } else if let Some(rich) = self.rows.get(self.sel).and_then(|r| r.rich.as_ref()) {
+                // ★ 리치 미리보기(09-03 ② — 행과 같은 화법: 색·굵기·탭 스톱).
+                let pad2 = px(8.0);
+                let inner = Rect::new(
+                    pr.x + pad2,
+                    pr.y + pad2,
+                    (pr.w - pad2 * 2).max(1),
+                    (pr.h - pad2 * 2).max(1),
+                );
+                let line_h = px(22.0);
+                let visible = (inner.h / line_h).max(1) as usize;
+                let start = self.preview_scroll.max(0) as usize;
+                let tab_w = dc.text_width("    ").max(8);
+                for (k, line) in rich.iter().skip(start).take(visible).enumerate() {
+                    #[allow(clippy::cast_possible_wrap)]
+                    let ly = inner.y + (k as i32) * line_h;
+                    let mut xoff = 0i32;
+                    for run in line {
+                        dc.select_font(FontSlot::Base, run.bold);
+                        let col = run.color.map_or(th.text, |c| {
+                            nclip_ctl::theme::Color::from_rgb(c[0], c[1], c[2])
+                        });
+                        for (ti, seg) in run.text.split('\t').enumerate() {
+                            if ti > 0 {
+                                xoff = (xoff / tab_w + 1) * tab_w;
+                            }
+                            if !seg.is_empty() {
+                                dc.text(inner.x + xoff, ly, inner, seg, col);
+                                xoff += dc.text_width(seg);
+                            }
+                        }
+                    }
+                }
+                dc.select_font(FontSlot::Base, false);
             } else if let Some((_, tb)) = &self.preview_tb {
                 tb.paint(dc, &th);
             }
