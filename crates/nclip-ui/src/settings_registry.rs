@@ -324,6 +324,33 @@ pub(crate) const REGISTRY: &[Entry] = &[
         SettingKind::Toggle,
         "sync.enabled",
     ),
+    e(
+        Msg::CatSync,
+        Msg::SetSyncHandle,
+        Msg::SetSyncHandleDesc,
+        SettingKind::Text {
+            hint: Msg::SetSyncHandle,
+        },
+        "sync.handle",
+    ),
+    e(
+        Msg::CatSync,
+        Msg::SetSyncPass,
+        Msg::SetSyncPassDesc,
+        SettingKind::Text {
+            hint: Msg::SetSyncPass,
+        },
+        "sync.passphrase",
+    ),
+    e(
+        Msg::CatSync,
+        Msg::SetSyncRelay,
+        Msg::SetSyncRelayDesc,
+        SettingKind::Text {
+            hint: Msg::SetSyncRelayDesc,
+        },
+        "sync.relay",
+    ),
     // ── 고급 ────────────────────────────────────────────────
     e(
         Msg::CatAdvanced,

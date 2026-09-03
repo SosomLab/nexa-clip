@@ -334,6 +334,18 @@ pub enum Msg {
     MenuCopyImage,
     /// 팝업 푸터: 스택 순차 붙여넣기 힌트(09-03 ③ — `{}` = 개수).
     HintStack,
+    /// 동기화: 핸들(내 아이디) 설정 라벨(09-03 기반).
+    SetSyncHandle,
+    /// 동기화: 핸들 설명.
+    SetSyncHandleDesc,
+    /// 동기화: 페어링 패스프레이즈 라벨.
+    SetSyncPass,
+    /// 동기화: 패스프레이즈 설명.
+    SetSyncPassDesc,
+    /// 동기화: 릴레이 서버 주소 라벨.
+    SetSyncRelay,
+    /// 동기화: 릴레이 주소 설명.
+    SetSyncRelayDesc,
     EditorHint,
     HintFiles,
     HintRich,
@@ -742,6 +754,27 @@ impl Msg {
                 "复制为图片",
                 "画像としてコピー",
             ],
+            Msg::SetSyncHandle => ["Handle", "내 아이디(핸들)", "我的 ID", "ハンドル"],
+            Msg::SetSyncHandleDesc => [
+                "Short public name shared by your devices (e.g. kiros33)",
+                "내 기기들이 공유하는 짧은 공개 이름 (예: kiros33)",
+                "您的设备共享的简短公开名称（例如 kiros33）",
+                "端末間で共有する短い公開名（例: kiros33）",
+            ],
+            Msg::SetSyncPass => ["Pairing passphrase", "페어링 암호", "配对口令", "ペアリングパスフレーズ"],
+            Msg::SetSyncPassDesc => [
+                "Secret used only to derive the meeting point — never sent to the server",
+                "만남 지점 파생에만 쓰는 비밀 — 서버로 전송되지 않습니다",
+                "仅用于派生会合点的秘密——不会发送到服务器",
+                "待ち合わせ地点の導出のみに使う秘密 — サーバーへは送られません",
+            ],
+            Msg::SetSyncRelay => ["Relay server", "릴레이 서버", "中继服务器", "リレーサーバー"],
+            Msg::SetSyncRelayDesc => [
+                "host:port of the beep relay (empty = default)",
+                "beep 릴레이의 host:port (비우면 기본값)",
+                "beep 中继的 host:port（留空 = 默认）",
+                "beep リレーの host:port（空 = 既定）",
+            ],
             Msg::HintStack => [
                 "Enter pastes {} in order · Ctrl+Click/Ctrl+Space toggles · Esc",
                 "Enter = {}개 순차 붙여넣기 · Ctrl+클릭/Ctrl+Space 선택 · Esc",
@@ -875,7 +908,7 @@ mod tests {
     use super::*;
 
     /// 카탈로그 전수 — 새 `Msg`를 더하면 여기도 더한다(빈칸 검사가 그걸 강제한다).
-    const ALL_MSG: [Msg; 158] = [
+    const ALL_MSG: [Msg; 164] = [
         Msg::AppName,
         Msg::SearchPlaceholder,
         Msg::EmptyHistory,
@@ -1003,6 +1036,12 @@ mod tests {
         Msg::MenuDelete,
         Msg::MenuCopyImage,
         Msg::HintStack,
+        Msg::SetSyncHandle,
+        Msg::SetSyncHandleDesc,
+        Msg::SetSyncPass,
+        Msg::SetSyncPassDesc,
+        Msg::SetSyncRelay,
+        Msg::SetSyncRelayDesc,
         Msg::EditorHint,
         Msg::HintFiles,
         Msg::HintRich,

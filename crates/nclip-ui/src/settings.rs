@@ -171,6 +171,13 @@ pub enum SettingKind {
         /// 버튼 라벨.
         verb: Msg,
     },
+    /// ★ 자유 문자열 한 줄(09-03 동기화 기반 — 핸들·패스프레이즈·서버 주소).
+    /// [`FontFace`](SettingKind::FontFace)의 TextBox 행(`RowCtl::Face`)을 재사용한다 —
+    /// 플러시가 `e.key` 범용이라 추가 배선이 없다.
+    Text {
+        /// 빈 값일 때 안내(placeholder).
+        hint: Msg,
+    },
 }
 
 /// 설정 항목(레지스트리 최소 단위).
@@ -240,6 +247,7 @@ impl Entry {
             SettingKind::Color { default } => vec![(self.key, default.to_string())],
             SettingKind::PositionGrid => vec![(self.key, "bl".to_string())],
             SettingKind::FontFace { family_key } => vec![(family_key, String::new())],
+            SettingKind::Text { .. } => vec![(self.key, String::new())],
             SettingKind::FontSection {
                 family_key,
                 size_key,
@@ -370,6 +378,7 @@ impl SettingsState {
             SettingKind::Color { .. } => nclip_ctl::theme::color_from_hex(value).is_some(),
             // 위치 코드·글꼴명(빈 값 = 시스템 기본)·크기 코드는 소비처가 관용 파싱한다.
             SettingKind::PositionGrid | SettingKind::FontFace { .. } => true,
+            SettingKind::Text { .. } => true,
             SettingKind::FontSection { .. } => true,
             // 행위 항목은 값이 없다 — 파일에서 와도 무시(default_values가 비어 도달 불가).
             SettingKind::Action { .. } => false,
@@ -977,6 +986,12 @@ impl SettingsWidget {
                         .with_text(self.values.get(family_key).map_or("", String::as_str));
                     family.set_scale(self.scale);
                     RowCtl::Face(family)
+                }
+                SettingKind::Text { hint } => {
+                    let mut t = TextBox::new(tr(lang, hint))
+                        .with_text(self.values.get(e.key).map_or("", String::as_str));
+                    t.set_scale(self.scale);
+                    RowCtl::Face(t)
                 }
                 SettingKind::PositionGrid => {
                     let mut p = PositionPicker::new();
