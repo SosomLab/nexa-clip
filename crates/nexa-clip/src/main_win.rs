@@ -181,8 +181,14 @@ pub(crate) struct MainWin {
     preview_open: bool,
     /// 미리보기 텍스트 — (항목 id, 읽기용 멀티라인 · wrap · 휠 스크롤만 라우팅).
     preview_tb: Option<(u64, TextBox)>,
-    /// ★ 리치 미리보기 줄 스크롤(09-03 ② — 리치 항목은 TextBox 대신 런을 직접 그린다).
+    /// ★ 리치 미리보기 세로 스크롤(px · 09-03 — 스크롤바와 짝).
     preview_scroll: i32,
+    /// 리치 미리보기 가로 스크롤(px).
+    preview_hs: i32,
+    /// ★ 미리보기 오버레이 스크롤바(횡/종 · 09-03 사용자 요청).
+    preview_bars: ScrollBars,
+    /// 콘텐츠 크기 캐시(w,h px) — draw(&self)가 재서 넣고 사건 처리가 읽는다.
+    preview_content: std::cell::Cell<(i32, i32)>,
     /// 리치 미리보기 대상 id — 선택이 바뀌면 스크롤을 되돌린다.
     preview_rich_id: Option<u64>,
     /// 미리보기 이미지 원본 — (항목 id, 셸이 지연 디코드해 넘긴 RGBA ·
@@ -226,6 +232,9 @@ impl MainWin {
             preview_open: false,
             preview_tb: None,
             preview_scroll: 0,
+            preview_hs: 0,
+            preview_bars: ScrollBars::new(),
+            preview_content: std::cell::Cell::new((0, 0)),
             preview_rich_id: None,
             preview_img: None,
         }
@@ -678,9 +687,63 @@ impl MainWin {
         consumed
     }
 
+    /// ★ 미리보기 스크롤바에 마우스 사건 — 썸 드래그(09-03). 소비되면 true.
+    fn feed_preview_bars(&mut self, event: &WindowEvent) -> bool {
+        if !self.preview_open {
+            return false;
+        }
+        let Some(win) = &self.window else {
+            return false;
+        };
+        if self
+            .rows
+            .get(self.sel)
+            .and_then(|r| r.rich.as_ref())
+            .is_none()
+        {
+            return false;
+        }
+        let Some(ev) = to_ctl_event(event, self.cursor) else {
+            return false;
+        };
+        if !matches!(
+            ev,
+            CtlEvent::MouseDown { .. } | CtlEvent::MouseMove { .. } | CtlEvent::MouseUp { .. }
+        ) {
+            return false;
+        }
+        let sz = win.inner_size();
+        let pr = self.preview_rect(sz.width as i32, sz.height as i32);
+        let pad2 = (self.scale * 8.0).round() as i32;
+        let inner = nclip_ctl::geom::Rect::new(
+            pr.x + pad2,
+            pr.y + pad2,
+            (pr.w - pad2 * 2).max(1),
+            (pr.h - pad2 * 2).max(1),
+        );
+        let (cw, ch) = self.preview_content.get();
+        let (ox, oy, consumed) = self.preview_bars.on_event(
+            &ev,
+            inner,
+            (inner.w + cw).max(inner.w),
+            (inner.h + ch).max(inner.h),
+            self.preview_hs,
+            self.preview_scroll,
+            self.scale,
+        );
+        if ox != self.preview_hs || oy != self.preview_scroll {
+            self.preview_hs = ox.clamp(0, cw.max(0));
+            self.preview_scroll = oy.clamp(0, ch.max(0));
+            self.redraw();
+        } else if consumed {
+            self.redraw();
+        }
+        consumed
+    }
+
     /// 스크롤바 자동 숨김 페이드 틱(셸 500ms 심장 박동).
     pub(crate) fn tick_ui(&mut self, now_ms: u64) {
-        if self.bars.tick(now_ms) {
+        if self.bars.tick(now_ms) | self.preview_bars.tick(now_ms) {
             self.redraw();
         }
     }
@@ -723,6 +786,7 @@ impl MainWin {
             if self.preview_rich_id != Some(row.id) {
                 self.preview_rich_id = Some(row.id);
                 self.preview_scroll = 0;
+                self.preview_hs = 0;
             }
             return;
         }
@@ -857,7 +921,7 @@ impl MainWin {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 self.cursor = (position.x as i32, position.y as i32);
-                if self.feed_bars(event) {
+                if self.feed_bars(event) || self.feed_preview_bars(event) {
                     return MainAction::None;
                 }
                 // 드래그 선택 추적 — 캡처 없이 흘려도 TextBox가 자기 상태로 판단한다.
@@ -891,22 +955,28 @@ impl MainWin {
                         let pr = self.preview_rect(sz.width as i32, sz.height as i32);
                         let (cx, cy) = self.cursor;
                         if pr.contains(nclip_ctl::geom::Point { x: cx, y: cy }) {
-                            // ★ 리치 미리보기(09-03 ②) — 줄 단위 스크롤.
-                            if let Some(nl) = self
+                            // ★ 리치 미리보기 — 픽셀 스크롤(횡/종 · 스크롤바와 짝 · 09-03).
+                            if self
                                 .rows
                                 .get(self.sel)
                                 .and_then(|r| r.rich.as_ref())
-                                .map(Vec::len)
+                                .is_some()
                             {
-                                let step = match delta {
-                                    MouseScrollDelta::LineDelta(_, y) => -*y as i32 * 3,
-                                    MouseScrollDelta::PixelDelta(p) => -(p.y as i32) / 20,
+                                let (dx, dy) = match delta {
+                                    MouseScrollDelta::LineDelta(x, y) => {
+                                        (-*x as i32 * 66, -*y as i32 * 66)
+                                    }
+                                    MouseScrollDelta::PixelDelta(p) => {
+                                        (-(p.x as i32), -(p.y as i32))
+                                    }
                                 };
-                                #[allow(clippy::cast_possible_wrap)]
-                                let max = (nl as i32 - 1).max(0);
-                                let ns = (self.preview_scroll + step).clamp(0, max);
-                                if ns != self.preview_scroll {
+                                let (cw, ch) = self.preview_content.get();
+                                let ns = (self.preview_scroll + dy).clamp(0, ch.max(0));
+                                let nh = (self.preview_hs + dx).clamp(0, cw.max(0));
+                                if ns != self.preview_scroll || nh != self.preview_hs {
                                     self.preview_scroll = ns;
+                                    self.preview_hs = nh;
+                                    self.preview_bars.show();
                                     self.redraw();
                                 }
                                 return MainAction::None;
@@ -940,7 +1010,7 @@ impl MainWin {
                 }
             }
             WindowEvent::MouseInput { state, button, .. } => {
-                if self.feed_bars(event) {
+                if self.feed_bars(event) || self.feed_preview_bars(event) {
                     return MainAction::None;
                 }
                 let (sx, sy) = self.cursor;
@@ -1582,13 +1652,17 @@ impl MainWin {
                     (pr.h - pad2 * 2).max(1),
                 );
                 let line_h = px(22.0);
-                let visible = (inner.h / line_h).max(1) as usize;
-                let start = self.preview_scroll.max(0) as usize;
                 let tab_w = dc.text_width("    ").max(8);
-                for (k, line) in rich.iter().skip(start).take(visible).enumerate() {
-                    #[allow(clippy::cast_possible_wrap)]
-                    let ly = inner.y + (k as i32) * line_h;
+                // ★ 픽셀 스크롤(횡/종) — 부분 줄까지 · 콘텐츠 크기는 캐시로(사건 처리 몫).
+                let start = (self.preview_scroll / line_h).max(0) as usize;
+                let off = self.preview_scroll.rem_euclid(line_h);
+                let visible = ((inner.h + off + line_h - 1) / line_h).max(1) as usize;
+                let mut max_w = 0i32;
+                for (k, line) in rich.iter().enumerate() {
                     let mut xoff = 0i32;
+                    let in_view = k >= start && k < start + visible;
+                    #[allow(clippy::cast_possible_wrap)]
+                    let ly = inner.y - off + ((k as i32) - start as i32) * line_h;
                     for run in line {
                         dc.select_font(FontSlot::Base, run.bold);
                         let col = run.color.map_or(th.text, |c| {
@@ -1599,13 +1673,31 @@ impl MainWin {
                                 xoff = (xoff / tab_w + 1) * tab_w;
                             }
                             if !seg.is_empty() {
-                                dc.text(inner.x + xoff, ly, inner, seg, col);
+                                if in_view {
+                                    dc.text(inner.x - self.preview_hs + xoff, ly, inner, seg, col);
+                                }
                                 xoff += dc.text_width(seg);
                             }
                         }
                     }
+                    max_w = max_w.max(xoff);
                 }
                 dc.select_font(FontSlot::Base, false);
+                // 스크롤 여유(콘텐츠 − 뷰포트) 캐시 + ★ 오버레이 스크롤바(횡/종).
+                #[allow(clippy::cast_possible_wrap)]
+                let content_h = (rich.len() as i32) * line_h;
+                self.preview_content
+                    .set(((max_w - inner.w).max(0), (content_h - inner.h).max(0)));
+                self.preview_bars.paint(
+                    dc,
+                    &th,
+                    inner,
+                    max_w.max(inner.w),
+                    content_h.max(inner.h),
+                    self.preview_hs,
+                    self.preview_scroll,
+                    self.scale,
+                );
             } else if let Some((_, tb)) = &self.preview_tb {
                 tb.paint(dc, &th);
             }
