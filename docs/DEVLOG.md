@@ -2,6 +2,10 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-09-04 (mac 4차) — 승격 확정 · ★ mac 자동 왕복 검사(실 파스텔보드 3종) · ★ set/read 공용 직렬화
+
+- 더블클릭 승격 사용자 확정(지연 = 폴링+settle 체감 · 결함 아님) · push 판정 로그 1줄(3-OS) · ★ **mac_tests 3종**(텍스트 한글·다중 표현·PNG — 에코 부분집합 성질 단언) + `clip_roundtrip` mac 본편("전부 동일" 실측) · ★ 병렬 set/read **SIGSEGV 발견** → `clip_serial()` 공용 잠금(상주 앱 잠재 크래시 예방) → [journal 4차](journal/2026-09-04.md)
+
 ## 2026-09-04 (mac 3차) — ★ mac 실기 회신 4건: 쓰기 내재화(NSPasteboard) · settle · ⇄ 재전송 금지 · Carbon 단축키
 
 - ① 더블클릭 승격 불능 = ★ **mac 쓰기 스텁**이 근인 → `NSPasteboard` 직접 게시(beep macclip 이식 + 다중 표현) · ② 한 복사 = 두 항목 → `watch_mac` **settle**(부분 스냅숏 차단) · ③ 이미지 핑퐁 → ★ **수신 표식(⇄ 기기명) = 영속 플래그** — 어떤 경로든 재전송 금지(사용자 지시 · 목록 우측 출처 표시 겸용) · ④ Ctrl+Shift+V → ★ **Carbon RegisterEventHotKey**(권한 불요 · 의존 0) → [journal 3차](journal/2026-09-04.md)
