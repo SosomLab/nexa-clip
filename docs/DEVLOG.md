@@ -2,6 +2,10 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-09-04 (mac 3차) — ★ mac 실기 회신 4건: 쓰기 내재화(NSPasteboard) · settle · ⇄ 재전송 금지 · Carbon 단축키
+
+- ① 더블클릭 승격 불능 = ★ **mac 쓰기 스텁**이 근인 → `NSPasteboard` 직접 게시(beep macclip 이식 + 다중 표현) · ② 한 복사 = 두 항목 → `watch_mac` **settle**(부분 스냅숏 차단) · ③ 이미지 핑퐁 → ★ **수신 표식(⇄ 기기명) = 영속 플래그** — 어떤 경로든 재전송 금지(사용자 지시 · 목록 우측 출처 표시 겸용) · ④ Ctrl+Shift+V → ★ **Carbon RegisterEventHotKey**(권한 불요 · 의존 0) → [journal 3차](journal/2026-09-04.md)
+
 ## 2026-09-04 (mac 1차) — ★ T-12e mac: 메뉴바 상주(NSStatusItem) + Dock 정책 — mac에서 셸 전체 첫 가동
 
 - 2차(Windows) — ★ **클립보드 전파 1단(DR-6)**: 휴대 페이로드(평문·PNG) · NCI1 조각 · 승인된 기기에만 · 수신 = 이력(⇄ 기기명) + 클립보드 게시 · 에코 지문 차단 · 클릭 승격 자동 포함 · ★ 설정 "기기 승인"(devices.txt v2) → [journal 2차](journal/2026-09-04.md)
