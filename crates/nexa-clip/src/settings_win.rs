@@ -52,6 +52,8 @@ pub(crate) struct App {
     widget: SettingsWidget,
     /// ★ 동기화 연결 테스트 결과(09-03) — 스레드가 채우고 tick이 소비한다.
     sync_test: Option<SyncTestSlot>,
+    /// ★ Test 성공 → 러너 재기동 요청(09-03) — 셸이 소비한다(`take_sync_respawn`).
+    sync_respawn: bool,
     mods: ModifiersState,
     started: Instant,
     /// 마지막으로 준 크기 — 바뀔 때만 `set_bounds`를 부른다.
@@ -69,7 +71,18 @@ pub(crate) struct App {
 
 impl App {
     pub(crate) fn new(font: Font, conf: Settings, resident: bool) -> Self {
-        let widget = SettingsWidget::new(&conf.state);
+        let mut widget = SettingsWidget::new(&conf.state);
+        // ★ 연결 상태 노트 시드(09-03) — 지금 연결돼 있으면 성공 메시지를 그대로 복원.
+        if crate::sync_cmd::is_connected() {
+            if let Some((raw, pin8)) = crate::sync_cmd::last_ok() {
+                let lang = nclip_core::current_lang();
+                let msg = nclip_core::tr(lang, nclip_core::Msg::StSyncTestOk)
+                    .replacen("{}", &raw, 1)
+                    .replacen("{}", &pin8, 1);
+                let mut inv0 = Invalidations::default();
+                widget.set_row_note_toned("sync.test", &msg, nclip_ui::NoteTone::Ok, &mut inv0);
+            }
+        }
         let theme = crate::conf::current_theme(conf.state.get("ui.theme"));
         Self {
             window: None,
@@ -81,6 +94,7 @@ impl App {
             conf,
             widget,
             sync_test: None,
+            sync_respawn: false,
             mods: ModifiersState::empty(),
             started: Instant::now(),
             laid_out: (0, 0),
@@ -94,6 +108,30 @@ impl App {
     /// UI 전역 변경(언어 등) 1회성 수거 — 셸이 트레이/창 라벨을 새 언어로.
     pub(crate) fn take_ui_refresh(&mut self) -> bool {
         std::mem::take(&mut self.ui_refresh)
+    }
+
+    /// ★ Test 성공 뒤 러너 재기동이 필요한가 — 셸이 `spawn_if_enabled`로 잇는다(09-03).
+    pub(crate) fn take_sync_respawn(&mut self) -> bool {
+        std::mem::take(&mut self.sync_respawn)
+    }
+
+    /// ★ 즉시 연결 해제(09-03 사용자) — Disconnect 버튼·연결 정보 변경·Enable 끔 공용.
+    ///   Connected 메시지 자리(sync.test)에 Disconnected를 표시하고 시드도 지운다.
+    fn sync_drop_now(&mut self) {
+        if !crate::sync_cmd::is_connected() {
+            return;
+        }
+        crate::sync_cmd::request_disconnect();
+        crate::sync_cmd::clear_last_ok();
+        let lang = nclip_core::current_lang();
+        let mut inv = Invalidations::default();
+        self.widget.set_row_note_toned(
+            "sync.test",
+            nclip_core::tr(lang, nclip_core::Msg::StSyncDisconnected),
+            nclip_ui::NoteTone::Info,
+            &mut inv,
+        );
+        self.redraw();
     }
 
     /// 창이 없으면 만들고, 있으면 앞으로 가져온다(트레이 "열기"의 재진입 경로).
@@ -226,11 +264,23 @@ impl App {
         };
         let raw = format!("{addr}:{port}");
         let dir = crate::conf::data_dir();
+        // ★ 연결 정보가 바뀌었을 수 있다(09-03 사용자) — 연결 중이면 끊고 새로 시도.
+        if crate::sync_cmd::is_connected() {
+            crate::sync_cmd::request_disconnect();
+            crate::sync_cmd::clear_last_ok();
+        }
         let slot: SyncTestSlot = std::sync::Arc::new(std::sync::Mutex::new(None));
         self.sync_test = Some(slot.clone());
         std::thread::Builder::new()
             .name("nclip-sync-test".into())
             .spawn(move || {
+                // 러너가 물러날 때까지 잠깐 대기 — 같은 신원 RID 이중 접속을 피한다.
+                for _ in 0..50 {
+                    if !crate::sync_cmd::is_running() {
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
                 let out = sync_test_once(&raw, &dir);
                 if let Ok(mut g) = slot.lock() {
                     *g = Some(out);
@@ -255,6 +305,26 @@ impl App {
                 self.widget
                     .set_row_note_toned("sync.test", &msg, nclip_ui::NoteTone::Ok, &mut inv);
                 println!("동기화 테스트: 성공 — {raw} · 핀 {pin8}");
+                // ★ 성공 = 자동 접속 계약(09-03 사용자 — "실행 시 자동 접속으로 동일 상태"):
+                //   sync.enabled를 켜서 다음 시작부터 러너가 같은 상태를 만든다.
+                crate::sync_cmd::note_last_ok(&raw, &pin8);
+                // ★ 성공 = 접속 유지 계약(09-03) — 셸이 러너를 (재)기동한다.
+                self.sync_respawn = true;
+                if self.conf.state.get("sync.enabled") != "on" {
+                    self.conf
+                        .set("sync.enabled", "on".to_string(), Instant::now());
+                    self.widget = SettingsWidget::new(&self.conf.state);
+                    let mut inv3 = Invalidations::default();
+                    self.widget.set_scale(self.scale, &mut inv3);
+                    self.laid_out = (0, 0);
+                    self.widget.set_row_note_toned(
+                        "sync.test",
+                        &msg,
+                        nclip_ui::NoteTone::Ok,
+                        &mut inv3,
+                    );
+                    println!("동기화: 테스트 성공 → 자동 접속 켜짐(sync.enabled = on)");
+                }
             }
             Err(e) => {
                 let msg =
@@ -357,31 +427,55 @@ impl App {
                     self.redraw();
                 }
             }
+            // ★ 비밀번호 생성 버튼(09-03 사용자) — 새 패스프레이즈로 교체 + 안내.
+            if key == "sync.passphrase.regen" && val == "run" {
+                let sug = suggest_passphrase();
+                self.conf.set("sync.passphrase", sug, now);
+                self.widget = SettingsWidget::new(&self.conf.state);
+                let mut inv2 = Invalidations::default();
+                self.widget.set_scale(self.scale, &mut inv2);
+                self.laid_out = (0, 0);
+                let lang = nclip_core::current_lang();
+                self.widget.set_row_note_toned(
+                    "sync.passphrase",
+                    nclip_core::tr(lang, nclip_core::Msg::StSyncPassSuggested),
+                    nclip_ui::NoteTone::Info,
+                    &mut inv2,
+                );
+                self.redraw();
+                // 연결 정보가 바뀌었다 — 연결 중이면 즉시 해제(재접속 = Test).
+                self.sync_drop_now();
+            }
+            // ★ 연결 정보 변경 = 즉시 해제(09-03 사용자) — Test로 새 정보 재접속.
+            if matches!(
+                key,
+                "sync.handle" | "sync.passphrase" | "sync.relay" | "sync.port"
+            ) {
+                self.sync_drop_now();
+            }
+            // ★ Enable Sync 끔 = 즉시 해제(09-03 사용자).
+            if key == "sync.enabled" && val != "on" {
+                self.sync_drop_now();
+            }
             // ★ 연결 테스트(09-03 — beep 화법: 진행/성공/실패를 행 노트로).
             if key == "sync.test" && val == "run" {
                 self.start_sync_test();
             }
-            // ★ 연결 해제(09-03) — 상주 세션을 끕는다(재연결 = 다음 시작).
+            // ★ 연결 해제(09-03) — **즉시** 끊고 Connected 자리(sync.test)에 표시.
             if key == "sync.disconnect" && val == "run" {
-                let lang = nclip_core::current_lang();
-                let mut inv2 = Invalidations::default();
                 if crate::sync_cmd::is_connected() {
-                    crate::sync_cmd::request_disconnect();
-                    self.widget.set_row_note_toned(
-                        "sync.disconnect",
-                        nclip_core::tr(lang, nclip_core::Msg::StSyncDisconnected),
-                        nclip_ui::NoteTone::Info,
-                        &mut inv2,
-                    );
+                    self.sync_drop_now();
                 } else {
+                    let lang = nclip_core::current_lang();
+                    let mut inv2 = Invalidations::default();
                     self.widget.set_row_note_toned(
                         "sync.disconnect",
                         nclip_core::tr(lang, nclip_core::Msg::StSyncNotConnected),
                         nclip_ui::NoteTone::Warn,
                         &mut inv2,
                     );
+                    self.redraw();
                 }
-                self.redraw();
             }
             if key == "app.autostart" {
                 let on = val == "on";

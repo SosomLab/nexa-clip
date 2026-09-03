@@ -15,10 +15,47 @@ const DEFAULT_RELAY: &str = "beepd.sosomlab.com";
 /// ★ 연결 해제 요청(09-03 — 설정 창 Disconnect) · 현재 연결 여부(표시·판정용).
 static STOP_REQ: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static CONNECTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// 러너 스레드 생존 여부 — 재기동(Test 성공) 때 이중 접속을 막는다(09-03).
+static RUNNING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// 러너 스레드가 살아 있는가(테스트가 RID 충돌을 피해 기다리는 데 쓴다).
+pub(crate) fn is_running() -> bool {
+    RUNNING.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// 러너 생존 표시 해제 가드 — 어떤 return 경로로 나가도 반드시 내린다.
+struct RunGuard;
+impl Drop for RunGuard {
+    fn drop(&mut self) {
+        RUNNING.store(false, std::sync::atomic::Ordering::Relaxed);
+    }
+}
 
 /// 지금 릴레이에 연결돼 있는가.
 pub(crate) fn is_connected() -> bool {
     CONNECTED.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// 마지막 접속 성공 정보(주소, 서버 핀 앞 8자) — 설정 창 노트 시드(09-03).
+static LAST_OK: std::sync::Mutex<Option<(String, String)>> = std::sync::Mutex::new(None);
+
+/// 마지막 성공 정보 기록(러너·테스트 공용).
+pub(crate) fn note_last_ok(addr: &str, pin8: &str) {
+    if let Ok(mut g) = LAST_OK.lock() {
+        *g = Some((addr.to_string(), pin8.to_string()));
+    }
+}
+
+/// 마지막 성공 정보 조회.
+pub(crate) fn last_ok() -> Option<(String, String)> {
+    LAST_OK.lock().ok().and_then(|g| g.clone())
+}
+
+/// 마지막 성공 정보 삭제 — 해제(Disconnect·설정 변경) 때 Connected 노트 시드를 지운다.
+pub(crate) fn clear_last_ok() {
+    if let Ok(mut g) = LAST_OK.lock() {
+        *g = None;
+    }
 }
 
 /// ★ 연결 해제 요청 — 러너가 세션을 끊고 스레드를 마친다(재연결 = 다음 시작).
@@ -36,9 +73,10 @@ pub(crate) fn spawn_if_enabled(
     }
     let handle = conf.state.get("sync.handle").trim().to_string();
     let pass = conf.state.get("sync.passphrase").trim().to_string();
+    // ★ 핸들/암호 없이도 접속은 한다(09-03 — 연결 상태 유지 계약: Test 성공 시 자동 켬).
+    //   페어링 랑데부만 생략되고, 기기 RID 등록·상태 표시는 그대로다.
     if handle.is_empty() || pass.is_empty() {
-        eprintln!("동기화: 핸들·페어링 암호가 비어 있습니다 — 설정 → 동기화에서 채운 뒤 재시작");
-        return;
+        println!("동기화: 핸들·페어링 암호 미설정 — 접속만 유지(기기 간 만남은 설정 후)");
     }
     let relay_raw = {
         let r = conf.state.get("sync.relay").trim().to_string();
@@ -57,7 +95,25 @@ pub(crate) fn spawn_if_enabled(
     let dir = crate::conf::data_dir();
     std::thread::Builder::new()
         .name("nclip-sync".into())
-        .spawn(move || run(&relay_raw, &handle, &pass, &dir, &proxy))
+        .spawn(move || {
+            // ★ 재기동(09-03 — Test 성공이 다시 부른다): 이전 러너가 살아 있으면
+            //   끊고 비켜줄 때까지 잠깐 기다린다(1 RID = 1 연결 — 이중 접속 금지).
+            if RUNNING.load(std::sync::atomic::Ordering::Relaxed) {
+                STOP_REQ.store(true, std::sync::atomic::Ordering::Relaxed);
+                for _ in 0..50 {
+                    if !RUNNING.load(std::sync::atomic::Ordering::Relaxed) {
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+            }
+            if RUNNING.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                eprintln!("동기화: 이전 세션이 아직 정리 중 — 재접속 포기(다음 시작 때)");
+                return;
+            }
+            let _alive = RunGuard;
+            run(&relay_raw, &handle, &pass, &dir, &proxy);
+        })
         .ok();
 }
 
@@ -104,13 +160,19 @@ fn run(
     loop {
         let mut rids: Vec<nclip_sync::relay::Rid> =
             nclip_sync::relay::rids_around(&id.peer_id()).to_vec();
-        rids.extend_from_slice(&nclip_sync::rid::rids_around(handle, pass));
+        if !handle.is_empty() && !pass.is_empty() {
+            rids.extend_from_slice(&nclip_sync::rid::rids_around(handle, pass));
+        }
 
         let expected = nclip_sync::relay::pinfile::lookup(&pin_path, &addr_str);
         match nclip_sync::relay::RelayClient::connect(addr, &id, &rids, expected) {
             Ok(client) => {
                 stage = 0;
                 notify(true);
+                note_last_ok(
+                    &addr_str,
+                    &nclip_sync::relay::peer_hex(&client.server_peer())[..8],
+                );
                 let info = client.register_info();
                 println!(
                     "동기화: 릴레이 접속 ok — {addr_str} · 관측 주소 {:?} · UDP 포트 {}",

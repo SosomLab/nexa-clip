@@ -867,6 +867,10 @@ impl ApplicationHandler<ShellEvent> for Shell {
 
     fn about_to_wait(&mut self, el: &ActiveEventLoop) {
         ApplicationHandler::about_to_wait(&mut self.app, el);
+        // ★ 동기화 재기동(09-03) — 설정 창 Test 성공이 러너 (재)접속을 요청한다.
+        if self.app.take_sync_respawn() {
+            crate::sync_cmd::spawn_if_enabled(&self.app.conf, self.proxy.clone());
+        }
         // ★ 캐럿 깜박임(09-02) — 검색창 띄운 창이 있으면 500ms 위상. 설정 창 페이드와
         //   겹칠 땐 더 짧은 쪽 데드라인이 이기지만, 우리가 덮어도 250ms 주기라 체감 무해.
         let searching = self.main.window_id().is_some() || self.popup.window_id().is_some();
