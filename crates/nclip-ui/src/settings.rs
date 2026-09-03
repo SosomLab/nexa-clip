@@ -101,8 +101,52 @@ const TOGGLE_DEFAULT_OFF: &[&str] = &[
 /// 미등록 키의 기본은 첫 옵션(기존 규약).
 /// ★ 암호 미리보기 아이콘(09-03 사용자 지정 — Material `password visibility` 96² 알파).
 const PW_EYE_ALPHA: &[u8] = include_bytes!("../assets/icon-pw-eye-96.alpha");
+/// ★ 비밀번호 생성 아이콘(09-03 사용자 지정 — Material `flip_camera_android` 96² 알파).
+const PW_REGEN_ALPHA: &[u8] = include_bytes!("../assets/icon-pw-regen-96.alpha");
 /// 자산 변 크기(px).
 const PW_EYE_SIDE: u32 = 96;
+
+/// ★ 비밀 행 버튼 자리(09-03 사용자 — "두 버튼은 좌측에") — 상자 왼쪽 바깥에
+/// [생성][미리보기(눈)] 순서로, 버튼 크기 = 상자 높이 · 간격 = 높이/8(절반 간격).
+fn pw_btn_rects(b: Rect) -> (Rect, Rect) {
+    let eye = Rect::new(b.x - b.h / 8 - b.h, b.y, b.h, b.h);
+    let regen = Rect::new(eye.x - b.h / 8 - b.h, b.y, b.h, b.h);
+    (eye, regen)
+}
+
+/// 96² 알파 자산을 잉크색으로 틴트해 캐시에 담는다(색이 같으면 재사용).
+fn tint_icon(
+    cell: &std::cell::RefCell<Option<(u32, nclip_ctl::theme::IconImage)>>,
+    alpha: &[u8],
+    ink: u32,
+) {
+    let mut cache = cell.borrow_mut();
+    let stale = !matches!(cache.as_ref(), Some((c, _)) if *c == ink);
+    if stale {
+        let (r, g, b) = ((ink >> 16) as u8, (ink >> 8) as u8, ink as u8);
+        let mut rgba = Vec::with_capacity(alpha.len() * 4);
+        for &a in alpha {
+            rgba.extend_from_slice(&[r, g, b, a]);
+        }
+        *cache = Some((
+            ink,
+            nclip_ctl::theme::IconImage::from_rgba(PW_EYE_SIDE, PW_EYE_SIDE, rgba),
+        ));
+    }
+}
+
+/// 틴트된 아이콘을 버튼 자리에 그린다(안쪽 여백 = 높이/8).
+fn draw_icon(
+    cell: &std::cell::RefCell<Option<(u32, nclip_ctl::theme::IconImage)>>,
+    r: Rect,
+    ctx: &mut dyn DrawCtx,
+) {
+    if let Some((_, img)) = cell.borrow().as_ref() {
+        let ins = r.h / 8;
+        let dst = Rect::new(r.x + ins, r.y + ins, r.w - ins * 2, r.h - ins * 2);
+        ctx.image_scaled(dst, img, r);
+    }
+}
 
 const RADIO_DEFAULTS: &[(&str, &str)] = &[
     ("app.lang", "en"),
@@ -598,6 +642,8 @@ pub struct SettingsWidget {
     notes: HashMap<&'static str, (String, NoteTone)>,
     /// 암호 눈 아이콘 틴트 캐시(색 키 — 96² 재틴트 방지).
     pw_eye: std::cell::RefCell<Option<(u32, nclip_ctl::theme::IconImage)>>,
+    /// 비밀번호 생성 아이콘 틴트 캐시(색 키).
+    pw_regen: std::cell::RefCell<Option<(u32, nclip_ctl::theme::IconImage)>>,
 }
 
 /// 행 노트의 시각 톤(08-22 — "검증됨"이 눈에 띄어야 한다는 사용자 요청).
@@ -651,6 +697,7 @@ impl SettingsWidget {
             disabled: std::collections::HashSet::new(),
             notes: HashMap::new(),
             pw_eye: std::cell::RefCell::new(None),
+            pw_regen: std::cell::RefCell::new(None),
         };
         let mut inv = Invalidations::default();
         w.rebuild(&mut inv);
@@ -1291,6 +1338,7 @@ impl SettingsWidget {
                 let ctl_w = match &row.ctl {
                     RowCtl::Combo(_) | RowCtl::Act(_) => combo_w,
                     RowCtl::Check(_) => check_w,
+                    RowCtl::Face(_) if matches!(e.kind, SettingKind::Text { .. }) => combo_w,
                     RowCtl::Face(_) => family_w,
                     RowCtl::Pos(p) => p.preferred_size().0,
                     RowCtl::Color(c) => c.preferred_width().min(rw - pad * 2),
@@ -1322,6 +1370,7 @@ impl SettingsWidget {
             let ctl_w = match &row.ctl {
                 RowCtl::Combo(_) | RowCtl::Act(_) => combo_w,
                 RowCtl::Check(_) => check_w,
+                RowCtl::Face(_) if matches!(e.kind, SettingKind::Text { .. }) => combo_w,
                 RowCtl::Face(_) => family_w,
                 RowCtl::Pos(p) => p.preferred_size().0,
                 RowCtl::Color(c) => c.preferred_width().min(rw - pad * 2),
@@ -1384,19 +1433,13 @@ impl SettingsWidget {
                 }
                 RowCtl::Face(family) => {
                     // 크기 콤보가 없다 — 얼굴만 지정하고 크기는 Base UI를 따른다.
-                    // ★ 비밀 행(09-03)은 우측 눈 버튼 자리(ctl_h+6)를 비워 둔다.
-                    let eye = if matches!(e.kind, SettingKind::Text { secret: true, .. }) {
-                        ctl_h + gap10 / 2
-                    } else {
-                        0
-                    };
+                    // ★ 텍스트 입력(09-03 사용자)은 콤보와 **시작 x·폭을 정렬**한다
+                    //   (입력란 세로 정렬 · 암호 상자도 동일 크기). 비밀 행의 생성·눈
+                    //   버튼은 상자 **왼쪽 바깥**에 그린다([`pw_btn_rects`]).
+                    let is_text = matches!(e.kind, SettingKind::Text { .. });
+                    let base_w = if is_text { combo_w } else { family_w };
                     family.set_bounds(
-                        Rect::new(
-                            rx + rw - family_w - pad - eye,
-                            top + (h - ctl_h) / 2,
-                            family_w,
-                            ctl_h,
-                        ),
+                        Rect::new(rx + rw - base_w - pad, top + (h - ctl_h) / 2, base_w, ctl_h),
                         inv,
                     );
                 }
@@ -1615,10 +1658,17 @@ impl Widget for SettingsWidget {
                 if let (RowCtl::Face(f), SettingKind::Text { secret: true, .. }) =
                     (&mut r.ctl, e.kind)
                 {
-                    let b = f.bounds();
-                    let er = Rect::new(b.right() + b.h / 4, b.y, b.h, b.h);
+                    let (er, rr) = pw_btn_rects(f.bounds());
                     if er.contains(nclip_ctl::geom::Point { x, y }) {
                         f.set_masked(!f.masked());
+                        inv.push(self.bounds);
+                        return;
+                    }
+                    // ★ 비밀번호 생성(09-03) — 값 생성은 호스트(설정 창) 몫이라
+                    //   가짜 키로 요청만 올린다(sync.test = run 문법).
+                    if rr.contains(nclip_ctl::geom::Point { x, y }) {
+                        self.changes
+                            .push(("sync.passphrase.regen", "run".to_string()));
                         inv.push(self.bounds);
                         return;
                     }
@@ -2176,36 +2226,18 @@ impl Widget for SettingsWidget {
                     // ★ 비밀 행 눈 버튼(09-03 — 사용자 지정 Material 아이콘):
                     //   보임 = accent · 가림 = 흐림.
                     if matches!(e.kind, SettingKind::Text { secret: true, .. }) {
-                        let b = f.bounds();
-                        let er = Rect::new(b.right() + b.h / 4, b.y, b.h, b.h);
+                        let (er, rr) = pw_btn_rects(f.bounds());
+                        // 눈 — 보임 = accent · 가림 = 흐림.
                         let ink = if f.masked() {
                             theme.text_dim
                         } else {
                             theme.accent
                         };
-                        let mut cache = self.pw_eye.borrow_mut();
-                        let stale = !matches!(cache.as_ref(), Some((c, _)) if *c == ink.0);
-                        if stale {
-                            let (r, g, bl) = ((ink.0 >> 16) as u8, (ink.0 >> 8) as u8, ink.0 as u8);
-                            let mut rgba = Vec::with_capacity(PW_EYE_ALPHA.len() * 4);
-                            for &a in PW_EYE_ALPHA {
-                                rgba.extend_from_slice(&[r, g, bl, a]);
-                            }
-                            *cache = Some((
-                                ink.0,
-                                nclip_ctl::theme::IconImage::from_rgba(
-                                    PW_EYE_SIDE,
-                                    PW_EYE_SIDE,
-                                    rgba,
-                                ),
-                            ));
-                        }
-                        if let Some((_, img)) = cache.as_ref() {
-                            let ins = er.h / 8;
-                            let dst =
-                                Rect::new(er.x + ins, er.y + ins, er.w - ins * 2, er.h - ins * 2);
-                            ctx.image_scaled(dst, img, er);
-                        }
+                        tint_icon(&self.pw_eye, PW_EYE_ALPHA, ink.0);
+                        draw_icon(&self.pw_eye, er, ctx);
+                        // 생성 — 항상 흐림 톤(눌림 상태가 없다).
+                        tint_icon(&self.pw_regen, PW_REGEN_ALPHA, theme.text_dim.0);
+                        draw_icon(&self.pw_regen, rr, ctx);
                     }
                 }
                 RowCtl::Color(c) => c.paint(ctx, theme),
