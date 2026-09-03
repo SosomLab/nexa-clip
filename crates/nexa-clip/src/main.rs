@@ -54,13 +54,17 @@ fn main() {
         Some("watch") => watch_cmd::run(),
         Some("peek") => watch_cmd::peek(),
         Some("tray") => tray_cmd::run(),
+        Some("status") => status(),
         Some("--help" | "-h" | "help") => usage(),
         Some(other) => {
             eprintln!("알 수 없는 명령: {other}\n");
             usage();
             std::process::exit(2);
         }
-        None => status(),
+        // ★ 무인수 = 트레이 상주(09-03 사용자 — 더블클릭 기대 동작 · beep과 동일 계약).
+        //   windows 서브시스템 전환으로 무인수 status는 보이지 않게 됐다 —
+        //   환경 점검은 `status` 명시 명령으로.
+        None => tray_cmd::run(),
     }
 }
 
@@ -69,7 +73,8 @@ fn usage() {
         "\
 nexa-clip [명령]
 
-  (없음)         환경 점검 — 이 PC에서 무엇이 되고 무엇이 안 되는지
+  (없음)         ★ 트레이 상주(= tray) — 더블클릭 기본 동작(09-03)
+  status         환경 점검 — 이 PC에서 무엇이 되고 무엇이 안 되는지
   demo           렌더 데모 — 창을 열고 S1 퀵 팝업 레이아웃을 그린다
                  (1/2/3 보기 모드 · T 테마 · Esc 종료)
   settings       설정 창 — 좌측 카테고리 + 검색 + 우측 폼(이식 프레임워크)
