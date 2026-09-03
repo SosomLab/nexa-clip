@@ -887,6 +887,9 @@ pub(crate) fn run() {
 
     sync_autostart(&mut conf);
 
+    // ★ M2 동기화 기반(09-03) — 켜져 있으면 릴레이 접속 스레드 상주.
+    crate::sync_cmd::spawn_if_enabled(&conf);
+
     // ★ T-12e4 단일 인스턴스(09-03) — 이미 상주 중이면 "열기"만 위임하고 조용히 끝낸다
     //   (자동 시작 상주 + 런처 재실행 = 감시 2중·트레이 2개이던 관찰의 처방).
     let single_guard = nclip_plat::single::acquire(&crate::conf::data_dir().join("instance.lock"));

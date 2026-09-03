@@ -22,6 +22,7 @@ nclip-core.workspace = true
 nclip-ctl.workspace = true
 nclip-plat.workspace = true
 nclip-store.workspace = true
+nclip-sync = { path = "../nclip-sync" }
 nclip-ui.workspace = true
 nclip-gfx.workspace = true
 # 설정 영속 — ★ nexa 계열 공용 크레이트(DR-32 · nclip 의존 0).
