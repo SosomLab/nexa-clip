@@ -104,6 +104,15 @@ pub(crate) const REGISTRY: &[Entry] = &[
         SettingKind::Toggle,
         "ui.close_to_tray",
     ),
+    // ★ Dock 아이콘(T-12e mac · 09-03 사용자 "독 표시 선택") — 끔 = Accessory
+    //   (메뉴 막대 전용). mac 전용 동작 · 다른 OS는 no-op(설명에 명시).
+    e(
+        Msg::CatGeneral,
+        Msg::SetDockIcon,
+        Msg::SetDockIconDesc,
+        SettingKind::Toggle,
+        "ui.dock_icon",
+    ),
     e(
         Msg::CatGeneral,
         Msg::SetLang,

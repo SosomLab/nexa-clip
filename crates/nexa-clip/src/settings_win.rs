@@ -593,6 +593,11 @@ impl App {
             if key == "sync.disconnect" && val == "run" {
                 self.sync_drop_now(); // 버튼은 연결 중에만 활성 — 별도 안내 노트 없음(09-03).
             }
+            // ★ Dock 아이콘(T-12e mac · 09-03 사용자) — 끔 = Accessory(메뉴 막대 전용).
+            //   즉시 반영 · 다음 시작은 셸이 기동 때 적용. 다른 OS no-op.
+            if key == "ui.dock_icon" {
+                nclip_plat::dock::set_dock_visible(val == "on");
+            }
             if key == "app.autostart" {
                 let on = val == "on";
                 match nclip_plat::autostart::apply(on) {
@@ -881,6 +886,13 @@ pub(crate) fn bring_to_front(win: &winit::window::Window) {
                 let _ = nclip_plat::paste::force_foreground(w.hwnd.get());
             }
         }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        // ★ Accessory(독 숨김)에서도 트레이 "열기"가 창을 진짜 앞으로(09-03) —
+        //   창 포커스 전에 앱 활성화가 선행돼야 한다(Dock 아이콘 없이도 활성 전환).
+        nclip_plat::dock::activate_front();
+        win.focus_window();
     }
     let _ = win;
 }

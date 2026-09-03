@@ -958,6 +958,14 @@ pub(crate) fn run() {
     let atop_effective = true;
 
     let mut el_builder = EventLoop::<ShellEvent>::with_user_event();
+    // ★ Dock 아이콘(T-12e mac · 09-03) — 끔 = 처음부터 Accessory로 기동(Dock 깜빡임 없음).
+    //   실행 중 토글은 설정 창이 `dock::set_dock_visible`로 즉시 반영한다.
+    #[cfg(target_os = "macos")]
+    if conf.state.get("ui.dock_icon") == "off" {
+        use winit::platform::macos::{ActivationPolicy, EventLoopBuilderExtMacOS as _};
+        el_builder.with_activation_policy(ActivationPolicy::Accessory);
+        println!("Dock 아이콘: 숨김(ui.dock_icon = off) — 메뉴 막대에서만 엽니다");
+    }
     #[cfg(all(unix, not(target_os = "macos")))]
     if x11_windows {
         use winit::platform::x11::EventLoopBuilderExtX11 as _;

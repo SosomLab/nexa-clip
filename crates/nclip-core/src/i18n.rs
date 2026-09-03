@@ -306,6 +306,10 @@ pub enum Msg {
     TrayQuit,
     /// 트레이 메뉴 "설정"(09-01 사용자 요청 — 우클릭에서 바로).
     TraySettings,
+    /// ★ Dock 아이콘 표시(T-12e mac · 09-03).
+    SetDockIcon,
+    /// 위 설명.
+    SetDockIconDesc,
     // ── 메인창·팝업 표시 문자열(09-02 i18n 스윕 — "기본 언어 en인데 한글이 보인다").
     SearchHint,
     MainTitleSuffix,
@@ -746,6 +750,18 @@ impl Msg {
             Msg::TrayOpen => ["Open", "열기", "打开", "開く"],
             Msg::TrayQuit => ["Quit", "종료", "退出", "終了"],
             Msg::TraySettings => ["Settings", "설정", "设置", "設定"],
+            Msg::SetDockIcon => [
+                "Show Dock icon",
+                "Dock 아이콘 표시",
+                "显示 Dock 图标",
+                "Dock アイコンを表示",
+            ],
+            Msg::SetDockIconDesc => [
+                "macOS only: off hides the app from Dock and Cmd+Tab — open it from the menu bar icon",
+                "macOS 전용: 끄면 Dock·Cmd+Tab에서 사라지고 메뉴 막대 아이콘에서만 엽니다",
+                "仅 macOS：关闭后从 Dock 和 Cmd+Tab 消失，仅可从菜单栏图标打开",
+                "macOS のみ: オフにすると Dock・Cmd+Tab から消え、メニューバーのアイコンからのみ開けます",
+            ],
             Msg::SearchHint => ["Search…", "검색…", "搜索…", "検索…"],
             Msg::MainTitleSuffix => [
                 "Clipboard Manager",
@@ -1035,7 +1051,7 @@ mod tests {
     use super::*;
 
     /// 카탈로그 전수 — 새 `Msg`를 더하면 여기도 더한다(빈칸 검사가 그걸 강제한다).
-    const ALL_MSG: [Msg; 187] = [
+    const ALL_MSG: [Msg; 189] = [
         Msg::AppName,
         Msg::SearchPlaceholder,
         Msg::EmptyHistory,
@@ -1140,6 +1156,8 @@ mod tests {
         Msg::TrayOpen,
         Msg::TrayQuit,
         Msg::TraySettings,
+        Msg::SetDockIcon,
+        Msg::SetDockIconDesc,
         Msg::SearchHint,
         Msg::MainTitleSuffix,
         Msg::MainNoItems,

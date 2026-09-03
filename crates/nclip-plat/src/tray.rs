@@ -1,9 +1,9 @@
 //! 시스템 트레이 상주(T-12e · FR-U-2) — **플랫폼 어댑터**.
 //!
 //! 이식 원본: `nexa-beep` `crates/nbeep-plat/src/tray.rs`(1,102줄 · 3-OS).
-//! 이식 = **공통 타입 + Windows 모듈**(08-28) + ★ **Linux SNI 모듈**(08-30 · 아래 `sni`).
-//! macOS는 objc2 계열 의존을 들여오는 결정(DR-8 원장)이 필요해 아직 스텁 — 미이식 타깃은
-//! `spawn`이 `None`을 돌려 **정직하게 없다**고 알린다.
+//! 이식 = **공통 타입 + Windows 모듈**(08-28) + ★ **Linux SNI 모듈**(08-30 · 아래 `sni`)
+//! + ★ **macOS NSStatusItem 모듈**(09-03 · 아래 `mac` — objc2는 winit과 같은 판 · 원장 docs/10 §3).
+//!   미이식 타깃은 `spawn`이 `None`을 돌려 **정직하게 없다**고 알린다.
 //!
 //! ## Linux 구현 노트 (beep 08-15 설계 + 08-29 실기 그대로)
 //!
@@ -82,6 +82,9 @@ pub use win::{cursor_pos, spawn};
 #[cfg(target_os = "linux")]
 pub use sni::{cursor_pos, spawn};
 
+#[cfg(target_os = "macos")]
+pub use mac::{cursor_pos, spawn};
+
 /// Wayland 활성화 토큰(Linux SNI — `ProvideXdgActivationToken`으로 셸이 준 것) — 다음
 /// Open 처리에서 **한 번** 꺼내 쓴다(토큰은 1회용). 다른 OS·미제공 = None.
 #[must_use]
@@ -134,20 +137,24 @@ pub fn tray_failure_hint() -> &'static str {
     {
         "트레이 창 생성 실패"
     }
-    #[cfg(not(any(windows, target_os = "linux")))]
+    #[cfg(target_os = "macos")]
     {
-        "이 OS는 아직 미이식(macOS — docs/21 참조)"
+        "AppKit 계약 위반(메인 스레드 밖 기동) — 재실행"
+    }
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
+    {
+        "이 OS는 아직 미이식"
     }
 }
 
-#[cfg(not(any(windows, target_os = "linux")))]
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
 /// 커서 위치(스텁) — 팝업 위치 계산용.
 #[must_use]
 pub fn cursor_pos() -> Option<(i32, i32)> {
     None
 }
 
-#[cfg(not(any(windows, target_os = "linux")))]
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
 /// 스텁(미이식 타깃) — 트레이 없음. 호스트는 `None`을 보고 정직하게 알린다.
 pub fn spawn<F: Fn(TrayEvent) + Send + Sync + 'static>(
     _content: TrayContent,
@@ -156,7 +163,7 @@ pub fn spawn<F: Fn(TrayEvent) + Send + Sync + 'static>(
     None
 }
 
-#[cfg(not(any(windows, target_os = "linux")))]
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
 impl TrayHandle {
     /// 표시 내용 갱신(스텁 — 도달 불가).
     pub fn update(&self, _content: TrayContent) {}
@@ -1109,5 +1116,246 @@ mod win {
                 }
             }
         }
+    }
+}
+
+/// macOS — **메뉴바 NSStatusItem** 어댑터(T-12e mac · 09-03 사용자 "윈도우와 동일하게
+/// 메뉴바 상주"). 이식 원본: `nexa-beep` `crates/nbeep-plat/src/tray.rs::mac`(M3-2b)
+/// + **최근 항목·설정 메뉴 확장**(Windows/Linux 모듈과 동일 메뉴 구성).
+///
+/// - **AppKit은 메인 스레드 강제** — `spawn`/`update`는 winit 메인 루프에서만 불린다
+///   (셸 기동·refresh_tray가 그 자리). 메인 스레드가 아니면 `None`(fail-soft).
+/// - 아이콘 = 호스트 합성 RGBA → `NSBitmapImageRep` → `NSImage`(표시 18×18pt —
+///   32px 원본이라 레티나에서 2x로 선명). ★ 연결 배지(녹색 점)는 호스트가 RGBA에
+///   합성해 넘긴다 — `update` 한 번이 곧 "연결 시 아이콘 변경"이다.
+/// - 메뉴 = **좌/우클릭 공통**(mac 관례 — beep 분석 08-15): 이름 헤더(비활성) · 구분선 ·
+///   최근 항목(태그 = 인덱스) · 구분선 · 열기 · 설정 · 구분선 · 종료. 최근 항목 수가
+///   매번 달라 `update`마다 메뉴를 통째로 다시 깐다(항목 수십 개 — 비용 무시 가능).
+/// - 상태(NSStatusItem — `Send` 아님)는 **스레드 로컬**. `TrayHandle`은 표식일 뿐이고,
+///   메인 스레드 밖 `update`는 조용히 무시된다(도달 경로 없음).
+/// - 전역 단축키·정식 알림은 후속(T-15 mac · UNUserNotificationCenter는 번들 필요).
+#[cfg(target_os = "macos")]
+mod mac {
+    use super::{TrayContent, TrayEvent, TrayHandle};
+    use objc2::rc::Retained;
+    use objc2::runtime::{AnyObject, NSObject};
+    use objc2::{declare_class, msg_send, msg_send_id, mutability, sel, ClassType, DeclaredClass};
+    use objc2_app_kit::{
+        NSBitmapImageRep, NSImage, NSMenu, NSMenuItem, NSStatusBar, NSStatusItem,
+        NSVariableStatusItemLength,
+    };
+    use objc2_foundation::{MainThreadMarker, NSSize, NSString};
+    use std::cell::RefCell;
+    use std::sync::OnceLock;
+
+    /// 이벤트 콜백(호스트 프록시 래퍼) — 액션 셀렉터에서 부른다.
+    static ON_EVENT: OnceLock<Box<dyn Fn(TrayEvent) + Send + Sync>> = OnceLock::new();
+
+    fn emit(ev: TrayEvent) {
+        if let Some(f) = ON_EVENT.get() {
+            f(ev);
+        }
+    }
+
+    struct State {
+        item: Retained<NSStatusItem>,
+        menu: Retained<NSMenu>,
+        target: Retained<Target>,
+    }
+
+    thread_local! {
+        /// 메인 스레드 전용 상태(NSStatusItem은 Send가 아니다).
+        static STATE: RefCell<Option<State>> = const { RefCell::new(None) };
+    }
+
+    declare_class!(
+        /// 메뉴 액션 수신자 — 셀렉터를 콜백으로 잇는 것 외에 아무것도 모른다.
+        struct Target;
+
+        unsafe impl ClassType for Target {
+            type Super = NSObject;
+            type Mutability = mutability::InteriorMutable;
+            const NAME: &'static str = "NclipTrayTarget";
+        }
+
+        impl DeclaredClass for Target {
+            type Ivars = ();
+        }
+
+        unsafe impl Target {
+            #[method(nclipTrayOpen:)]
+            fn tray_open(&self, _sender: Option<&AnyObject>) {
+                emit(TrayEvent::Open);
+            }
+
+            #[method(nclipTraySettings:)]
+            fn tray_settings(&self, _sender: Option<&AnyObject>) {
+                emit(TrayEvent::Settings);
+            }
+
+            #[method(nclipTrayQuit:)]
+            fn tray_quit(&self, _sender: Option<&AnyObject>) {
+                emit(TrayEvent::Quit);
+            }
+
+            #[method(nclipTrayRecent:)]
+            fn tray_recent(&self, sender: Option<&AnyObject>) {
+                let Some(s) = sender else { return };
+                // ★ 최근 항목 인덱스는 메뉴 항목 tag에 실려 온다(0 = 최신).
+                let tag: isize = unsafe { msg_send![s, tag] };
+                if let Ok(i) = usize::try_from(tag) {
+                    emit(TrayEvent::Recent(i));
+                }
+            }
+        }
+    );
+
+    /// RGBA(straight) → NSImage(18×18pt 표시 · 원본 해상도 유지 = 레티나 2x).
+    fn image_from_rgba(rgba: &[u8], side: u32) -> Option<Retained<NSImage>> {
+        if side == 0 || rgba.len() != (side as usize) * (side as usize) * 4 {
+            return None;
+        }
+        unsafe {
+            let rep: Option<Retained<NSBitmapImageRep>> = msg_send_id![
+                NSBitmapImageRep::alloc(),
+                initWithBitmapDataPlanes: std::ptr::null_mut::<*mut u8>(),
+                pixelsWide: side as isize,
+                pixelsHigh: side as isize,
+                bitsPerSample: 8_isize,
+                samplesPerPixel: 4_isize,
+                hasAlpha: true,
+                isPlanar: false,
+                colorSpaceName: &*NSString::from_str("NSDeviceRGBColorSpace"),
+                bytesPerRow: (side * 4) as isize,
+                bitsPerPixel: 32_isize,
+            ];
+            let rep = rep?;
+            let data = rep.bitmapData();
+            if data.is_null() {
+                return None;
+            }
+            std::ptr::copy_nonoverlapping(rgba.as_ptr(), data, rgba.len());
+            let img = NSImage::initWithSize(NSImage::alloc(), NSSize::new(18.0, 18.0));
+            img.addRepresentation(&rep);
+            Some(img)
+        }
+    }
+
+    /// 메뉴 항목 하나(제목 + 액션 + 태그) — 반복을 줄인다.
+    fn menu_item(
+        mtm: MainThreadMarker,
+        target: &Retained<Target>,
+        title: &str,
+        action: objc2::runtime::Sel,
+        tag: isize,
+    ) -> Retained<NSMenuItem> {
+        let it = NSMenuItem::new(mtm);
+        unsafe {
+            it.setTitle(&NSString::from_str(title));
+            it.setAction(Some(action));
+            it.setTarget(Some(target));
+            let _: () = msg_send![&*it, setTag: tag];
+        }
+        it
+    }
+
+    /// 아이콘·툴팁 반영 + 메뉴 재구성(Windows 모듈과 같은 구성 · T-18e 최근 항목 포함).
+    fn apply(mtm: MainThreadMarker, state: &State, content: &TrayContent) {
+        unsafe {
+            if let Some(btn) = state.item.button(mtm) {
+                if let Some(img) = image_from_rgba(&content.rgba, content.side) {
+                    btn.setImage(Some(&img));
+                }
+                btn.setToolTip(Some(&NSString::from_str(&content.tooltip)));
+            }
+            let menu = &state.menu;
+            menu.removeAllItems();
+            let header = NSMenuItem::new(mtm);
+            header.setTitle(&NSString::from_str(&content.name));
+            // 액션 없는 항목은 autoenablesItems가 비활성으로 그린다(이름 헤더 관례).
+            menu.addItem(&header);
+            menu.addItem(&NSMenuItem::separatorItem(mtm));
+            for (i, label) in content.recent.iter().enumerate() {
+                let Ok(tag) = isize::try_from(i) else { break };
+                menu.addItem(&menu_item(
+                    mtm,
+                    &state.target,
+                    label,
+                    sel!(nclipTrayRecent:),
+                    tag,
+                ));
+            }
+            if !content.recent.is_empty() {
+                menu.addItem(&NSMenuItem::separatorItem(mtm));
+            }
+            menu.addItem(&menu_item(
+                mtm,
+                &state.target,
+                &content.open_label,
+                sel!(nclipTrayOpen:),
+                0,
+            ));
+            menu.addItem(&menu_item(
+                mtm,
+                &state.target,
+                &content.settings_label,
+                sel!(nclipTraySettings:),
+                0,
+            ));
+            menu.addItem(&NSMenuItem::separatorItem(mtm));
+            menu.addItem(&menu_item(
+                mtm,
+                &state.target,
+                &content.quit_label,
+                sel!(nclipTrayQuit:),
+                0,
+            ));
+        }
+    }
+
+    /// 커서 위치 — 미배선(mac 전역 단축키가 아직 없어 팝업 호출 경로가 없다 · T-15 mac 후속).
+    #[must_use]
+    pub fn cursor_pos() -> Option<(i32, i32)> {
+        None
+    }
+
+    /// 메뉴바 상주 시작 — **메인 스레드에서만**(아니면 None · fail-soft).
+    pub fn spawn<F: Fn(TrayEvent) + Send + Sync + 'static>(
+        content: TrayContent,
+        on_event: F,
+    ) -> Option<TrayHandle> {
+        let mtm = MainThreadMarker::new()?; // AppKit 계약 — 메인 스레드 증명
+        if ON_EVENT.set(Box::new(on_event)).is_err() {
+            return None; // 이미 떠 있다
+        }
+        let target: Retained<Target> = unsafe { msg_send_id![Target::alloc(), init] };
+        unsafe {
+            let bar = NSStatusBar::systemStatusBar();
+            let item = bar.statusItemWithLength(NSVariableStatusItemLength);
+            let menu = NSMenu::new(mtm);
+            // mac 관례 — 메뉴를 달면 좌/우클릭 둘 다 연다(분석 표 08-15). "열기"는 메뉴에서.
+            item.setMenu(Some(&menu));
+            let state = State { item, menu, target };
+            apply(mtm, &state, &content);
+            STATE.with(|s| *s.borrow_mut() = Some(state));
+        }
+        Some(TrayHandle { _priv: () })
+    }
+
+    impl TrayHandle {
+        /// 표시 내용 갱신 — 메인 스레드에서만 실제 반영(밖이면 무시 · 도달 경로 없음).
+        pub fn update(&self, content: TrayContent) {
+            let Some(mtm) = MainThreadMarker::new() else {
+                return;
+            };
+            STATE.with(|s| {
+                if let Some(state) = s.borrow().as_ref() {
+                    apply(mtm, state, &content);
+                }
+            });
+        }
+
+        /// 알림 — 미배선(정식 = UNUserNotificationCenter · .app 번들 필요 — 후속). 표식만.
+        pub fn notify(&self, _title: &str, _body: &str, _silent: bool, _target: &str) {}
     }
 }

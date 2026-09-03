@@ -33,3 +33,28 @@ x11rb = { version = "0.13", default-features = false, features = ["xtest", "xfix
 wayland-client = "0.31"
 wayland-backend = { version = "0.3", features = ["client_system", "dlopen"] }
 wayland-protocols = { version = "0.32", features = ["client", "staging"] }
+
+# ── macOS 타깃 한정(다른 OS 산출물 크기 불변) — 원장 docs/10 §3 · beep `nbeep-plat` 선례 ──
+[target.'cfg(target_os = "macos")'.dependencies]
+# 트레이(T-12e mac · NSStatusItem) + Dock 정책(Accessory — `ui.dock_icon`) — winit과 같은
+# 판(objc2 0.5 / 0.2 계열 · Cargo.lock 동일 항목 = 의존 트리 중복 0 · 산출물 증가 미미).
+# 클래스별 feature는 트레이가 쓰는 상속 사슬(NSStatusBarButton→NSButton→NSControl→NSView)까지 명시.
+objc2 = "0.5"
+objc2-app-kit = { version = "0.2", features = [
+    "NSStatusBar",
+    "NSStatusItem",
+    "NSStatusBarButton",
+    "NSButton",
+    "NSControl",
+    "NSView",
+    "NSResponder",
+    "NSMenu",
+    "NSMenuItem",
+    "NSImage",
+    "NSImageRep",
+    "NSBitmapImageRep",
+    "NSCell",
+    "NSApplication",
+    "NSRunningApplication",
+] }
+objc2-foundation = { version = "0.2", features = ["NSString", "NSGeometry", "NSThread"] }

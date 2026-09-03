@@ -16,6 +16,8 @@
 pub mod autostart;
 pub mod clipboard;
 pub mod console;
+/// ★ Dock 노출 제어(T-12e mac — activation policy). 다른 OS no-op.
+pub mod dock;
 pub mod font;
 /// ★ 호스트명(09-03 — 기기 표시 이름 기본값 원료 · beep host.rs 이식).
 pub mod host;
