@@ -2,6 +2,12 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-09-03 (Windows 9~12차) — 추천 3종 · ★ 지연 로드 · ★ M2 동기화 기반 · 연결 수명 계약
+
+- 12차 — ★ **연결 수명 계약**(Test 성공 = `sync.enabled` 자동 + 러너 재기동 · Disconnect/정보 변경/Enable 끔 = 즉시 해제 · Test = 재접속 · RUNNING 가드) · 설정 UX 마감(입력란 정렬 · 눈/★비밀번호 생성 버튼 왼쪽 · 사용자 SVG 아이콘) → [journal 12차](journal/2026-09-03.md)
+- 11차 — ★ **blob 지연 로드**(기동 1.8s→107ms · RSS 287→21MB) · ★ **nclip-sync 신설**(beep 릴레이 스택 사본 · 앱 격리 3종 · 셸 러너 · TOFU 핀 · 페어링 RID) · beep식 설정 UX(서버/포트 선택지 · 암호 은닉 · Test · 상태 노트) · 연결 표시(트레이 녹색 점 · 메인 인디케이터 · 툴바 아이콘) → [journal 11차](journal/2026-09-03.md)
+- 9~10차 — 단일 인스턴스(T-12e4) · 미리보기 리치화+스크롤바 · 붙여넣기 스택 · 콘솔 창 제거(무인수 = 트레이) · 속도 실측(병목 = 저장소 전장 적재) → [journal 9·10차](journal/2026-09-03.md)
+
 ## 2026-09-03 (1차) — ★ T-14 본편: Linux 클립보드 내재화(x11rb+XFIXES)
 
 - 5차 — ★ 결함: Firefox 한글 `\uXXXX` · 터미널 `\E2\9E\9C` — Mutter 브리지가 선두에 둔 charset 없는 `text/plain`(GTK = ASCII 이스케이프)을 집음 → 텍스트 타깃 **UTF-8 보장 순위**(`text_rank`) + 실패 시 다음 순위 · 원시 TARGETS 진단 · 사용자 재복사 검증 ⏳ → [journal 5차](journal/2026-09-03.md)
