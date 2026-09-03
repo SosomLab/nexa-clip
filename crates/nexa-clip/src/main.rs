@@ -1,3 +1,6 @@
+// ★ Windows = `windows` 서브시스템(09-03 사용자 — 실행 때 콘솔 창이 먼저 뗴).
+//   beep과 같은 원인(링커 기본값) · 같은 처방. 터미널 출력은 attach_parent로 살린다.
+#![cfg_attr(windows, windows_subsystem = "windows")]
 //! `nexa-clip` — 본체. **조립 지점**이다.
 //!
 //! 여기서만 어댑터를 실체화해 [`nclip_core`]의 포트에 주입한다(의존성 역전).
@@ -29,6 +32,8 @@ use nclip_plat::paste::{spike_steal_focus, PlatformPaste};
 use nclip_plat::watch::PlatformWatch;
 
 fn main() {
+    // 터미널에서 부르면 그 콘솔에 출력(windows 서브시스템 보완 · 09-03).
+    nclip_plat::console::attach_parent();
     // ★ 이식 컨트롤(우클릭 편집 메뉴)의 라벨을 앱 i18n에 잇는다(미주입 기본 = 영어).
     nclip_ctl::controls::set_ctl_labels(|m| {
         use nclip_ctl::controls::CtlMsg as C;

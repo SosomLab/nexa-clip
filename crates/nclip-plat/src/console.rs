@@ -6,6 +6,21 @@
 
 use std::sync::OnceLock;
 
+/// ★ 부모 콘솔 붙기(09-03) — 본체가 `windows` 서브시스템(콘솔 창 없음)이 되면
+/// 터미널에서 실행해도 출력이 사라진다. 터미널이 부모면 그 콘솔을 붙여
+/// 진단 출력(status·peek·감시 로그)을 살린다. 더블클릭이면 조용히 실패(창도 콘솔도 없음).
+pub fn attach_parent() {
+    #[cfg(windows)]
+    // SAFETY: 인자 없는 단순 호출 — 실패는 무시한다.
+    unsafe {
+        #[link(name = "kernel32")]
+        extern "system" {
+            fn AttachConsole(pid: u32) -> i32;
+        }
+        AttachConsole(u32::MAX); // ATTACH_PARENT_PROCESS
+    }
+}
+
 static HANDLER: OnceLock<Box<dyn Fn() + Send + Sync>> = OnceLock::new();
 
 /// 콘솔 종료 신호(Ctrl+C·Ctrl+Break·창 닫기·로그오프)에 `f`를 부른다.
