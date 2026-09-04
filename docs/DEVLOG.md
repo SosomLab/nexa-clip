@@ -2,9 +2,9 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
-## 2026-09-05 (Windows 3차) — ★ 최신화 뒤 Windows 빌드 실패 = `win` 모듈 `super::super::hotkeys()` 경로 회귀
+## 2026-09-05 (Windows 3차) — ★ 최신화 뒤 Windows 빌드 실패 · CI 16회 연속 빨강 = 3-OS `cfg` 경로 사슬 → 3타깃 복구
 
-- mac 5차 `5960581`이 mac `mac::hotkey`(2단) 경로를 고치며 Windows `win`(1단)까지 같은 꼴로 바꿈 → `E0425` · `super::hotkeys()` 환원 1줄 · 8 스위트 통과 · 디버그 인스턴스 상주 · 교훈: `cfg` 모듈 경로는 다른 OS 깊이도 같이(3-OS `cargo check` CI 게이트 검토) → [journal 3차](journal/2026-09-05.md)
+- `10f18a1`(Win 세션)이 mac `super::hotkeys`(2단이라 E0425) + Linux `redundant_clone`을 깨고 → `5960581`(mac 5차)이 mac을 고치며 Windows `win`(1단)까지 `super::super`로 → 오늘 `win` 환원 + Linux `.clone()` 제거 · **3타깃 clippy 로컬 통과** · 8 스위트 · 디버그 인스턴스 상주 · 교훈: `cfg` 모듈 깊이 확인 + **CI 결과를 본다**(T-40 push 전 3타깃 clippy) → [journal 3차](journal/2026-09-05.md)
 
 ## 2026-09-05 (Linux VM 2차) — ★ 호스트 mac과 LAN 직결 불능 = 게스트 러너 미기동 → 릴레이 None 자동 재기동
 

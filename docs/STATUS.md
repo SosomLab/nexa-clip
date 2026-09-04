@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-09-05 (3차 · Windows) — ★ 최신화 뒤 빌드 실패 · CI 16회 연속 빨강(09-04 10:44~) = 3-OS `cfg` 모듈 경로 사슬 → 3타깃 복구
+
+mac/Linux 21커밋 수신 뒤 디버그 빌드 `E0425`(`win` 모듈 `super::super::hotkeys()`). CI 이력: **`10f18a1`부터 16회 연속 실패** — Windows 세션이
+mac(`mac::hotkey` 2단 → `super::` 오류)·Linux(`redundant_clone`)를 깨고, mac 5차가 mac을 고치며 Windows(`win` 1단)를 깨뜨린 사슬.
+★ 수정: `win` `super::hotkeys()` 환원 + Linux `.clone()` 제거 · **3타깃 clippy `-D warnings` 로컬 통과**(타깃 std 설치돼 있음 · 링크 없이 26초) ·
+fmt ✓ · 8 스위트 ✓ · 디버그 인스턴스 상주. 교훈 = `cfg` 모듈 깊이 + **CI를 본다**(T-40). ⏳ Windows 실기 4건(팝업 논리 px · None 자동 재기동 ·
+이름 재소개 · 팔레트 PNG 섬네일) — 두 PC 실기(M2 판정)와 묶어서.
+
+---
+
 ## 2026-09-05 (2차 · Linux VM) — ★ 호스트 mac과 LAN 직결 불능 = 게스트 러너 미기동 → 릴레이 None 자동 재기동
 
 Linux 개발 PC = VMware Fusion 게스트(192.168.80.131) · 호스트 mac bridge101 192.168.80.1. 설정 창에서 릴레이 none → 핸들·암호 순으로 채우면
