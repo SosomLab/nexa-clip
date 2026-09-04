@@ -31,6 +31,9 @@ use std::num::NonZeroU32;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
+use nclip_ctl::draw::FontSlot;
+use nclip_ctl::Control as _;
+
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
@@ -79,6 +82,19 @@ pub(crate) struct App {
     anchor: Option<(i32, i32, u32, u32)>,
     /// ★ 메인창이 최상위면 설정 창도 최상위(가려지지 않게).
     on_top: bool,
+    /// ★ 단축키 캡처 오버레이(09-04 사용자 — 설정 창 안 모달): 대상 키 · 지금까지 누른 조합 · 버튼 셋.
+    capture: Option<HotkeyCapture>,
+}
+
+/// 캡처 오버레이 상태.
+struct HotkeyCapture {
+    key: &'static str,
+    combo: Option<nclip_core::hotkey::Hotkey>,
+    /// 수정 키 없는 조합을 눌렀다 — 안내 문구.
+    need_mod: bool,
+    remove: nclip_ctl::controls::Button,
+    ok: nclip_ctl::controls::Button,
+    cancel: nclip_ctl::controls::Button,
 }
 
 impl App {
@@ -110,6 +126,7 @@ impl App {
             resident,
             anchor: None,
             on_top: false,
+            capture: None,
         }
     }
 
@@ -166,6 +183,222 @@ impl App {
     }
 
     /// 창이 없으면 만들고, 있으면 앞으로 가져온다(트레이 "열기"의 재진입 경로).
+    /// ★ 캡처 오버레이 열기(09-04).
+    fn begin_capture(&mut self, key: &'static str) {
+        let lang = nclip_core::current_lang();
+        use nclip_ctl::controls::{Button, ButtonTone};
+        let mk = |m: nclip_core::Msg, tone: ButtonTone| {
+            let mut b = Button::new(nclip_core::tr(lang, m)).with_tone(tone);
+            b.set_scale(self.scale);
+            b
+        };
+        self.capture = Some(HotkeyCapture {
+            key,
+            combo: None,
+            need_mod: false,
+            remove: mk(nclip_core::Msg::HotkeyRemove, ButtonTone::Danger),
+            ok: mk(nclip_core::Msg::HotkeyOk, ButtonTone::Safe),
+            cancel: mk(nclip_core::Msg::HotkeyCancel, ButtonTone::Default),
+        });
+        self.redraw();
+    }
+
+    /// 오버레이 패널·버튼 자리(창 크기 기준 · 매 페인트 계산 — 값싸다).
+    fn capture_layout_of(&self, w: i32, h: i32) -> (Rect, Rect, Rect, Rect) {
+        capture_layout(self.scale, w, h)
+    }
+}
+
+/// 오버레이 패널·버튼 자리 — (패널, 제거, 확인, 취소).
+fn capture_layout(scale: f32, w: i32, h: i32) -> (Rect, Rect, Rect, Rect) {
+    {
+        let px = |v: f32| (v * scale).round() as i32;
+        let (pw, ph) = (px(380.0).min(w - px(20.0)), px(190.0));
+        let panel = Rect::new((w - pw) / 2, (h - ph) / 2, pw, ph);
+        let (bw, bh, gap, pad) = (px(96.0), px(30.0), px(8.0), px(14.0));
+        let by = panel.y + ph - pad - bh;
+        let remove = Rect::new(panel.x + pad, by, px(120.0), bh);
+        let cancel = Rect::new(panel.x + pw - pad - bw, by, bw, bh);
+        let ok = Rect::new(cancel.x - gap - bw, by, bw, bh);
+        (panel, remove, ok, cancel)
+    }
+}
+
+impl App {
+    /// 캡처 확정·제거·취소 — 값 반영은 설정 + 위젯 라벨.
+    fn end_capture(&mut self, apply: Option<String>) {
+        let Some(c) = self.capture.take() else {
+            return;
+        };
+        if let Some(v) = apply {
+            let now = Instant::now();
+            self.conf.set(c.key, v.clone(), now);
+            let mut inv = Invalidations::default();
+            self.widget.set_value(c.key, &v, &mut inv);
+            println!(
+                "단축키 변경: {} = {}",
+                c.key,
+                if v.is_empty() { "없음" } else { v.as_str() }
+            );
+        }
+        self.redraw();
+    }
+
+    /// 캡처 중 키 입력 — 수정 키 단독은 무시 · Esc 취소 · Enter 확정 · 그 외 = 조합 갱신.
+    fn capture_key(&mut self, el: &ActiveEventLoop, event: &winit::event::KeyEvent) {
+        let _ = el;
+        if event.state != ElementState::Pressed {
+            return;
+        }
+        let ctrl = self.mods.control_key();
+        let shift = self.mods.shift_key();
+        let alt = self.mods.alt_key();
+        let meta = self.mods.super_key();
+        match event.logical_key.as_ref() {
+            Key::Named(NamedKey::Escape) => {
+                self.end_capture(None);
+                return;
+            }
+            Key::Named(NamedKey::Enter) if !ctrl && !shift && !alt && !meta => {
+                let v = self
+                    .capture
+                    .as_ref()
+                    .and_then(|c| c.combo.map(|h| h.canonical()));
+                if v.is_some() {
+                    self.end_capture(v);
+                }
+                return;
+            }
+            _ => {}
+        }
+        let Some(tok) = keycode_token(&event.physical_key) else {
+            return; // 수정 키 단독·미지원 키
+        };
+        let Some(c) = self.capture.as_mut() else {
+            return;
+        };
+        match nclip_core::hotkey::Hotkey::from_parts(ctrl, shift, alt, meta, tok) {
+            Some(h) if h.is_global_safe() => {
+                c.combo = Some(h);
+                c.need_mod = false;
+            }
+            Some(_) => {
+                c.combo = None;
+                c.need_mod = true;
+            }
+            None => {}
+        }
+        self.redraw();
+    }
+
+    /// 캡처 중 마우스 — 버튼 셋만 받는다.
+    fn capture_mouse(&mut self, ev: InputEvent) {
+        let Some(win) = &self.window else {
+            return;
+        };
+        let size = win.inner_size();
+        let (_, r_remove, r_ok, r_cancel) =
+            self.capture_layout_of(size.width as i32, size.height as i32);
+        let Some(c) = self.capture.as_mut() else {
+            return;
+        };
+        let mut inv = Invalidations::default();
+        c.remove.set_bounds(r_remove, &mut inv);
+        c.ok.set_bounds(r_ok, &mut inv);
+        c.cancel.set_bounds(r_cancel, &mut inv);
+        c.remove.on_event(&ev, &mut inv);
+        c.ok.on_event(&ev, &mut inv);
+        c.cancel.on_event(&ev, &mut inv);
+        let (rm, ok, cancel) = (
+            c.remove.take_clicked(),
+            c.ok.take_clicked(),
+            c.cancel.take_clicked(),
+        );
+        let combo = c.combo.map(|h| h.canonical());
+        if rm {
+            self.end_capture(Some(String::new()));
+        } else if ok {
+            if combo.is_some() {
+                self.end_capture(combo);
+            }
+        } else if cancel {
+            self.end_capture(None);
+        } else {
+            self.redraw();
+        }
+    }
+}
+
+/// 오버레이 그리기(위젯 위 · 맨 끝) — 자유 함수(페인트 중 surface 대여와 겹치지 않게 필드만 받는다).
+fn paint_capture(
+    c: &mut HotkeyCapture,
+    dc: &mut RasterCtx<'_, '_, '_>,
+    w: i32,
+    h: i32,
+    th: &Theme,
+    scale: f32,
+) {
+    {
+        let (panel, r_remove, r_ok, r_cancel) = capture_layout(scale, w, h);
+        let th = *th;
+        let lang = nclip_core::current_lang();
+        let px = |v: f32| (v * scale).round() as i32;
+        dc.fill_rect_alpha(
+            Rect::new(0, 0, w, h),
+            nclip_ctl::theme::Color::from_rgb(0, 0, 0),
+            0.35,
+        );
+        dc.fill_round_rect(panel, px(8.0), th.window_bg);
+        dc.stroke_round_rect(panel, px(8.0), th.border, 1.0);
+        let full = Rect::new(0, 0, w, h);
+        dc.select_font(FontSlot::Base, true);
+        dc.text(
+            panel.x + px(14.0),
+            panel.y + px(12.0),
+            full,
+            nclip_core::tr(lang, nclip_core::Msg::HotkeyTitle),
+            th.text,
+        );
+        dc.select_font(FontSlot::Status, false);
+        let prompt = if c.need_mod {
+            nclip_core::tr(lang, nclip_core::Msg::HotkeyNeedMod)
+        } else {
+            nclip_core::tr(lang, nclip_core::Msg::HotkeyPrompt)
+        };
+        dc.text(
+            panel.x + px(14.0),
+            panel.y + px(40.0),
+            full,
+            prompt,
+            if c.need_mod { th.warn } else { th.text_dim },
+        );
+        // 조합 표시 상자 — 검색창 높이 · accent 글자.
+        let boxr = Rect::new(
+            panel.x + px(14.0),
+            panel.y + px(66.0),
+            panel.w - px(28.0),
+            px(34.0),
+        );
+        dc.fill_round_rect(boxr, px(5.0), th.field_bg);
+        dc.stroke_round_rect(boxr, px(5.0), th.accent, 1.0);
+        let shown = c
+            .combo
+            .map(|hk| hk.display(cfg!(target_os = "macos")))
+            .unwrap_or_default();
+        dc.select_font_sized(FontSlot::Base, true, 2.0 * scale);
+        dc.text(boxr.x + px(10.0), boxr.y + px(6.0), full, &shown, th.accent);
+        dc.select_font(FontSlot::Base, false);
+        let mut inv = Invalidations::default();
+        c.remove.set_bounds(r_remove, &mut inv);
+        c.ok.set_bounds(r_ok, &mut inv);
+        c.cancel.set_bounds(r_cancel, &mut inv);
+        c.remove.paint(dc, &th);
+        c.ok.paint(dc, &th);
+        c.cancel.paint(dc, &th);
+    }
+}
+
+impl App {
     /// ★ 열기 직전 셸이 준다(09-04) — 메인창 기하 + 메인창 최상위 여부.
     pub(crate) fn set_anchor(&mut self, main_geom: Option<(i32, i32, u32, u32)>, on_top: bool) {
         self.anchor = main_geom;
@@ -782,6 +1015,11 @@ impl App {
     fn drain_changes(&mut self) {
         let now = Instant::now();
         for (key, val) in self.widget.take_changes() {
+            // ★ 단축키 행 클릭(09-04) — 값이 아니라 캡처 오버레이를 연다.
+            if key.starts_with("key.") && val == "run" {
+                self.begin_capture(key);
+                continue;
+            }
             // ★ 즉시 적용 계약 — 값은 바로 반영하고, **파일 쓰기는 미룬다**
             //   (조용해진 뒤 1초 · 늦어도 10초 — [`crate::conf`]).
             self.conf.set(key, val.clone(), now);
@@ -996,6 +1234,9 @@ impl App {
             RasterCtx::new(&mut gfx, &self.font, self.scale);
             dc.fill_rect(Rect::new(0, 0, iw, ih), self.theme.window_bg);
             self.widget.paint(&mut dc, &self.theme);
+            if let Some(c) = self.capture.as_mut() {
+                paint_capture(c, &mut dc, iw, ih, &self.theme, self.scale);
+            }
         }
         let _ = buf.present();
     }
@@ -1011,6 +1252,45 @@ impl ApplicationHandler for App {
     }
 
     fn window_event(&mut self, el: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
+        // ★ 캡처 오버레이가 열려 있으면 키·마우스는 오버레이가 전부 먹는다(모달 · 09-04).
+        if self.capture.is_some() {
+            match &event {
+                WindowEvent::ModifiersChanged(m) => {
+                    self.mods = m.state();
+                    return;
+                }
+                WindowEvent::KeyboardInput { event: kev, .. } => {
+                    let kev = kev.clone();
+                    self.capture_key(el, &kev);
+                    return;
+                }
+                WindowEvent::CursorMoved { position, .. } => {
+                    self.cursor = (position.x as i32, position.y as i32);
+                    let (x, y) = self.cursor;
+                    self.capture_mouse(InputEvent::MouseMove { x, y });
+                    return;
+                }
+                WindowEvent::MouseInput { state, button, .. } => {
+                    if *button == winit::event::MouseButton::Left {
+                        let (x, y) = self.cursor;
+                        let ev = if *state == ElementState::Pressed {
+                            InputEvent::MouseDown {
+                                x,
+                                y,
+                                shift: false,
+                                primary: false,
+                            }
+                        } else {
+                            InputEvent::MouseUp { x, y }
+                        };
+                        self.capture_mouse(ev);
+                    }
+                    return;
+                }
+                WindowEvent::MouseWheel { .. } => return,
+                _ => {}
+            }
+        }
         match event {
             WindowEvent::CloseRequested => self.request_close(el),
             WindowEvent::ModifiersChanged(m) => self.mods = m.state(),
@@ -1347,4 +1627,75 @@ fn monitor_key(m: &winit::monitor::MonitorHandle) -> String {
         Some(n) if !n.is_empty() => format!("{n}@{}x{}", s.width, s.height),
         _ => format!("{}:{}@{}x{}", p.x, p.y, s.width, s.height),
     }
+}
+
+/// winit 물리 키 → 단축키 토큰(09-04 캡처) — 글자·숫자·F키·편집/이동 키만. 수정 키 단독·그 밖은 `None`.
+fn keycode_token(pk: &winit::keyboard::PhysicalKey) -> Option<&'static str> {
+    use winit::keyboard::{KeyCode as K, PhysicalKey};
+    let PhysicalKey::Code(code) = pk else {
+        return None;
+    };
+    Some(match code {
+        K::KeyA => "A",
+        K::KeyB => "B",
+        K::KeyC => "C",
+        K::KeyD => "D",
+        K::KeyE => "E",
+        K::KeyF => "F",
+        K::KeyG => "G",
+        K::KeyH => "H",
+        K::KeyI => "I",
+        K::KeyJ => "J",
+        K::KeyK => "K",
+        K::KeyL => "L",
+        K::KeyM => "M",
+        K::KeyN => "N",
+        K::KeyO => "O",
+        K::KeyP => "P",
+        K::KeyQ => "Q",
+        K::KeyR => "R",
+        K::KeyS => "S",
+        K::KeyT => "T",
+        K::KeyU => "U",
+        K::KeyV => "V",
+        K::KeyW => "W",
+        K::KeyX => "X",
+        K::KeyY => "Y",
+        K::KeyZ => "Z",
+        K::Digit0 => "0",
+        K::Digit1 => "1",
+        K::Digit2 => "2",
+        K::Digit3 => "3",
+        K::Digit4 => "4",
+        K::Digit5 => "5",
+        K::Digit6 => "6",
+        K::Digit7 => "7",
+        K::Digit8 => "8",
+        K::Digit9 => "9",
+        K::F1 => "F1",
+        K::F2 => "F2",
+        K::F3 => "F3",
+        K::F4 => "F4",
+        K::F5 => "F5",
+        K::F6 => "F6",
+        K::F7 => "F7",
+        K::F8 => "F8",
+        K::F9 => "F9",
+        K::F10 => "F10",
+        K::F11 => "F11",
+        K::F12 => "F12",
+        K::Space => "Space",
+        K::Tab => "Tab",
+        K::Insert => "Insert",
+        K::Delete => "Delete",
+        K::Home => "Home",
+        K::End => "End",
+        K::PageUp => "PageUp",
+        K::PageDown => "PageDown",
+        K::ArrowUp => "Up",
+        K::ArrowDown => "Down",
+        K::ArrowLeft => "Left",
+        K::ArrowRight => "Right",
+        _ => return None,
+    })
 }

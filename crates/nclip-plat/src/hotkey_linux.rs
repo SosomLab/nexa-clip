@@ -24,17 +24,15 @@ use zbus::zvariant::{OwnedObjectPath, OwnedValue, Value};
 pub enum HotkeyEvent {
     /// 등록 결과(한 번) — `trigger` = 셸이 확정한 조합의 사람이 읽는 설명(실패 시 빈 문자열).
     Bound { ok: bool, trigger: String },
-    /// 눌림(`Activated` — 해제는 무시).
-    Activated,
+    /// 눌림(`Activated` — 해제는 무시). 값 = 우리 쪽 단축키 id(`a1`·`a2`·`a3`).
+    Activated(String),
 }
 
 pub(crate) const PORTAL_DEST: &str = "org.freedesktop.portal.Desktop";
 pub(crate) const PORTAL_PATH: &str = "/org/freedesktop/portal/desktop";
 const IFACE: &str = "org.freedesktop.portal.GlobalShortcuts";
-/// 단축키 id — 우리 쪽 식별자(셸 대화창엔 `description`이 보인다).
-pub const SHORTCUT_ID: &str = "open";
-/// 제안 조합(포털 shortcuts-spec 문법) — 설정 `key.open` 기본값 Ctrl+Shift+V.
-pub const PREFERRED_TRIGGER: &str = "CTRL+SHIFT+v";
+/// 첫 단축키 id(설명·트리거 조회용 대표) — 09-04: 목록은 셸이 준다(`a1` = 퀵 팝업).
+pub const SHORTCUT_ID: &str = "a1";
 
 /// 마지막 등록 결과의 조합 설명(호스트 안내용).
 static TRIGGER: Mutex<String> = Mutex::new(String::new());
@@ -46,10 +44,13 @@ pub fn bound_trigger() -> String {
 }
 
 /// 포털 등록 + 신호 대기 스레드 기동. 실패도 `Bound { ok: false }`로 **반드시 한 번** 알린다.
-pub fn spawn(description: String, on_event: Box<dyn Fn(HotkeyEvent) + Send + Sync>) {
+pub fn spawn(
+    binds: Vec<(String, String, String)>,
+    on_event: Box<dyn Fn(HotkeyEvent) + Send + Sync>,
+) {
     let _ = std::thread::Builder::new()
         .name("nclip-hotkey".into())
-        .spawn(move || match run(&description, &on_event) {
+        .spawn(move || match run(&binds, &on_event) {
             Ok(()) => {}
             Err(_) => on_event(HotkeyEvent::Bound {
                 ok: false,
@@ -88,7 +89,11 @@ where
     Ok((code, results))
 }
 
-fn run(description: &str, on_event: &(dyn Fn(HotkeyEvent) + Send + Sync)) -> zbus::Result<()> {
+/// `binds` = (id, 설명, preferred_trigger) 목록(09-04 — 동작별).
+fn run(
+    binds: &[(String, String, String)],
+    on_event: &(dyn Fn(HotkeyEvent) + Send + Sync),
+) -> zbus::Result<()> {
     let conn = Connection::session()?;
     let portal = Proxy::new(&conn, PORTAL_DEST, PORTAL_PATH, IFACE)?;
     // 포털 부재 = 여기서 실패(version 속성 조회).
@@ -118,10 +123,13 @@ fn run(description: &str, on_event: &(dyn Fn(HotkeyEvent) + Send + Sync)) -> zbu
     let activated = portal.receive_signal("Activated")?;
 
     // ③ 등록 — 셸이 사용자 확인 대화창을 띄운다(GNOME). 응답까지 이 스레드는 기다린다.
-    let mut sc: HashMap<&str, Value<'_>> = HashMap::new();
-    sc.insert("description", Value::from(description));
-    sc.insert("preferred_trigger", Value::from(PREFERRED_TRIGGER));
-    let shortcuts = vec![(SHORTCUT_ID, sc)];
+    let mut shortcuts: Vec<(&str, HashMap<&str, Value<'_>>)> = Vec::new();
+    for (id, desc, trig) in binds {
+        let mut sc: HashMap<&str, Value<'_>> = HashMap::new();
+        sc.insert("description", Value::from(desc.as_str()));
+        sc.insert("preferred_trigger", Value::from(trig.as_str()));
+        shortcuts.push((id.as_str(), sc));
+    }
     let mut opts: HashMap<&str, Value<'_>> = HashMap::new();
     opts.insert("handle_token", Value::from("nclip_req_bind"));
     let (code, results) = call_with_response(
@@ -155,9 +163,7 @@ fn run(description: &str, on_event: &(dyn Fn(HotkeyEvent) + Send + Sync)) -> zbu
         else {
             continue;
         };
-        if id == SHORTCUT_ID {
-            on_event(HotkeyEvent::Activated);
-        }
+        on_event(HotkeyEvent::Activated(id));
     }
     Ok(())
 }

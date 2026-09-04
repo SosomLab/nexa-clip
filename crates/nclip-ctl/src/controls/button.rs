@@ -147,6 +147,11 @@ impl Button {
     }
 
     /// 텍스트 지정(체이닝).
+    /// ★ 라벨 변경(09-04 — 단축키 행: 조합이 곧 버튼 글자).
+    pub fn set_label(&mut self, label: impl Into<String>) {
+        self.label = Some(label.into());
+    }
+
     #[must_use]
     pub fn with_label(mut self, label: impl Into<String>) -> Self {
         self.label = Some(label.into());

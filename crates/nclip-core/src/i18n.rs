@@ -211,6 +211,18 @@ pub enum Msg {
     CatGeneral,
     /// 설정 카테고리: 단축키.
     CatShortcuts,
+    /// ★ 단축키 설정(09-04): 동작 라벨 3 · 공통 설명 · 캡처 오버레이 문구.
+    SetHotkeyOpen,
+    SetHotkeyOpenAlt,
+    SetHotkeyPastePlain,
+    SetHotkeyDesc,
+    HotkeyNone,
+    HotkeyTitle,
+    HotkeyPrompt,
+    HotkeyNeedMod,
+    HotkeyRemove,
+    HotkeyOk,
+    HotkeyCancel,
     /// 설정 카테고리: 캡처.
     CatCapture,
     /// 설정 카테고리: 보관.
@@ -624,6 +636,42 @@ impl Msg {
             Msg::SystemDefaultFont => ["System default", "시스템 기본", "系统默认", "システム標準"],
             Msg::CatGeneral => ["General", "일반", "常规", "一般"],
             Msg::CatShortcuts => ["Shortcuts", "단축키", "快捷键", "ショートカット"],
+            Msg::SetHotkeyOpen => ["Show quick popup", "퀵 팝업 띄우기", "显示快捷弹窗", "クイック ポップアップを表示"],
+            Msg::SetHotkeyOpenAlt => [
+                "Show quick popup (secondary)",
+                "퀵 팝업 띄우기 (보조)",
+                "显示快捷弹窗（备用）",
+                "クイック ポップアップを表示（予備）",
+            ],
+            Msg::SetHotkeyPastePlain => [
+                "Paste clipboard as plain text",
+                "클립보드를 평문으로 붙여넣기",
+                "以纯文本粘贴剪贴板",
+                "クリップボードをプレーンテキストで貼り付け",
+            ],
+            Msg::SetHotkeyDesc => [
+                "Global — works from any app. Click the shortcut to change it. Windows applies immediately; macOS/Linux after restart",
+                "전역 — 어느 앱에서나 동작합니다. 조합을 누르면 바꿉니다. Windows는 즉시, macOS/Linux는 재시작 후 적용",
+                "全局——在任何应用中生效。点击组合键以更改。Windows 立即生效；macOS/Linux 重启后生效",
+                "グローバル — どのアプリでも動作。組み合わせを押すと変更。Windows は即時、macOS/Linux は再起動後に適用",
+            ],
+            Msg::HotkeyNone => ["None", "없음", "无", "なし"],
+            Msg::HotkeyTitle => ["Set shortcut", "단축키 지정", "设置快捷键", "ショートカットを設定"],
+            Msg::HotkeyPrompt => [
+                "Press the key combination",
+                "키 조합을 누르세요",
+                "请按下组合键",
+                "キーの組み合わせを押してください",
+            ],
+            Msg::HotkeyNeedMod => [
+                "Include Ctrl, Shift, Alt or Win (F-keys may stand alone)",
+                "Ctrl·Shift·Alt·Win 중 하나를 포함하세요 (F키는 단독 가능)",
+                "请包含 Ctrl、Shift、Alt 或 Win（F 键可单独使用）",
+                "Ctrl・Shift・Alt・Win のいずれかを含めてください（F キーは単独可）",
+            ],
+            Msg::HotkeyRemove => ["Remove shortcut", "바로가기 제거", "移除快捷键", "ショートカットを削除"],
+            Msg::HotkeyOk => ["OK", "확인", "确定", "OK"],
+            Msg::HotkeyCancel => ["Cancel", "취소", "取消", "キャンセル"],
             Msg::CatCapture => ["Capture", "캡처", "采集", "取り込み"],
             Msg::CatStorage => ["Storage", "보관", "存储", "保存"],
             Msg::CatPrivacy => ["Privacy", "보안·개인정보", "隐私与安全", "プライバシー"],
@@ -1215,7 +1263,7 @@ mod tests {
     use super::*;
 
     /// 카탈로그 전수 — 새 `Msg`를 더하면 여기도 더한다(빈칸 검사가 그걸 강제한다).
-    const ALL_MSG: [Msg; 223] = [
+    const ALL_MSG: [Msg; 234] = [
         Msg::AppName,
         Msg::SearchPlaceholder,
         Msg::EmptyHistory,
@@ -1273,6 +1321,17 @@ mod tests {
         Msg::SystemDefaultFont,
         Msg::CatGeneral,
         Msg::CatShortcuts,
+        Msg::SetHotkeyOpen,
+        Msg::SetHotkeyOpenAlt,
+        Msg::SetHotkeyPastePlain,
+        Msg::SetHotkeyDesc,
+        Msg::HotkeyNone,
+        Msg::HotkeyTitle,
+        Msg::HotkeyPrompt,
+        Msg::HotkeyNeedMod,
+        Msg::HotkeyRemove,
+        Msg::HotkeyOk,
+        Msg::HotkeyCancel,
         Msg::CatCapture,
         Msg::CatStorage,
         Msg::CatPrivacy,

@@ -38,8 +38,8 @@ pub enum TrayEvent {
     OpenTarget(String),
     /// ★ 최근 항목 선택(T-18e) — 값 = [`TrayContent::recent`]의 인덱스(0 = 최신).
     Recent(usize),
-    /// ★ 전역 단축키(T-15 · `key.open`) — 팝업 토글.
-    Hotkey,
+    /// ★ 전역 단축키 눌림 — 값 = 동작 id([`nclip_core::hotkey`] ID_OPEN 1 · ID_OPEN_ALT 2 · ID_PASTE_PLAIN 3).
+    Hotkey(u32),
     /// 전역 단축키 등록 결과(시작 직후 한 번) — 실패 = 다른 앱이 선점(충돌 표시용).
     HotkeyStatus(bool),
     /// 앱 종료(메뉴 "종료").
@@ -99,8 +99,32 @@ pub fn take_activation_token() -> Option<String> {
     }
 }
 
+/// ★ 등록할 단축키 목록(09-04) — (동작 id, 조합). 셸이 설정에서 만들어 [`set_hotkeys`]로 넘긴다.
+static HOTKEYS: std::sync::Mutex<Vec<(u32, nclip_core::hotkey::Hotkey)>> =
+    std::sync::Mutex::new(Vec::new());
+/// 사람이 읽는 조합 설명(호스트 안내용) — 셸이 함께 준다.
+static HOTKEY_LABEL: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+
+/// ★ 단축키 목록 지정(09-04). 트레이 기동 전에 부르면 기동 때 등록되고, 기동 뒤에 부르면 **Windows는 즉시 재등록**
+/// (트레이 스레드에 메시지) · mac/Linux는 다음 시작에 반영된다(설명문에 명시).
+pub fn set_hotkeys(list: Vec<(u32, nclip_core::hotkey::Hotkey)>, label: String) {
+    if let Ok(mut g) = HOTKEYS.lock() {
+        *g = list;
+    }
+    if let Ok(mut g) = HOTKEY_LABEL.lock() {
+        *g = label;
+    }
+    #[cfg(windows)]
+    win::rebind_hotkeys();
+}
+
+/// 지금 목록(플랫폼 등록 코드가 읽는다).
+fn hotkeys() -> Vec<(u32, nclip_core::hotkey::Hotkey)> {
+    HOTKEYS.lock().map(|g| g.clone()).unwrap_or_default()
+}
+
 /// 전역 단축키의 **실제** 조합 설명(호스트 안내용) — Linux는 셸이 확정한 것(사용자가
-/// 포털 대화창에서 바꿨을 수 있다) · 그 외는 고정 Ctrl+Shift+V.
+/// 포털 대화창에서 바꿨을 수 있다) · 그 외는 셸이 준 설명(없으면 기본).
 #[must_use]
 pub fn hotkey_label() -> String {
     #[cfg(target_os = "linux")]
@@ -110,7 +134,12 @@ pub fn hotkey_label() -> String {
             return t;
         }
     }
-    "Ctrl+Shift+V".to_string()
+    let l = HOTKEY_LABEL.lock().map(|g| g.clone()).unwrap_or_default();
+    if l.is_empty() {
+        "Shift+Alt+C".to_string()
+    } else {
+        l
+    }
 }
 
 /// 단축키 등록 실패 시 OS별 사실 안내(호스트가 그대로 보여준다).
@@ -489,12 +518,34 @@ mod sni {
         .ok()?;
         let _ = CONN.set(conn);
         // ★ 전역 단축키(T-15 Linux) — Windows `RegisterHotKey`와 같은 자리. 결과는 한 번 알린다.
-        let desc = format!("{} — 퀵 팝업", state().name);
+        // ★ 목록(09-04) — 동작 id별 포털 단축키(설명은 셸 대화창에 보인다). 런타임 변경은 다음 시작에.
+        let name = state().name.clone();
+        let binds: Vec<(String, String, String)> = super::hotkeys()
+            .into_iter()
+            .map(|(id, hk)| {
+                let what = match id {
+                    nclip_core::hotkey::ID_PASTE_PLAIN => "평문 붙여넣기",
+                    nclip_core::hotkey::ID_OPEN_ALT => "퀵 팝업(보조)",
+                    _ => "퀵 팝업",
+                };
+                (
+                    format!("a{id}"),
+                    format!("{name} — {what}"),
+                    hk.portal_spec(),
+                )
+            })
+            .collect();
         hotkey_linux::spawn(
-            desc,
+            binds,
             Box::new(|ev| match ev {
                 HotkeyEvent::Bound { ok, .. } => emit(TrayEvent::HotkeyStatus(ok)),
-                HotkeyEvent::Activated => emit(TrayEvent::Hotkey),
+                HotkeyEvent::Activated(id) => {
+                    let n = id
+                        .strip_prefix('a')
+                        .and_then(|x| x.parse::<u32>().ok())
+                        .unwrap_or(1);
+                    emit(TrayEvent::Hotkey(n));
+                }
             }),
         );
         Some(TrayHandle { _priv: () })
@@ -644,6 +695,7 @@ mod win {
     #[link(name = "user32")]
     extern "system" {
         fn RegisterHotKey(hwnd: HWND, id: i32, modifiers: u32, vk: u32) -> i32;
+        fn UnregisterHotKey(hwnd: HWND, id: i32) -> i32;
         fn CreatePopupMenu() -> HANDLE;
         fn AppendMenuW(menu: HANDLE, flags: u32, id: usize, label: *const u16) -> i32;
         fn TrackPopupMenu(
@@ -686,14 +738,11 @@ mod win {
     const WM_RBUTTONUP: u32 = 0x0205;
     const WM_DESTROY: u32 = 0x0002;
     const WM_HOTKEY: u32 = 0x0312;
-    /// ★ 팝업 열기 전역 단축키(`key.open` 기본 = **Ctrl+Shift+V** — [docs/14 §3-2]).
-    ///   설정 배선(키 변경)은 후속 — 지금은 명세 기본값 고정.
-    const HOTKEY_ID: i32 = 1;
-    const MOD_CONTROL: u32 = 0x0002;
-    const MOD_SHIFT: u32 = 0x0004;
+    /// ★ 전역 단축키(09-04 설정 배선) — 목록은 [`super::hotkeys`] · id = 동작 id(1..=8) · 재등록은 `WM_APP_HOTKEY`.
+    const HOTKEY_ID_MAX: i32 = 8;
     /// 재등록 방지(Windows 10 1607+) — 키 반복으로 이벤트가 쏟아지지 않게.
     const MOD_NOREPEAT: u32 = 0x4000;
-    const VK_V: u32 = 0x56;
+    const WM_APP_HOTKEY: u32 = 0x8000 + 4; // 단축키 목록 재등록 요청(목록은 HOTKEYS에)
     const NIM_ADD: u32 = 0;
     const NIM_MODIFY: u32 = 1;
     const NIM_DELETE: u32 = 2;
@@ -744,6 +793,44 @@ mod win {
     fn emit(ev: TrayEvent) {
         if let Some(cb) = ON_EVENT.get() {
             cb(ev);
+        }
+    }
+
+    /// ★ 목록대로 (재)등록(09-04) — 트레이 스레드에서만. 옛 id는 전부 해제한 뒤 등록. 반환 = 하나라도 있고 전부 성공.
+    fn register_hotkeys(hwnd: HWND) -> bool {
+        // SAFETY: 이 스레드가 만든 hwnd · Win32 등록/해제 호출.
+        unsafe {
+            for id in 1..=HOTKEY_ID_MAX {
+                UnregisterHotKey(hwnd, id);
+            }
+            let list = super::hotkeys();
+            let mut all = !list.is_empty();
+            for (id, hk) in list {
+                if !(1..=HOTKEY_ID_MAX as u32).contains(&id) {
+                    continue;
+                }
+                let ok = RegisterHotKey(
+                    hwnd,
+                    id as i32,
+                    hk.win_mods() | MOD_NOREPEAT,
+                    hk.key.win_vk(),
+                ) != 0;
+                if !ok {
+                    all = false;
+                }
+            }
+            all
+        }
+    }
+
+    /// 셸이 목록을 바꿨다 — 트레이 스레드에 재등록을 시킨다(창이 아직 없으면 기동 때 등록된다).
+    pub(super) fn rebind_hotkeys() {
+        let hwnd = HWND.load(Ordering::Acquire);
+        if hwnd != 0 {
+            // SAFETY: 살아 있는 hwnd에 사용자 메시지 게시.
+            unsafe {
+                PostMessageW(hwnd, WM_APP_HOTKEY, 0, 0);
+            }
         }
     }
 
@@ -950,9 +1037,14 @@ mod win {
                 0
             }
             WM_HOTKEY => {
-                if w == HOTKEY_ID as usize {
-                    emit(TrayEvent::Hotkey);
+                if (1..=HOTKEY_ID_MAX as usize).contains(&w) {
+                    emit(TrayEvent::Hotkey(w as u32));
                 }
+                0
+            }
+            WM_APP_HOTKEY => {
+                let ok = register_hotkeys(hwnd);
+                emit(TrayEvent::HotkeyStatus(ok));
                 0
             }
             WM_APP_UPDATE => {
@@ -1052,14 +1144,9 @@ mod win {
                     }
                     HWND.store(hwnd, Ordering::Release);
                     apply_state(hwnd, NIM_ADD);
-                    // ★ 전역 단축키(T-15) — 이 스레드의 메시지 루프가 WM_HOTKEY를 받는다.
+                    // ★ 전역 단축키(T-15 · 09-04 설정 배선) — 이 스레드의 메시지 루프가 WM_HOTKEY를 받는다.
                     //   실패 = 다른 앱이 선점(CopyQ 등) — 조용히 넘기지 않고 알린다.
-                    let hot = RegisterHotKey(
-                        hwnd,
-                        HOTKEY_ID,
-                        MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT,
-                        VK_V,
-                    ) != 0;
+                    let hot = register_hotkeys(hwnd);
                     emit(TrayEvent::HotkeyStatus(hot));
                     let mut msg = MSG {
                         hwnd: 0,
@@ -1409,18 +1496,45 @@ mod mac {
             ) -> OSStatus;
         }
 
-        extern "C" fn on_hotkey(_: *mut c_void, _: *mut c_void, _: *mut c_void) -> OSStatus {
-            emit(TrayEvent::Hotkey);
+        extern "C" {
+            fn GetEventParameter(
+                event: *mut c_void,
+                name: u32,
+                typ: u32,
+                out_type: *mut u32,
+                size: u32,
+                out_size: *mut u32,
+                data: *mut c_void,
+            ) -> OSStatus;
+        }
+
+        extern "C" fn on_hotkey(_: *mut c_void, event: *mut c_void, _: *mut c_void) -> OSStatus {
+            // ★ 어느 단축키인지(09-04) — kEventParamDirectObject('----') · typeEventHotKeyID('hkid').
+            let mut id = EventHotKeyID {
+                signature: 0,
+                id: 0,
+            };
+            // SAFETY: Carbon이 준 이벤트에서 고정 크기 구조체를 읽는다.
+            let got = unsafe {
+                GetEventParameter(
+                    event,
+                    u32::from_be_bytes(*b"----"),
+                    u32::from_be_bytes(*b"hkid"),
+                    std::ptr::null_mut(),
+                    std::mem::size_of::<EventHotKeyID>() as u32,
+                    std::ptr::null_mut(),
+                    (&mut id as *mut EventHotKeyID).cast(),
+                )
+            } == 0;
+            emit(TrayEvent::Hotkey(if got && id.id > 0 { id.id } else { 1 }));
             0 // noErr
         }
 
-        /// `Ctrl+Shift+V` 등록 — 성공 여부(실패 = 다른 앱 선점 등 · 호스트가 알린다).
+        /// ★ 목록([`super::hotkeys`])대로 등록(09-04) — 성공 여부(실패 = 다른 앱 선점 등 · 호스트가 알린다).
+        ///   런타임 변경은 다음 시작에 반영(Carbon 재등록은 설치 스레드 제약 — 설명문에 명시).
         pub(super) fn register() -> bool {
             const KEYBOARD: u32 = u32::from_be_bytes(*b"keyb"); // kEventClassKeyboard
             const HOTKEY_PRESSED: u32 = 5; // kEventHotKeyPressed
-            const SHIFT: u32 = 0x200; // shiftKey
-            const CONTROL: u32 = 0x1000; // controlKey
-            const VK_V: u32 = 0x09; // kVK_ANSI_V
             let spec = EventTypeSpec {
                 class: KEYBOARD,
                 kind: HOTKEY_PRESSED,
@@ -1440,12 +1554,24 @@ mod mac {
                 {
                     return false;
                 }
-                let id = EventHotKeyID {
-                    signature: u32::from_be_bytes(*b"nclp"),
-                    id: 1,
-                };
-                let mut hotkey: *mut c_void = std::ptr::null_mut();
-                RegisterEventHotKey(VK_V, SHIFT | CONTROL, id, target, 0, &mut hotkey) == 0
+                let list = super::hotkeys();
+                let mut all = !list.is_empty();
+                for (n, hk) in list {
+                    let id = EventHotKeyID {
+                        signature: u32::from_be_bytes(*b"nclp"),
+                        id: n,
+                    };
+                    let code = hk.key.mac_keycode();
+                    if code == 0xFFFF {
+                        all = false;
+                        continue;
+                    }
+                    let mut hotkey: *mut c_void = std::ptr::null_mut();
+                    if RegisterEventHotKey(code, hk.mac_mods(), id, target, 0, &mut hotkey) != 0 {
+                        all = false;
+                    }
+                }
+                all
             }
         }
     }

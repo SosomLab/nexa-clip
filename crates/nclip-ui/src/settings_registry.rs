@@ -320,6 +320,34 @@ pub(crate) const REGISTRY: &[Entry] = &[
         SettingKind::Toggle,
         "ui.image_preview",
     ),
+    // ── 단축키(09-04 사용자) — 동작별 전역 조합 · 캡처 오버레이로 변경/제거
+    e(
+        Msg::CatShortcuts,
+        Msg::SetHotkeyOpen,
+        Msg::SetHotkeyDesc,
+        SettingKind::Hotkey {
+            default: "Shift+Alt+C",
+        },
+        "key.open",
+    ),
+    e(
+        Msg::CatShortcuts,
+        Msg::SetHotkeyOpenAlt,
+        Msg::SetHotkeyDesc,
+        SettingKind::Hotkey {
+            default: "Ctrl+Shift+V",
+        },
+        "key.open_alt",
+    ),
+    e(
+        Msg::CatShortcuts,
+        Msg::SetHotkeyPastePlain,
+        Msg::SetHotkeyDesc,
+        SettingKind::Hotkey {
+            default: "Shift+Alt+X",
+        },
+        "key.paste_plain",
+    ),
     // ── 검색 ────────────────────────────────────────────────
     e(
         Msg::CatSearch,

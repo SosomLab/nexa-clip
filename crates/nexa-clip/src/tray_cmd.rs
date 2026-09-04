@@ -190,8 +190,10 @@ pub(crate) enum ShellEvent {
     Captured(Box<ClipSnapshot>),
     /// ★ 최근 항목 선택(T-18e) — 그 항목의 표현 전부를 클립보드로 되돌린다.
     Recent(usize),
-    /// ★ 전역 단축키(`Ctrl+Shift+V`) — 퀵 팝업 토글.
-    Hotkey,
+    /// ★ 전역 단축키 눌림 — 값 = 동작 id(1 퀵 팝업 · 2 보조 · 3 평문 붙여넣기 · 09-04).
+    Hotkey(u32),
+    /// ★ 평문 붙여넣기 뒤 원본 클립보드 복원(09-04 — 0.3초 뒤) — 값 = 항목 id.
+    RestoreClipboard(u64),
     /// 전역 단축키 등록 결과 — 실패 = 다른 앱이 선점(충돌을 화면에 알린다).
     HotkeyStatus(bool),
     /// ★ 팝업을 닫은 **다음 루프 바퀴**에 주입한다(08-30 Linux 실기 "첫 번만 붙는다").
@@ -375,6 +377,8 @@ struct Shell {
     thumb_migrated: usize,
     /// ★ 검색 색인(09-04) — id → 소문자 검색문. 메인·팝업과 공유.
     search_idx: crate::search_index::SearchIndex,
+    /// ★ 마지막으로 플랫폼에 넘긴 단축키 설정 서명(09-04) — 바뀔 때만 재등록.
+    hotkey_sig: String,
     /// ★ 감시 끄기(09-04 사용자 — 툴바 토글): 켜지면 로컬 캡처 사건을 버린다. 세션 한정(재시작 = 켜짐).
     watch_off: bool,
 }
@@ -475,6 +479,100 @@ impl Shell {
                 }
             }
         }
+    }
+
+    /// ★ 단축키 목록 적용(09-04) — 설정 `key.*`를 읽어 플랫폼에 넘긴다. 바뀐 게 없으면 no-op.
+    fn apply_hotkeys(&mut self, force: bool) {
+        use nclip_core::hotkey::{Hotkey, ACTIONS};
+        let mut list = Vec::new();
+        let mut labels = Vec::new();
+        let mut sig = String::new();
+        for (key, id, _) in ACTIONS {
+            let v = self.app.conf.state.get(key).trim().to_string();
+            sig.push_str(&v);
+            sig.push('|');
+            if let Some(h) = Hotkey::parse(&v) {
+                labels.push(format!(
+                    "{}={}",
+                    match *id {
+                        nclip_core::hotkey::ID_PASTE_PLAIN => "평문",
+                        nclip_core::hotkey::ID_OPEN_ALT => "팝업(보조)",
+                        _ => "팝업",
+                    },
+                    h.display(cfg!(target_os = "macos"))
+                ));
+                list.push((*id, h));
+            }
+        }
+        if !force && sig == self.hotkey_sig {
+            return;
+        }
+        self.hotkey_sig = sig;
+        nclip_plat::tray::set_hotkeys(list, labels.join(" · "));
+    }
+
+    /// ★ 평문 붙여넣기 단축키(09-04 · CopyQ "클립보드를 일반 문자로 붙여넣기"): 맨 앞 항목의 평문을 게시 → 지금 포그라운드에
+    ///   Ctrl+V 주입 → 0.3초 뒤 원본 표현으로 복원(사용자 결정 — 이후 일반 붙여넣기는 서식 그대로).
+    fn paste_plain_hotkey(&mut self) {
+        let Some(id) = self.history.get(0).map(|it| it.id) else {
+            eprintln!("평문 붙여넣기: 이력이 비어 있습니다");
+            return;
+        };
+        let _ = self.ensure_loaded(id);
+        let Some(item) = self.history.get_by_id(id) else {
+            return;
+        };
+        let reps = Self::reps_for_mode(item, PasteAs::Plain);
+        if reps.is_empty() {
+            eprintln!("평문 붙여넣기: 맨 앞 항목에 평문 표현이 없습니다");
+            return;
+        }
+        if !self.paste.capture_focus() {
+            eprintln!("평문 붙여넣기: 대상 창을 기억하지 못했습니다");
+        }
+        match nclip_plat::clipboard::set_reps(&reps) {
+            Ok(_) => self.history.expect_echo(0),
+            Err(e) => {
+                eprintln!("평문 붙여넣기: 게시 실패 — {e}");
+                return;
+            }
+        }
+        match self.paste.restore_and_paste(PasteAs::Plain) {
+            Ok(()) => println!("평문 붙여넣기: 주입 ok — 0.3초 뒤 원본 복원"),
+            Err(e) => {
+                eprintln!("평문 붙여넣기: 주입 실패 {e:?} — 클립보드에는 평문이 실려 있습니다")
+            }
+        }
+        let proxy = self.proxy.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(300));
+            let _ = proxy.send_event(ShellEvent::RestoreClipboard(id));
+        });
+    }
+
+    /// 원본 복원 — 그 항목의 표현 전부를 다시 게시(에코는 승격으로 흡수).
+    fn restore_clipboard(&mut self, id: u64) {
+        let _ = self.ensure_loaded(id);
+        let Some(pos) =
+            (0..self.history.len()).find(|&i| self.history.get(i).is_some_and(|it| it.id == id))
+        else {
+            return;
+        };
+        let Some(item) = self.history.get(pos) else {
+            return;
+        };
+        let reps = item.reps.clone();
+        if reps.iter().all(|r| r.data.is_empty()) {
+            return;
+        }
+        match nclip_plat::clipboard::set_reps(&reps) {
+            Ok(n) => {
+                println!("평문 붙여넣기: 원본 복원 — 표현 {n}개");
+                self.history.expect_echo(pos);
+            }
+            Err(e) => eprintln!("원본 복원 실패: {e}"),
+        }
+        self.release_body(id);
     }
 
     /// ★ 설정 창 열기(09-04 사용자) — 메인창 기하·최상위 여부를 앵커로 넘긴다(메인창 모니터·옆 배치 · 위에 뜨게).
@@ -1424,7 +1522,11 @@ impl ApplicationHandler<ShellEvent> for Shell {
                 self.save_main_geom();
                 el.exit();
             }
-            ShellEvent::Hotkey => self.toggle_popup(el),
+            ShellEvent::Hotkey(id) => match id {
+                nclip_core::hotkey::ID_PASTE_PLAIN => self.paste_plain_hotkey(),
+                _ => self.toggle_popup(el),
+            },
+            ShellEvent::RestoreClipboard(id) => self.restore_clipboard(id),
             ShellEvent::PasteAfterClose(as_) => self.paste_now(as_),
             ShellEvent::PasteStack(ids) => self.paste_stack(&ids),
             // ★ 연결 표시(09-04) — 릴레이 이벤트든 LAN 세션 변화(SyncTick)든 **같은 판정**으로 갱신:
@@ -1479,13 +1581,11 @@ impl ApplicationHandler<ShellEvent> for Shell {
             }
             ShellEvent::HotkeyStatus(ok) => {
                 if ok {
-                    println!(
-                        "전역 단축키: {} — 퀵 팝업",
-                        nclip_plat::tray::hotkey_label()
-                    );
+                    println!("전역 단축키: {}", nclip_plat::tray::hotkey_label());
                 } else {
                     eprintln!(
-                        "⚠️ 전역 단축키(Ctrl+Shift+V) 등록 실패 — {}. 트레이 좌클릭으로 여세요",
+                        "⚠️ 전역 단축키({}) 등록 일부 실패 — {}. 설정 → 단축키에서 조합을 바꾸세요",
+                        nclip_plat::tray::hotkey_label(),
                         nclip_plat::tray::hotkey_failure_hint()
                     );
                 }
@@ -1508,6 +1608,8 @@ impl ApplicationHandler<ShellEvent> for Shell {
         if self.app.take_sync_respawn() {
             crate::sync_cmd::spawn_if_enabled(&self.app.conf, self.proxy.clone());
         }
+        // ★ 단축키 설정 동기(09-04) — 바뀌면 플랫폼 재등록(Windows 즉시).
+        self.apply_hotkeys(false);
         // ★ 검색 방식 동기(09-04 · `find.mode`) — 설정 창에서 바꾸면 다음 박동에 열린 창이 다시 거른다.
         let mode = nclip_core::search::Mode::from_code(self.app.conf.state.get("find.mode"));
         if self.main.set_search_mode(mode) {
@@ -1689,7 +1791,7 @@ pub(crate) fn run() {
             let _ = proxy.send_event(match ev {
                 TrayEvent::Quit => ShellEvent::Quit,
                 TrayEvent::Recent(i) => ShellEvent::Recent(i),
-                TrayEvent::Hotkey => ShellEvent::Hotkey,
+                TrayEvent::Hotkey(id) => ShellEvent::Hotkey(id),
                 TrayEvent::HotkeyStatus(ok) => ShellEvent::HotkeyStatus(ok),
                 TrayEvent::Open | TrayEvent::OpenTarget(_) => ShellEvent::Open,
                 TrayEvent::Settings => ShellEvent::OpenSettings,
@@ -1818,6 +1920,7 @@ pub(crate) fn run() {
         thumbs: thumbs.clone(),
         thumb_migrated: 0,
         search_idx: search_idx.clone(),
+        hotkey_sig: String::new(),
         watch_off: false,
     };
     shell.main.set_mono_font(mono_font.clone());
@@ -1828,6 +1931,8 @@ pub(crate) fn run() {
     shell.popup.set_search_index(search_idx);
     shell.start_thumb_migration();
     shell.build_search_index();
+    // ★ 단축키 목록(09-04) — 트레이 스레드가 기동 때 읽는다(이 뒤에 tray::spawn).
+    shell.apply_hotkeys(true);
     // ★ 복원 직후 트레이 메뉴·툴팁 갱신(09-01 사용자 실기 "우클릭에 최근이 안 보임") —
     //   spawn 때는 빈 내용이었고 첫 캡처까지는 아무도 불러주지 않았다.
     shell.refresh_tray();

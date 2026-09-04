@@ -401,6 +401,12 @@ pub enum SettingKind {
         /// 버튼 라벨.
         verb: Msg,
     },
+    /// ★ 전역 단축키(09-04 사용자) — 값 = 조합 문자열(`Shift+Alt+C` · 빈 값 = 없음). 버튼 라벨이 곧 조합이고,
+    /// 클릭 = `(key, "run")` 방출 → 호스트가 캡처 오버레이를 연다(제거·확인·취소).
+    Hotkey {
+        /// 기본 조합.
+        default: &'static str,
+    },
     /// ★ 자유 문자열 한 줄(09-03 동기화 기반 — 핸들·패스프레이즈·서버 주소).
     /// [`FontFace`](SettingKind::FontFace)의 TextBox 행(`RowCtl::Face`)을 재사용한다 —
     /// 플러시가 `e.key` 범용이라 추가 배선이 없다.
@@ -491,7 +497,16 @@ impl Entry {
             ],
             // 행위 항목은 값이 없다 — 영속·검증 대상에서 자연히 빠진다.
             SettingKind::Action { .. } => vec![],
+            SettingKind::Hotkey { default } => vec![(self.key, default.to_string())],
         }
+    }
+}
+
+/// 단축키 버튼 라벨 — 조합 표시(mac은 기호) · 빈 값 = "없음".
+fn hotkey_label(value: &str, lang: Lang) -> String {
+    match nclip_core::hotkey::Hotkey::parse(value) {
+        Some(h) => h.display(cfg!(target_os = "macos")),
+        None => tr(lang, Msg::HotkeyNone).to_string(),
     }
 }
 
@@ -616,6 +631,10 @@ impl SettingsState {
             SettingKind::FontSection { .. } => true,
             // 행위 항목은 값이 없다 — 파일에서 와도 무시(default_values가 비어 도달 불가).
             SettingKind::Action { .. } => false,
+            // 단축키 = 빈 값(없음) 또는 파싱되는 조합만.
+            SettingKind::Hotkey { .. } => {
+                value.trim().is_empty() || nclip_core::hotkey::Hotkey::parse(value).is_some()
+            }
         };
         if valid {
             self.values.insert(k, value.to_string());
@@ -1293,6 +1312,14 @@ impl SettingsWidget {
                     b.set_scale(self.scale);
                     RowCtl::Act(b)
                 }
+                SettingKind::Hotkey { .. } => {
+                    let mut b = Button::new(hotkey_label(
+                        self.values.get(e.key).map_or("", String::as_str),
+                        lang,
+                    ));
+                    b.set_scale(self.scale);
+                    RowCtl::Act(b)
+                }
                 SettingKind::FontSection {
                     family_key,
                     size_key,
@@ -1367,6 +1394,12 @@ impl SettingsWidget {
                 // 토글도 역반영(08-15 — 쌍방 동기화: 다른 경로가 켠/끈 것을 표시).
                 RowCtl::Check(c) => c.set_on(value == "on"),
                 // ★ 텍스트 입력도(09-03 — 패스프레이즈 추천/생성을 재구성 없이 반영).
+                // ★ 단축키 행(09-04): 버튼 글자 = 조합(빈 값 = 없음).
+                RowCtl::Act(b)
+                    if matches!(registry()[row.idx].kind, SettingKind::Hotkey { .. }) =>
+                {
+                    b.set_label(hotkey_label(value, current_lang()));
+                }
                 RowCtl::Face(f) => f.set_text(value),
                 _ => {}
             }

@@ -142,7 +142,9 @@ General 안내문 그대로:
 
 | key | 종류 | 기본값(Win/Linux · mac) | 출처 |
 |---|---|---|:--:|
-| `key.open` | Hotkey | `Ctrl+Shift+V` · `⇧⌘C` | M |
+| `key.open` | Hotkey | ★ **`Shift+Alt+C`**(09-04 사용자 · 종전 Ctrl+Shift+V) · mac ⇧⌥C | M |
+| `key.open_alt` | Hotkey | `Ctrl+Shift+V`(보조 — 같은 동작 · 09-04) | N |
+| `key.paste_plain` | Hotkey | `Shift+Alt+X` — 맨 앞 항목의 평문을 게시·주입 · 0.3초 뒤 원본 복원(09-04) | N |
 | `key.main_window` | Hotkey | — | N |
 | `key.pin` | Hotkey | `Ctrl+P` · `⌥P` | M |
 | `key.delete` | Hotkey | `Delete` · `⌥⌫` | M |
