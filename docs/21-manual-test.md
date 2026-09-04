@@ -571,7 +571,7 @@ cargo run -p nexa-clip -- settings
 | --- | --- | --- | --- | --- | --- |
 | R1 | VSCode 코드 복사 | 색·굵기 · `&nbsp;` 들여쓰기 · 탭 스톱 열맞춤 | ✅ 09-03 | ☐ | ☐ |
 | R2 | Sublime 코드 복사 | `pre` 원시 개행 = 줄 · 색 | ✅ 09-03 | ☐ | ☐ |
-| R3 | **PLEdit7(PL/SQL Developer)** SQL 복사 | 키워드·주석 색 | ⏳ 09-04 제보 "평문처럼" — `peek`로 HTML 유무부터 | ☐ | ☐ |
+| R3 | **PLEdit7(PL/SQL Developer)** SQL 복사 | **평문 행이 정답** — `watch` 실측(09-04): 표현 = `CF_UNICODETEXT`·`CF_TEXT`·`CF_OEMTEXT`·`DataObject`·`Ole Private Data`·`CF_LOCALE` 6개뿐, **HTML/RTF 없음**(원천이 서식을 안 올린다). 같은 SQL을 **Golden8**에서 복사하면 `HTML Format` 1.6KB가 있어 색이 산다 | ✅ 판정 | ☐ | ☐ |
 | R4 | 새 Outlook 메일(Wingdings 불릿 · `<ul>` · `data:` 표 이미지) | `■` 제목 · `•` 들여쓰기 · 미리보기에 표 이미지 | ✅ 09-04 | ☐ | ☐ |
 | R5 | 우클릭 "이미지로 복사" → PPT 붙여넣기 | 색·들여쓰기·이미지가 합성된 그림 | ✅ 09-04 | ☐ | ☐ |
 | R6 | 평문만 있는 복사(메모장) | 리치 경로를 타지 않는다(평문 행) | ✅ | ☐ | ☐ |
