@@ -65,6 +65,36 @@ pub struct StoredItem {
     pub blobs: Vec<(u32, [u8; 32], u64)>,
 }
 
+fn blob_path_in(dir: &Path, id: &[u8; 32]) -> PathBuf {
+    let hex: String = id.iter().map(|b| format!("{b:02x}")).collect();
+    dir.join("blob").join(&hex[..2]).join(hex)
+}
+
+/// ★ blob 읽기 전용 손잡이(09-04 검색 색인) — **다른 스레드**에서 본문 blob을 복호한다(`Send` · 저장소 상태와 무관).
+#[derive(Clone)]
+pub struct BlobReader {
+    dir: PathBuf,
+    master: [u8; 32],
+}
+
+impl std::fmt::Debug for BlobReader {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // 키는 찍지 않는다.
+        f.debug_struct("BlobReader")
+            .field("dir", &self.dir)
+            .finish_non_exhaustive()
+    }
+}
+
+impl BlobReader {
+    /// 복호한 평문 — 없거나 손상이면 `None`.
+    #[must_use]
+    pub fn read(&self, id: &[u8; 32]) -> Option<Vec<u8>> {
+        let bytes = std::fs::read(blob_path_in(&self.dir, id)).ok()?;
+        sealed::open(DOMAIN_BLOB, &self.master, &bytes)
+    }
+}
+
 /// `add`가 돌려주는 참조 — 셸이 항목에 붙여 두면 본문·섬네일을 내렸다 다시 읽을 수 있다(09-04 · 30 §3).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct AddRefs {
@@ -91,6 +121,10 @@ pub trait HistoryStore {
     fn read_blob_by_id(&self, id: &[u8; 32]) -> Option<Vec<u8>>;
     /// ★ 지금 압축(09-04 · 30 §5) — 살아 있는 항목(최신이 앞)만 새 세그먼트로. 섬네일 이관 직후 인덱스를 줄인다.
     fn compact_now(&mut self, _live: &[StoredItem]) {}
+    /// ★ 스레드용 blob 읽기 손잡이(09-04 검색 색인) — 파일 저장소만 준다.
+    fn blob_reader(&self) -> Option<BlobReader> {
+        None
+    }
 }
 
 /// 저장 없이 도는 자리(열기 실패·테스트) — 전부 no-op.
@@ -199,8 +233,7 @@ impl FileStore {
     }
 
     fn blob_path(&self, id: &[u8; 32]) -> PathBuf {
-        let hex: String = id.iter().map(|b| format!("{b:02x}")).collect();
-        self.dir.join("blob").join(&hex[..2]).join(hex)
+        blob_path_in(&self.dir, id)
     }
 
     /// ★ 키 있는 내용 주소(DR-37d) — 평문 해시를 마스터로 감싼다(확인 공격 오라클 차단).
@@ -626,6 +659,13 @@ impl HistoryStore for FileStore {
 
     fn compact_now(&mut self, live: &[StoredItem]) {
         self.compact(live);
+    }
+
+    fn blob_reader(&self) -> Option<BlobReader> {
+        Some(BlobReader {
+            dir: self.dir.clone(),
+            master: self.master,
+        })
     }
 }
 

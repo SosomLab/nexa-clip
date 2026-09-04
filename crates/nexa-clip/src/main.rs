@@ -22,6 +22,7 @@ mod lan;
 mod main_win;
 mod popup_win;
 mod render_img;
+mod search_index;
 mod settings_win;
 mod sync_cmd;
 mod syncitem;

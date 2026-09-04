@@ -33,6 +33,7 @@ use nclip_plat::paste::PlatformPaste;
 use nclip_plat::tray::{spawn, TrayContent, TrayEvent, TrayHandle};
 use nclip_plat::watch::PlatformWatch;
 use nclip_store::{FileStore, HistoryStore, NullStore, StoredItem};
+use std::rc::Rc;
 use std::time::{Duration, Instant};
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
@@ -96,6 +97,9 @@ fn decode_one(r: &RawRep, side: u32) -> Option<(u32, u32, Vec<u8>)> {
     }
 }
 
+/// 검색 색인 배경 로더 작업 단위 — (항목 id, 라벨, 텍스트 blob 참조들(형식·id·길이)).
+type PendingText = (u64, String, Vec<(String, [u8; 32], u64)>);
+
 /// 다른 스레드(트레이·감시)에서 메인 루프로 쏘는 사건.
 #[derive(Debug)]
 pub(crate) enum ShellEvent {
@@ -124,6 +128,8 @@ pub(crate) enum ShellEvent {
     },
     /// 디코드 실패 — 진행 중 표시만 푼다.
     ThumbFailed(u64),
+    /// ★ 검색 색인 한 건(09-04) — 배경 로더가 blob 본문을 읽어 만든 소문자 검색문.
+    SearchText { id: u64, text: String },
     /// ★ 기동 마이그레이션(구본 RGBA → PNG) 한 건 완료 — 셸이 blob으로 기록.
     ThumbEncoded {
         id: u64,
@@ -322,6 +328,8 @@ struct Shell {
     thumbs: crate::thumbs::Thumbs,
     /// 마이그레이션 진행 수(로그용).
     thumb_migrated: usize,
+    /// ★ 검색 색인(09-04) — id → 소문자 검색문. 메인·팝업과 공유.
+    search_idx: crate::search_index::SearchIndex,
     /// ★ 감시 끄기(09-04 사용자 — 툴바 토글): 켜지면 로컬 캡처 사건을 버린다. 세션 한정(재시작 = 켜짐).
     watch_off: bool,
 }
@@ -422,6 +430,99 @@ impl Shell {
                 }
             }
         }
+    }
+
+    /// ★ 검색문 갱신(09-04 색인) — 손에 있는 본문(inline 또는 적재된 blob)으로. 본문이 미적재 blob이면 라벨만(배경 로더가 채운다).
+    fn index_item(&mut self, id: u64) {
+        let Some(it) = self.history.get_by_id(id) else {
+            return;
+        };
+        let plain =
+            crate::main_win::plain_of(&it.reps).or_else(|| nclip_core::capture::svg_text(&it.reps));
+        let text = nclip_core::search::search_text(
+            &it.label,
+            plain.as_deref(),
+            crate::search_index::TEXT_CAP,
+        );
+        self.search_idx.borrow_mut().insert(id, Rc::from(text));
+    }
+
+    /// 맨 앞 항목(방금 push된 것) 색인.
+    fn index_front(&mut self) {
+        if let Some(id) = self.history.get(0).map(|it| it.id) {
+            self.index_item(id);
+        }
+    }
+
+    /// ★ 기동 색인(09-04): inline 본문은 즉시, blob 본문(텍스트 계열 · 미적재)은 **배경 스레드**가 한 번 읽어 채운다.
+    fn build_search_index(&mut self) {
+        let ids: Vec<u64> = (0..self.history.len())
+            .filter_map(|i| self.history.get(i).map(|it| it.id))
+            .collect();
+        let mut pending: Vec<PendingText> = Vec::new();
+        for id in ids {
+            self.index_item(id);
+            let Some(it) = self.history.get_by_id(id) else {
+                continue;
+            };
+            // 텍스트 계열인데 본문이 비어 있는(미적재 blob) 표현 — 평문 우선순위대로.
+            let mut refs: Vec<(u8, String, [u8; 32], u64)> = it
+                .blob_refs
+                .iter()
+                .filter_map(|(ri, bid, len)| {
+                    let r = it.reps.get(*ri as usize)?;
+                    if !r.data.is_empty() {
+                        return None;
+                    }
+                    let rank = nclip_core::capture::plain_rank(&r.format)?;
+                    Some((rank, r.format.clone(), *bid, *len))
+                })
+                .collect();
+            if refs.is_empty() {
+                continue;
+            }
+            refs.sort_by_key(|r| r.0);
+            pending.push((
+                id,
+                it.label.clone(),
+                refs.into_iter().map(|(_, f, b, l)| (f, b, l)).collect(),
+            ));
+        }
+        if pending.is_empty() {
+            return;
+        }
+        let Some(reader) = self.store.blob_reader() else {
+            return;
+        };
+        println!(
+            "검색 색인: 본문 blob {}건을 배경에서 읽습니다",
+            pending.len()
+        );
+        let proxy = self.proxy.clone();
+        std::thread::Builder::new()
+            .name("search-index".into())
+            .spawn(move || {
+                for (id, label, refs) in pending {
+                    let mut plain = None;
+                    for (fmt, bid, len) in refs {
+                        if let Some(data) = reader.read(&bid) {
+                            if data.len() as u64 == len {
+                                if let Some(t) = nclip_core::capture::decode_plain(&fmt, &data) {
+                                    plain = Some(t);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    let text = nclip_core::search::search_text(
+                        &label,
+                        plain.as_deref(),
+                        crate::search_index::TEXT_CAP,
+                    );
+                    let _ = proxy.send_event(ShellEvent::SearchText { id, text });
+                }
+            })
+            .ok();
     }
 
     /// ★ 기동 마이그레이션(09-04 · 30 §5 A): 구본 인라인 RGBA 섬네일을 항목에서 **바로 떼어**(RSS 즉시 ↓) 워커 스레드가
@@ -623,6 +724,7 @@ impl Shell {
             if let Some(it) = self.history.get_by_id(id) {
                 let __sid = it.id;
                 self.store_add(__sid);
+                self.index_item(__sid);
             }
             self.main.on_history_changed(&self.history);
             self.refresh_tray();
@@ -811,6 +913,7 @@ impl Shell {
         // ★ 재적재로 되돌아온 우리 게시도 여기로 온다 — 승격(맨 위로)이
         //   곧 에코 처리다(항목이 늘지 않는다).
         let pushed: Pushed = self.history.push(&snap, kind, label, thumb);
+        self.index_front();
         // ★ push 판정 가시화(09-04 mac 실기 "더블클릭 승격 안 됨" 진단) — 에코가
         //   승격(Promoted)으로 흡수됐는지 새 항목(New)으로 늘었는지 로그로 판정한다.
         if let Some(front) = self.history.get(0) {
@@ -1163,6 +1266,7 @@ impl ApplicationHandler<ShellEvent> for Shell {
                 MainAction::Delete(id) => {
                     if self.history.remove(id) {
                         self.thumbs.borrow_mut().remove(id);
+                        self.search_idx.borrow_mut().remove(&id);
                         self.store.remove(id);
                         self.main.on_history_changed(&self.history);
                         self.refresh_tray();
@@ -1256,6 +1360,11 @@ impl ApplicationHandler<ShellEvent> for Shell {
                 self.popup.redraw_now();
             }
             ShellEvent::ThumbFailed(id) => self.thumbs.borrow_mut().fail(id),
+            ShellEvent::SearchText { id, text } => {
+                if self.history.get_by_id(id).is_some() {
+                    self.search_idx.borrow_mut().insert(id, Rc::from(text));
+                }
+            }
             ShellEvent::ThumbEncoded { id, w, h, png } => self.on_thumb_encoded(id, w, h, png),
             ShellEvent::ThumbMigrated => {
                 // ★ 인덱스를 바로 줄인다(30 §5) — 구본 RGBA 레코드가 죽은 이벤트로 남아 있다.
@@ -1319,6 +1428,14 @@ impl ApplicationHandler<ShellEvent> for Shell {
         if self.app.take_sync_respawn() {
             crate::sync_cmd::spawn_if_enabled(&self.app.conf, self.proxy.clone());
         }
+        // ★ 검색 방식 동기(09-04 · `find.mode`) — 설정 창에서 바꾸면 다음 박동에 열린 창이 다시 거른다.
+        let mode = nclip_core::search::Mode::from_code(self.app.conf.state.get("find.mode"));
+        if self.main.set_search_mode(mode) {
+            self.main.on_history_changed(&self.history);
+        }
+        if self.popup.set_search_mode(mode) {
+            self.popup.on_history_changed(&self.history);
+        }
         // ★ 뷰포트 섬네일 디코드 요청 처리(09-04 · 30 §4).
         self.pump_thumbs();
         // ★ 메모리 GC(09-04 · DR-42) — 30초 주기 · 상한 초과 즉시.
@@ -1328,6 +1445,8 @@ impl ApplicationHandler<ShellEvent> for Shell {
             let gone = self.history.remove_unpinned();
             for id in &gone {
                 self.store.remove(*id);
+                self.search_idx.borrow_mut().remove(id);
+                self.thumbs.borrow_mut().remove(*id);
             }
             println!("기록 모두 삭제: {}개 (고정 항목 유지)", gone.len());
             self.main.on_history_changed(&self.history);
@@ -1598,6 +1717,7 @@ pub(crate) fn run() {
     // ★ 섬네일 캐시(09-04 · 30 §4) — 32장(384² ≈ 19MB 상한) · 메인·팝업·셸 공유.
     let thumbs: crate::thumbs::Thumbs =
         std::rc::Rc::new(std::cell::RefCell::new(crate::thumbs::ThumbCache::new(32)));
+    let search_idx = crate::search_index::new_index();
     let mut shell = Shell {
         font: font.clone(),
         app: App::new(font, conf, true),
@@ -1617,13 +1737,17 @@ pub(crate) fn run() {
         last_gc: Instant::now(),
         thumbs: thumbs.clone(),
         thumb_migrated: 0,
+        search_idx: search_idx.clone(),
         watch_off: false,
     };
     shell.main.set_mono_font(mono_font.clone());
     shell.popup.set_mono_font(mono_font);
     shell.main.set_thumbs(thumbs.clone());
     shell.popup.set_thumbs(thumbs);
+    shell.main.set_search_index(search_idx.clone());
+    shell.popup.set_search_index(search_idx);
     shell.start_thumb_migration();
+    shell.build_search_index();
     // ★ 복원 직후 트레이 메뉴·툴팁 갱신(09-01 사용자 실기 "우클릭에 최근이 안 보임") —
     //   spawn 때는 빈 내용이었고 첫 캡처까지는 아무도 불러주지 않았다.
     shell.refresh_tray();

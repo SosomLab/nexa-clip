@@ -132,6 +132,10 @@ pub(crate) struct Popup {
     opened_at: std::time::Instant,
     /// 마지막 커서 위치(winit은 클릭 이벤트에 좌표를 싣지 않는다).
     cursor: (i32, i32),
+    /// ★ 검색 색인(09-04) — id → 소문자 검색문(셸이 채운다 · 없으면 라벨로).
+    search_idx: Option<crate::search_index::SearchIndex>,
+    /// ★ 검색 방식(09-04 · 설정 `find.mode`).
+    search_mode: nclip_core::search::Mode,
     /// ★ 행 hover 페이드(09-04 사용자 — 메인과 동일): 의도 코얼레싱(70ms · 휠 안정 120ms) + 상태 레이어 6%.
     row_fade: nclip_ctl::tokens::HoverFade,
     row_intent: nclip_ctl::tokens::HoverIntent<usize>,
@@ -216,6 +220,20 @@ impl Popup {
         self.thumbs = Some(thumbs);
     }
 
+    /// ★ 검색 색인 주입(09-04).
+    pub(crate) fn set_search_index(&mut self, idx: crate::search_index::SearchIndex) {
+        self.search_idx = Some(idx);
+    }
+
+    /// ★ 검색 방식 동기(09-04) — 바뀌었을 때만 true.
+    pub(crate) fn set_search_mode(&mut self, mode: nclip_core::search::Mode) -> bool {
+        if self.search_mode == mode {
+            return false;
+        }
+        self.search_mode = mode;
+        true
+    }
+
     /// 셸이 캐시를 채운 뒤 — 창이 있으면 다시 그린다.
     pub(crate) fn redraw_now(&self) {
         if let Some(w) = &self.window {
@@ -256,6 +274,8 @@ impl Popup {
             was_focused: false,
             opened_at: std::time::Instant::now(),
             cursor: (0, 0),
+            search_mode: nclip_core::search::Mode::Exact,
+            search_idx: None,
             row_fade: nclip_ctl::tokens::HoverFade::default(),
             row_intent: nclip_ctl::tokens::HoverIntent::default(),
         }
@@ -603,12 +623,23 @@ impl Popup {
         // ★ 세대 가드(28 §hover) — 행 인덱스가 바뀌니 낡은 hover 의도·페이드는 버린다.
         self.row_intent.clear();
         self.row_fade.set(None);
-        let q = self.search.display_text().to_lowercase();
+        // ★ 검색 = 라벨 + 본문 전체 · `find.mode`(메인과 동일 · 09-04).
+        let matcher =
+            nclip_core::search::Matcher::new(&self.search.display_text(), self.search_mode);
         self.rows.clear();
         let mut normal = Vec::new();
         let mut i = 0usize;
         while let Some(item) = hist.get(i) {
-            if q.is_empty() || item.label.to_lowercase().contains(&q) {
+            let hit = matcher.is_empty()
+                || match self
+                    .search_idx
+                    .as_ref()
+                    .and_then(|ix| ix.borrow().get(&item.id).cloned())
+                {
+                    Some(t) => matcher.matches_lower(&t),
+                    None => matcher.matches(&item.label),
+                };
+            if hit {
                 let plain = crate::main_win::plain_of(&item.reps)
                     .or_else(|| nclip_core::capture::svg_text(&item.reps));
                 let row = Row {

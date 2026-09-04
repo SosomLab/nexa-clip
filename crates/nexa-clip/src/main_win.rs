@@ -185,6 +185,10 @@ pub(crate) struct MainWin {
     font_mono: Option<Font>,
     /// ★ 섬네일 공유 캐시(09-04 · 30 §4).
     thumbs: Option<crate::thumbs::Thumbs>,
+    /// ★ 검색 색인(09-04) — id → 소문자 검색문(셸이 채운다 · 없으면 라벨로).
+    search_idx: Option<crate::search_index::SearchIndex>,
+    /// ★ 검색 방식(09-04 · 설정 `find.mode`) — 셸이 박동마다 동기.
+    search_mode: nclip_core::search::Mode,
     /// ★ 리치 런 파싱 캐시(09-04 · 30 §4) — id → (내용 열쇠, 런). 내용이 바뀌면(열쇠 다름) 다시 파싱.
     rich_cache: std::collections::HashMap<u64, (u64, RichRuns)>,
     theme: Theme,
@@ -301,6 +305,8 @@ impl MainWin {
             font_mono: None,
             thumbs: None,
             rich_cache: std::collections::HashMap::new(),
+            search_mode: nclip_core::search::Mode::Exact,
+            search_idx: None,
             theme: Theme::dark(),
             scale: 1.0,
             search: {
@@ -436,6 +442,20 @@ impl MainWin {
     /// ★ 섬네일 캐시 주입(09-04 · 30 §4).
     pub(crate) fn set_thumbs(&mut self, thumbs: crate::thumbs::Thumbs) {
         self.thumbs = Some(thumbs);
+    }
+
+    /// ★ 검색 색인 주입(09-04).
+    pub(crate) fn set_search_index(&mut self, idx: crate::search_index::SearchIndex) {
+        self.search_idx = Some(idx);
+    }
+
+    /// ★ 검색 방식 동기(09-04) — 바뀌었을 때만 true(호출자가 refresh).
+    pub(crate) fn set_search_mode(&mut self, mode: nclip_core::search::Mode) -> bool {
+        if self.search_mode == mode {
+            return false;
+        }
+        self.search_mode = mode;
+        true
     }
 
     /// 셸이 캐시를 채운 뒤 — 창이 있으면 다시 그린다.
@@ -607,7 +627,10 @@ impl MainWin {
     }
 
     pub(crate) fn refresh(&mut self, hist: &History) {
-        let q = self.search.display_text().to_lowercase();
+        // ★ 검색(09-04 사용자 — "nexa-app을 치면 4·5번이 빠진다"): 라벨(첫 줄 44자)만 보던 것을 **라벨 + 본문 전체**로,
+        //   방식은 설정 `find.mode`(정확히/유사/정규식 — 자체 엔진 `nclip_core::search`).
+        let matcher =
+            nclip_core::search::Matcher::new(&self.search.display_text(), self.search_mode);
         self.total = hist.len();
         let mut pinned = Vec::new();
         let mut normal = Vec::new();
@@ -615,8 +638,19 @@ impl MainWin {
         let mut i = 0usize;
         while let Some(item) = hist.get(i) {
             i += 1;
-            if !q.is_empty() && !item.label.to_lowercase().contains(&q) {
-                continue;
+            // ★ 색인만 훑는다(09-04 — 파일 I/O 0 · 소문자 변환 0) · 색인 전이면 라벨로.
+            if !matcher.is_empty() {
+                let hit = match self
+                    .search_idx
+                    .as_ref()
+                    .and_then(|ix| ix.borrow().get(&item.id).cloned())
+                {
+                    Some(t) => matcher.matches_lower(&t),
+                    None => matcher.matches(&item.label),
+                };
+                if !hit {
+                    continue;
+                }
             }
             let plain = plain_of(&item.reps).or_else(|| svg_text(&item.reps));
             let key = crate::dedup::content_key_of(item, plain.as_deref());

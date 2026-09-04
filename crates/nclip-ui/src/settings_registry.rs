@@ -324,7 +324,7 @@ pub(crate) const REGISTRY: &[Entry] = &[
     e(
         Msg::CatSearch,
         Msg::SetSearchMode,
-        Msg::SetSearchMode,
+        Msg::SetSearchModeDesc,
         SettingKind::Radio(SEARCH_OPTS),
         "find.mode",
     ),

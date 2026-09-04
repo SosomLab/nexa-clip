@@ -454,6 +454,8 @@ pub enum Msg {
     ValFuzzy,
     /// 값: 정규식.
     ValRegex,
+    /// ★ 검색 방식 설명(09-04).
+    SetSearchModeDesc,
     /// 한글 조합 중 검색.
     SetHangulCompose,
     /// 동기화 설명.
@@ -1124,6 +1126,12 @@ impl Msg {
             Msg::ValExact => ["Exact", "정확히", "精确", "完全一致"],
             Msg::ValFuzzy => ["Fuzzy", "유사", "模糊", "あいまい"],
             Msg::ValRegex => ["Regular expression", "정규식", "正则表达式", "正規表現"],
+            Msg::SetSearchModeDesc => [
+                "Searches label and full text, case-insensitive. Exact = substring · Fuzzy = every space-separated word, any order · Regex = built-in engine (. * + ? {n,m} [] () | ^ $ \\d \\w \\s \\b); invalid pattern falls back to Exact",
+                "라벨과 본문 전체를 대소문자 무시로 찾습니다. 정확히 = 부분 문자열 · 유사 = 띄어쓴 단어 전부(순서 무관) · 정규식 = 자체 엔진(. * + ? {n,m} [] () | ^ $ \\d \\w \\s \\b) · 잘못된 패턴은 정확히로 대체",
+                "搜索标签和全文，忽略大小写。精确 = 子串 · 模糊 = 所有空格分隔的词，顺序不限 · 正则 = 内置引擎 (. * + ? {n,m} [] () | ^ $ \\d \\w \\s \\b)；无效模式回退为精确",
+                "ラベルと本文全体を大文字小文字無視で検索。完全 = 部分文字列 · あいまい = 空白区切りの語をすべて（順不同） · 正規表現 = 内蔵エンジン (. * + ? {n,m} [] () | ^ $ \\d \\w \\s \\b)；無効なパターンは完全に戻す",
+            ],
             Msg::SetHangulCompose => [
                 "Search while composing Hangul",
                 "한글 조합 중에도 검색",
@@ -1199,7 +1207,7 @@ mod tests {
     use super::*;
 
     /// 카탈로그 전수 — 새 `Msg`를 더하면 여기도 더한다(빈칸 검사가 그걸 강제한다).
-    const ALL_MSG: [Msg; 221] = [
+    const ALL_MSG: [Msg; 222] = [
         Msg::AppName,
         Msg::SearchPlaceholder,
         Msg::EmptyHistory,
@@ -1407,6 +1415,7 @@ mod tests {
         Msg::ValExact,
         Msg::ValFuzzy,
         Msg::ValRegex,
+        Msg::SetSearchModeDesc,
         Msg::SetHangulCompose,
         Msg::SetSyncEnabledDesc,
         Msg::SetTrayRecent,
