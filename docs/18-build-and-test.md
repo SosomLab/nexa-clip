@@ -46,6 +46,7 @@ cargo build          # 첫 빌드에서 툴체인·의존을 받는다
 ```bash
 cargo fmt --all --check                              # ① 서식
 cargo clippy --workspace --all-targets -- -D warnings # ② 린트(경고 = 실패)
+#   ★ push 전엔 scripts/check-3os.sh — ②를 호스트 + 나머지 두 OS 타깃(--target)으로(T-40 · 09-05 · 타깃당 수십 초)
 cargo test --workspace                               # ③ 테스트
 cargo run -p nexa-clip                               # ④ 환경 점검(눈으로 1초)
 ```

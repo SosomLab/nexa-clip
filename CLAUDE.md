@@ -51,6 +51,7 @@
 - 기록: 일자 상세 `docs/journal/YYYY-MM-DD.md`(시간 역순) + [DEVLOG](docs/DEVLOG.md) 요약 + [MILESTONES](docs/MILESTONES.md) + [BRANCHES](docs/BRANCHES.md). **한 작업 = 한 트랜잭션 갱신**.
 - **큰 단위 = 브랜치, 세부 기능 = 커밋. push는 사용자 명시 요청 시에만.**
 - 스테이징은 `git add <파일>`로 내가 고친 것만. **`git add -A`·`git add .` 금지.**
+- 🔴 **push 전 `scripts/check-3os.sh`**(3타깃 clippy) · push 뒤 `gh run watch`. cfg 모듈 경로를 손대면 **다른 OS 모듈 깊이**를 같이 본다(win·sni 1단 · mac::hotkey 2단 — 09-05 CI 16회 빨강의 교훈).
 - **기능 설계 전 `nexa-beep`·`nexa-dir2` 문서·코드 먼저 확인**(재발명 금지). 이식 커밋에 원본 경로 명기.
 - 🔴 **모든 변경에서 상시 점검** — 이 변경이 ① `nexa-beepd`(서버) ② `nbeep-relay` 와이어 ③ beep과 공유하는 규약(도메인 문자열·prologue·타이브레이크)을 건드리는가?
   하나라도 예면 **[docs/22 전달 원장](docs/22-upstream-beep-liaison.md)** 에 기록하고 사용자에게 알린다. ⚠️ beep 저장소 직접 수정은 **승인 대상**(다른 프로젝트).

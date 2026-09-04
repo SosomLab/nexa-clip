@@ -10,6 +10,10 @@
 
 - 근인 = 입력 순서(릴레이 none 뒤에 핸들·암호) — 핸들·암호 변경은 재기동 계기가 아니었다(Test·재시작만) · 재시작으로 mac 접속 ✓ · ★ **자동 재기동**(none·켜짐·둘 다 있음 → 800ms 디바운스 · `lan_auto_respawn_ready` 테스트) · 부수: 비콘 = 기본 경로 /24만 → 호스트→게스트 한 방향 불능(T-26 인터페이스 열거) · 설정 저장 = 이미 quiet 1s/최대 10s 스케줄러(변경 없음) → [journal 2차](journal/2026-09-05.md)
 
+## 2026-09-05 (mac 3차) — ★ T-40 push 전 3타깃 clippy 스크립트(재발 방지 — 사슬 ②는 내 sed)
+
+- `scripts/check-3os.sh`(호스트 판별 · fmt · 호스트+타 OS 2타깃 clippy `-D warnings` · std 부재 안내) · mac에서 Win/Linux 타깃 실측 ✓ · 16 push 규칙 🔴 · 18 §2 · CLAUDE.md §4 → [journal mac 3차](journal/2026-09-05.md)
+
 ## 2026-09-05 (mac 2차) — ★ 기기 이름 재소개(저장 박자 · 전 세션 · 미승인 포함)
 
 - 세션 채널 `PeerCmd{Item,Hello}` · `announce_name()`(승인 무관 · 릴레이/LAN) · 세션 루프 Hello 재전송 · 수신 `upsert_online` PeerId 갱신 + "이름 갱신" 로그 · 설정 1s 디바운스(저장 quiet와 동일) → [journal 2차](journal/2026-09-05.md)

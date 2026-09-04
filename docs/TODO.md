@@ -48,7 +48,7 @@
 | **T-12c3** | P1 | 소 | 실기 확인 — ★ **값 바꾸고 창 닫았다 다시 열기**(쓰기 경로 · 창 조작 필요) | T-12c2 | ✅ **Win**(08-27) · mac ⏳ |
 | **T-12c4** | P1 | 소 | 점검 화면이 저장본을 읽는다(읽기 경로 터미널 검증) | T-12c2 | ✅ **Win·mac**(08-26) |
 | **T-12c5** | **P0** | 소 | ⚠️ **macOS 빌드 복구** — `appkit` unsafe fn 블록(E0133 × 13) · CI mac 잡 green 확인 | T-9b | ✅ 수정(08-26) · **CI 3-OS green**(run 32979150472) |
-| **T-40** | P1 | 소 | ★ **push 전 3타깃 clippy**(09-05 — CI 16회 연속 빨강을 하루 동안 아무도 안 봄): `scripts/check-3os.sh`(호스트 + `--target x86_64-unknown-linux-gnu`·`x86_64-apple-darwin` clippy `-D warnings` · fmt) + 문서 16 push 규칙에 "push 뒤 `gh run watch`" | T-12c5 | ☐ |
+| **T-40** | P1 | 소 | ★ **push 전 3타깃 clippy**(09-05 — CI 16회 연속 빨강을 하루 동안 아무도 안 봄): `scripts/check-3os.sh`(호스트 + `--target x86_64-unknown-linux-gnu`·`x86_64-apple-darwin` clippy `-D warnings` · fmt) + 문서 16 push 규칙에 "push 뒤 `gh run watch`" | T-12c5 | ✅ **구현**(09-05 mac — `scripts/check-3os.sh` · 호스트 자동 판별 · 타깃 std 부재 시 안내 · 16 push 규칙 + 18 §2 + CLAUDE.md §4 · mac에서 Windows/Linux 타깃 clippy 실측 통과) |
 | **T-14a** | **P0** | 중 | ★ **캡처 파이프라인** — 종류 판정 순서 · `Preview` 생성 · 용량 규칙([27](27-capture-cases.md)) | T-14 | ✅ |
 | **T-14b** | **P0** | 중 | ★ **Windows 클립보드 감시** — 메시지 전용 창 · `watch` 명령 | T-14a | ✅ |
 | **T-14b'** | **P0** | 소 | 앱별 훑기 1차(PPT·Excel·Edge·VS Code) — 결함 셋 · **18건 박제** | T-14b | ✅ |

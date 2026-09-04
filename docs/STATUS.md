@@ -24,6 +24,13 @@ Linux 개발 PC = VMware Fusion 게스트(192.168.80.131) · 호스트 mac bridg
 
 ---
 
+## 2026-09-05 (mac 3차) — ★ T-40 `scripts/check-3os.sh` — push 전 3타깃 clippy(mac에서 Win·Linux 타깃 실측 ✓)
+
+Windows 3차(CI 16회 빨강 · 사슬 ② = mac 5차 sed가 `win` 모듈까지 바꿈)를 받은 뒤 재발 방지 구현: 호스트 자동 판별 · fmt →
+호스트 → 나머지 두 OS `--target` clippy `-D warnings` · 규약 16/18/CLAUDE.md 반영 · **현재 트리 3-OS green**.
+
+---
+
 ## 2026-09-05 (2차 · macOS) — ★ 기기 이름 변경 재소개(저장 박자 · 릴레이/LAN 전 세션 · 미승인 포함 · PeerId 갱신)
 
 `PeerCmd { Item, Hello }` + `announce_name()` — 이름 변경 1s 디바운스 뒤 살아 있는 세션 전부에 `NCH1` 재전송 · 상대는
