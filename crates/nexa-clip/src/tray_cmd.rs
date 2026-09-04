@@ -752,7 +752,44 @@ impl Shell {
                 continue;
             }
             let Some((bid, len, _, _)) = it.thumb_ref else {
-                self.thumbs.borrow_mut().fail(id);
+                // ★ 자가 치유(09-05 mac 실기 — 옛 워커가 팔레트 PNG를 못 읽어 섬네일 없이 저장된 항목):
+                //   참조가 없으면 본문 표현에서 섬네일을 만들어 표시하고, PNG blob으로 영속한다
+                //   (`on_thumb_encoded` = 마이그레이션 경로 재사용). 이미지 계열이 아니면 종전대로 실패.
+                let is_image = matches!(
+                    it.kind,
+                    nclip_core::ClipKind::Image | nclip_core::ClipKind::Object
+                );
+                if !is_image {
+                    self.thumbs.borrow_mut().fail(id);
+                    continue;
+                }
+                let _ = self.ensure_loaded(id);
+                let reps: Vec<RawRep> = self
+                    .history
+                    .get_by_id(id)
+                    .map(|it| it.reps.clone())
+                    .unwrap_or_default();
+                if reps.iter().all(|r| r.data.is_empty()) {
+                    self.thumbs.borrow_mut().fail(id);
+                    continue;
+                }
+                let proxy = self.proxy.clone();
+                std::thread::Builder::new()
+                    .name("thumb-rebuild".into())
+                    .spawn(move || match decode_image(&reps, THUMB_SIDE) {
+                        Some((w, h, rgba)) => {
+                            if let Some(png) = nclip_plat::imgdec::encode_raw_isolated(w, h, &rgba)
+                            {
+                                let _ =
+                                    proxy.send_event(ShellEvent::ThumbEncoded { id, w, h, png });
+                            }
+                            let _ = proxy.send_event(ShellEvent::ThumbReady { id, w, h, rgba });
+                        }
+                        None => {
+                            let _ = proxy.send_event(ShellEvent::ThumbFailed(id));
+                        }
+                    })
+                    .ok();
                 continue;
             };
             let Some(png) = self.store.read_blob_by_id(&bid) else {
