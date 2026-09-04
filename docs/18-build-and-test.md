@@ -456,8 +456,41 @@ $EDITOR Cargo.toml       # [workspace.package] version
 git tag v0.1.0 && git push origin v0.1.0
 ```
 
-- winget·choco는 저장소 변수 `WINGET_PUBLISH`·`CHOCO_PUSH`(= true · 09-04 설정)와 시크릿(`WINGET_TOKEN`·`CHOCO_API_KEY`·`TAP_TOKEN` · 09-04 사용자 추가)이 있어야 나간다.
+- winget·choco는 저장소 변수 `WINGET_PUBLISH`·`CHOCO_PUSH`와 시크릿(`WINGET_TOKEN`·`CHOCO_API_KEY`·`TAP_TOKEN` · 09-04 사용자 추가)이 있어야 나간다.
+  ★ **v0.1.0(09-04)은 둘 다 `false`** — brew만 낸다(사용자 지시). 다시 켜려면 `gh variable set WINGET_PUBLISH --body true` (choco도 같은 식).
 - ★ **직전 제출이 검수 대기 중이면 그 채널은 자동으로 건너뛴다**(guard 잡 — winget 열린 PR · choco 피드 부재). 릴리스·brew·다른 채널은 그대로.
   사람이 확인한 뒤 강제하려면 `publish-windows-packages` 수동 실행 `force=true`.
 - 태그 없이 산출물만 보려면 Actions → release → *Run workflow*(초안).
 - Linux 산출물은 **zig 링커로 glibc 2.17 기준** 링크(배포판 비종속 · 09-04) — 심볼 게이트가 2.17 초과·시스템 라이브러리 링크를 막는다([packaging/README §Linux](../packaging/README.md#linux--배포판-비종속09-04)).
+
+### 10-1. 명령 모음 — 로컬 릴리스 빌드 · 드라이런 · 태그 (09-04 사용자 요청)
+
+```bash
+# ── 로컬 릴리스 프로필 빌드(디버그 대신 최적화 바이너리로 실기 — 두 실행 파일 모두)
+cargo build --release -p nexa-clip -p nclip-imgdec
+ls -la target/release/nexa-clip* target/release/nclip-imgdec*      # 크기 게이트 ≤ 10MB
+./target/release/nexa-clip --version                               # 워크스페이스 버전 확인
+./target/release/nexa-clip tray                                    # 릴리스 바이너리로 상주(데이터는 exe 옆 data/)
+#   Windows(PowerShell): Start-Process .	argetelease
+exa-clip.exe -ArgumentList tray
+
+# ── 디버그 빌드 재시작(개발 반복) — Linux는 scripts/dev-restart.sh · Windows는 아래 두 줄
+taskkill //F //IM nexa-clip.exe; cargo build -p nexa-clip && ./target/debug/nexa-clip.exe tray
+
+# ── 배포 파이프라인 드라이런(태그 없이 · 초안 릴리스만) — 5타깃 빌드·게이트·매니페스트까지 그대로 돈다
+gh workflow run release --ref main -R SosomLab/nexa-clip
+gh run list -R SosomLab/nexa-clip --workflow release -L 1          # run id
+gh run watch <run-id> -R SosomLab/nexa-clip --exit-status --interval 30
+gh run view <run-id> -R SosomLab/nexa-clip --log-failed | tail -80   # 실패 잡 로그
+gh release list -R SosomLab/nexa-clip                              # 초안(v0.0.0-dev.<sha>) 확인 · 검증 뒤 지운다
+gh release delete v0.0.0-dev.<sha> -R SosomLab/nexa-clip --cleanup-tag -y
+
+# ── 정식 태그(brew만 · winget/choco 제외 — 09-04 v0.1.0 방식)
+gh variable set WINGET_PUBLISH --body false -R SosomLab/nexa-clip
+gh variable set CHOCO_PUSH --body false -R SosomLab/nexa-clip
+git tag -a v0.1.0 -m "Nexa Clip 0.1.0" && git push origin v0.1.0
+gh run list -R SosomLab/nexa-clip --workflow homebrew -L 1         # 릴리스 뒤 brew 탭 갱신 잡
+```
+
+- 릴리스 워크플로는 **태그 = `Cargo.toml` 버전**이어야 meta 잡을 통과한다. 드라이런은 `0.0.0-dev.<sha>`로 이름 붙는다.
+- 로컬 릴리스 빌드는 CI와 프로필이 같지만 Linux의 zig 링커(glibc 2.17)·심볼 게이트는 CI에서만 돈다.
