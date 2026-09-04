@@ -12,6 +12,8 @@ use nclip_gfx::{Color, Font, Surface, TextStyle};
 pub(crate) const SIDE: u32 = 96;
 /// 정규식 아이콘(09-04 사용자 지정 — Material `regular_expression` 96² 알파).
 const REGEX_ALPHA: &[u8] = include_bytes!("../assets/icon-regex-96.alpha");
+/// 정확히 아이콘(09-04 사용자 지정 — Material `equal` 96² 알파).
+const EXACT_ALPHA: &[u8] = include_bytes!("../assets/icon-exact-96.alpha");
 
 /// 글리프 → 96² 알파(가운데 정렬 · 굵게). 한 번 굽고 누수시켜 `'static`으로(항목 3 × 창 2 · 9KB씩).
 fn glyph_alpha(font: &Font, text: &str, size: f32) -> &'static [u8] {
@@ -50,7 +52,8 @@ pub(crate) fn build(font: &Font, value: &str) -> IconDropdown {
         IconDropItem {
             value: "exact",
             label: tr(lang, Msg::ValExact).to_string(),
-            alpha: glyph_alpha(font, "Aa", 56.0),
+            // ★ 사용자 지정 Material `equal`(두 줄) SVG(09-04)를 구운 알파.
+            alpha: EXACT_ALPHA,
             size: SIDE,
         },
         IconDropItem {
