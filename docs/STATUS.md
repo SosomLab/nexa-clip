@@ -6,7 +6,7 @@
 
 ## 2026-09-04 (4차 · macOS) — 승격 확정 · ★ mac 자동 왕복 검사 · ★ set/read 공용 직렬화(SIGSEGV 근절)
 
-16차(Windows): ★ 리치 2단(Outlook Wingdings 불릿 ■ · 목록·들여쓰기·배율 · `[image]`) · ★ 더블클릭/Enter 활성 대상 따라가기(선택·스크롤 이동, 미리보기 유지). ⏳ 실기.
+16차(Windows): ★ 리치 2단(Outlook Wingdings 불릿 ■ · 목록·들여쓰기·배율 · ★ 인라인 `data:` 이미지 미리보기) · ★ 더블클릭/Enter 활성 대상 따라가기(선택·스크롤 이동, 미리보기 유지). ⏳ 실기.
 
 15차(Windows): ★ 배포 파이프라인(brew·winget·choco · 검수 대기 자동 판정 · secrets/vars 준비 · Linux 배포판 비종속 zig/glibc 2.17). 드라이런 전부 녹색 ✅ · ⏳ 첫 태그 `v0.1.0`은 사용자 결정.
 
