@@ -126,5 +126,7 @@ refresh() ─────────────┴→ intent = None · row_fad
 
 ### 6. 상태(09-04)
 
-설계만 확정. 현재 코드는 사건마다 `row_fade.set` 직접 호출(코얼레싱 없음). 구현은 `HoverIntent` 신설 + `main_win` 사건 3곳 · `tick_ui` · `refresh` 연결 — 파일 2개 · 100줄 안팎.
+✅ **구현**(같은 날 사용자 "준비되면 진행"): `nclip-ctl::tokens::HoverIntent<T>`(`set`·`settle`·`take_due`·`clear`·`is_waiting` + 단위 테스트) ·
+`main_win` — CursorMoved = 의도 등록만 · 벗어나면 즉시 끔 · MouseWheel = `settle` + 커서 아래 행 재등록 · `tick_ui` = 수행 지점(행 페이드 · 툴바 hover/툴팁) ·
+`refresh` = 세대 가드. 원칙은 [10 DR-41](10-decision-record.md#dr-41--최소-처리-원칙-프로세스는-방해받지-않고-지금-필요한-일만-최소로-09-04--사용자-확정)로 승격.
 

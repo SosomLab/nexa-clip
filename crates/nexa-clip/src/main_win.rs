@@ -220,6 +220,10 @@ pub(crate) struct MainWin {
     dot_fade: nclip_ctl::tokens::Fade,
     /// ★ 목록 행 hover 페이드(09-04 사용자 — "기본색보다 조금 진하게 서서히"): Material 상태 레이어(본문색 6%).
     row_fade: nclip_ctl::tokens::HoverFade,
+    /// ★ hover 의도 코얼레싱(09-04 · 28 §hover): 사건은 의도만 덮어쓰고, 수행(`row_fade.set`·툴팁)은
+    ///   `tick_ui`가 70ms 뒤 1회 — 빠르게 지나간 행·버튼은 페이드를 시작조차 하지 않는다.
+    row_intent: nclip_ctl::tokens::HoverIntent<usize>,
+    tool_intent: nclip_ctl::tokens::HoverIntent<Tool>,
     /// ★ 보기 모드(Ctrl+1/2/3 · `ui.view_mode` 영속).
     view: ViewMode,
     /// ★ 우클릭 컨텍스트 메뉴(VT-5).
@@ -306,6 +310,8 @@ impl MainWin {
             tool_fade: nclip_ctl::tokens::HoverFade::default(),
             dot_fade: nclip_ctl::tokens::Fade::hover(),
             row_fade: nclip_ctl::tokens::HoverFade::default(),
+            row_intent: nclip_ctl::tokens::HoverIntent::default(),
+            tool_intent: nclip_ctl::tokens::HoverIntent::default(),
             view: ViewMode::Compact,
             menu: ContextMenu::new(),
             editor: None,
@@ -560,6 +566,9 @@ impl MainWin {
         if self.sel >= self.rows.len() {
             self.sel = self.rows.len().saturating_sub(1);
         }
+        // ★ 세대 가드(28 §hover) — 행 인덱스가 바뀌었으니 낡은 hover 의도·페이드는 버린다.
+        self.row_intent.clear();
+        self.row_fade.set(None);
         // ★ 활성 대상 따라가기(09-04) — 승격으로 옮겨간 자리를 찾아 선택을 옮긴다(id → 내용 열쇠 · 5초 시효).
         if let Some((id, key, t)) = self.follow {
             if t.elapsed().as_secs() >= 5 {
@@ -918,8 +927,22 @@ impl MainWin {
     }
 
     /// 스크롤바 자동 숨김 페이드 틱(셸 500ms 심장 박동).
-    /// 반환 = 아직 움직이는 중(셸이 16ms 박동으로 올린다 — 툴바 hover 페이드).
+    /// 반환 = 아직 움직이는 중(셸이 16ms 박동으로 올린다 — hover 페이드 · 의도 대기).
     pub(crate) fn tick_ui(&mut self, now_ms: u64) -> bool {
+        // ★ 의도 수행 지점(28 §hover) — 여기서만 페이드가 시작되고 툴팁이 뜬다.
+        if let Some(r) = self.row_intent.take_due(now_ms) {
+            if self.row_fade.current() != Some(r) {
+                self.row_fade.set(Some(r));
+                self.redraw();
+            }
+        }
+        if let Some(t) = self.tool_intent.take_due(now_ms) {
+            if self.hovered != Some(t) {
+                self.hovered = Some(t);
+                self.tool_fade.set(Some(t as usize));
+                self.redraw();
+            }
+        }
         if self.bars.tick(now_ms)
             | self.preview_bars.tick(now_ms)
             | self.tool_fade.tick(now_ms)
@@ -931,6 +954,8 @@ impl MainWin {
         self.tool_fade.is_animating()
             || self.dot_fade.is_animating()
             || self.row_fade.is_animating()
+            || self.row_intent.is_waiting(now_ms)
+            || self.tool_intent.is_waiting(now_ms)
     }
 
     /// ★ 미리보기 내용을 현재 선택과 동기(09-02 K4) — id 비교만이라 매 사건 호출해도 값싸다.
@@ -1152,17 +1177,28 @@ impl MainWin {
                 if !inv.is_empty() {
                     self.redraw();
                 }
-                // ★ 행 hover 페이드(09-04) — 선택(하늘색)과 별개로 살짝 진해진다.
-                let row_hover = self.row_at(self.cursor.0, self.cursor.1, w, h);
-                if row_hover != self.row_fade.current() {
-                    self.row_fade.set(row_hover);
-                    self.redraw();
+                // ★ 행·툴바 hover = **의도만 등록**(09-04 · 28 §hover) — 수행은 tick_ui가 70ms 뒤 1회.
+                //   목록/툴바를 벗어나면 즉시 끈다(꺼짐은 기다릴 이유가 없다).
+                let now = now_ms();
+                match self.row_at(self.cursor.0, self.cursor.1, w, h) {
+                    Some(r) => self.row_intent.set(r, now),
+                    None => {
+                        self.row_intent.clear();
+                        if self.row_fade.current().is_some() {
+                            self.row_fade.set(None);
+                            self.redraw();
+                        }
+                    }
                 }
-                let hovered = self.tool_at(self.cursor.0, self.cursor.1, h);
-                if hovered != self.hovered {
-                    self.hovered = hovered;
-                    self.tool_fade.set(hovered.map(|t| t as usize));
-                    self.redraw();
+                match self.tool_at(self.cursor.0, self.cursor.1, h) {
+                    Some(t) => self.tool_intent.set(t, now),
+                    None => {
+                        self.tool_intent.clear();
+                        if self.hovered.take().is_some() {
+                            self.tool_fade.set(None);
+                            self.redraw();
+                        }
+                    }
                 }
                 // ★ 상태줄 점 hover(09-04) — 색의 뜻을 툴팁으로.
                 let dot_hover = self.sync_dot_rect.get().contains(nclip_ctl::geom::Point {
@@ -1176,6 +1212,8 @@ impl MainWin {
                 }
             }
             WindowEvent::CursorLeft { .. } => {
+                self.tool_intent.clear();
+                self.row_intent.clear();
                 if self.hovered.take().is_some() {
                     self.tool_fade.set(None);
                     self.redraw();
@@ -1186,6 +1224,12 @@ impl MainWin {
                 }
             }
             WindowEvent::MouseWheel { delta, .. } => {
+                // ★ 스크롤 안정 대기(28 §hover) — 멈춘 뒤 커서 아래 행만 의도로.
+                let now = now_ms();
+                self.row_intent.settle(now);
+                if let Some(r) = self.row_at(self.cursor.0, self.cursor.1, w, h) {
+                    self.row_intent.set(r, now);
+                }
                 // ★ 패널 위 휠 = 미리보기 전문 스크롤(09-02 K4) — 목록은 건드리지 않는다.
                 if self.preview_open {
                     if let Some(win) = &self.window {
@@ -2884,6 +2928,14 @@ fn draw_tooltip(
         label,
         th.chrome_bg.lerp(th.text, g),
     );
+}
+
+/// 벽시계 ms — hover 의도의 시계(셸 박동과 같은 원천).
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 /// `Rect`에 (x,y) 포함 판정이 없어 로컬 확장.
