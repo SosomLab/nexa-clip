@@ -2326,8 +2326,9 @@ impl MainWin {
                 }
             }
             Tool::WatchOff => {
-                // ★ Material `stop_circle`(09-04 사용자 지정 SVG를 구운 알파) — 켜짐(감시 꺼짐) = accent.
-                let c = if self.watch_off { th.accent } else { ink };
+                // ★ Material `stop_circle`(09-04 사용자 지정 SVG를 구운 알파) — 켜짐(감시 꺼짐) = **danger 빨강**
+                //   (사용자 09-04 "더 강한 인상" — 캡처가 멈춘 상태는 놓치면 안 된다).
+                let c = if self.watch_off { th.danger } else { ink };
                 let mut cache = self.watch_icon.borrow_mut();
                 let stale = !matches!(cache.as_ref(), Some((k, _)) if *k == c.0);
                 if stale {
