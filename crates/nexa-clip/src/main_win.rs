@@ -224,6 +224,11 @@ pub(crate) struct MainWin {
     ///   `tick_ui`가 70ms 뒤 1회 — 빠르게 지나간 행·버튼은 페이드를 시작조차 하지 않는다.
     row_intent: nclip_ctl::tokens::HoverIntent<usize>,
     tool_intent: nclip_ctl::tokens::HoverIntent<Tool>,
+    /// 커서가 창 안에 있나(CursorMoved = 안 · CursorLeft = 밖) — 행이 재배열된 뒤 **가만히 있는 커서** 아래 행을 다시 재려면 필요.
+    cursor_in: bool,
+    /// ★ 행 재배열 뒤 재hover(09-04 사용자 — "더블클릭으로 순서가 바뀐 뒤 마우스를 안 움직이면 진해지지 않는다"):
+    ///   refresh가 세운다 → 다음 paint가 새 오프셋으로 커서 아래 행을 의도로 등록.
+    rehover_pending: bool,
     /// ★ 보기 모드(Ctrl+1/2/3 · `ui.view_mode` 영속).
     view: ViewMode,
     /// ★ 우클릭 컨텍스트 메뉴(VT-5).
@@ -312,6 +317,8 @@ impl MainWin {
             row_fade: nclip_ctl::tokens::HoverFade::default(),
             row_intent: nclip_ctl::tokens::HoverIntent::default(),
             tool_intent: nclip_ctl::tokens::HoverIntent::default(),
+            cursor_in: false,
+            rehover_pending: false,
             view: ViewMode::Compact,
             menu: ContextMenu::new(),
             editor: None,
@@ -567,8 +574,10 @@ impl MainWin {
             self.sel = self.rows.len().saturating_sub(1);
         }
         // ★ 세대 가드(28 §hover) — 행 인덱스가 바뀌었으니 낡은 hover 의도·페이드는 버린다.
+        //   커서가 창 안에 있으면 다음 paint(새 오프셋)에서 커서 아래 행을 다시 의도로 잰다.
         self.row_intent.clear();
         self.row_fade.set(None);
+        self.rehover_pending = self.cursor_in;
         // ★ 활성 대상 따라가기(09-04) — 승격으로 옮겨간 자리를 찾아 선택을 옮긴다(id → 내용 열쇠 · 5초 시효).
         if let Some((id, key, t)) = self.follow {
             if t.elapsed().as_secs() >= 5 {
@@ -1180,6 +1189,7 @@ impl MainWin {
                 // ★ 행·툴바 hover = **의도만 등록**(09-04 · 28 §hover) — 수행은 tick_ui가 70ms 뒤 1회.
                 //   목록/툴바를 벗어나면 즉시 끈다(꺼짐은 기다릴 이유가 없다).
                 let now = now_ms();
+                self.cursor_in = true;
                 match self.row_at(self.cursor.0, self.cursor.1, w, h) {
                     Some(r) => self.row_intent.set(r, now),
                     None => {
@@ -1212,6 +1222,8 @@ impl MainWin {
                 }
             }
             WindowEvent::CursorLeft { .. } => {
+                self.cursor_in = false;
+                self.rehover_pending = false;
                 self.tool_intent.clear();
                 self.row_intent.clear();
                 if self.hovered.take().is_some() {
@@ -1575,6 +1587,13 @@ impl MainWin {
         {
             let l = self.list_rect(w, h);
             self.rebuild_offsets(l.w);
+            // ★ 재배열 뒤 재hover — 새 오프셋이 생긴 지금, 가만히 있는 커서 아래 행을 의도로(70ms 뒤 서서히).
+            if self.rehover_pending {
+                self.rehover_pending = false;
+                if let Some(r) = self.row_at(self.cursor.0, self.cursor.1, w, h) {
+                    self.row_intent.set(r, now_ms());
+                }
+            }
             let total = *self.row_offs.last().unwrap_or(&0);
             self.scroll = self.scroll.clamp(0, (total - l.h).max(0));
             if self.follow_scroll {
