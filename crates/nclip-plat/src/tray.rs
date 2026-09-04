@@ -521,7 +521,7 @@ mod sni {
         let _ = CONN.set(conn);
         // ★ 전역 단축키(T-15 Linux) — Windows `RegisterHotKey`와 같은 자리. 결과는 한 번 알린다.
         // ★ 목록(09-04) — 동작 id별 포털 단축키(설명은 셸 대화창에 보인다). 런타임 변경은 다음 시작에.
-        let name = state().name.clone();
+        let name = state().name;
         let binds: Vec<(String, String, String)> = super::hotkeys()
             .into_iter()
             .map(|(id, hk)| {
