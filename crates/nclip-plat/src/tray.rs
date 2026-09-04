@@ -805,7 +805,7 @@ mod win {
             for id in 1..=HOTKEY_ID_MAX {
                 UnregisterHotKey(hwnd, id);
             }
-            let list = super::super::hotkeys();
+            let list = super::hotkeys();
             let mut all = !list.is_empty();
             for (id, hk) in list {
                 if !(1..=HOTKEY_ID_MAX as u32).contains(&id) {

@@ -2,6 +2,10 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-09-05 (Windows 3차) — ★ 최신화 뒤 Windows 빌드 실패 = `win` 모듈 `super::super::hotkeys()` 경로 회귀
+
+- mac 5차 `5960581`이 mac `mac::hotkey`(2단) 경로를 고치며 Windows `win`(1단)까지 같은 꼴로 바꿈 → `E0425` · `super::hotkeys()` 환원 1줄 · 8 스위트 통과 · 디버그 인스턴스 상주 · 교훈: `cfg` 모듈 경로는 다른 OS 깊이도 같이(3-OS `cargo check` CI 게이트 검토) → [journal 3차](journal/2026-09-05.md)
+
 ## 2026-09-05 (Linux VM 2차) — ★ 호스트 mac과 LAN 직결 불능 = 게스트 러너 미기동 → 릴레이 None 자동 재기동
 
 - 근인 = 입력 순서(릴레이 none 뒤에 핸들·암호) — 핸들·암호 변경은 재기동 계기가 아니었다(Test·재시작만) · 재시작으로 mac 접속 ✓ · ★ **자동 재기동**(none·켜짐·둘 다 있음 → 800ms 디바운스 · `lan_auto_respawn_ready` 테스트) · 부수: 비콘 = 기본 경로 /24만 → 호스트→게스트 한 방향 불능(T-26 인터페이스 열거) · 설정 저장 = 이미 quiet 1s/최대 10s 스케줄러(변경 없음) → [journal 2차](journal/2026-09-05.md)
