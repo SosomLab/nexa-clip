@@ -417,11 +417,13 @@ impl History {
         }
         // ② 같은 내용이 어딘가 있는가 — 승격(지문으로 거르고 바이트로 확정).
         let fp = fingerprint(&snap.reps);
+        // ★ 부분집합도 같은 내용(09-04 실기 — 같은 PC 두 인스턴스): 다른 인스턴스/기기가 게시한
+        //   평문(CF_UNICODETEXT 하나)을 감시가 다시 읽으면 원본(HTML 등 표현이 더 많은 항목)의
+        //   부분집합이다 → 새 행이 아니라 원본 승격. 출처(로컬/원격 기기)는 같아야 한다.
         if let Some(i) = self.items.iter().position(|it| {
-            it.fingerprint == fp
-                && same_content(&it.reps, &snap.reps)
-                && remote_origin(it.source_app.as_deref())
-                    == remote_origin(snap.source_app.as_deref())
+            remote_origin(it.source_app.as_deref()) == remote_origin(snap.source_app.as_deref())
+                && ((it.fingerprint == fp && same_content(&it.reps, &snap.reps))
+                    || is_subset(&snap.reps, &it.reps))
         }) {
             let mut it = self.items.remove(i).unwrap_or_else(|| unreachable!());
             it.copies += 1;
@@ -530,6 +532,37 @@ mod tests {
         assert!(h.get(0).and_then(|i| i.source_app.as_deref()) == Some("Code"));
     }
 
+    /// ★ 09-04 실기: 표현이 더 많은 원본이 있을 때 평문만 다시 잡히면 새 행이 아니라 승격.
+    #[test]
+    fn plain_subset_of_richer_item_promotes() {
+        let mut h = History::new(10);
+        let rich = snap(
+            "Code",
+            &[
+                ("CF_UNICODETEXT", b"hello"),
+                ("HTML Format", b"<b>hello</b>"),
+            ],
+        );
+        let plain = snap(
+            "Other",
+            &[("CF_UNICODETEXT", b"hello"), ("CF_LOCALE", b"ko")],
+        );
+        assert_eq!(h.push(&rich, ClipKind::Text, "h".into(), None), Pushed::New);
+        assert_eq!(
+            h.push(&plain, ClipKind::Text, "h".into(), None),
+            Pushed::Promoted
+        );
+        assert_eq!(h.len(), 1);
+        assert_eq!(h.get(0).map(|i| i.reps.len()), Some(2), "원본 표현 유지");
+        // 원격 출처의 평문은 로컬 원본을 승격시키지 않는다(기기별 별도 행).
+        let remote = snap("⇄ mac", &[("CF_UNICODETEXT", b"hello")]);
+        assert_eq!(
+            h.push(&remote, ClipKind::Text, "h".into(), None),
+            Pushed::New
+        );
+        assert_eq!(h.len(), 2);
+    }
+
     fn snap(app: &str, reps: &[(&str, &[u8])]) -> ClipSnapshot {
         ClipSnapshot {
             reps: reps
@@ -566,8 +599,11 @@ mod tests {
             "원본 표현이 유지된다"
         );
         assert_eq!(h.get(0).map(|i| i.copies), Some(2));
-        // 기대는 한 번뿐 — 같은 평문이 또 오면 이제 같은 내용이 없으니 새 항목.
-        assert_eq!(push(&mut h, &echo, "x"), Pushed::New);
+        // ★ 09-04: 기대(에코)가 소진돼도 같은 평문은 원본의 **부분집합** = 같은 내용 → 승격
+        //   (같은 PC 두 인스턴스·다른 기기가 게시한 평문이 새 행을 만들지 않는다).
+        assert_eq!(push(&mut h, &echo, "x"), Pushed::Promoted);
+        assert_eq!(h.len(), 2);
+        assert_eq!(h.get(0).map(|i| i.copies), Some(3));
         // 기대와 무관한 내용은 부분집합이 아니면 새 항목.
         h.expect_echo(0);
         let z = snap("App", &[("text/plain", b"z")]);
