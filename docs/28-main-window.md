@@ -67,3 +67,64 @@
 | 핀 토글 | `History::set_pinned` | `add(같은 id)` — 재생 시 교체 = 핀 영속 |
 | 삭제 | `History::remove(id)`(신설) | `remove(id)` |
 | 복사(재적재) | `expect_echo` — 에코 = 승격 | `touch`(에코 push 경로 그대로) |
+
+## ★ hover 의도(intent) 코얼레싱 — 설계 (2026-09-04 · 사용자 요청)
+
+> 요구: *"마우스가 빠르게 지나가거나 휠로 스크롤하면 행마다 처리하지 말고, **마지막 항목**에서만 서서히 진해져라 —
+> nexa-dir2 파일 처리처럼 큐에 넣고 필요한 대상만 처리하고 나머지는 버려라."*
+> 원형 = [nexa-dir2 20 세션 코얼레싱](../../nexa-dir2/docs/20-session-coalescing.md)(요청/수행 분리 · 디바운스 재무장 · 스냅샷 1회) +
+> [01 §4](../../nexa-dir2/docs/01-architecture.md) 세대 가드.
+
+### 1. 문제
+
+`HoverFade`는 "켜지는 것·꺼지는 것 둘"만 들고 있어 사건당 O(1)이지만, **목표를 사건마다 바꾸면** 지나간 행마다 페이드가
+잠깐 켜졌다 꺼지며 꼬리가 보이고, hover에 붙는 부수 처리(툴팁 라벨 · 리치 런 재계산 · 이미지 디코드 예열 같은 것)가 생기면
+통과한 행 수만큼 낭비한다. 휠 스크롤은 커서가 안 움직여도 커서 아래 행이 바뀌므로 같은 문제가 더 세게 난다.
+
+### 2. 원칙 — dir2 20 승계
+
+| 원칙 | 여기서의 구현 |
+| --- | --- |
+| **요청/수행 분리** | 사건(CursorMoved · MouseWheel · 스크롤바 드래그)은 `hover_intent = Some((row, now))` **덮어쓰기**만 — 계산·그리기 0 |
+| **큐 없는 코얼레싱** | 의도는 항상 **1개**(마지막). 새 사건이 오면 이전 의도는 어디에도 남지 않으므로 폐기 비용 0 — "쌓아두고 마지막만 반영"을 큐 없이 |
+| **수행 1회** | `tick_ui`가 의도 나이 ≥ `HOVER_INTENT_MS`(**70ms**)이고 `row_fade.current()`와 다를 때만 `row_fade.set(row)` — 그 순간부터 페이드 시작 |
+| **세대 가드** | `refresh`(이력 변경 · 검색 · 병합 토글)로 행 인덱스가 바뀌면 의도·페이드를 **버린다**(`intent = None` · `row_fade.set(None)`) — 낡은 인덱스에 색을 칠하지 않는다 |
+| **스크롤 안정 대기** | 휠·스크롤바 사건은 `scroll_settle_until = now + 120ms`를 재무장 — 그동안 의도 보류. 멈추면 **커서 아래 행**을 다시 재서 의도 1개 등록(마우스가 안 움직여도) |
+
+### 3. 흐름
+
+```
+CursorMoved ─┐
+MouseWheel ──┼→ intent = Some((row_at(cursor), now))       ← 덮어쓰기(이전 의도 자연 폐기)
+스크롤바 ────┘   (휠·스크롤바는 scroll_settle_until 재무장)
+                       │
+tick_ui(16ms 박동) ────┼→ now < scroll_settle_until ? 보류
+                       │   intent.age ≥ 70ms && intent.row ≠ row_fade.current() → row_fade.set(row)  ← 수행 1회
+                       │   (여기에만 부수 처리 훅 — 툴팁 라벨 · 예열)
+CursorLeft ────────────┼→ intent = None · row_fade.set(None)
+refresh() ─────────────┴→ intent = None · row_fade.set(None)   ← 세대 가드
+```
+
+- 빠르게 통과한 행들은 **의도 단계에서 버려져 페이드를 시작조차 하지 않는다**. 마지막 행만 70ms 뒤 서서히 진해진다.
+- 직전 hover 행의 꺼짐은 `HoverFade`의 prev 슬롯이 맡는다(되돌아오면 꺼지던 자리에서 이어서 밝아짐 — 기존 성질 유지).
+- 박동: 의도 대기 중·페이드 중·스크롤 안정 대기 중만 16ms, 아니면 기존 500ms(캐럿 위상) — `tick_ui`의 반환값에 셋을 OR.
+
+### 4. 상수·범위
+
+| 이름 | 값 | 근거 |
+| --- | --- | --- |
+| `HOVER_INTENT_MS` | 70 | 60~100ms가 "머문다"와 "지나간다"를 가르는 관례(hoverIntent 류). 100 넘으면 굼뜨고 40 아래면 꼬리가 남는다 |
+| `SCROLL_SETTLE_MS` | 120 | 휠 노치 간격(대개 30~80ms)보다 길고, 멈춤 체감(≈150ms)보다 짧게 |
+
+적용 대상: 메인 목록 행(우선) → 툴바 툴팁(같은 구조 · `Tool` 키) → 팝업 행(같은 코드 이식). 셋 다 **`HoverIntent` 한 구조체**로 —
+`set(target, now)` · `settle(now)` · `take_due(now) -> Option<T>` · `clear()` — `nclip-ctl::tokens`에 두고 `HoverFade`와 짝.
+
+### 5. 검증
+
+- 단위(`nclip-ctl` tokens): 행 0→4를 10ms 간격으로 지나면 `take_due`가 **0회**, 마지막 행에서 70ms 뒤 **1회**. 스크롤 안정 대기 중엔 만료돼도 내놓지 않는다. `clear` 뒤엔 아무것도 없다.
+- 실기: 목록을 휠로 빠르게 훑어도 지나간 행에 색이 남지 않고, 멈춘 자리의 행만 진해진다. 이력 갱신 직후 엉뚱한 행이 칠해지지 않는다.
+
+### 6. 상태(09-04)
+
+설계만 확정. 현재 코드는 사건마다 `row_fade.set` 직접 호출(코얼레싱 없음). 구현은 `HoverIntent` 신설 + `main_win` 사건 3곳 · `tick_ui` · `refresh` 연결 — 파일 2개 · 100줄 안팎.
+
