@@ -160,7 +160,11 @@ fn size_ok(w: u32, h: u32) -> bool {
 }
 
 fn decode_png(src: &[u8]) -> Option<(u32, u32, Vec<u8>)> {
-    let decoder = png::Decoder::new(src);
+    let mut decoder = png::Decoder::new(src);
+    // ★ 팔레트·16비트 정규화(09-04 mac 실기 — Windows PPT가 보낸 8-bit colormap PNG가 "[이미지]"로만
+    //   보임): EXPAND = 팔레트→RGB(A)(tRNS→알파) · 저비트 그레이 확장, STRIP_16 = 16→8비트.
+    //   Windows는 CF_DIB가 함께 있어 가려졌고, 원격 수신·mac은 PNG 한 표현뿐이라 드러났다.
+    decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
     let mut reader = decoder.read_info().ok()?;
     let info = reader.info();
     if !size_ok(info.width, info.height) {
@@ -202,7 +206,7 @@ fn decode_png(src: &[u8]) -> Option<(u32, u32, Vec<u8>)> {
                 }
             }
         }
-        png::ColorType::Indexed => return None, // read_info 기본은 팔레트 확장 아님 — 거부
+        png::ColorType::Indexed => return None, // EXPAND 변환 뒤에는 도달하지 않는다(방어)
     }
     (rgba.len() == (w * h * 4) as usize).then_some((w, h, rgba))
 }
@@ -544,5 +548,27 @@ mod lockdown {
     #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
     pub fn engage() -> Result<&'static str, String> {
         Err("미지원 OS — 강등 수단 없음".into())
+    }
+}
+
+#[cfg(test)]
+mod palette_tests {
+    use super::decode_png;
+
+    /// ★ 팔레트(8-bit colormap) PNG — 09-04 mac 실기: Windows PPT가 보낸 이미지가 "[이미지]"로만 보이던 것.
+    #[test]
+    fn indexed_png_decodes_to_rgba() {
+        let mut buf = Vec::new();
+        {
+            let mut enc = png::Encoder::new(&mut buf, 2, 1);
+            enc.set_color(png::ColorType::Indexed);
+            enc.set_depth(png::BitDepth::Eight);
+            enc.set_palette(vec![255, 0, 0, 0, 0, 255]); // 0 = 빨강 · 1 = 파랑
+            let mut w = enc.write_header().expect("헤더");
+            w.write_image_data(&[0, 1]).expect("데이터");
+        }
+        let (w, h, rgba) = decode_png(&buf).expect("팔레트 PNG는 디코드돼야 한다");
+        assert_eq!((w, h), (2, 1));
+        assert_eq!(rgba, vec![255, 0, 0, 255, 0, 0, 255, 255]);
     }
 }
