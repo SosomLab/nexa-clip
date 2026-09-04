@@ -296,9 +296,7 @@ mod imp {
     pub(super) type Target = i32;
 
     const KVK_ANSI_V: u16 = 0x09;
-    const KVK_SHIFT: u16 = 0x38;
     const FLAG_COMMAND: u64 = 1 << 20;
-    const FLAG_SHIFT: u64 = 1 << 17;
     const HID_EVENT_TAP: u32 = 0;
 
     type CFTypeRef = *mut core::ffi::c_void;
@@ -442,25 +440,20 @@ mod imp {
                 hint: "시스템 설정 → 개인정보 보호 및 보안 → 손쉬운 사용",
             });
         }
-        let plain = matches!(as_, PasteAs::Plain);
-        let flags = FLAG_COMMAND | if plain { FLAG_SHIFT } else { 0 };
+        // ★ 평문도 **⌘V**다(09-04 mac 실기 "⇧Enter·⇧⌥X 미동작" — Windows 08-31과 같은 결론):
+        //   재적재가 이미 평문 표현만 올렸으므로 ⌘V로 충분하고, ⌘⇧V는 앱마다 다른 기능
+        //   (TextEdit "스타일 일치"는 ⌥⇧⌘V · 터미널은 없음)이라 어디서도 보장되지 않는다.
+        //   방식 차이는 클립보드 내용이 담는다(T-15b · 4모드 = 내용 선별). 플래그를 명시로
+        //   박으므로 사용자가 아직 쥔 물리 ⇧/⌥(⇧Enter · ⇧⌥X 직후)는 합성 이벤트에 섞이지 않는다.
+        let _ = as_;
         unsafe {
             let src = CGEventSourceCreate(1); // kCGEventSourceStateHIDSystemState
             for down in [true, false] {
-                if plain {
-                    let ev = CGEventCreateKeyboardEvent(src, KVK_SHIFT, down);
-                    if ev.is_null() {
-                        return Err(PasteError::Os("CGEvent 생성 실패".into()));
-                    }
-                    CGEventSetFlags(ev, flags);
-                    CGEventPost(HID_EVENT_TAP, ev);
-                    CFRelease(ev);
-                }
                 let ev = CGEventCreateKeyboardEvent(src, KVK_ANSI_V, down);
                 if ev.is_null() {
                     return Err(PasteError::Os("CGEvent 생성 실패".into()));
                 }
-                CGEventSetFlags(ev, flags);
+                CGEventSetFlags(ev, FLAG_COMMAND);
                 CGEventPost(HID_EVENT_TAP, ev);
                 CFRelease(ev);
             }

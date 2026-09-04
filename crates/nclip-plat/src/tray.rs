@@ -105,8 +105,8 @@ static HOTKEYS: std::sync::Mutex<Vec<(u32, nclip_core::hotkey::Hotkey)>> =
 /// 사람이 읽는 조합 설명(호스트 안내용) — 셸이 함께 준다.
 static HOTKEY_LABEL: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
 
-/// ★ 단축키 목록 지정(09-04). 트레이 기동 전에 부르면 기동 때 등록되고, 기동 뒤에 부르면 **Windows는 즉시 재등록**
-/// (트레이 스레드에 메시지) · mac/Linux는 다음 시작에 반영된다(설명문에 명시).
+/// ★ 단축키 목록 지정(09-04). 트레이 기동 전에 부르면 기동 때 등록되고, 기동 뒤에 부르면 **Windows·mac은 즉시 재등록**
+/// (Windows = 트레이 스레드 메시지 · mac = 메인 스레드 Carbon 재등록 09-04) · Linux는 다음 시작에 반영된다(설명문에 명시).
 pub fn set_hotkeys(list: Vec<(u32, nclip_core::hotkey::Hotkey)>, label: String) {
     if let Ok(mut g) = HOTKEYS.lock() {
         *g = list;
@@ -116,6 +116,8 @@ pub fn set_hotkeys(list: Vec<(u32, nclip_core::hotkey::Hotkey)>, label: String) 
     }
     #[cfg(windows)]
     win::rebind_hotkeys();
+    #[cfg(target_os = "macos")]
+    mac::rebind_hotkeys();
 }
 
 /// 지금 목록(플랫폼 등록 코드가 읽는다).
@@ -803,7 +805,7 @@ mod win {
             for id in 1..=HOTKEY_ID_MAX {
                 UnregisterHotKey(hwnd, id);
             }
-            let list = super::hotkeys();
+            let list = super::super::hotkeys();
             let mut all = !list.is_empty();
             for (id, hk) in list {
                 if !(1..=HOTKEY_ID_MAX as u32).contains(&id) {
@@ -1400,10 +1402,62 @@ mod mac {
         }
     }
 
-    /// 커서 위치 — 미배선(mac 전역 단축키가 아직 없어 팝업 호출 경로가 없다 · T-15 mac 후속).
+    /// 커서 위치(물리 px · 팝업 위치 계산용 — 09-04 mac 실기 "팝업이 다른 모니터로 간다"):
+    /// CGEvent의 전역 좌표(포인트 · 주 화면 좌상단 원점)를 **그 포인트가 든 디스플레이의
+    /// 배율**로 물리 px로 환산한다 — winit의 mac 모니터 좌표(`position`/`size`) 규약과 같다.
     #[must_use]
+    #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
     pub fn cursor_pos() -> Option<(i32, i32)> {
-        None
+        use std::ffi::c_void;
+        #[repr(C)]
+        #[derive(Clone, Copy)]
+        struct CGPoint {
+            x: f64,
+            y: f64,
+        }
+        #[repr(C)]
+        struct CGSize {
+            width: f64,
+            height: f64,
+        }
+        #[repr(C)]
+        struct CGRect {
+            origin: CGPoint,
+            size: CGSize,
+        }
+        #[link(name = "CoreGraphics", kind = "framework")]
+        extern "C" {
+            fn CGEventCreate(src: *mut c_void) -> *mut c_void;
+            fn CGEventGetLocation(ev: *mut c_void) -> CGPoint;
+            fn CGGetDisplaysWithPoint(p: CGPoint, max: u32, out: *mut u32, count: *mut u32) -> i32;
+            fn CGDisplayBounds(display: u32) -> CGRect;
+            fn CGDisplayPixelsWide(display: u32) -> usize;
+        }
+        #[link(name = "CoreFoundation", kind = "framework")]
+        extern "C" {
+            fn CFRelease(cf: *mut c_void);
+        }
+        // SAFETY: 빈 이벤트를 만들어 현재 커서 위치만 읽고 즉시 해제 · 출력 포인터 조회 호출.
+        unsafe {
+            let ev = CGEventCreate(std::ptr::null_mut());
+            if ev.is_null() {
+                return None;
+            }
+            let p = CGEventGetLocation(ev);
+            CFRelease(ev);
+            let (mut display, mut n) = (0u32, 0u32);
+            let scale = if CGGetDisplaysWithPoint(p, 1, &mut display, &mut n) == 0 && n > 0 {
+                let b = CGDisplayBounds(display);
+                if b.size.width > 0.0 {
+                    CGDisplayPixelsWide(display) as f64 / b.size.width
+                } else {
+                    1.0
+                }
+            } else {
+                1.0
+            };
+            Some(((p.x * scale).round() as i32, (p.y * scale).round() as i32))
+        }
     }
 
     /// 메뉴바 상주 시작 — **메인 스레드에서만**(아니면 None · fail-soft).
@@ -1494,6 +1548,14 @@ mod mac {
                 options: u32,
                 out: *mut *mut c_void,
             ) -> OSStatus;
+            fn UnregisterEventHotKey(hotkey: *mut c_void) -> OSStatus;
+        }
+
+        thread_local! {
+            /// 핸들러 설치 여부(1회) — 재등록 때 핸들러를 또 깔면 이벤트가 중복 배달된다.
+            static HANDLER: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+            /// 지금 등록된 단축키 핸들 — 재등록 때 전부 해제하고 새로 건다(09-04 즉시 반영).
+            static REGS: std::cell::RefCell<Vec<*mut c_void>> = const { std::cell::RefCell::new(Vec::new()) };
         }
 
         extern "C" {
@@ -1530,8 +1592,10 @@ mod mac {
             0 // noErr
         }
 
-        /// ★ 목록([`super::hotkeys`])대로 등록(09-04) — 성공 여부(실패 = 다른 앱 선점 등 · 호스트가 알린다).
-        ///   런타임 변경은 다음 시작에 반영(Carbon 재등록은 설치 스레드 제약 — 설명문에 명시).
+        /// ★ 목록([`super::super::hotkeys`])대로 등록(09-04) — 성공 여부(실패 = 다른 앱 선점 등 · 호스트가 알린다).
+        ///   ★ **재호출 = 재등록**(09-04 사용자 실기 "단축키 설정이 안 바뀜"): 핸들러는 1회만 깔고,
+        ///   기존 핸들을 전부 `UnregisterEventHotKey`한 뒤 새 목록을 건다 — Windows와 같은 즉시 반영.
+        ///   메인 스레드 전용(호출부가 보장).
         pub(super) fn register() -> bool {
             const KEYBOARD: u32 = u32::from_be_bytes(*b"keyb"); // kEventClassKeyboard
             const HOTKEY_PRESSED: u32 = 5; // kEventHotKeyPressed
@@ -1539,22 +1603,31 @@ mod mac {
                 class: KEYBOARD,
                 kind: HOTKEY_PRESSED,
             };
-            // SAFETY: 출력 포인터만 받는 등록 호출 — 핸들은 앱 수명 전체 유지(해제 없음 · 의도).
+            // SAFETY: 출력 포인터만 받는 등록/해제 호출 — 핸들러는 앱 수명 전체 유지(1회).
             unsafe {
                 let target = GetApplicationEventTarget();
-                let mut handler: *mut c_void = std::ptr::null_mut();
-                if InstallEventHandler(
-                    target,
-                    on_hotkey,
-                    1,
-                    &spec,
-                    std::ptr::null_mut(),
-                    &mut handler,
-                ) != 0
-                {
-                    return false;
+                if !HANDLER.get() {
+                    let mut handler: *mut c_void = std::ptr::null_mut();
+                    if InstallEventHandler(
+                        target,
+                        on_hotkey,
+                        1,
+                        &spec,
+                        std::ptr::null_mut(),
+                        &mut handler,
+                    ) != 0
+                    {
+                        return false;
+                    }
+                    HANDLER.set(true);
                 }
-                let list = super::hotkeys();
+                // 이전 등록 전부 해제 — 옛 조합이 남아 두 조합이 다 살아 있으면 안 된다.
+                REGS.with(|r| {
+                    for h in r.borrow_mut().drain(..) {
+                        let _ = UnregisterEventHotKey(h);
+                    }
+                });
+                let list = super::super::hotkeys();
                 let mut all = !list.is_empty();
                 for (n, hk) in list {
                     let id = EventHotKeyID {
@@ -1569,10 +1642,24 @@ mod mac {
                     let mut hotkey: *mut c_void = std::ptr::null_mut();
                     if RegisterEventHotKey(code, hk.mac_mods(), id, target, 0, &mut hotkey) != 0 {
                         all = false;
+                    } else {
+                        REGS.with(|r| r.borrow_mut().push(hotkey));
                     }
                 }
                 all
             }
+        }
+    }
+
+    /// ★ 런타임 재등록(09-04) — `set_hotkeys`가 부른다. 트레이가 떠 있고 메인 스레드일 때만
+    ///   (기동 전 호출은 `spawn`이 등록하고, 다른 스레드면 다음 시작에 반영). 결과를 통지한다.
+    pub(super) fn rebind_hotkeys() {
+        if MainThreadMarker::new().is_none() {
+            return;
+        }
+        let spawned = STATE.with(|s| s.borrow().is_some());
+        if spawned {
+            emit(TrayEvent::HotkeyStatus(hotkey::register()));
         }
     }
 }

@@ -482,33 +482,15 @@ impl Shell {
     }
 
     /// ★ 단축키 목록 적용(09-04) — 설정 `key.*`를 읽어 플랫폼에 넘긴다. 바뀐 게 없으면 no-op.
+    ///   부팅 1회분은 `run()`이 **트레이 기동 전에** 넘긴다(09-04 mac 실기 — mac·Linux는
+    ///   기동 때 한 번만 읽는다) — 여기는 런타임 변경(Windows 즉시 재등록) 몫.
     fn apply_hotkeys(&mut self, force: bool) {
-        use nclip_core::hotkey::{Hotkey, ACTIONS};
-        let mut list = Vec::new();
-        let mut labels = Vec::new();
-        let mut sig = String::new();
-        for (key, id, _) in ACTIONS {
-            let v = self.app.conf.state.get(key).trim().to_string();
-            sig.push_str(&v);
-            sig.push('|');
-            if let Some(h) = Hotkey::parse(&v) {
-                labels.push(format!(
-                    "{}={}",
-                    match *id {
-                        nclip_core::hotkey::ID_PASTE_PLAIN => "평문",
-                        nclip_core::hotkey::ID_OPEN_ALT => "팝업(보조)",
-                        _ => "팝업",
-                    },
-                    h.display(cfg!(target_os = "macos"))
-                ));
-                list.push((*id, h));
-            }
-        }
+        let (list, label, sig) = hotkey_conf(&self.app.conf);
         if !force && sig == self.hotkey_sig {
             return;
         }
         self.hotkey_sig = sig;
-        nclip_plat::tray::set_hotkeys(list, labels.join(" · "));
+        nclip_plat::tray::set_hotkeys(list, label);
     }
 
     /// ★ 평문 붙여넣기 단축키(09-04 · CopyQ "클립보드를 일반 문자로 붙여넣기"): 맨 앞 항목의 평문을 게시 → 지금 포그라운드에
@@ -1015,6 +997,17 @@ impl Shell {
                 if let Some(clean) = nclip_core::capture::sanitize_cf_html(&r.data) {
                     println!(
                         "HTML 정제: {}B → {}B (script/이벤트 속성 제거)",
+                        r.data.len(),
+                        clean.len()
+                    );
+                    r.data = clean;
+                }
+            } else if nclip_core::capture::is_html_format(&r.format) {
+                // ★ mac `public.html`·Linux `text/html`(09-04) — 헤더 없는 HTML도 같은 경계를 지난다.
+                if let Some(clean) = nclip_core::capture::sanitize_plain_html(&r.data) {
+                    println!(
+                        "HTML 정제({}): {}B → {}B",
+                        r.format,
                         r.data.len(),
                         clean.len()
                     );
@@ -1689,6 +1682,33 @@ fn x11_backend_ready() -> bool {
     })
 }
 
+/// 설정 `key.*` → (등록 목록, 안내 라벨, 변경 감지 서명) — 부팅(트레이 기동 전)과
+/// 런타임 적용(`Shell::apply_hotkeys`)이 같은 계산을 쓴다(09-04).
+fn hotkey_conf(conf: &Settings) -> (Vec<(u32, nclip_core::hotkey::Hotkey)>, String, String) {
+    use nclip_core::hotkey::{Hotkey, ACTIONS};
+    let mut list = Vec::new();
+    let mut labels = Vec::new();
+    let mut sig = String::new();
+    for (key, id, _) in ACTIONS {
+        let v = conf.state.get(key).trim().to_string();
+        sig.push_str(&v);
+        sig.push('|');
+        if let Some(h) = Hotkey::parse(&v) {
+            labels.push(format!(
+                "{}={}",
+                match *id {
+                    nclip_core::hotkey::ID_PASTE_PLAIN => "평문",
+                    nclip_core::hotkey::ID_OPEN_ALT => "팝업(보조)",
+                    _ => "팝업",
+                },
+                h.display(cfg!(target_os = "macos"))
+            ));
+            list.push((*id, h));
+        }
+    }
+    (list, labels.join(" · "), sig)
+}
+
 pub(crate) fn run() {
     // ★ 설정을 먼저 — UI 글꼴(`ui.font_family`)이 폰트 선택을 좌우한다(09-01 "JetBrains Mono").
     let mut conf = Settings::load();
@@ -1781,6 +1801,12 @@ pub(crate) fn run() {
     for id in history.drain_evicted() {
         store.remove(id);
     }
+
+    // ★ 단축키 목록을 트레이 기동 **전에** 넘긴다(09-04 mac 실기 "⇧⌥C 무동작") —
+    //   mac(Carbon)·Linux(포털)는 기동 때 한 번만 읽는다: 뒤에 넘기면 빈 목록으로 등록돼
+    //   단축키가 전부 죽는다. Windows만 재등록 메시지가 있어 이 순서 결함이 가려져 있었다.
+    let (hk_list, hk_label, hk_sig) = hotkey_conf(&conf);
+    nclip_plat::tray::set_hotkeys(hk_list, hk_label);
 
     // 트레이 — 이벤트는 프록시로 메인 루프에 되돌린다(beep 호스트 문법).
     //   ★ 복원을 먼저 끝내 첫 우클릭부터 최근이 보인다(09-01 D1 — 예전엔 빈 메뉴로 떴다).
@@ -1920,7 +1946,7 @@ pub(crate) fn run() {
         thumbs: thumbs.clone(),
         thumb_migrated: 0,
         search_idx: search_idx.clone(),
-        hotkey_sig: String::new(),
+        hotkey_sig: hk_sig,
         watch_off: false,
     };
     shell.main.set_mono_font(mono_font.clone());
@@ -1931,8 +1957,6 @@ pub(crate) fn run() {
     shell.popup.set_search_index(search_idx);
     shell.start_thumb_migration();
     shell.build_search_index();
-    // ★ 단축키 목록(09-04) — 트레이 스레드가 기동 때 읽는다(이 뒤에 tray::spawn).
-    shell.apply_hotkeys(true);
     // ★ 복원 직후 트레이 메뉴·툴팁 갱신(09-01 사용자 실기 "우클릭에 최근이 안 보임") —
     //   spawn 때는 빈 내용이었고 첫 캡처까지는 아무도 불러주지 않았다.
     shell.refresh_tray();

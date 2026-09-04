@@ -120,7 +120,8 @@ pub(crate) struct Popup {
     view: ViewMode,
     /// ★ 스택 선택(id · 선택 순서 유지 — 09-03 ③): Enter = 순서대로 붙여넣기.
     marked: Vec<u64>,
-    /// ★ 열 때 쓸 크기(물리 px · `ui.popup_w/h` — 09-02 "마지막 크기 기억").
+    /// ★ 열 때 쓸 크기(**논리 px** · `ui.popup_w/h` — 09-02 "마지막 크기 기억" · 09-04 mac 실기
+    ///   "열 때마다 커진다" = 물리 px 저장이 Retina/외장 배율 차이에 곱해지던 것 → 배율 독립으로).
     pref_size: Option<(u32, u32)>,
     /// 마지막 실측 크기(Resized에서 갱신) — 닫을 때 셸이 저장.
     last_size: Option<(u32, u32)>,
@@ -181,7 +182,13 @@ fn clamp_to_monitor(el: &ActiveEventLoop, x: i32, y: i32, pref: Option<(u32, u32
                 (POPUP_H * scale).ceil() as i32,
             )
         },
-        |(w, h)| (w as i32, h as i32),
+        // 저장값은 논리 px — 이 모니터 배율로 물리 px 환산(클램프는 물리 좌표계).
+        |(w, h)| {
+            (
+                (f64::from(w) * scale).ceil() as i32,
+                (f64::from(h) * scale).ceil() as i32,
+            )
+        },
     );
     // ★ 작업 영역 우선(09-01 사용자 실기 "작업표시줄에 가린다") — Windows는 rcWork,
     //   없으면 모니터 전체로 폴백. 가장자리 5px(논리) 여유도 사용자 요청.
@@ -587,9 +594,12 @@ impl Popup {
                 .with_window_level(WindowLevel::AlwaysOnTop)
                 .with_inner_size(LogicalSize::new(POPUP_W, POPUP_H)),
         ));
-        // ★ 마지막 크기 복원(물리 px · 09-02) — 기본 크기보다 우선.
+        // ★ 마지막 크기 복원(논리 px · 09-02 · 09-04 배율 독립) — 기본 크기보다 우선.
         if let Some((pw, ph)) = self.pref_size {
-            attrs = attrs.with_inner_size(winit::dpi::PhysicalSize::new(pw.max(200), ph.max(160)));
+            attrs = attrs.with_inner_size(LogicalSize::new(
+                f64::from(pw.max(200)),
+                f64::from(ph.max(160)),
+            ));
         }
         if let Some((x, y)) = at {
             // 커서 위치(DR-24 기본) — 물리 좌표 그대로(커서가 곧 물리 좌표다).
@@ -808,8 +818,15 @@ impl Popup {
             }
             WindowEvent::Resized(sz) => {
                 // ★ 마지막 크기 기억(09-02) — 닫을 때 셸이 ui.popup_w/h로 저장.
+                //   ★ 논리 px로(09-04) — 물리 px는 모니터를 옮기거나 Retina에서 배율만큼 불어난다.
                 if sz.width > 0 && sz.height > 0 {
-                    self.last_size = Some((sz.width, sz.height));
+                    let s = f64::from(self.scale.max(1.0));
+                    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                    let logical = (
+                        (f64::from(sz.width) / s).round() as u32,
+                        (f64::from(sz.height) / s).round() as u32,
+                    );
+                    self.last_size = Some(logical);
                 }
                 self.redraw();
             }
