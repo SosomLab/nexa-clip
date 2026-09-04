@@ -51,7 +51,7 @@ const REMOTE_MARK: &str = "⇄ ";
 
 /// 목록 썸네일 긴 변(px) — 팝업 행(30px)에 들어가는 크기의 2배(고DPI 여유).
 /// ★ 09-02: 48→160 — Rich 본문 존(≈행 높이)에 그려도 흐릿하지 않게.
-const THUMB_SIDE: u32 = 512; // ★ 09-02 가변 행 — 실치수 표시(최대 높이 200px)에도 선명하게.
+const THUMB_SIDE: u32 = 384; // ★ 09-04 DR-42 ⑤ C: 512→384(표시 상한 200px · 장당 1MB→0.6MB). 09-02 가변 행 선명도 유지.
 /// ★ 미리보기 원본 디코드 상한(09-02 K4) — 패널 표시용이라 이 이상은 낭비.
 const PREVIEW_SIDE: u32 = 1600;
 
@@ -115,6 +115,24 @@ pub(crate) enum ShellEvent {
         summary: String,
         skip_hash: Option<u64>,
     },
+    /// ★ 섬네일 디코드 완료(09-04 · 30 §4) — 워커 스레드 → 캐시.
+    ThumbReady {
+        id: u64,
+        w: u32,
+        h: u32,
+        rgba: Vec<u8>,
+    },
+    /// 디코드 실패 — 진행 중 표시만 푼다.
+    ThumbFailed(u64),
+    /// ★ 기동 마이그레이션(구본 RGBA → PNG) 한 건 완료 — 셸이 blob으로 기록.
+    ThumbEncoded {
+        id: u64,
+        w: u32,
+        h: u32,
+        png: Vec<u8>,
+    },
+    /// 마이그레이션 끝.
+    ThumbMigrated,
     /// 트레이 메뉴 "종료".
     Quit,
     /// 감시가 항목을 잡았다 — 게이트를 지나면 이력에 넣는다.
@@ -240,7 +258,10 @@ fn to_stored(it: &HistoryItem) -> StoredItem {
         source_app: it.source_app.clone(),
         copies: it.copies,
         pinned: it.pinned,
-        thumb: it.thumb.clone(),
+        // ★ 섬네일 화소는 인덱스에 쓰지 않는다(09-04 · 30 §5 A) — `store_add`가 PNG로 만들어 `thumb_png`에 싣는다.
+        thumb: None,
+        thumb_ref: it.thumb_ref,
+        thumb_png: None,
         created_ms: it.created_ms,
         // ★ 미적재 참조 전달(09-03 지연 로드) — 재기록이 본문 없이도 안전한 근거.
         blobs: it.blob_refs.clone(),
@@ -257,6 +278,7 @@ fn to_history(it: StoredItem) -> HistoryItem {
         it.copies,
         it.pinned,
         it.thumb,
+        it.thumb_ref,
         it.created_ms,
         it.blobs,
     )
@@ -296,6 +318,10 @@ struct Shell {
     atop_effective: bool,
     /// ★ 마지막 메모리 GC 시각(09-04 · 30 §3).
     last_gc: Instant,
+    /// ★ 섬네일 상주 캐시(09-04 · 30 §4) — 메인·팝업과 공유.
+    thumbs: crate::thumbs::Thumbs,
+    /// 마이그레이션 진행 수(로그용).
+    thumb_migrated: usize,
     /// ★ 감시 끄기(09-04 사용자 — 툴바 토글): 켜지면 로컬 캡처 사건을 버린다. 세션 한정(재시작 = 켜짐).
     watch_off: bool,
 }
@@ -361,15 +387,145 @@ impl Shell {
     }
 
     /// ★ 저장소 기록 + blob 참조 회수(09-04 · 30 §3) — 캡처된 항목도 참조를 들고 있어야 나중에 내릴 수 있다.
+    /// ★ 섬네일(30 §5 A): RGBA가 있고 참조가 없으면 PNG로 인코드(격리 워커)해 blob으로 — 돌아온 참조를 항목에 붙이고
+    ///   RGBA는 캐시로 옮긴 뒤 항목에서 내린다(인덱스·RAM 모두 화소 0).
     fn store_add(&mut self, id: u64) {
-        let Some(stored) = self.history.get_by_id(id).map(to_stored) else {
+        let Some(mut stored) = self.history.get_by_id(id).map(to_stored) else {
             return;
         };
+        let rgba = self
+            .history
+            .get_by_id(id)
+            .filter(|it| it.thumb_ref.is_none())
+            .and_then(|it| it.thumb.clone());
+        if let Some((tw, th, px)) = &rgba {
+            match nclip_plat::imgdec::encode_raw_isolated(*tw, *th, px) {
+                Some(png) => stored.thumb_png = Some((*tw, *th, png)),
+                // 인코드 실패 — 구본 인라인(RGBA)으로라도 남긴다(데이터 우선).
+                None => stored.thumb = rgba.clone(),
+            }
+        }
+        let refs = self.store.add(&stored);
+        let pinned = self.history.get_by_id(id).is_some_and(|it| it.pinned);
+        if let Some(it) = self.history.get_by_id_mut(id) {
+            if it.blob_refs.is_empty() && !refs.blobs.is_empty() {
+                it.blob_refs = refs.blobs;
+            }
+            if refs.thumb.is_some() {
+                it.thumb_ref = refs.thumb;
+                if let Some((tw, th, px)) = it.thumb.take() {
+                    self.thumbs.borrow_mut().insert(
+                        id,
+                        nclip_ctl::theme::IconImage::from_rgba(tw, th, px),
+                        pinned,
+                    );
+                }
+            }
+        }
+    }
+
+    /// ★ 기동 마이그레이션(09-04 · 30 §5 A): 구본 인라인 RGBA 섬네일을 항목에서 **바로 떼어**(RSS 즉시 ↓) 워커 스레드가
+    ///   384²로 줄여 PNG로 인코드 → `ThumbEncoded`로 돌아오면 blob으로 기록. 오래된 것부터(재생 순서 보존).
+    fn start_thumb_migration(&mut self) {
+        let mut legacy: Vec<(u64, u32, u32, Vec<u8>)> = Vec::new();
+        for i in (0..self.history.len()).rev() {
+            let Some(id) = self.history.get(i).map(|it| it.id) else {
+                continue;
+            };
+            if let Some(it) = self.history.get_by_id_mut(id) {
+                if it.thumb_ref.is_none() {
+                    if let Some((w, h, px)) = it.thumb.take() {
+                        legacy.push((id, w, h, px));
+                    }
+                }
+            }
+        }
+        if legacy.is_empty() {
+            return;
+        }
+        println!(
+            "섬네일 마이그레이션: {}개 — RGBA 인덱스 → PNG blob(384²) · 배경",
+            legacy.len()
+        );
+        let proxy = self.proxy.clone();
+        std::thread::Builder::new()
+            .name("thumb-migrate".into())
+            .spawn(move || {
+                for (id, w, h, px) in legacy {
+                    let (w, h, px) = nclip_core::img::downscale_rgba(w, h, &px, THUMB_SIDE)
+                        .unwrap_or((w, h, px));
+                    if let Some(png) = nclip_plat::imgdec::encode_raw_isolated(w, h, &px) {
+                        let _ = proxy.send_event(ShellEvent::ThumbEncoded { id, w, h, png });
+                    }
+                    // 워커 프로세스 폭주 방지 — 항목당 잠깐 쉰다(총 수 초).
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                let _ = proxy.send_event(ShellEvent::ThumbMigrated);
+            })
+            .ok();
+    }
+
+    /// 마이그레이션 결과 — 참조 없는 항목만(그새 재복사돼 새 PNG가 생겼으면 버린다).
+    fn on_thumb_encoded(&mut self, id: u64, w: u32, h: u32, png: Vec<u8>) {
+        let Some(mut stored) = self
+            .history
+            .get_by_id(id)
+            .filter(|it| it.thumb_ref.is_none())
+            .map(to_stored)
+        else {
+            return;
+        };
+        stored.thumb_png = Some((w, h, png));
         let refs = self.store.add(&stored);
         if let Some(it) = self.history.get_by_id_mut(id) {
-            if it.blob_refs.is_empty() && !refs.is_empty() {
-                it.blob_refs = refs;
+            if it.blob_refs.is_empty() && !refs.blobs.is_empty() {
+                it.blob_refs = refs.blobs;
             }
+            it.thumb_ref = refs.thumb;
+        }
+        self.thumb_migrated += 1;
+    }
+
+    /// ★ 뷰포트 섬네일 펌프(09-04 · 30 §4): 그리기 루프가 남긴 요청을 최대 4개 꺼내 워커 스레드에 디코드를 맡긴다.
+    ///   RGBA가 아직 항목에 있으면(막 캡처·승격) 바로 캐시에 넣는다.
+    fn pump_thumbs(&mut self) {
+        let wanted = self.thumbs.borrow_mut().take_wanted(4);
+        for id in wanted {
+            let Some(it) = self.history.get_by_id(id) else {
+                self.thumbs.borrow_mut().fail(id);
+                continue;
+            };
+            let pinned = it.pinned;
+            if let Some((w, h, px)) = &it.thumb {
+                let img = nclip_ctl::theme::IconImage::from_rgba(*w, *h, px.clone());
+                self.thumbs.borrow_mut().insert(id, img, pinned);
+                self.main.redraw_now();
+                self.popup.redraw_now();
+                continue;
+            }
+            let Some((bid, len, _, _)) = it.thumb_ref else {
+                self.thumbs.borrow_mut().fail(id);
+                continue;
+            };
+            let Some(png) = self.store.read_blob_by_id(&bid) else {
+                self.thumbs.borrow_mut().fail(id);
+                continue;
+            };
+            if png.len() as u64 != len {
+                self.thumbs.borrow_mut().fail(id);
+                continue;
+            }
+            let proxy = self.proxy.clone();
+            std::thread::Builder::new()
+                .name("thumb-decode".into())
+                .spawn(move || {
+                    let ev = match nclip_plat::imgdec::decode_isolated(&png, THUMB_SIDE) {
+                        Some((w, h, rgba)) => ShellEvent::ThumbReady { id, w, h, rgba },
+                        None => ShellEvent::ThumbFailed(id),
+                    };
+                    let _ = proxy.send_event(ev);
+                })
+                .ok();
         }
     }
 
@@ -384,11 +540,20 @@ impl Shell {
         self.last_gc = Instant::now();
         let keep = self.main.preview_id();
         let freed = self.history.unload_cold_except(keep);
+        // 섬네일 캐시 — 상한 초과면 8장까지 줄인다(고정 제외).
+        let thumb_bytes = {
+            let mut t = self.thumbs.borrow_mut();
+            if resident > ACTIVE_CAP {
+                t.trim(8);
+            }
+            t.bytes()
+        };
         if freed > 0 {
             println!(
-                "메모리 GC: 본문 {}MB 내림 → 상주 {}MB",
+                "메모리 GC: 본문 {}MB 내림 → 상주 {}MB + 섬네일 캐시 {}MB",
                 freed >> 20,
-                self.history.resident_bytes() >> 20
+                self.history.resident_bytes() >> 20,
+                thumb_bytes >> 20
             );
         }
     }
@@ -997,6 +1162,7 @@ impl ApplicationHandler<ShellEvent> for Shell {
                 MainAction::CopyImage(id) => self.copy_as_image(id),
                 MainAction::Delete(id) => {
                     if self.history.remove(id) {
+                        self.thumbs.borrow_mut().remove(id);
                         self.store.remove(id);
                         self.main.on_history_changed(&self.history);
                         self.refresh_tray();
@@ -1010,6 +1176,8 @@ impl ApplicationHandler<ShellEvent> for Shell {
                         .map(|it| !it.pinned)
                         .unwrap_or(false);
                     if self.history.set_pinned(id, now) {
+                        // ★ 고정 = 섬네일 캐시 축출 제외(DR-42 ①).
+                        self.thumbs.borrow_mut().set_keep(id, now);
                         // ★ 핀 영속 = 같은 id Add 재기록(재생 시 교체 — docs/28 §4).
                         if let Some(it) = self.history.get_by_id(id) {
                             let __sid = it.id;
@@ -1077,6 +1245,24 @@ impl ApplicationHandler<ShellEvent> for Shell {
             ShellEvent::PasteStack(ids) => self.paste_stack(&ids),
             // ★ 연결 표시(09-04) — 릴레이 이벤트든 LAN 세션 변화(SyncTick)든 **같은 판정**으로 갱신:
             //   동기화 Off = 숨김 · 켜짐 = 릴레이 연결 ∨ LAN 피어 연결(릴레이 None·프로필 실행도 표시된다).
+            ShellEvent::ThumbReady { id, w, h, rgba } => {
+                let pinned = self.history.get_by_id(id).is_some_and(|it| it.pinned);
+                self.thumbs.borrow_mut().insert(
+                    id,
+                    nclip_ctl::theme::IconImage::from_rgba(w, h, rgba),
+                    pinned,
+                );
+                self.main.redraw_now();
+                self.popup.redraw_now();
+            }
+            ShellEvent::ThumbFailed(id) => self.thumbs.borrow_mut().fail(id),
+            ShellEvent::ThumbEncoded { id, w, h, png } => self.on_thumb_encoded(id, w, h, png),
+            ShellEvent::ThumbMigrated => {
+                println!(
+                    "섬네일 마이그레이션 완료: {}개 → PNG blob",
+                    self.thumb_migrated
+                );
+            }
             ShellEvent::SyncTick => self.refresh_sync_indicator(),
             ShellEvent::SyncState(on) => {
                 let _ = on; // 값은 판정에 안 쓴다(러너 상태·LAN 피어를 직접 본다) — 이벤트는 깨우기용.
@@ -1127,6 +1313,8 @@ impl ApplicationHandler<ShellEvent> for Shell {
         if self.app.take_sync_respawn() {
             crate::sync_cmd::spawn_if_enabled(&self.app.conf, self.proxy.clone());
         }
+        // ★ 뷰포트 섬네일 디코드 요청 처리(09-04 · 30 §4).
+        self.pump_thumbs();
         // ★ 메모리 GC(09-04 · DR-42) — 30초 주기 · 상한 초과 즉시.
         self.gc_memory(false);
         // ★ 기록 모두 삭제(09-04 사용자 — 설정 고급 · 2단계 확인 통과) — 고정 제외 전부 · 저장소까지.
@@ -1402,6 +1590,9 @@ pub(crate) fn run() {
         });
     }
 
+    // ★ 섬네일 캐시(09-04 · 30 §4) — 32장(384² ≈ 19MB 상한) · 메인·팝업·셸 공유.
+    let thumbs: crate::thumbs::Thumbs =
+        std::rc::Rc::new(std::cell::RefCell::new(crate::thumbs::ThumbCache::new(32)));
     let mut shell = Shell {
         font: font.clone(),
         app: App::new(font, conf, true),
@@ -1419,10 +1610,15 @@ pub(crate) fn run() {
         proxy: el.create_proxy(),
         atop_effective,
         last_gc: Instant::now(),
+        thumbs: thumbs.clone(),
+        thumb_migrated: 0,
         watch_off: false,
     };
     shell.main.set_mono_font(mono_font.clone());
     shell.popup.set_mono_font(mono_font);
+    shell.main.set_thumbs(thumbs.clone());
+    shell.popup.set_thumbs(thumbs);
+    shell.start_thumb_migration();
     // ★ 복원 직후 트레이 메뉴·툴팁 갱신(09-01 사용자 실기 "우클릭에 최근이 안 보임") —
     //   spawn 때는 빈 내용이었고 첫 캡처까지는 아무도 불러주지 않았다.
     shell.refresh_tray();

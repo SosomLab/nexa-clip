@@ -127,7 +127,8 @@ struct Row {
     /// ★ 메타(09-04 사용자 "내용과 메타 분리") — 이 내용을 만든 출처들(로컬 앱 · ⇄ 기기). 합친 행은 여럿.
     origins: Vec<String>,
     copies: u32,
-    thumb: Option<nclip_ctl::theme::IconImage>,
+    /// ★ 섬네일 치수(09-04 · 30 §4) — 화소는 공유 캐시(`thumbs`)에서 그릴 때 꺼낸다(없으면 요청만 남긴다).
+    thumb_dims: Option<(u32, u32)>,
     /// 원본 화소 치수(라벨 "W×H" 파싱 · 09-02 가변 행 — 섬네일은 축소본이라 절대 크기를 모른다).
     img_dims: Option<(u32, u32)>,
     /// ★ 리치 런(색·굵기 — T-18d 1단 · 09-03): HTML 표현이 서식을 품을 때만 Some.
@@ -181,6 +182,8 @@ pub(crate) struct MainWin {
     font: Font,
     /// ★ 고정폭 글꼴(09-04 — `ui.font_mono` · 터미널/코드 리치 런의 Mono 슬롯). 없으면 기본 글꼴.
     font_mono: Option<Font>,
+    /// ★ 섬네일 공유 캐시(09-04 · 30 §4).
+    thumbs: Option<crate::thumbs::Thumbs>,
     theme: Theme,
     scale: f32,
     /// ★ 검색 입력(09-01 — 사용자 요청 "캐럿·복사/붙여넣기·드래그 선택") — 이식 `TextBox`
@@ -293,6 +296,7 @@ impl MainWin {
             surface: None,
             font,
             font_mono: None,
+            thumbs: None,
             theme: Theme::dark(),
             scale: 1.0,
             search: {
@@ -399,6 +403,27 @@ impl MainWin {
     /// ★ 고정폭 글꼴 주입(09-04) — 셸이 `ui.font_mono`로 만든 것.
     pub(crate) fn set_mono_font(&mut self, font: Option<Font>) {
         self.font_mono = font;
+    }
+
+    /// ★ 섬네일 캐시 주입(09-04 · 30 §4).
+    pub(crate) fn set_thumbs(&mut self, thumbs: crate::thumbs::Thumbs) {
+        self.thumbs = Some(thumbs);
+    }
+
+    /// 셸이 캐시를 채운 뒤 — 창이 있으면 다시 그린다.
+    pub(crate) fn redraw_now(&self) {
+        self.redraw();
+    }
+
+    /// 행의 섬네일 — 캐시에 있으면 그것, 없으면 **요청만**(DR-41 요청/수행 분리) 남기고 None.
+    fn thumb_for(&self, row: &Row) -> Option<std::rc::Rc<nclip_ctl::theme::IconImage>> {
+        row.thumb_dims?;
+        let cache = self.thumbs.as_ref()?;
+        let mut c = cache.borrow_mut();
+        c.get(row.id).or_else(|| {
+            c.want(row.id);
+            None
+        })
     }
 
     /// ★ 감시 끄기 토글 표시(09-04) — 값은 셸이 갖는다(캡처 차단).
@@ -577,9 +602,7 @@ impl MainWin {
                 key: crate::dedup::content_key_of(item, plain.as_deref()),
                 origins: item.source_app.iter().cloned().collect(),
                 copies: item.copies,
-                thumb: item.thumb.as_ref().map(|(w, h, rgba)| {
-                    nclip_ctl::theme::IconImage::from_rgba(*w, *h, rgba.clone())
-                }),
+                thumb_dims: item.thumb_dims(),
                 img_dims: display_dims(&item.reps).or_else(|| parse_dims(&item.label)),
                 plain,
                 // 행은 앞 5줄만 그리지만 ★ 미리보기 패널이 전문을 쓴다(09-03 ② — 400줄 상한).
@@ -796,11 +819,11 @@ impl MainWin {
         if self.view != ViewMode::Rich {
             return self.row_h();
         }
-        if let Some(img) = &row.thumb {
+        if let Some((tw, th)) = row.thumb_dims {
             #[allow(clippy::cast_possible_wrap)]
             let (ow, oh) = row
                 .img_dims
-                .map_or((img.w.max(1) as i32, img.h.max(1) as i32), |(a, b)| {
+                .map_or((tw.max(1) as i32, th.max(1) as i32), |(a, b)| {
                     (a as i32, b as i32)
                 });
             let (_, dh) = self.rich_fit(ow, oh, content_w);
@@ -1811,6 +1834,8 @@ impl MainWin {
             .partition_point(|&o| o <= self.scroll)
             .saturating_sub(1);
         for (vi, row) in self.rows.iter().enumerate().skip(first) {
+            // ★ 섬네일은 캐시에서(09-04 · 30 §4) — 없으면 요청만 남기고 이번엔 텍스트 폴백.
+            let thumb = self.thumb_for(row);
             let y = list.y - self.scroll + self.row_offs[vi];
             if y >= list.y + list.h {
                 break;
@@ -1886,7 +1911,7 @@ impl MainWin {
                 }
                 let cx0 = tx + px(30.0);
                 let content_clip = Rect::new(cx0, clip.y, (right - cx0).max(0), clip.h);
-                if let Some(img) = &row.thumb {
+                if let Some(img) = &thumb {
                     // ★ 원본 치수 기준 — 복사본마다 확대율이 같다(최대 높이만 비율 축소).
                     #[allow(clippy::cast_possible_wrap)]
                     let (ow, oh) = row
@@ -1963,7 +1988,7 @@ impl MainWin {
             // 보기 3모드(docs/04 §2-2) — Plain은 글리프도 접어 밀도 최우선.
             let show_glyph = self.view != ViewMode::Plain;
             if show_glyph {
-                if let Some(img) = &row.thumb {
+                if let Some(img) = &thumb {
                     let box_side = px(24.0);
                     let (iw, ih) = (img.w.max(1) as i32, img.h.max(1) as i32);
                     let (dw, dh) = if iw >= ih {

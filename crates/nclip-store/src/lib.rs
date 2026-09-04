@@ -53,6 +53,10 @@ pub struct StoredItem {
     /// ★ 핀(T-18b0 기초) — 상한 제거에서 지켜진다. UI는 후속.
     pub pinned: bool,
     pub thumb: Option<(u32, u32, Vec<u8>)>,
+    /// ★ 섬네일 PNG blob 참조(09-04 · EV_ADD3) — (id, 길이, 폭, 높이). 읽기·쓰기 공용.
+    pub thumb_ref: Option<([u8; 32], u64, u32, u32)>,
+    /// ★ 쓰기 전용: 새로 만든 섬네일 PNG(폭, 높이, 바이트) — `add`가 blob으로 쓰고 참조를 돌려준다.
+    pub thumb_png: Option<(u32, u32, Vec<u8>)>,
     /// 생성 시각(epoch ms · T-13 기간 정책) — 구본(EV_ADD)은 0.
     pub created_ms: u64,
     /// ★ 미적재 blob 참조(09-03 지연 로드) — `(reps 인덱스, blob id, 평문 길이)`.
@@ -61,13 +65,20 @@ pub struct StoredItem {
     pub blobs: Vec<(u32, [u8; 32], u64)>,
 }
 
+/// `add`가 돌려주는 참조 — 셸이 항목에 붙여 두면 본문·섬네일을 내렸다 다시 읽을 수 있다(09-04 · 30 §3).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct AddRefs {
+    pub blobs: Vec<(u32, [u8; 32], u64)>,
+    pub thumb: Option<([u8; 32], u64, u32, u32)>,
+}
+
 /// 이력 영속 포트(DR-37f) — 셸은 이것만 안다.
 pub trait HistoryStore {
     /// 전체 재생 — 최신이 앞. 손상 레코드는 세고 버린다(fail-closed).
     fn load(&mut self) -> Vec<StoredItem>;
     /// 새 항목(또는 같은 id의 교체 — coalesce 완본). ★ 반환 = 이 기록이 가리키는 blob 참조(표현 인덱스 · id · 길이)
     /// — 셸이 항목에 붙여 두면 나중에 본문을 내리고 다시 읽을 수 있다(09-04 · 30 §3).
-    fn add(&mut self, item: &StoredItem) -> Vec<(u32, [u8; 32], u64)>;
+    fn add(&mut self, item: &StoredItem) -> AddRefs;
     /// 승격 — 맨 앞으로 + `copies` +1.
     fn touch(&mut self, id: u64);
     /// 제거(상한 축출 포함).
@@ -88,8 +99,8 @@ impl HistoryStore for NullStore {
     fn load(&mut self) -> Vec<StoredItem> {
         Vec::new()
     }
-    fn add(&mut self, _: &StoredItem) -> Vec<(u32, [u8; 32], u64)> {
-        Vec::new()
+    fn add(&mut self, _: &StoredItem) -> AddRefs {
+        AddRefs::default()
     }
     fn touch(&mut self, _: u64) {}
     fn remove(&mut self, _: u64) {}
@@ -257,10 +268,9 @@ impl FileStore {
     }
 
     /// Add 레코드 본문 인코딩 — blob 참조 수·항목→blob 표를 갱신한다. 반환 = (레코드, blob 참조 목록).
-    #[allow(clippy::type_complexity)]
-    fn encode_add(&mut self, item: &StoredItem) -> (Vec<u8>, Vec<(u32, [u8; 32], u64)>) {
+    fn encode_add(&mut self, item: &StoredItem) -> (Vec<u8>, AddRefs) {
         let mut w = codec::W::new();
-        w.u8(EV_ADD2);
+        w.u8(EV_ADD3);
         w.u64(item.created_ms);
         w.u64(item.id);
         w.u8(kind_code(item.kind));
@@ -268,18 +278,33 @@ impl FileStore {
         w.u8(u8::from(item.pinned));
         w.opt_str(item.source_app.as_deref());
         w.str(&item.label);
-        match &item.thumb {
-            Some((tw, th, rgba)) => {
-                w.u8(1);
-                w.u32(*tw);
-                w.u32(*th);
-                w.bytes(rgba);
-            }
-            None => w.u8(0),
-        }
-        w.u32(u32::try_from(item.reps.len()).unwrap_or(0));
         let mut ids = Vec::new();
         let mut refs = Vec::new();
+        // ★ 섬네일(09-04 · 30 §5 A): 참조가 있으면 참조 · 새 PNG면 blob으로 쓰고 참조 · (구본) RGBA는 인라인.
+        let mut thumb_ref = item.thumb_ref;
+        if thumb_ref.is_none() {
+            if let Some((tw, th, png)) = &item.thumb_png {
+                if let Some(id) = self.write_blob(png) {
+                    thumb_ref = Some((id, png.len() as u64, *tw, *th));
+                }
+            }
+        }
+        if let Some((id, len, tw, th)) = thumb_ref {
+            w.u8(2);
+            w.0.extend_from_slice(&id);
+            w.u64(len);
+            w.u32(tw);
+            w.u32(th);
+            ids.push(id);
+        } else if let Some((tw, th, rgba)) = &item.thumb {
+            w.u8(1);
+            w.u32(*tw);
+            w.u32(*th);
+            w.bytes(rgba);
+        } else {
+            w.u8(0);
+        }
+        w.u32(u32::try_from(item.reps.len()).unwrap_or(0));
         for (ri, r) in item.reps.iter().enumerate() {
             w.str(&r.format);
             // ★ 미적재 참조(지연 로드) — blob은 이미 실재: 참조만 다시 쓴다(09-03).
@@ -309,7 +334,13 @@ impl FileStore {
             *self.blob_refs.entry(*id).or_insert(0) += 1;
         }
         self.item_blobs.insert(item.id, ids);
-        (w.0, refs)
+        (
+            w.0,
+            AddRefs {
+                blobs: refs,
+                thumb: thumb_ref,
+            },
+        )
     }
 
     /// `with_time` = EV_ADD2(생성 시각 포함) · EV_ADD 구본은 0으로 복원(기간 면제).
@@ -322,13 +353,26 @@ impl FileStore {
         let pinned = r.u8()? == 1;
         let source_app = r.opt_str()?;
         let label = r.str()?;
-        let thumb = match r.u8()? {
-            1 => Some((r.u32()?, r.u32()?, r.bytes()?.to_vec())),
-            _ => None,
-        };
+        let mut ids = Vec::new();
+        let mut thumb = None;
+        let mut thumb_ref = None;
+        match r.u8()? {
+            1 => thumb = Some((r.u32()?, r.u32()?, r.bytes()?.to_vec())),
+            // ★ EV_ADD3 — PNG blob 참조(09-04). 참조 수에 센다(항목 삭제 때 같이 지워진다).
+            2 => {
+                let (idb, rest) = r.0.split_at_checked(32)?;
+                r.0 = rest;
+                let mut bid = [0u8; 32];
+                bid.copy_from_slice(idb);
+                let len = r.u64()?;
+                let (tw, th) = (r.u32()?, r.u32()?);
+                ids.push(bid);
+                thumb_ref = Some((bid, len, tw, th));
+            }
+            _ => {}
+        }
         let n = r.u32()? as usize;
         let mut reps = Vec::with_capacity(n.min(1024));
-        let mut ids = Vec::new();
         let mut blobs = Vec::new();
         for ri in 0..n {
             let format = r.str()?;
@@ -360,6 +404,8 @@ impl FileStore {
                 copies,
                 pinned,
                 thumb,
+                thumb_ref,
+                thumb_png: None,
                 blobs,
                 created_ms,
             },
@@ -402,8 +448,8 @@ impl FileStore {
                 events += 1;
                 let mut r = codec::R(&plain);
                 match r.u8() {
-                    Some(tag @ (EV_ADD | EV_ADD2)) => {
-                        if let Some((item, ids)) = self.decode_add(&plain[1..], tag == EV_ADD2) {
+                    Some(tag @ (EV_ADD | EV_ADD2 | EV_ADD3)) => {
+                        if let Some((item, ids)) = self.decode_add(&plain[1..], tag != EV_ADD) {
                             for id in &ids {
                                 *self.blob_refs.entry(*id).or_insert(0) += 1;
                             }
@@ -484,6 +530,8 @@ const EV_TOUCH: u8 = 2;
 const EV_REMOVE: u8 = 3;
 /// ★ 생성 시각이 붙은 Add(T-13 · 09-01) — 구본 EV_ADD도 계속 읽는다(마이그레이션 불요).
 const EV_ADD2: u8 = 4;
+/// ★ 섬네일 = PNG blob 참조(09-04 · 30 §5 A) — 몸통은 EV_ADD2와 같고 섬네일 태그 2가 추가. 구본 둘 다 계속 읽는다.
+const EV_ADD3: u8 = 5;
 
 fn kind_code(k: ClipKind) -> u8 {
     match k {
@@ -534,7 +582,7 @@ impl HistoryStore for FileStore {
         items
     }
 
-    fn add(&mut self, item: &StoredItem) -> Vec<(u32, [u8; 32], u64)> {
+    fn add(&mut self, item: &StoredItem) -> AddRefs {
         let (plain, refs) = self.encode_add(item);
         self.append_record(&plain);
         refs
@@ -599,6 +647,8 @@ mod tests {
             copies: 1,
             pinned: false,
             thumb: None,
+            thumb_ref: None,
+            thumb_png: None,
             created_ms: 1_700_000_000_000,
             blobs: Vec::new(),
         }
@@ -784,5 +834,29 @@ mod tests {
 
     fn walk_files(dir: &Path) -> usize {
         all_files(dir).len()
+    }
+
+    /// ★ 섬네일 PNG blob 왕복(09-04 · EV_ADD3): add가 참조를 돌려주고, 재생하면 참조만(화소 없음) 복원 · 삭제하면 blob도 준다.
+    #[test]
+    fn thumb_png_blob_roundtrip() {
+        let dir = tmp("thumb");
+        let mut st = FileStore::open(&dir).expect("open").store;
+        let mut it = item(1, "img", b"x");
+        it.thumb_png = Some((3, 2, vec![0x89, b'P', b'N', b'G', 1, 2, 3, 4, 5]));
+        let refs = st.add(&it);
+        let (bid, len, tw, th) = refs.thumb.expect("thumb ref");
+        assert_eq!((len, tw, th), (9, 3, 2));
+        assert_eq!(
+            st.read_blob_by_id(&bid).as_deref(),
+            Some(&[0x89, b'P', b'N', b'G', 1, 2, 3, 4, 5][..])
+        );
+        drop(st);
+        let mut st = FileStore::open(&dir).expect("reopen").store;
+        let items = st.load();
+        assert_eq!(items.len(), 1);
+        assert!(items[0].thumb.is_none(), "화소는 인덱스에 없다");
+        assert_eq!(items[0].thumb_ref, Some((bid, 9, 3, 2)));
+        st.remove(1);
+        assert!(st.read_blob_by_id(&bid).is_none(), "참조 0 → blob 삭제");
     }
 }

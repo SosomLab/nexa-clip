@@ -18,6 +18,9 @@ use crate::{ClipKind, ClipSnapshot, RawRep};
 use std::collections::VecDeque;
 
 /// 이력 항목 — 표현 원본을 통째로 든다(재적재가 존재 이유다).
+/// ★ 섬네일 blob 참조(09-04 · 30 §5 A) — (blob id, PNG 길이, 폭, 높이). 인덱스엔 이것만 남고 화소는 blob에.
+pub type ThumbRef = ([u8; 32], u64, u32, u32);
+
 #[derive(Clone, Debug)]
 pub struct HistoryItem {
     /// ★ 항목 id — 셸이 영속(T-16)과 짝을 맞추는 열쇠. `push`가 단조 증가로 부여하고,
@@ -38,6 +41,8 @@ pub struct HistoryItem {
     /// ★ 목록용 썸네일(w, h, RGBA) — 호출자가 만든다(이력은 디코더를 모른다).
     ///   `None` = 이미지 아님·미리보기 꺼짐·디코드 실패(목록은 글리프 폴백).
     pub thumb: Option<(u32, u32, Vec<u8>)>,
+    /// ★ 섬네일 PNG blob 참조(09-04) — 있으면 `thumb`(RGBA)는 내려도 된다(캐시가 다시 디코드).
+    pub thumb_ref: Option<ThumbRef>,
     /// ★ 미적재 blob 참조(09-03 지연 로드 — `(reps 인덱스, blob id, 길이)`).
     /// 비어 있으면 본문까지 적재된 항목. 셸이 접근 시 채운다.
     pub blob_refs: Vec<(u32, [u8; 32], u64)>,
@@ -78,6 +83,7 @@ impl HistoryItem {
         copies: u32,
         pinned: bool,
         thumb: Option<(u32, u32, Vec<u8>)>,
+        thumb_ref: Option<ThumbRef>,
         created_ms: u64,
         blob_refs: Vec<(u32, [u8; 32], u64)>,
     ) -> Self {
@@ -93,6 +99,7 @@ impl HistoryItem {
             source_app,
             copies,
             thumb,
+            thumb_ref,
             created_ms,
             bytes,
             fingerprint,
@@ -125,6 +132,25 @@ impl HistoryItem {
                 r.data = Vec::new();
             }
         }
+        freed
+    }
+
+    /// 섬네일 치수 — RGBA가 있든 참조만 있든(행 높이 계산은 화소 없이도 된다).
+    #[must_use]
+    pub fn thumb_dims(&self) -> Option<(u32, u32)> {
+        self.thumb
+            .as_ref()
+            .map(|(w, h, _)| (*w, *h))
+            .or_else(|| self.thumb_ref.map(|(_, _, w, h)| (w, h)))
+    }
+
+    /// ★ 섬네일 RGBA 내리기(09-04 · 30 §2 T) — PNG 참조가 있을 때만(다시 디코드할 수 있다). 반환 = 해제 바이트.
+    pub fn unload_thumb(&mut self) -> u64 {
+        if self.thumb_ref.is_none() {
+            return 0;
+        }
+        let freed = self.thumb.as_ref().map_or(0, |(_, _, b)| b.len() as u64);
+        self.thumb = None;
         freed
     }
 
@@ -336,6 +362,7 @@ impl History {
                 it.kind = kind;
                 it.label = label;
                 it.thumb = None;
+                it.thumb_ref = None;
                 true
             }
             None => false,
@@ -459,6 +486,7 @@ impl History {
                     source_app: snap.source_app.clone(),
                     copies,
                     thumb,
+                    thumb_ref: None,
                     created_ms,
                     blob_refs: Vec::new(), // 신선 캡처 = 전부 적재.
                 };
@@ -493,6 +521,7 @@ impl History {
             // 승격은 기존 썸네일 유지 — 새로 왔으면(설정을 켠 뒤 재복사 등) 채운다.
             if thumb.is_some() {
                 it.thumb = thumb;
+                it.thumb_ref = None; // 새 화소 — PNG는 셸이 다시 만든다.
             }
             self.items.push_front(it);
             return Pushed::Promoted;
@@ -512,6 +541,7 @@ impl History {
             source_app: snap.source_app.clone(),
             copies: 1,
             thumb,
+            thumb_ref: None,
             created_ms: now_ms,
             blob_refs: Vec::new(),
         });
@@ -863,6 +893,7 @@ mod budget_tests {
                 None,
                 1,
                 pinned,
+                None,
                 None,
                 created,
                 Vec::new(),

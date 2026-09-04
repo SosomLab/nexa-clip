@@ -25,6 +25,7 @@ mod render_img;
 mod settings_win;
 mod sync_cmd;
 mod syncitem;
+mod thumbs;
 mod tray_cmd;
 mod watch_cmd;
 

@@ -74,8 +74,8 @@ struct Row {
     /// 내용 열쇠(병합) · 출처(메타).
     key: u64,
     origin: Option<String>,
-    /// 이미지 썸네일(설정이 켜져 있고 디코드가 됐을 때) — 없으면 글리프.
-    thumb: Option<nclip_ctl::theme::IconImage>,
+    /// ★ 섬네일 치수(09-04 · 30 §4) — 화소는 공유 캐시에서 그릴 때 꺼낸다.
+    thumb_dims: Option<(u32, u32)>,
     /// 본문(평문 순위 → SVG 추출) — Rich 본문·이미지 라벨 뒤 식별 보조(09-02).
     plain: Option<String>,
     /// 표시 치수(문서 논리 크기 · 09-02 — 메인과 같은 배율 규약).
@@ -91,6 +91,8 @@ pub(crate) struct Popup {
     font: Font,
     /// ★ 고정폭 글꼴(09-04) — 리치 런 Mono 슬롯.
     font_mono: Option<Font>,
+    /// ★ 섬네일 공유 캐시(09-04 · 30 §4).
+    thumbs: Option<crate::thumbs::Thumbs>,
     theme: Theme,
     scale: f32,
     /// ★ 검색 입력(09-02 — "메인 검색창의 모든 기능을 팝업에도") — 이식 `TextBox`
@@ -206,6 +208,18 @@ impl Popup {
         self.font_mono = font;
     }
 
+    /// ★ 섬네일 캐시 주입(09-04 · 30 §4).
+    pub(crate) fn set_thumbs(&mut self, thumbs: crate::thumbs::Thumbs) {
+        self.thumbs = Some(thumbs);
+    }
+
+    /// 셸이 캐시를 채운 뒤 — 창이 있으면 다시 그린다.
+    pub(crate) fn redraw_now(&self) {
+        if let Some(w) = &self.window {
+            w.request_redraw();
+        }
+    }
+
     pub(crate) fn new(font: Font) -> Self {
         Self {
             window: None,
@@ -213,6 +227,7 @@ impl Popup {
             surface: None,
             font,
             font_mono: None,
+            thumbs: None,
             theme: Theme::dark(),
             scale: 1.0,
             search: {
@@ -344,11 +359,11 @@ impl Popup {
         if self.view != ViewMode::Rich {
             return self.row_h();
         }
-        if let Some(img) = &row.thumb {
+        if let Some((tw, th)) = row.thumb_dims {
             #[allow(clippy::cast_possible_wrap)]
             let (ow, oh) = row
                 .img_dims
-                .map_or((img.w.max(1) as i32, img.h.max(1) as i32), |(a, b)| {
+                .map_or((tw.max(1) as i32, th.max(1) as i32), |(a, b)| {
                     (a as i32, b as i32)
                 });
             let (_, dh) = self.rich_fit(ow, oh, content_w);
@@ -594,9 +609,7 @@ impl Popup {
                         .is_some_and(|s| s.starts_with(crate::dedup::REMOTE_MARK)),
                     key: crate::dedup::content_key_of(item, plain.as_deref()),
                     origin: item.source_app.clone(),
-                    thumb: item.thumb.as_ref().map(|(w, h, rgba)| {
-                        nclip_ctl::theme::IconImage::from_rgba(*w, *h, rgba.clone())
-                    }),
+                    thumb_dims: item.thumb_dims(),
                     plain,
                     img_dims: crate::main_win::display_dims(&item.reps)
                         .or_else(|| crate::main_win::parse_dims(&item.label)),
@@ -1030,6 +1043,7 @@ impl Popup {
                 self.view,
                 &self.row_offs,
                 &self.marked,
+                self.thumbs.as_ref(),
             );
             let total = *self.row_offs.last().unwrap_or(&0);
             let vp = nclip_ctl::geom::Rect::new(0, px(38.0), iw, (ih - px(24.0) - px(38.0)).max(1));
@@ -1050,6 +1064,20 @@ impl Popup {
 
 /// 팝업 화면 — [`demo`](crate::demo)의 간략 보기 화법을 실데이터로.
 #[allow(clippy::too_many_arguments)]
+/// 행의 섬네일 — 캐시에 있으면 그것, 없으면 요청만 남기고 None(메인과 같은 규칙).
+fn thumb_for(
+    thumbs: Option<&crate::thumbs::Thumbs>,
+    row: &Row,
+) -> Option<std::rc::Rc<nclip_ctl::theme::IconImage>> {
+    row.thumb_dims?;
+    let mut c = thumbs?.borrow_mut();
+    c.get(row.id).or_else(|| {
+        c.want(row.id);
+        None
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
 fn draw(
     dc: &mut RasterCtx<'_, '_, '_>,
     w: i32,
@@ -1063,6 +1091,7 @@ fn draw(
     view: ViewMode,
     offs: &[i32],
     marked: &[u64],
+    thumbs: Option<&crate::thumbs::Thumbs>,
 ) {
     let px = |v: f32| (v * s).round() as i32;
     let full = Rect::new(0, 0, w, h);
@@ -1100,6 +1129,8 @@ fn draw(
     }
     let mut pin_divider_done = false;
     for (vi, row) in rows.iter().enumerate().skip(first) {
+        // ★ 섬네일은 캐시에서(09-04 · 30 §4) — 없으면 요청만.
+        let thumb = thumb_for(thumbs, row);
         let y = list_top - scroll + offs.get(vi).copied().unwrap_or(0);
         if y >= list_bot {
             break;
@@ -1170,7 +1201,7 @@ fn draw(
             dc.select_font(FontSlot::Base, false);
             let cx0 = pad + px(30.0);
             let content_clip = Rect::new(cx0, clip.y, (right - cx0).max(0), clip.h);
-            if let Some(img) = &row.thumb {
+            if let Some(img) = &thumb {
                 #[allow(clippy::cast_possible_wrap)]
                 let (ow, oh) = row
                     .img_dims
@@ -1258,7 +1289,7 @@ fn draw(
             pad
         } else {
             // ★ 이미지 썸네일(설정 켜짐 · 디코드 성공 시) — 비율 유지로 24px 상자에.
-            if let Some(img) = &row.thumb {
+            if let Some(img) = &thumb {
                 let box_side = px(24.0);
                 let (iw2, ih2) = (img.w.max(1) as i32, img.h.max(1) as i32);
                 let (dw, dh) = if iw2 >= ih2 {

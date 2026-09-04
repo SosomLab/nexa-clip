@@ -6,7 +6,7 @@
 
 ## 2026-09-04 (4차 · macOS) — 승격 확정 · ★ mac 자동 왕복 검사 · ★ set/read 공용 직렬화(SIGSEGV 근절)
 
-16차(Windows): ★ **리치 2단** — Outlook Wingdings 불릿 ■ · 목록·들여쓰기·배율 · 인라인 `data:` 이미지 미리보기 · ★ **터미널 복사 색/글꼴/배경**(블록 pre · 고정폭 Mono 슬롯 `ui.font_mono` = Nerd Font 폴백) · ★ ANSI SGR(원시 로그). ★ 더블클릭/Enter·이미지로 복사 후 **새 자리 따라가기**. ★ 툴바 재배치(토글 그룹 + **감시 정지/재개** 2상 토글 벽돌/초록) · 사용자 지정 아이콘 3종(stop/play/settings). ★ 툴팁·행 hover 페이드 + **hover 의도 코얼레싱**(`HoverIntent` · 70ms · 스크롤 안정 · 세대 가드 · 재hover) → **DR-41 최소 처리 원칙** 승격. ✅ 사용자 실기(이미지 미리보기 · 1번 이동). PLEdit 리치 = 원천이 HTML/RTF를 안 올림(회귀 아님 · 21 §7 R3). ⏳ 터미널 리치·감시 토글·hover 실기.
+16차(Windows): ★ **리치 2단** — Outlook Wingdings 불릿 ■ · 목록·들여쓰기·배율 · 인라인 `data:` 이미지 미리보기 · ★ **터미널 복사 색/글꼴/배경**(블록 pre · 고정폭 Mono 슬롯 `ui.font_mono` = Nerd Font 폴백) · ★ ANSI SGR(원시 로그). ★ 더블클릭/Enter·이미지로 복사 후 **새 자리 따라가기**. ★ 툴바 재배치(토글 그룹 + **감시 정지/재개** 2상 토글 벽돌/초록) · 사용자 지정 아이콘 3종(stop/play/settings). ★ 툴팁·행 hover 페이드 + **hover 의도 코얼레싱**(`HoverIntent` · 70ms · 스크롤 안정 · 세대 가드 · 재hover) → **DR-41 최소 처리 원칙** 승격. ✅ 사용자 실기(이미지 미리보기 · 1번 이동). PLEdit 리치 = 원천이 HTML/RTF를 안 올림(회귀 아님 · 21 §7 R3). ★ **메모리 상주 계층**(DR-42 · 30): 냉 본문 즉시 내림 + 30초 GC + 섬네일 PNG blob(384²) 이관·LRU 캐시 → **기동 RSS 82 → 18.7MB**. ⏳ 터미널 리치·감시 토글·hover·섬네일 실기.
 
 15차(Windows): ★ 배포 파이프라인(brew·winget·choco · 검수 대기 자동 판정 · secrets/vars 준비 · Linux 배포판 비종속 zig/glibc 2.17). 드라이런 전부 녹색 ✅ · ⏳ 첫 태그 `v0.1.0`은 사용자 결정.
 
