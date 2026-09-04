@@ -71,7 +71,16 @@ fn save_token(t: &str) {
         if let Some(dir) = p.parent() {
             let _ = std::fs::create_dir_all(dir);
         }
-        let _ = std::fs::write(p, t);
+        // ★ 소유자만(09-05) — 이 토큰은 대화창 없이 키 주입 세션을 여는 열쇠다.
+        use std::io::Write as _;
+        use std::os::unix::fs::OpenOptionsExt as _;
+        let _ = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(p)
+            .and_then(|mut f| f.write_all(t.as_bytes()));
     }
 }
 

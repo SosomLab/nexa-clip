@@ -135,7 +135,16 @@ pub fn write_atomic(path: &Path, contents: &str) -> io::Result<()> {
     let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let tmp = dir.join(format!(".{base}.{}.{seq}.tmp", std::process::id()));
     let write = (|| -> io::Result<()> {
-        let mut f = fs::File::create(&tmp)?;
+        let mut opts = fs::OpenOptions::new();
+        opts.write(true).create(true).truncate(true);
+        // ★ 소유자만(09-05) — 설정에는 비밀(페어링 패스프레이즈 등)이 실릴 수 있다. umask 기본(0644/0664)은
+        //   같은 PC의 다른 계정·백업 도구에 그대로 노출된다. rename이 temp의 모드를 그대로 나른다.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt as _;
+            opts.mode(0o600);
+        }
+        let mut f = opts.open(&tmp)?;
         f.write_all(contents.as_bytes())?;
         f.sync_all()
     })();
@@ -441,6 +450,19 @@ mod tests {
             ],
         );
         assert_eq!(text, "_schema=1\na=new\nz=keep\n");
+    }
+
+    /// ★ 09-05: 설정 파일은 소유자만 읽는다(비밀이 실릴 수 있다).
+    #[cfg(unix)]
+    #[test]
+    fn written_file_is_owner_only() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let d = tmpdir("perm");
+        let p = d.join("settings.cfg");
+        write_atomic(&p, "_schema=1\n").unwrap();
+        let mode = fs::metadata(&p).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600, "mode {mode:o}");
+        let _ = fs::remove_dir_all(d);
     }
 
     #[test]
