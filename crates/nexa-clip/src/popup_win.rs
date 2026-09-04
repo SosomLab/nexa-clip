@@ -48,6 +48,8 @@ pub(crate) enum PopupAction {
     None,
     /// 닫아 달라(Esc·포커스 잃음·X) — 붙여넣기 없음.
     Close,
+    /// ★ 검색 방식 선택(09-04 드롭다운) — 셸이 `find.mode`에 쓴다.
+    SearchMode(&'static str),
     /// ★ 붙여넣기 스택(09-03 ③ — Ditto 화법): 표시 순서대로 **순차** 붙여넣기.
     PickStack(Vec<u64>),
     /// ★ 항목 선택 — `index`는 **이력 인덱스**(필터를 통과해 되돌린 값).
@@ -98,6 +100,8 @@ pub(crate) struct Popup {
     /// ★ 검색 입력(09-02 — "메인 검색창의 모든 기능을 팝업에도") — 이식 `TextBox`
     ///   정식 편집기: 캐럿·드래그 선택·×지우기·우클릭 편집 메뉴·IME preedit.
     search: TextBox,
+    /// ★ 검색 방식 드롭다운(09-04) — 메인과 동일.
+    mode_drop: nclip_ctl::controls::IconDropdown,
     /// 캐럿 깜박임 위상(셸이 500ms마다 돌린다).
     caret_phase: bool,
     /// 필터 통과 행(최신이 위).
@@ -231,6 +235,9 @@ impl Popup {
             return false;
         }
         self.search_mode = mode;
+        let mut inv = Invalidations::default();
+        self.mode_drop.set_value(mode.code(), &mut inv);
+        self.redraw();
         true
     }
 
@@ -242,7 +249,9 @@ impl Popup {
     }
 
     pub(crate) fn new(font: Font) -> Self {
+        let mode_drop = crate::mode_drop::build(&font, "exact");
         Self {
+            mode_drop,
             window: None,
             ctx: None,
             surface: None,
@@ -729,6 +738,24 @@ impl Popup {
 
     /// 창 이벤트 처리 — 셸이 [`PopupAction`]에 따라 후속(닫기·재적재)을 한다.
     pub(crate) fn handle_event(&mut self, event: &WindowEvent, hist: &History) -> PopupAction {
+        // ★ 검색 방식 드롭다운(09-04) — 열려 있거나 그 자리를 눌렀으면 먼저 먹는다(메뉴와 같은 z순서 계약).
+        if let Some(ev) = crate::main_win::to_ctl_event(event, self.cursor) {
+            let was_open = self.mode_drop.is_open();
+            let inside = matches!(
+                ev,
+                CtlEvent::MouseDown { x, y, .. }
+                    if self.mode_drop.bounds().contains(nclip_ctl::geom::Point { x, y })
+            );
+            if was_open || inside {
+                let mut inv = Invalidations::default();
+                self.mode_drop.on_event(&ev, &mut inv);
+                self.redraw();
+                if let Some(v) = self.mode_drop.take_changed() {
+                    return PopupAction::SearchMode(v);
+                }
+                return PopupAction::None;
+            }
+        }
         match event {
             WindowEvent::CloseRequested => return PopupAction::Close,
             WindowEvent::Focused(true) => self.was_focused = true,
@@ -1054,12 +1081,17 @@ impl Popup {
             let px = |v: f32| (v * self.scale).round() as i32;
             let mut inv = Invalidations::default();
             self.search.set_scale(self.scale);
+            // ★ 검색 방식 드롭다운(09-04) — 정사각 · 검색창은 그 오른쪽부터.
+            let (side, gap) = (px(24.0), px(6.0));
+            self.mode_drop.set_scale(self.scale);
+            self.mode_drop
+                .set_bounds(Rect::new(px(10.0), px(7.0), side, side), &mut inv);
             self.search.set_bounds(
                 Rect::new(
-                    px(10.0),
+                    px(10.0) + side + gap,
                     px(7.0),
-                    (size.width as i32 - px(20.0)).max(40),
-                    px(24.0),
+                    (size.width as i32 - px(20.0) - side - gap).max(40),
+                    side,
                 ),
                 &mut inv,
             );
@@ -1107,6 +1139,7 @@ impl Popup {
                 self.scale,
                 self.theme,
                 &self.search,
+                &self.mode_drop,
                 &self.rows,
                 self.sel,
                 self.scroll,
@@ -1156,6 +1189,7 @@ fn draw(
     s: f32,
     th: Theme,
     search: &TextBox,
+    mode_drop: &nclip_ctl::controls::IconDropdown,
     rows: &[Row],
     sel: usize,
     scroll: i32,
@@ -1184,6 +1218,7 @@ fn draw(
     // ── 헤더: 검색 필드(정식 TextBox — 캐럿·선택·×· 09-02) ──
     dc.fill_rect(Rect::new(0, 0, w, header_h), th.chrome_bg);
     search.paint(dc, &th);
+    mode_drop.paint(dc, &th);
     dc.fill_rect(Rect::new(0, header_h - 1, w, 1), th.border);
 
     // ── 목록 — ★ 보기 3모드(`ui.popup_view` · 09-02) · 가변 행은 누적합.
@@ -1439,4 +1474,5 @@ fn draw(
 
     // 검색 우클릭 편집 메뉴 — 맨 위 레이어(z = 그리는 순서).
     search.paint_popup(dc, &th);
+    mode_drop.paint_popup(dc, &th);
 }

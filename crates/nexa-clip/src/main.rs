@@ -20,6 +20,7 @@ mod devices;
 mod icon;
 mod lan;
 mod main_win;
+mod mode_drop;
 mod popup_win;
 mod render_img;
 mod search_index;

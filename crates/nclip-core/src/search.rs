@@ -21,6 +21,16 @@ pub enum Mode {
 }
 
 impl Mode {
+    /// 방식 → 설정 문자열.
+    #[must_use]
+    pub fn code(self) -> &'static str {
+        match self {
+            Self::Exact => "exact",
+            Self::Fuzzy => "fuzzy",
+            Self::Regex => "regex",
+        }
+    }
+
     /// 설정 문자열 → 방식(모르는 값 = 정확히).
     #[must_use]
     pub fn from_code(code: &str) -> Self {

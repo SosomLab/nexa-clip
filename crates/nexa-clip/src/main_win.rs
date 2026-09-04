@@ -95,6 +95,8 @@ pub(crate) enum MainAction {
     TogglePreview,
     /// ★ 감시 끄기 토글(09-04) — 셸이 캡처를 버린다(세션 한정 · 영속 없음).
     ToggleWatch,
+    /// ★ 검색 방식 선택(09-04 드롭다운) — 셸이 `find.mode`에 쓴다(적용은 박동 동기).
+    SearchMode(&'static str),
     /// ★ 중복 제외 보기 토글(09-04) — 셸이 `ui.dedup_view` 영속 + refresh.
     DedupView(bool),
     /// ★ 이미지로 복사(09-03 — 렌더 비트맵을 PNG+DIB로 게시 · "PPT에 이미지처럼").
@@ -196,6 +198,8 @@ pub(crate) struct MainWin {
     /// ★ 검색 입력(09-01 — 사용자 요청 "캐럿·복사/붙여넣기·드래그 선택") — 이식 `TextBox`
     ///   정식 편집기. 항상 포커스(키보드 기본 캡처)·IME preedit 인라인 표시.
     search: TextBox,
+    /// ★ 검색 방식 드롭다운(09-04 사용자) — 검색바 앞 정사각(Aa · ≈ · .*).
+    mode_drop: nclip_ctl::controls::IconDropdown,
     /// 캐럿 깜빡임 위상(셸 500ms 타이머).
     caret_phase: bool,
     /// ★ 최상위 고정 상태(`ui.always_on_top` 영속 — 셸이 넘겨준다).
@@ -297,7 +301,9 @@ pub(crate) struct MainWin {
 
 impl MainWin {
     pub(crate) fn new(font: Font) -> Self {
+        let mode_drop = crate::mode_drop::build(&font, "exact");
         Self {
+            mode_drop,
             window: None,
             ctx: None,
             surface: None,
@@ -455,6 +461,9 @@ impl MainWin {
             return false;
         }
         self.search_mode = mode;
+        let mut inv = Invalidations::default();
+        self.mode_drop.set_value(mode.code(), &mut inv);
+        self.redraw();
         true
     }
 
@@ -1235,6 +1244,24 @@ impl MainWin {
             }
             None => return MainAction::None,
         };
+        // ★ 검색 방식 드롭다운(09-04) — 열려 있거나 그 자리를 눌렀으면 먼저 먹는다(메뉴와 같은 z순서 계약).
+        if let Some(ev) = to_ctl_event(event, self.cursor) {
+            let was_open = self.mode_drop.is_open();
+            let inside = matches!(
+                ev,
+                CtlEvent::MouseDown { x, y, .. }
+                    if self.mode_drop.bounds().contains(nclip_ctl::geom::Point { x, y })
+            );
+            if was_open || inside {
+                let mut inv = Invalidations::default();
+                self.mode_drop.on_event(&ev, &mut inv);
+                self.redraw();
+                if let Some(v) = self.mode_drop.take_changed() {
+                    return MainAction::SearchMode(v);
+                }
+                return MainAction::None;
+            }
+        }
         // ★ 열린 컨텍스트 메뉴가 있으면 먼저 먹는다(바깥 클릭 = 닫기 — 메뉴 계약).
         if self.menu.is_open() {
             if let Some(ev) = to_ctl_event(event, self.cursor) {
@@ -1759,12 +1786,19 @@ impl MainWin {
             let mut inv = Invalidations::default();
             self.search.set_scale(self.scale);
             let tbw = self.toolbar_w();
+            // ★ 검색 방식 드롭다운 = 검색창 높이의 정사각형(09-04) · 그 오른쪽부터 검색창.
+            let side = (self.scale * 24.0).round() as i32;
+            let gap = (self.scale * 6.0).round() as i32;
+            let top = (self.scale * 7.0).round() as i32;
+            self.mode_drop.set_scale(self.scale);
+            self.mode_drop
+                .set_bounds(Rect::new(tbw + pad, top, side, side), &mut inv);
             self.search.set_bounds(
                 Rect::new(
-                    tbw + pad,
-                    (self.scale * 7.0).round() as i32,
-                    (w - tbw - pad * 2).max(40),
-                    (self.scale * 24.0).round() as i32,
+                    tbw + pad + side + gap,
+                    top,
+                    (w - tbw - pad * 2 - side - gap).max(40),
+                    side,
                 ),
                 &mut inv,
             );
@@ -1842,6 +1876,7 @@ impl MainWin {
         // ── ① 검색 1줄 — 툴바 오른쪽(정식 TextBox · 09-01) ──
         dc.fill_rect(Rect::new(tb_w, 0, w - tb_w, header_h), th.chrome_bg);
         self.search.paint(dc, &th);
+        self.mode_drop.paint(dc, &th);
         dc.fill_rect(Rect::new(tb_w, header_h - 1, w - tb_w, 1), th.border);
         for (k, t) in TOOLS_TOP.iter().enumerate() {
             match t {
@@ -2428,6 +2463,7 @@ impl MainWin {
         }
         // 검색 우클릭 편집 메뉴 — 맨 위 레이어.
         self.search.paint_popup(dc, &th);
+        self.mode_drop.paint_popup(dc, &th);
         // ★ 컨텍스트 메뉴 — 언제나 맨 위(툴팁 교훈).
         if self.menu.is_open() {
             self.menu.paint(dc, &th);

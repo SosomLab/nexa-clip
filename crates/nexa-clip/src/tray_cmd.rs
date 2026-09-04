@@ -432,6 +432,16 @@ impl Shell {
         }
     }
 
+    /// ★ 검색 방식 선택(09-04 드롭다운) — 설정에 쓰면 박동 동기가 두 창의 방식·드롭다운·필터를 맞춘다.
+    fn set_find_mode(&mut self, v: &str) {
+        if self.app.conf.state.get("find.mode") != v {
+            self.app
+                .conf
+                .set("find.mode", v.to_string(), Instant::now());
+            println!("검색 방식: {v}");
+        }
+    }
+
     /// ★ 검색문 갱신(09-04 색인) — 손에 있는 본문(inline 또는 적재된 blob)으로. 본문이 미적재 blob이면 라벨만(배경 로더가 채운다).
     fn index_item(&mut self, id: u64) {
         let Some(it) = self.history.get_by_id(id) else {
@@ -1229,6 +1239,7 @@ impl ApplicationHandler<ShellEvent> for Shell {
                         );
                     }
                 }
+                MainAction::SearchMode(v) => self.set_find_mode(v),
                 MainAction::ToggleWatch => {
                     self.watch_off = !self.watch_off;
                     self.main.apply_watch_off(self.watch_off);
@@ -1299,6 +1310,7 @@ impl ApplicationHandler<ShellEvent> for Shell {
             match self.popup.handle_event(&event, &self.history) {
                 PopupAction::None => {}
                 PopupAction::Close => self.close_popup(),
+                PopupAction::SearchMode(v) => self.set_find_mode(v),
                 PopupAction::Pick { index, as_ } => self.pick(index, as_),
                 PopupAction::PickStack(ids) => {
                     self.close_popup();
