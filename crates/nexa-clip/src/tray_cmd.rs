@@ -1069,6 +1069,17 @@ impl ApplicationHandler<ShellEvent> for Shell {
         if self.app.take_sync_respawn() {
             crate::sync_cmd::spawn_if_enabled(&self.app.conf, self.proxy.clone());
         }
+        // ★ 기록 모두 삭제(09-04 사용자 — 설정 고급 · 2단계 확인 통과) — 고정 제외 전부 · 저장소까지.
+        if self.app.take_clear_history() {
+            let gone = self.history.remove_unpinned();
+            for id in &gone {
+                self.store.remove(*id);
+            }
+            println!("기록 모두 삭제: {}개 (고정 항목 유지)", gone.len());
+            self.main.on_history_changed(&self.history);
+            self.popup.on_history_changed(&self.history);
+            self.refresh_tray();
+        }
         // ★ 캐럿 깜박임(09-02) — 검색창 띄운 창이 있으면 500ms 위상. 설정 창 페이드와
         //   겹칠 땐 더 짧은 쪽 데드라인이 이기지만, 우리가 덮어도 250ms 주기라 체감 무해.
         let searching = self.main.window_id().is_some() || self.popup.window_id().is_some();

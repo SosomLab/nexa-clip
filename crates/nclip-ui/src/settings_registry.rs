@@ -443,6 +443,16 @@ pub(crate) const REGISTRY: &[Entry] = &[
         SettingKind::Toggle,
         "adv.log",
     ),
+    // ★ 기록 모두 삭제(09-04 사용자) — 2단계 확인(첫 클릭 무장 2초 → 둘째 클릭 실행)은 셸(settings_win)이 맡는다.
+    e(
+        Msg::CatAdvanced,
+        Msg::SetClearHistory,
+        Msg::SetClearHistoryDesc,
+        SettingKind::Action {
+            verb: Msg::SetClearHistoryVerb,
+        },
+        "hist.clear",
+    ),
 ];
 
 #[cfg(test)]

@@ -464,6 +464,12 @@ pub enum Msg {
     SetDiagLog,
     /// 로그 설명.
     SetDiagLogDesc,
+    /// ★ 기록 모두 삭제(09-04 · 고급) — 라벨 · 설명 · 버튼 · 무장 노트 · 완료 노트.
+    SetClearHistory,
+    SetClearHistoryDesc,
+    SetClearHistoryVerb,
+    NoteClearArmed,
+    NoteClearDone,
     /// 값: 영어.
     ValLangEn,
     /// 값: 한국어.
@@ -1136,6 +1142,31 @@ impl Msg {
                 "托盘菜单中的最近条目数",
                 "トレイメニューの最近の項目数",
             ],
+            Msg::SetClearHistory => [
+                "Delete all history",
+                "기록 모두 삭제",
+                "删除全部记录",
+                "履歴をすべて削除",
+            ],
+            Msg::SetClearHistoryDesc => [
+                "Removes every clipboard item except pinned ones, from memory and the encrypted store. Click twice within 2 seconds to confirm. Cannot be undone",
+                "고정 항목을 뺀 모든 클립보드 기록을 메모리와 암호화 저장소에서 지웁니다. 2초 안에 두 번 눌러야 실행되며 되돌릴 수 없습니다",
+                "从内存和加密存储中删除除固定项外的全部剪贴板记录。2 秒内点击两次以确认。无法撤销",
+                "固定項目を除くすべての履歴をメモリと暗号化ストアから削除します。2 秒以内に 2 回押して確定。元に戻せません",
+            ],
+            Msg::SetClearHistoryVerb => ["Delete", "삭제", "删除", "削除"],
+            Msg::NoteClearArmed => [
+                "Click again within 2 seconds to delete everything except pinned items",
+                "2초 안에 다시 누르면 고정 항목을 뺀 모든 기록을 삭제합니다",
+                "2 秒内再次点击将删除除固定项外的全部记录",
+                "2 秒以内にもう一度押すと固定項目以外をすべて削除します",
+            ],
+            Msg::NoteClearDone => [
+                "Deleted. Pinned items were kept",
+                "삭제했습니다 · 고정 항목은 남겼습니다",
+                "已删除。固定项已保留",
+                "削除しました。固定項目は残しています",
+            ],
             Msg::SetDiagLog => ["Diagnostic log", "진단 로그", "诊断日志", "診断ログ"],
             Msg::SetDiagLogDesc => [
                 "Local only. Never sent anywhere",
@@ -1168,7 +1199,7 @@ mod tests {
     use super::*;
 
     /// 카탈로그 전수 — 새 `Msg`를 더하면 여기도 더한다(빈칸 검사가 그걸 강제한다).
-    const ALL_MSG: [Msg; 216] = [
+    const ALL_MSG: [Msg; 221] = [
         Msg::AppName,
         Msg::SearchPlaceholder,
         Msg::EmptyHistory,
@@ -1381,6 +1412,11 @@ mod tests {
         Msg::SetTrayRecent,
         Msg::SetDiagLog,
         Msg::SetDiagLogDesc,
+        Msg::SetClearHistory,
+        Msg::SetClearHistoryDesc,
+        Msg::SetClearHistoryVerb,
+        Msg::NoteClearArmed,
+        Msg::NoteClearDone,
         Msg::ValLangEn,
         Msg::ValLangKo,
         Msg::ValLangZh,

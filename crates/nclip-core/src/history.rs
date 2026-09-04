@@ -303,6 +303,19 @@ impl History {
         }
     }
 
+    /// ★ 일괄 삭제(09-04 사용자 — 설정 고급 "기록 모두 삭제"): **고정 제외** 전부 지우고 지운 id를 돌려준다
+    /// (저장소 동기화는 호출자 몫 — `remove`와 같은 규약).
+    pub fn remove_unpinned(&mut self) -> Vec<u64> {
+        let gone: Vec<u64> = self
+            .items
+            .iter()
+            .filter(|it| !it.pinned)
+            .map(|it| it.id)
+            .collect();
+        self.items.retain(|it| it.pinned);
+        gone
+    }
+
     /// ★ 핀 토글(T-18b0 기초) — 축출에서 지켜진다. 있는 id면 `true`.
     pub fn set_pinned(&mut self, id: u64, pinned: bool) -> bool {
         match self.items.iter_mut().find(|it| it.id == id) {

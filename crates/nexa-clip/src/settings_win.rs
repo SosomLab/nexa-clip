@@ -54,6 +54,10 @@ pub(crate) struct App {
     sync_test: Option<SyncTestSlot>,
     /// ★ Test 성공 → 러너 재기동 요청(09-03) — 셸이 소비한다(`take_sync_respawn`).
     sync_respawn: bool,
+    /// ★ 기록 모두 삭제 무장(09-04 사용자 — 2단계 확인): 첫 클릭 시각 · 2초 지나면 풀린다.
+    clear_arm: Option<Instant>,
+    /// ★ 둘째 클릭 확정 → 셸이 소비해 실제로 지운다(`take_clear_history`).
+    clear_request: bool,
     /// 마지막으로 노트에 반영한 러너 상태(변화 때만 갱신 — 자동 Test 표시).
     sync_shown: Option<crate::sync_cmd::SyncStatus>,
     /// 마지막으로 그린 기기 목록 텍스트(변화 때만 set_value).
@@ -89,6 +93,8 @@ impl App {
             widget,
             sync_test: None,
             sync_respawn: false,
+            clear_arm: None,
+            clear_request: false,
             sync_shown: None,
             devices_text: String::new(),
             mods: ModifiersState::empty(),
@@ -109,6 +115,24 @@ impl App {
     /// ★ Test 성공 뒤 러너 재기동이 필요한가 — 셸이 `spawn_if_enabled`로 잇는다(09-03).
     pub(crate) fn take_sync_respawn(&mut self) -> bool {
         std::mem::take(&mut self.sync_respawn)
+    }
+
+    /// ★ 기록 모두 삭제 확정(09-04) — 셸이 가져가 고정 제외 전부 지운다(1회성).
+    pub(crate) fn take_clear_history(&mut self) -> bool {
+        std::mem::take(&mut self.clear_request)
+    }
+
+    /// ★ 삭제 무장 만료(2초) — 노트를 지운다. 폴마다 값싸게.
+    fn expire_clear_arm(&mut self) {
+        if self
+            .clear_arm
+            .is_some_and(|t| t.elapsed() >= Duration::from_secs(2))
+        {
+            self.clear_arm = None;
+            let mut inv = Invalidations::default();
+            self.widget.set_row_note("hist.clear", "", &mut inv);
+            self.redraw();
+        }
     }
 
     /// ★ 즉시 연결 해제(09-03 사용자) — Disconnect 버튼·연결 정보 변경·Enable 끔 공용.
@@ -302,6 +326,7 @@ impl App {
     ///   수동 Test가 진행 중이면 그 결과가 우선(끝나면 러너 상태가 이어받는다).
     fn poll_sync_status(&mut self) {
         self.refresh_devices();
+        self.expire_clear_arm();
         use crate::sync_cmd::SyncStatus as S;
         let st = crate::sync_cmd::status();
         // ★ 활성 규칙(09-03·09-04 사용자): 동기화가 꺼져 있으면 **아래 설정 전부 잠금**(의미가 없다) ·
@@ -694,6 +719,33 @@ impl App {
             // ★ 연결 테스트(09-03 — beep 화법: 진행/성공/실패를 행 노트로).
             if key == "sync.test" && val == "run" {
                 self.start_sync_test();
+            }
+            // ★ 기록 모두 삭제(09-04 사용자) — **2단계**: 첫 클릭 = 경고 노트 + 2초 무장 · 그 안의 둘째 클릭 = 확정.
+            if key == "hist.clear" && val == "run" {
+                let lang = nclip_core::current_lang();
+                let mut inv = Invalidations::default();
+                let armed = self
+                    .clear_arm
+                    .is_some_and(|t| t.elapsed() < Duration::from_secs(2));
+                if armed {
+                    self.clear_arm = None;
+                    self.clear_request = true;
+                    self.widget.set_row_note_toned(
+                        "hist.clear",
+                        nclip_core::tr(lang, nclip_core::Msg::NoteClearDone),
+                        nclip_ui::NoteTone::Ok,
+                        &mut inv,
+                    );
+                } else {
+                    self.clear_arm = Some(Instant::now());
+                    self.widget.set_row_note_toned(
+                        "hist.clear",
+                        nclip_core::tr(lang, nclip_core::Msg::NoteClearArmed),
+                        nclip_ui::NoteTone::Warn,
+                        &mut inv,
+                    );
+                }
+                self.redraw();
             }
             // ★ 연결 해제(09-03) — **즉시** 끊고 Connected 자리(sync.test)에 표시.
             if key == "sync.disconnect" && val == "run" {
