@@ -93,6 +93,8 @@ pub(crate) enum MainAction {
     ToggleAlwaysTop,
     /// ★ 미리보기 패널 토글(09-02 K4) — 셸이 `ui.preview_open` 영속.
     TogglePreview,
+    /// ★ 감시 끄기 토글(09-04) — 셸이 캡처를 버린다(세션 한정 · 영속 없음).
+    ToggleWatch,
     /// ★ 중복 제외 보기 토글(09-04) — 셸이 `ui.dedup_view` 영속 + refresh.
     DedupView(bool),
     /// ★ 이미지로 복사(09-03 — 렌더 비트맵을 PNG+DIB로 게시 · "PPT에 이미지처럼").
@@ -145,21 +147,27 @@ enum Tool {
     Dedup,
     /// ★ 미리보기 패널 토글(09-02 K4 — CopyQ식 하단 패널). 켜짐 = accent.
     Preview,
-    /// ★ 최상위 고정(09-02 사용자 요청) — 모든 창 위에 표시. ⚙ 위 바닥 고정.
+    /// ★ 최상위 고정(09-02 사용자 요청) — 모든 창 위에 표시. 09-04: 토글 그룹(중복제외·미리보기·최상위)으로 이동.
     AlwaysTop,
+    /// ★ 감시 끄기 토글(09-04 사용자) — 켜짐(accent) = 클립보드 캡처를 받지 않는다(이 세션만 · 영속 없음).
+    WatchOff,
     Settings,
 }
 
 /// 툴바 배치(위에서부터) — `None` = 구분선. ⚙는 바닥 고정(VT-4).
-const TOOLS_TOP: [Option<Tool>; 8] = [
+const TOOLS_TOP: [Option<Tool>; 11] = [
     Some(Tool::Pin),
     Some(Tool::Delete),
     None,
     Some(Tool::Copy),
     Some(Tool::CopyPlain),
     None,
+    // ★ 토글 그룹(09-04 사용자): 중복 제외 · 미리보기 · 최상위 — 그 아래 감시 끄기.
     Some(Tool::Dedup),
     Some(Tool::Preview),
+    Some(Tool::AlwaysTop),
+    None,
+    Some(Tool::WatchOff),
 ];
 
 pub(crate) struct MainWin {
@@ -176,6 +184,8 @@ pub(crate) struct MainWin {
     caret_phase: bool,
     /// ★ 최상위 고정 상태(`ui.always_on_top` 영속 — 셸이 넘겨준다).
     always_top: bool,
+    /// ★ 감시 끄기(09-04) — 셸이 캡처를 버린다. 툴바 토글 표시용.
+    watch_off: bool,
     rows: Vec<Row>,
     sel: usize,
     /// ★ 목록 세로 스크롤(**픽셀** · 09-02 실기 — 행 단위는 터치패드에서 뚝뚝 끊겼다).
@@ -280,6 +290,7 @@ impl MainWin {
             follow: None,
             follow_scroll: false,
             follow_new: None,
+            watch_off: false,
             hovered: None,
             view: ViewMode::Compact,
             menu: ContextMenu::new(),
@@ -350,6 +361,12 @@ impl MainWin {
     }
 
     /// ★ 최상위 고정 적용(09-02) — 토글 즉시 창 레벨 반영.
+    /// ★ 감시 끄기 토글 표시(09-04) — 값은 셸이 갖는다(캡처 차단).
+    pub(crate) fn apply_watch_off(&mut self, on: bool) {
+        self.watch_off = on;
+        self.redraw();
+    }
+
     pub(crate) fn apply_always_top(&mut self, on: bool) {
         self.always_top = on;
         if let Some(w) = &self.window {
@@ -656,19 +673,8 @@ impl MainWin {
         Rect::new(x, y, side, side)
     }
 
-    /// ★ 최상위 고정 — ⚙ 바로 위(바닥 구역 · 09-02).
-    /// ★ 연결 아이콘 자리(09-03 — Always on top 위) — 표시 전용(버튼 아님).
+    /// ★ 연결 아이콘 자리(09-03) — 표시 전용(버튼 아님). 09-04: 바닥 구역 = 연결 · ⚙ 둘뿐(최상위는 위 그룹으로).
     fn sync_icon_rect(&self, h: i32) -> Rect {
-        let side = self.px(28.0);
-        Rect::new(
-            (self.toolbar_w() - side) / 2,
-            h - self.status_h() - side * 3 - self.px(18.0),
-            side,
-            side,
-        )
-    }
-
-    fn always_top_rect(&self, h: i32) -> Rect {
         let side = self.px(28.0);
         Rect::new(
             (self.toolbar_w() - side) / 2,
@@ -692,9 +698,6 @@ impl MainWin {
     fn tool_at(&self, x: i32, y: i32, h: i32) -> Option<Tool> {
         if self.settings_rect(h).contains_xy(x, y) {
             return Some(Tool::Settings);
-        }
-        if self.always_top_rect(h).contains_xy(x, y) {
-            return Some(Tool::AlwaysTop);
         }
         for (k, t) in TOOLS_TOP.iter().enumerate() {
             if let Some(t) = t {
@@ -798,6 +801,7 @@ impl MainWin {
             (Tool::Settings, _) => MainAction::OpenSettings,
             (Tool::AlwaysTop, _) => MainAction::ToggleAlwaysTop,
             (Tool::Preview, _) => MainAction::TogglePreview,
+            (Tool::WatchOff, _) => MainAction::ToggleWatch,
             // 값 적용은 셸 왕복(`apply_dedup`) — 영속과 화면이 한 곳에서 맞는다(미리보기 토글과 같은 문법).
             (Tool::Dedup, _) => MainAction::DedupView(!self.dedup_view),
             (_, None) => MainAction::None, // VT-3: 선택 없으면 비활성
@@ -1597,7 +1601,11 @@ impl MainWin {
                     dc,
                     self.tool_rect(k),
                     *t,
-                    has_sel || matches!(*t, Tool::Preview | Tool::Dedup),
+                    has_sel
+                        || matches!(
+                            *t,
+                            Tool::Preview | Tool::Dedup | Tool::AlwaysTop | Tool::WatchOff
+                        ),
                 ),
                 None => {
                     let r = self.tool_rect(k);
@@ -1608,7 +1616,6 @@ impl MainWin {
                 }
             }
         }
-        self.draw_tool(dc, self.always_top_rect(h), Tool::AlwaysTop, true);
         self.draw_tool(dc, self.settings_rect(h), Tool::Settings, true);
         // ★ 동기화 연결 아이콘(09-03 — beep Lucide 자산 동일: cable=연결 · unplug=끊김).
         if let Some(on) = self.sync_on {
@@ -2142,9 +2149,6 @@ impl MainWin {
         if tool == Tool::Settings {
             return self.settings_rect(h);
         }
-        if tool == Tool::AlwaysTop {
-            return self.always_top_rect(h);
-        }
         for (k, t) in TOOLS_TOP.iter().enumerate() {
             if *t == Some(tool) {
                 return self.tool_rect(k);
@@ -2316,6 +2320,27 @@ impl MainWin {
                     let (iw, ih2) = (px(5.2), px(2.9));
                     dc.fill_triangle((cx, yc - ih2), (cx - iw, yc), (cx + iw, yc), th.chrome_bg);
                     dc.fill_triangle((cx - iw, yc), (cx + iw, yc), (cx, yc + ih2), th.chrome_bg);
+                }
+            }
+            Tool::WatchOff => {
+                // ★ Material `visibility_off` 근사(09-04 사용자 — 감시 끄기) — 눈 윤곽(타원 두 겹) + 동공,
+                //   켜짐(감시 꺼짐) = accent + 사선.
+                let on = self.watch_off;
+                let c = if on { th.accent } else { ink };
+                dc.fill_ellipse(
+                    Rect::new(cx - px(10.0), cy - px(6.0), px(20.0), px(12.0)),
+                    c,
+                );
+                dc.fill_ellipse(
+                    Rect::new(cx - px(8.0), cy - px(4.0), px(16.0), px(8.0)),
+                    th.chrome_bg,
+                );
+                dc.fill_ellipse(Rect::new(cx - px(3.0), cy - px(3.0), px(6.0), px(6.0)), c);
+                if on {
+                    let line = [(cx - px(9.0), cy - px(9.0)), (cx + px(9.0), cy + px(9.0))];
+                    // 바탕색 굵은 선을 먼저 그어 눈과 사선을 떼어 놓는다(Material 관례).
+                    dc.polyline(&line, th.chrome_bg, w2 + 2.0 * self.scale);
+                    dc.polyline(&line, c, w2);
                 }
             }
             Tool::Settings => {
@@ -2757,6 +2782,7 @@ fn tool_label(t: Tool) -> &'static str {
         Tool::Preview => tr(lang, Msg::TipPreview),
         Tool::Dedup => tr(lang, Msg::DedupLabel),
         Tool::AlwaysTop => tr(lang, Msg::TipAlwaysTop),
+        Tool::WatchOff => tr(lang, Msg::ActionPauseCapture),
         Tool::Settings => tr(lang, Msg::TraySettings),
     }
 }

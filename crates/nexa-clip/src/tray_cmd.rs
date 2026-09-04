@@ -294,6 +294,8 @@ struct Shell {
     /// ★ 창 레벨(최상위)이 지금 창 백엔드에서 실제로 먹는가 — Wayland 네이티브 창이면
     ///   false(프로토콜에 "항상 위" 요청이 없다). 토글 때 정직 안내에 쓴다(09-02).
     atop_effective: bool,
+    /// ★ 감시 끄기(09-04 사용자 — 툴바 토글): 켜지면 로컬 캡처 사건을 버린다. 세션 한정(재시작 = 켜짐).
+    watch_off: bool,
 }
 
 impl Shell {
@@ -517,6 +519,10 @@ impl Shell {
     /// 캡처(감시) 또는 원격 항목(`remote = Some(기기명)`)을 이력에 넣는다 — 게이트·요약·썸네일·
     /// 영속·화면 갱신은 공용. ★ 우리 복사만 다른 기기로 전파한다(09-04 · DR-6).
     fn on_captured(&mut self, mut snap: Box<ClipSnapshot>, remote: Option<&str>) {
+        // ★ 감시 끄기(09-04) — 로컬 캡처만 버린다(수신 항목은 감시가 아니라 동기화).
+        if self.watch_off && remote.is_none() {
+            return;
+        }
         // ★ CF_HTML 정제(T-14d · D-62 1단) — 캡처 때 한 번만(재적재·저장은 이미 깨끗).
         for r in &mut snap.reps {
             if r.format == "HTML Format" {
@@ -897,6 +903,18 @@ impl ApplicationHandler<ShellEvent> for Shell {
                             "최상위 고정: Wayland 창에는 즉시 적용되지 않습니다 — 재시작하면 X11 창으로 적용됩니다"
                         );
                     }
+                }
+                MainAction::ToggleWatch => {
+                    self.watch_off = !self.watch_off;
+                    self.main.apply_watch_off(self.watch_off);
+                    println!(
+                        "클립보드 감시: {}",
+                        if self.watch_off {
+                            "꺼짐 — 툴바 토글로 다시 켭니다(이 세션만)"
+                        } else {
+                            "켜짐"
+                        }
+                    );
                 }
                 MainAction::TogglePreview => {
                     let on = self.app.conf.state.get("ui.preview_open") != "on";
@@ -1327,6 +1345,7 @@ pub(crate) fn run() {
         sync_skip: None,
         proxy: el.create_proxy(),
         atop_effective,
+        watch_off: false,
     };
     // ★ 복원 직후 트레이 메뉴·툴팁 갱신(09-01 사용자 실기 "우클릭에 최근이 안 보임") —
     //   spawn 때는 빈 내용이었고 첫 캡처까지는 아무도 불러주지 않았다.
