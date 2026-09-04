@@ -216,6 +216,8 @@ pub(crate) struct MainWin {
     hovered: Option<Tool>,
     /// ★ 툴바 hover 페이드(09-04 사용자 — "설정 창처럼 서서히 진해지게"): 공용 `HoverFade`(켜지는 것·꺼지는 것 둘).
     tool_fade: nclip_ctl::tokens::HoverFade,
+    /// ★ 상태줄 점 툴팁 페이드(09-04) — 툴바 툴팁과 같은 곡선.
+    dot_fade: nclip_ctl::tokens::Fade,
     /// ★ 보기 모드(Ctrl+1/2/3 · `ui.view_mode` 영속).
     view: ViewMode,
     /// ★ 우클릭 컨텍스트 메뉴(VT-5).
@@ -300,6 +302,7 @@ impl MainWin {
             watch_off: false,
             hovered: None,
             tool_fade: nclip_ctl::tokens::HoverFade::default(),
+            dot_fade: nclip_ctl::tokens::Fade::hover(),
             view: ViewMode::Compact,
             menu: ContextMenu::new(),
             editor: None,
@@ -914,10 +917,14 @@ impl MainWin {
     /// 스크롤바 자동 숨김 페이드 틱(셸 500ms 심장 박동).
     /// 반환 = 아직 움직이는 중(셸이 16ms 박동으로 올린다 — 툴바 hover 페이드).
     pub(crate) fn tick_ui(&mut self, now_ms: u64) -> bool {
-        if self.bars.tick(now_ms) | self.preview_bars.tick(now_ms) | self.tool_fade.tick(now_ms) {
+        if self.bars.tick(now_ms)
+            | self.preview_bars.tick(now_ms)
+            | self.tool_fade.tick(now_ms)
+            | self.dot_fade.tick(now_ms)
+        {
             self.redraw();
         }
-        self.tool_fade.is_animating()
+        self.tool_fade.is_animating() || self.dot_fade.is_animating()
     }
 
     /// ★ 미리보기 내용을 현재 선택과 동기(09-02 K4) — id 비교만이라 매 사건 호출해도 값싸다.
@@ -1152,6 +1159,7 @@ impl MainWin {
                 });
                 if dot_hover != self.sync_dot_hover {
                     self.sync_dot_hover = dot_hover;
+                    self.dot_fade.set(dot_hover);
                     self.redraw();
                 }
             }
@@ -2087,7 +2095,10 @@ impl MainWin {
 
         // ★ 툴팁 — **반드시 맨 끝**(09-01 실기 "일부만 보임" = 목록이 덤어버렸다).
         //   글자는 본문 크기(Base) — Status는 작다는 사용자 피드백.
+        //   ★ 서서히 진해진다(09-04 사용자 — 설정 창과 같은 `Fade::hover` 곡선): 바탕은 알파, 글자·테두리는
+        //   바탕색에서 본색으로 보간(글자 알파 API가 없어 같은 체감을 색으로 낸다).
         if let Some(t) = self.hovered {
+            let g = self.tool_fade.value(t as usize).clamp(0.0, 1.0);
             let r = self.tool_rect_of(t, h);
             let label = self.tool_label(t);
             let tw = dc.text_width(label);
@@ -2098,9 +2109,7 @@ impl MainWin {
                 tw + pad_x * 2,
                 tip_h,
             );
-            dc.fill_round_rect(tip, px(5.0), th.chrome_bg);
-            dc.stroke_round_rect(tip, px(5.0), th.border, 1.0);
-            dc.text(tip.x + pad_x, tip.y + px(5.0), full, label, th.text);
+            draw_tooltip(dc, &th, tip, px(5.0), pad_x, px(5.0), full, label, g);
         }
         // ★ 상태줄 점 툴팁(09-04 사용자) — 점 위쪽·오른쪽 끝 정렬(창 밖으로 안 나가게).
         if self.sync_dot_hover {
@@ -2121,9 +2130,8 @@ impl MainWin {
                 tip_w,
                 tip_h,
             );
-            dc.fill_round_rect(tip, px(5.0), th.chrome_bg);
-            dc.stroke_round_rect(tip, px(5.0), th.border, 1.0);
-            dc.text(tip.x + pad_x, tip.y + px(5.0), full, label, th.text);
+            let g = self.dot_fade.value().clamp(0.0, 1.0);
+            draw_tooltip(dc, &th, tip, px(5.0), pad_x, px(5.0), full, label, g);
         }
 
         // ★ 인라인 에디터(S4 평문화) — 목록 영역을 덮는 시트 + 안내 줄.
@@ -2828,6 +2836,33 @@ impl MainWin {
             Tool::Settings => tr(lang, Msg::TraySettings),
         }
     }
+}
+
+/// 툴팁 한 장 — 진행도 `g`(0~1)로 서서히 진해진다: 바탕 알파 · 테두리/글자 = 바탕색→본색 보간.
+#[allow(clippy::too_many_arguments)]
+fn draw_tooltip(
+    dc: &mut RasterCtx<'_, '_, '_>,
+    th: &nclip_ctl::theme::Theme,
+    tip: Rect,
+    radius: i32,
+    pad_x: i32,
+    pad_y: i32,
+    clip: Rect,
+    label: &str,
+    g: f32,
+) {
+    if g <= 0.0 {
+        return;
+    }
+    dc.fill_round_rect_alpha(tip, radius, th.chrome_bg, g);
+    dc.stroke_round_rect(tip, radius, th.chrome_bg.lerp(th.border, g), 1.0);
+    dc.text(
+        tip.x + pad_x,
+        tip.y + pad_y,
+        clip,
+        label,
+        th.chrome_bg.lerp(th.text, g),
+    );
 }
 
 /// `Rect`에 (x,y) 포함 판정이 없어 로컬 확장.
