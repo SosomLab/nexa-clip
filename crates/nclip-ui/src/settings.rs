@@ -71,7 +71,6 @@ const HIDDEN_KEYS: &[&str] = &[
     "ui.popup_w",
     "ui.popup_h",
     "ui.preview_open",
-    "ui.dedup_view",
     "ui.always_on_top",
 ];
 

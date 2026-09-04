@@ -53,8 +53,6 @@ pub(crate) struct OpenOpts<'a> {
     pub always_top: bool,
     /// `ui.preview_open`(09-02 K4).
     pub preview_open: bool,
-    /// ★ `ui.dedup_view`(09-04) — 중복 제외 보기.
-    pub dedup_view: bool,
 }
 
 /// ★ 동기화 표시 모드(09-04 사용자) — 상태줄 점 색의 근거.
@@ -93,8 +91,6 @@ pub(crate) enum MainAction {
     ToggleAlwaysTop,
     /// ★ 미리보기 패널 토글(09-02 K4) — 셸이 `ui.preview_open` 영속.
     TogglePreview,
-    /// ★ 중복 제외 보기 토글(09-04) — 셸이 `ui.dedup_view` 영속 + refresh.
-    DedupView(bool),
     /// ★ 이미지로 복사(09-03 — 렌더 비트맵을 PNG+DIB로 게시 · "PPT에 이미지처럼").
     CopyImage(u64),
     /// ★ 보기 모드 변경(Ctrl+1/2/3) — 셸이 `ui.view_mode`에 영속한다.
@@ -141,8 +137,6 @@ enum Tool {
     Delete,
     Copy,
     CopyPlain,
-    /// ★ 중복 제외 보기(09-04 사용자 — Material `compress` 아이콘 · 미리보기 위). 켜짐 = accent.
-    Dedup,
     /// ★ 미리보기 패널 토글(09-02 K4 — CopyQ식 하단 패널). 켜짐 = accent.
     Preview,
     /// ★ 최상위 고정(09-02 사용자 요청) — 모든 창 위에 표시. ⚙ 위 바닥 고정.
@@ -151,14 +145,13 @@ enum Tool {
 }
 
 /// 툴바 배치(위에서부터) — `None` = 구분선. ⚙는 바닥 고정(VT-4).
-const TOOLS_TOP: [Option<Tool>; 8] = [
+const TOOLS_TOP: [Option<Tool>; 7] = [
     Some(Tool::Pin),
     Some(Tool::Delete),
     None,
     Some(Tool::Copy),
     Some(Tool::CopyPlain),
     None,
-    Some(Tool::Dedup),
     Some(Tool::Preview),
 ];
 
@@ -212,12 +205,8 @@ pub(crate) struct MainWin {
     sync_icon: std::cell::RefCell<Option<(bool, u32, nclip_ctl::theme::IconImage)>>,
     /// 미리보기 아이콘 틴트 캐시(색 키 · 09-03 사용자 지정 아이콘).
     preview_icon: std::cell::RefCell<Option<(u32, nclip_ctl::theme::IconImage)>>,
-    /// 중복 제외 아이콘 틴트 캐시(색 키 · 09-04 사용자 지정 Material `compress`).
-    dedup_icon: std::cell::RefCell<Option<(u32, nclip_ctl::theme::IconImage)>>,
     /// ★ 미리보기 패널 열림(09-02 K4 · `ui.preview_open` 영속 — 기본 접힘).
     preview_open: bool,
-    /// ★ 중복 제외 보기(09-04 사용자) — 같은 내용은 **로컬 1건**, 로컬이 없으면 **가장 최근 수신 1건**만.
-    dedup_view: bool,
     /// 미리보기 텍스트 — (항목 id, 읽기용 멀티라인 · wrap · 휠 스크롤만 라우팅).
     preview_tb: Option<(u64, TextBox)>,
     /// ★ 리치 미리보기 세로 스크롤(px · 09-03 — 스크롤바와 짝).
@@ -272,11 +261,9 @@ impl MainWin {
             sync_mode: SyncMode::Off,
             sync_icon: std::cell::RefCell::new(None),
             preview_icon: std::cell::RefCell::new(None),
-            dedup_icon: std::cell::RefCell::new(None),
             preview_open: false,
             preview_tb: None,
             preview_scroll: 0,
-            dedup_view: false,
             preview_hs: 0,
             preview_bars: ScrollBars::new(),
             preview_content: std::cell::Cell::new((0, 0)),
@@ -361,7 +348,6 @@ impl MainWin {
         self.theme = theme;
         self.always_top = opts.always_top;
         self.preview_open = opts.preview_open;
-        self.dedup_view = opts.dedup_view;
         self.view = ViewMode::from_code(opts.view_code).unwrap_or_default();
         if let Some(w) = &self.window {
             w.set_visible(true);
@@ -519,9 +505,8 @@ impl MainWin {
         }
         self.rows = pinned;
         self.rows.extend(normal);
-        if self.dedup_view {
-            self.rows = Self::dedup_rows(std::mem::take(&mut self.rows));
-        }
+        // ★ 병합 표시는 기본 기능(09-04 사용자 확정) — 같은 내용은 항상 한 행(로컬 우선 · 출처는 메타).
+        self.rows = Self::dedup_rows(std::mem::take(&mut self.rows));
         if self.sel >= self.rows.len() {
             self.sel = self.rows.len().saturating_sub(1);
         }
@@ -756,8 +741,6 @@ impl MainWin {
             (Tool::Settings, _) => MainAction::OpenSettings,
             (Tool::AlwaysTop, _) => MainAction::ToggleAlwaysTop,
             (Tool::Preview, _) => MainAction::TogglePreview,
-            // 값 적용은 셸 왕복(`apply_dedup`) — 영속과 화면이 한 곳에서 맞는다(미리보기 토글과 같은 문법).
-            (Tool::Dedup, _) => MainAction::DedupView(!self.dedup_view),
             (_, None) => MainAction::None, // VT-3: 선택 없으면 비활성
             (Tool::Pin, Some(id)) => MainAction::TogglePin(id),
             (Tool::Delete, Some(id)) => MainAction::Delete(id),
@@ -962,14 +945,6 @@ impl MainWin {
     pub(crate) fn set_sync_mode(&mut self, mode: SyncMode) {
         if self.sync_mode != mode {
             self.sync_mode = mode;
-            self.redraw();
-        }
-    }
-
-    /// ★ 중복 제외 보기 적용(토글 셸 왕복 · 09-04) — 행 재구성은 셸이 `on_history_changed`로.
-    pub(crate) fn apply_dedup(&mut self, on: bool) {
-        if self.dedup_view != on {
-            self.dedup_view = on;
             self.redraw();
         }
     }
@@ -1523,12 +1498,9 @@ impl MainWin {
         let has_sel = !self.rows.is_empty();
         for (k, t) in TOOLS_TOP.iter().enumerate() {
             match t {
-                Some(t) => self.draw_tool(
-                    dc,
-                    self.tool_rect(k),
-                    *t,
-                    has_sel || matches!(*t, Tool::Preview | Tool::Dedup),
-                ),
+                Some(t) => {
+                    self.draw_tool(dc, self.tool_rect(k), *t, has_sel || *t == Tool::Preview)
+                }
                 None => {
                     let r = self.tool_rect(k);
                     dc.fill_rect(
@@ -2119,28 +2091,6 @@ impl MainWin {
                     dc.image_scaled(dst, img, r);
                 }
             }
-            Tool::Dedup => {
-                // ★ Material `compress`(09-04 사용자 지정 SVG) — 켜짐(중복 제외 보기) = accent.
-                let c = if self.dedup_view { th.accent } else { ink };
-                let mut cache = self.dedup_icon.borrow_mut();
-                let stale = !matches!(cache.as_ref(), Some((k, _)) if *k == c.0);
-                if stale {
-                    let (r0, g0, b0) = ((c.0 >> 16) as u8, (c.0 >> 8) as u8, c.0 as u8);
-                    let mut rgba = Vec::with_capacity(DEDUP_ALPHA.len() * 4);
-                    for &a in DEDUP_ALPHA {
-                        rgba.extend_from_slice(&[r0, g0, b0, a]);
-                    }
-                    *cache = Some((
-                        c.0,
-                        nclip_ctl::theme::IconImage::from_rgba(PREVIEW_SIDE, PREVIEW_SIDE, rgba),
-                    ));
-                }
-                if let Some((_, img)) = cache.as_ref() {
-                    let half = px(10.0);
-                    let dst = Rect::new(cx - half, cy - half, half * 2, half * 2);
-                    dc.image_scaled(dst, img, r);
-                }
-            }
             Tool::AlwaysTop => {
                 // ★ Material `layers`(09-02 사용자 시안) — 꺼짐 = 윗장 윤곽선 + 밴드 1,
                 //   켜짐 = accent 적층 3장. 마름모 = 삼각형 2장 합성.
@@ -2578,8 +2528,6 @@ fn svg_attr(xml: &str, name: &str) -> Option<u32> {
 
 /// ★ 미리보기 툴바 아이콘(09-03 사용자 지정 — Material `preview` 96² 알파).
 const PREVIEW_ALPHA: &[u8] = include_bytes!("../assets/icon-preview-96.alpha");
-/// ★ 중복 제외 툴바 아이콘(09-04 사용자 지정 — Material `compress` 96² 알파).
-const DEDUP_ALPHA: &[u8] = include_bytes!("../assets/icon-dedup-96.alpha");
 /// 미리보기 자산 변(px).
 const PREVIEW_SIDE: u32 = 96;
 
@@ -2622,7 +2570,6 @@ fn tool_label(t: Tool) -> &'static str {
         Tool::Copy => tr(lang, Msg::TipCopy),
         Tool::CopyPlain => tr(lang, Msg::TipCopyPlain),
         Tool::Preview => tr(lang, Msg::TipPreview),
-        Tool::Dedup => tr(lang, Msg::DedupLabel),
         Tool::AlwaysTop => tr(lang, Msg::TipAlwaysTop),
         Tool::Settings => tr(lang, Msg::TraySettings),
     }
