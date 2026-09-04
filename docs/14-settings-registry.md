@@ -251,7 +251,7 @@ General 안내문 그대로:
 | `sync.device_name` | Text | — | 기기 표시 이름(비면 호스트명 정제 → `clip-{지문4}` 폴백 · 프로필 실행은 `-{프로필}` 접미) |
 | `sync.handle` | Text | — | 핸들([09 §6](09-identity-and-pairing.md)) · 입력 시 패스프레이즈 자동 추천 |
 | `sync.passphrase` | Text(비밀) | — | 페어링 패스프레이즈 · 눈(보기) · 생성(2단 확인 · 생성 시 표시) · 서버로 안 감 |
-| `sync.relay` | RadioInput | `beepd.sosomlab.com` | 공식 릴레이 · 직접 입력 · **`none`** = 같은 네트워크만(포트·Test·Disconnect 잠금 · Test 없이 즉시 적용) |
+| `sync.relay` | RadioInput | `beepd.sosomlab.com` | 공식 릴레이 · 직접 입력 · **`none`** = 같은 네트워크만(포트·Test·Disconnect 잠금 · Test 없이 즉시 적용 · ★ 핸들·암호를 뒤늦게 채워도 800ms 뒤 **자동 재기동**(09-05) — 서버 릴레이는 정보 변경 = 해제 → Test) |
 | `sync.port` | RadioInput | `47300` | 릴레이 TCP 제어 포트 |
 | `sync.retry` | Radio | `normal` | 재시도 정책 — 실패 n회째 = base×2^(n−1)(상한 · ±20% 지터 · 성공 시 초기화) · normal 5s→5분 · patient 15s→15분 · eager 2s→1분 |
 | `sync.test` | Action | — | 릴레이 접속 시험 → 성공 = `sync.enabled` 자동 켬 + 러너 (재)기동 · 연결 중엔 잠금 · 실행 시 자동 Test 노트 |

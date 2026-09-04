@@ -57,6 +57,9 @@ pub(crate) struct App {
     sync_test: Option<SyncTestSlot>,
     /// ★ Test 성공 → 러너 재기동 요청(09-03) — 셸이 소비한다(`take_sync_respawn`).
     sync_respawn: bool,
+    /// ★ 릴레이 None 자동 재기동 예약(09-05 사용자 — VM 실기: 핸들·암호를 **뒤늦게** 채우면 Test·재시작 전엔
+    ///   러너가 안 섰다). 자유 문자열 행은 글자마다 오므로 마지막 입력 뒤 잠잠해지면 한 번만 건다(디바운스).
+    sync_respawn_at: Option<Instant>,
     /// ★ 기록 모두 삭제 무장(09-04 사용자 — 2단계 확인): 첫 클릭 시각 · 2초 지나면 풀린다.
     clear_arm: Option<Instant>,
     /// ★ 둘째 클릭 확정 → 셸이 소비해 실제로 지운다(`take_clear_history`).
@@ -113,6 +116,7 @@ impl App {
             widget,
             sync_test: None,
             sync_respawn: false,
+            sync_respawn_at: None,
             clear_arm: None,
             clear_request: false,
             sync_shown: None,
@@ -138,6 +142,28 @@ impl App {
     /// ★ Test 성공 뒤 러너 재기동이 필요한가 — 셸이 `spawn_if_enabled`로 잇는다(09-03).
     pub(crate) fn take_sync_respawn(&mut self) -> bool {
         std::mem::take(&mut self.sync_respawn)
+    }
+
+    /// ★ 릴레이 None 자동 재기동 무장(09-05 사용자) — 핸들·암호 행이 바뀔 때 부른다.
+    ///   조건이 맞으면 `LAN_RESPAWN_DEBOUNCE` 뒤로 예약(연속 입력은 마지막만 남는다 — DR-41) ·
+    ///   조건이 깨지면(둘 중 하나 비움 등) 예약 취소.
+    fn arm_lan_respawn(&mut self, now: Instant) {
+        let ready = lan_auto_respawn_ready(
+            self.conf.state.get("sync.relay"),
+            self.conf.state.get("sync.enabled"),
+            self.conf.state.get("sync.handle"),
+            self.conf.state.get("sync.passphrase"),
+        );
+        self.sync_respawn_at = ready.then(|| now + LAN_RESPAWN_DEBOUNCE);
+    }
+
+    /// 예약이 만료됐으면 셸에 재기동을 요청한다(tick 경로).
+    fn fire_lan_respawn(&mut self) {
+        if self.sync_respawn_at.is_some_and(|at| Instant::now() >= at) {
+            self.sync_respawn_at = None;
+            self.sync_respawn = true;
+            self.sync_shown = None; // 러너가 서면 LanOnly 노트로 갱신
+        }
     }
 
     /// ★ 기록 모두 삭제 확정(09-04) — 셸이 가져가 고정 제외 전부 지운다(1회성).
@@ -1107,8 +1133,9 @@ impl App {
                     &mut inv2,
                 );
                 self.redraw();
-                // 연결 정보가 바뀌었다 — 연결 중이면 즉시 해제(재접속 = Test).
+                // 연결 정보가 바뀌었다 — 연결 중이면 즉시 해제(재접속 = Test · 릴레이 None이면 자동).
                 self.sync_drop_now();
+                self.arm_lan_respawn(now);
             }
             // ★ 연결 정보 변경 = 즉시 해제(09-03 사용자) — Test로 새 정보 재접속.
             if matches!(
@@ -1126,6 +1153,11 @@ impl App {
             {
                 self.sync_respawn = true;
                 self.sync_shown = None;
+            }
+            // ★ 릴레이 None + 핸들·암호를 **뒤늦게** 채운 경우(09-05 사용자 — VM 실기): 종전엔 Test·재시작 전까지
+            //   러너가 서지 않았다(입력 순서에 따라 결과가 갈림). 둘 다 차면 잠잠해진 뒤 한 번 자동 재기동.
+            if matches!(key, "sync.handle" | "sync.passphrase") {
+                self.arm_lan_respawn(now);
             }
             // ★ Enable Sync 끔 = 즉시 해제(09-03 사용자).
             if key == "sync.enabled" && val != "on" {
@@ -1444,6 +1476,7 @@ impl ApplicationHandler for App {
     fn about_to_wait(&mut self, el: &ActiveEventLoop) {
         // 캐럿 깜빡임·툴팁·★ 상태 페이드 — 위젯이 "다시 그려야 한다"고 할 때만.
         let now = self.now_ms();
+        self.fire_lan_respawn(); // ★ 릴레이 None 자동 재기동(09-05) — 디바운스 만료 시 셸에 요청.
         self.poll_sync_test(); // ★ 동기화 테스트 결과 소비(09-03).
         self.poll_sync_status(); // ★ 러너 상태 → 노트(자동 Test 표시).
         let animating = self.widget.tick(now);
@@ -1463,6 +1496,12 @@ impl ApplicationHandler for App {
             Some(Duration::from_millis(250))
         } else {
             None
+        };
+        // ★ 자동 재기동 예약이 있으면 그 만료에도 깨어난다(Wait만 두면 타이머가 영영 안 돈다).
+        let next = match (next, self.sync_respawn_at) {
+            (Some(d), Some(at)) => Some(d.min(at.saturating_duration_since(wall))),
+            (None, Some(at)) => Some(at.saturating_duration_since(wall)),
+            (d, None) => d,
         };
         match next {
             Some(d) => el.set_control_flow(ControlFlow::WaitUntil(wall + d)),
@@ -1712,4 +1751,35 @@ fn keycode_token(pk: &winit::keyboard::PhysicalKey) -> Option<&'static str> {
 /// 물리 키 비교(09-04) — 한글/다른 자판에서도 Ctrl+C/V/X/A가 같은 자리로 잡힌다.
 fn phys_is(pk: &winit::keyboard::PhysicalKey, code: winit::keyboard::KeyCode) -> bool {
     matches!(pk, winit::keyboard::PhysicalKey::Code(c) if *c == code)
+}
+
+/// ★ 릴레이 None 자동 재기동 디바운스(09-05) — 자유 문자열 행은 글자마다 오므로 마지막 입력 뒤 이만큼 잠잠해야 건다.
+const LAN_RESPAWN_DEBOUNCE: Duration = Duration::from_millis(800);
+
+/// 릴레이 None 자동 재기동 조건(순수 판정) — 동기화 켜짐 · 릴레이 `none` · 핸들·암호 둘 다 있음.
+///   서버 릴레이는 종전 계약(정보 변경 = 해제 → Test로 재접속)을 유지한다.
+fn lan_auto_respawn_ready(relay: &str, enabled: &str, handle: &str, pass: &str) -> bool {
+    relay.trim() == "none"
+        && enabled == "on"
+        && !handle.trim().is_empty()
+        && !pass.trim().is_empty()
+}
+
+#[cfg(test)]
+mod lan_respawn_tests {
+    use super::lan_auto_respawn_ready;
+
+    #[test]
+    fn ready_only_when_none_enabled_and_identity_full() {
+        assert!(lan_auto_respawn_ready("none", "on", "kiros33", "pw"));
+        assert!(lan_auto_respawn_ready(" none ", "on", " kiros33 ", "pw"), "공백 무시");
+        assert!(!lan_auto_respawn_ready("none", "on", "", "pw"), "핸들 비면 안 건다");
+        assert!(!lan_auto_respawn_ready("none", "on", "kiros33", "  "), "암호 비면 안 건다");
+        assert!(!lan_auto_respawn_ready("none", "off", "kiros33", "pw"), "동기화 꺼짐");
+        assert!(
+            !lan_auto_respawn_ready("beepd.sosomlab.com", "on", "kiros33", "pw"),
+            "서버 릴레이는 종전 계약(Test) 유지"
+        );
+        assert!(!lan_auto_respawn_ready("", "on", "kiros33", "pw"), "빈 릴레이 = 기본 서버");
+    }
 }
