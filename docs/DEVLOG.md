@@ -2,6 +2,10 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-09-05 (Linux VM 4차) — ★ Linux 전체 점검 — 붙여넣기 불능 = 포털 RemoteDesktop 세션 고착 → 자가 복구 · 설정 파일 중복/664 · T-15d 완화 · T-18g 근인
+
+- 감사 3축(클립보드/주입/단축키 · 트레이/자동시작/테마/폰트 · T-15d/18g/14i) + 자동 실기(캡처→mac 전파 · SNI · 포털 세션 · 테마 추종) · 수정 4커밋(`fix/linux-audit-09-05`): 세션 자가 복구(재현 테스트) · `ui.set_*` 등재+dedup · 0600 · 팝업 합성/repeat 차단 · 잔여 → **T-41** → [journal 4차](journal/2026-09-05.md)
+
 ## 2026-09-05 (Windows 3차) — ★ 최신화 뒤 Windows 빌드 실패 · CI 16회 연속 빨강 = 3-OS `cfg` 경로 사슬 → 3타깃 복구
 
 - `10f18a1`(Win 세션)이 mac `super::hotkeys`(2단이라 E0425) + Linux `redundant_clone`을 깨고 → `5960581`(mac 5차)이 mac을 고치며 Windows `win`(1단)까지 `super::super`로 → 오늘 `win` 환원 + Linux `.clone()` 제거 · **3타깃 clippy 로컬 통과** · 8 스위트 · 디버그 인스턴스 상주 · 교훈: `cfg` 모듈 깊이 확인 + **CI 결과를 본다**(T-40 push 전 3타깃 clippy) → [journal 3차](journal/2026-09-05.md)
