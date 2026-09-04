@@ -394,6 +394,74 @@ pub fn overlay_color(theme: &crate::theme::Theme, on_accent: bool) -> Color {
     }
 }
 
+/// ★ **hover 의도(intent) 코얼레싱** — 큐 없이 "마지막 의도 1개"만(nexa-clip 28 §hover · dir2 20 승계 · 09-04).
+///
+/// 사건(커서 이동·휠)은 [`set`](Self::set)으로 목표를 **덮어쓰기**만 한다 — 이전 의도는 어디에도 남지 않아
+/// 폐기 비용 0. 수행은 [`take_due`](Self::take_due)가 의도 나이 ≥ [`INTENT_MS`](Self::INTENT_MS)일 때 **1회**
+/// 내놓는다. 빠르게 지나간 목표들은 수행 단계에 닿지 못한다. 휠·스크롤바는 [`settle`](Self::settle)로
+/// [`SETTLE_MS`](Self::SETTLE_MS) 동안 수행을 보류한다(멈춘 뒤 커서 아래 목표만).
+///
+/// 같은 목표가 다시 `set`되면 시계를 **다시 재지 않는다** — 한 행 안에서 잔움직임이 계속돼도 70ms 뒤엔 켜진다.
+#[derive(Clone, Copy, Debug)]
+pub struct HoverIntent<T: Copy + PartialEq> {
+    pending: Option<(T, u64)>,
+    settle_until: u64,
+}
+
+impl<T: Copy + PartialEq> Default for HoverIntent<T> {
+    fn default() -> Self {
+        Self {
+            pending: None,
+            settle_until: 0,
+        }
+    }
+}
+
+impl<T: Copy + PartialEq> HoverIntent<T> {
+    /// "머문다"로 보는 최소 시간(ms) — 60~100ms 관례(hoverIntent 류). 100↑ 굼뜸 · 40↓ 꼬리.
+    pub const INTENT_MS: u64 = 70;
+    /// 휠·스크롤바 뒤 안정 대기(ms) — 휠 노치 간격(30~80)보다 길고 멈춤 체감(≈150)보다 짧게.
+    pub const SETTLE_MS: u64 = 120;
+
+    /// 의도 등록(덮어쓰기). 같은 목표면 등록 시각을 유지한다.
+    pub fn set(&mut self, target: T, now_ms: u64) {
+        if self.pending.is_some_and(|(t, _)| t == target) {
+            return;
+        }
+        self.pending = Some((target, now_ms));
+    }
+
+    /// 스크롤 사건 — 안정 대기를 재무장한다.
+    pub fn settle(&mut self, now_ms: u64) {
+        self.settle_until = now_ms + Self::SETTLE_MS;
+    }
+
+    /// 만료된 의도를 1회 내놓는다(안정 대기 중이면 보류).
+    pub fn take_due(&mut self, now_ms: u64) -> Option<T> {
+        if now_ms < self.settle_until {
+            return None;
+        }
+        let (t, at) = self.pending?;
+        if now_ms.saturating_sub(at) < Self::INTENT_MS {
+            return None;
+        }
+        self.pending = None;
+        Some(t)
+    }
+
+    /// 의도·대기 전부 버린다(커서 이탈 · 세대 교체).
+    pub fn clear(&mut self) {
+        self.pending = None;
+        self.settle_until = 0;
+    }
+
+    /// 아직 기다리는 게 있나(박동을 촘촘히 유지할지).
+    #[must_use]
+    pub fn is_waiting(&self, now_ms: u64) -> bool {
+        self.pending.is_some() || now_ms < self.settle_until
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -624,5 +692,36 @@ mod tests {
         for (size, _) in [type_scale::BODY, type_scale::TITLE, type_scale::CAPTION] {
             assert_eq!(type_scale::line_height(size) % 4, 0);
         }
+    }
+
+    /// ★ 의도 코얼레싱(28 §hover): 5행을 10ms 간격으로 지나면 수행 0회, 마지막 행에서 70ms 뒤 1회.
+    #[test]
+    fn hover_intent_keeps_only_last() {
+        let mut hi = HoverIntent::<usize>::default();
+        let mut fired = Vec::new();
+        for k in 0..5u64 {
+            hi.set(k as usize, 1_000 + k * 10);
+            if let Some(t) = hi.take_due(1_000 + k * 10) {
+                fired.push(t);
+            }
+        }
+        assert!(fired.is_empty(), "{fired:?}");
+        assert_eq!(hi.take_due(1_040 + 69), None, "아직 69ms");
+        assert_eq!(hi.take_due(1_040 + 70), Some(4));
+        assert_eq!(hi.take_due(1_200), None, "1회만");
+        // 같은 목표 재등록은 시계를 다시 재지 않는다.
+        hi.set(7, 2_000);
+        hi.set(7, 2_060);
+        assert_eq!(hi.take_due(2_070), Some(7));
+        // 스크롤 안정 대기 중엔 만료돼도 보류 · 지나면 내놓는다.
+        hi.set(9, 3_000);
+        hi.settle(3_050);
+        assert_eq!(hi.take_due(3_100), None);
+        assert!(hi.is_waiting(3_100));
+        assert_eq!(hi.take_due(3_050 + HoverIntent::<usize>::SETTLE_MS), Some(9));
+        hi.set(1, 4_000);
+        hi.clear();
+        assert_eq!(hi.take_due(5_000), None);
+        assert!(!hi.is_waiting(5_000));
     }
 }
