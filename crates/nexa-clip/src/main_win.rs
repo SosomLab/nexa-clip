@@ -489,6 +489,7 @@ impl MainWin {
             if !q.is_empty() && !item.label.to_lowercase().contains(&q) {
                 continue;
             }
+            let plain = plain_of(&item.reps).or_else(|| svg_text(&item.reps));
             let row = Row {
                 id: item.id,
                 pinned: item.pinned,
@@ -499,14 +500,14 @@ impl MainWin {
                     .source_app
                     .as_deref()
                     .is_some_and(|s| s.starts_with("⇄ ")),
-                key: History::content_key(item),
+                key: content_key_of(item, plain.as_deref()),
                 origins: item.source_app.iter().cloned().collect(),
                 copies: item.copies,
                 thumb: item.thumb.as_ref().map(|(w, h, rgba)| {
                     nclip_ctl::theme::IconImage::from_rgba(*w, *h, rgba.clone())
                 }),
                 img_dims: display_dims(&item.reps).or_else(|| parse_dims(&item.label)),
-                plain: plain_of(&item.reps).or_else(|| svg_text(&item.reps)),
+                plain,
                 // 행은 앞 5줄만 그리지만 ★ 미리보기 패널이 전문을 쓴다(09-03 ② — 400줄 상한).
                 rich: nclip_core::richtext::html_runs_of(&item.reps, 400),
             };
@@ -2490,6 +2491,49 @@ pub(crate) fn plain_of(reps: &[nclip_core::RawRep]) -> Option<String> {
 /// PPT 래스터(PNG/DIB)는 ~150dpi 렌더라 화소 수 그대로 그리면 실물보다 ~1.56배
 /// 크다. CopyQ(Qt)는 SVG **선언 크기**(예: 447×51)로 그려 실물과 비슷하다.
 /// 우선순위: SVG width/height → EMF 프레임(0.01mm→96dpi) → 없음(래스터 화소 폴백).
+/// ★ 중복 제외 보기의 **내용 열쇠**(09-04 사용자 — "내용과 메타 분리"): 표현 집합이 아니라 **내용**으로 묶는다.
+///   텍스트 = 평문(개행 정규화·끝 공백 제거) · 이미지/개체 = PNG 바이트(없으면 DIB 바이트) · 그 외 = 이력 지문.
+///   로컬(HTML 등 표현이 많은 원본)과 수신(평문/PNG만)이 같은 내용이면 같은 열쇠가 된다.
+fn content_key_of(item: &nclip_core::history::HistoryItem, plain: Option<&str>) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::hash::DefaultHasher::new();
+    let image_rep = matches!(item.kind, ClipKind::Image | ClipKind::Object).then(|| {
+        item.reps
+            .iter()
+            .find(|r| {
+                matches!(r.format.as_str(), "PNG" | "public.png" | "image/png")
+                    && !r.data.is_empty()
+            })
+            .or_else(|| {
+                item.reps.iter().find(|r| {
+                    matches!(r.format.as_str(), "CF_DIB" | "CF_DIBV5" | "image/bmp")
+                        && !r.data.is_empty()
+                })
+            })
+    });
+    match (image_rep.flatten(), plain) {
+        (Some(r), _) => {
+            "img".hash(&mut h);
+            r.data.hash(&mut h);
+        }
+        (None, Some(t)) if !t.trim().is_empty() => {
+            "txt".hash(&mut h);
+            t.replace(
+                "
+", "
+",
+            )
+            .trim_end()
+            .hash(&mut h);
+        }
+        _ => {
+            "fp".hash(&mut h);
+            History::content_key(item).hash(&mut h);
+        }
+    }
+    h.finish()
+}
+
 pub(crate) fn display_dims(reps: &[nclip_core::RawRep]) -> Option<(u32, u32)> {
     if let Some(r) = reps.iter().find(|r| r.format.starts_with("image/svg")) {
         if let Ok(xml) = std::str::from_utf8(&r.data) {
