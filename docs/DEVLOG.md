@@ -2,6 +2,10 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-09-05 (mac 1차) — ★ 수신 이미지 "[이미지]"만 = 팔레트 PNG 디코드 거부 → EXPAND 정규화
+
+- `dump_item` 예제로 저장 바이트 확인(8-bit colormap) · `nclip-imgdec` `Indexed => None` 근인 · `Transformations::EXPAND|STRIP_16` + 회귀 테스트 · `decode_probe` 예제(3-OS 워커 경로) 실제 바이트 384×33 ✓ · 함정: `--example`과 함께 빌드하면 bin 미갱신 → [journal](journal/2026-09-05.md)
+
 ## 2026-09-04 (mac 6차) — ★ 붙여넣기 불능 근인 = TCC 요구사항 고착 · 권한 대화상자 · 붙여넣기 자동 실기 3/3(사용자 ✅)
 
 - 앱 자기 판정(`open --args status`)으로 `needs permission` 확정 · 같은 바이너리 터미널 권한 3/3 = 주입 경로 정상 · ★ **TCC 항목은 최초 서명 요구사항을 고착**(토글 ON 무효) → `tccutil reset`→재시작→토글 · PKCS12 3DES(OpenSSL 3 호환) · `prompt_trust`(OS 대화상자) · ★ `mac-paste-e2e.sh`(설정 단축키 반영) · `mac-grant-accessibility.sh` → 설치본 `paste inject: ok` · E2E 3/3 → [journal 6차](journal/2026-09-04.md)
