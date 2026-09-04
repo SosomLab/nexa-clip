@@ -14,8 +14,9 @@ use std::cell::Cell;
 /// 검색 방식 — 설정 `find.mode` 값과 1:1.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum Mode {
-    #[default]
     Exact,
+    /// ★ 기본(09-04 사용자) — 띄어쓴 단어 전부(순서 무관).
+    #[default]
     Fuzzy,
     Regex,
 }
@@ -31,13 +32,13 @@ impl Mode {
         }
     }
 
-    /// 설정 문자열 → 방식(모르는 값 = 정확히).
+    /// 설정 문자열 → 방식(모르는 값 = 기본 유사).
     #[must_use]
     pub fn from_code(code: &str) -> Self {
         match code.trim() {
-            "fuzzy" => Self::Fuzzy,
+            "exact" => Self::Exact,
             "regex" => Self::Regex,
-            _ => Self::Exact,
+            _ => Self::Fuzzy,
         }
     }
 }

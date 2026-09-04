@@ -249,7 +249,7 @@ impl Popup {
     }
 
     pub(crate) fn new(font: Font) -> Self {
-        let mode_drop = crate::mode_drop::build(&font, "exact");
+        let mode_drop = crate::mode_drop::build(&font, "fuzzy");
         Self {
             mode_drop,
             window: None,
@@ -283,7 +283,7 @@ impl Popup {
             was_focused: false,
             opened_at: std::time::Instant::now(),
             cursor: (0, 0),
-            search_mode: nclip_core::search::Mode::Exact,
+            search_mode: nclip_core::search::Mode::Fuzzy,
             search_idx: None,
             row_fade: nclip_ctl::tokens::HoverFade::default(),
             row_intent: nclip_ctl::tokens::HoverIntent::default(),

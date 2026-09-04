@@ -301,7 +301,7 @@ pub(crate) struct MainWin {
 
 impl MainWin {
     pub(crate) fn new(font: Font) -> Self {
-        let mode_drop = crate::mode_drop::build(&font, "exact");
+        let mode_drop = crate::mode_drop::build(&font, "fuzzy");
         Self {
             mode_drop,
             window: None,
@@ -311,7 +311,7 @@ impl MainWin {
             font_mono: None,
             thumbs: None,
             rich_cache: std::collections::HashMap::new(),
-            search_mode: nclip_core::search::Mode::Exact,
+            search_mode: nclip_core::search::Mode::Fuzzy,
             search_idx: None,
             theme: Theme::dark(),
             scale: 1.0,

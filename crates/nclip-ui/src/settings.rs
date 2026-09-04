@@ -341,7 +341,7 @@ const RADIO_DEFAULTS: &[(&str, &str)] = &[
     ("store.max_age_days", "0"),
     ("store.max_total_mb", "500"),
     ("store.sort", "recent"),
-    ("find.mode", "exact"),
+    ("find.mode", "fuzzy"), // ★ 기본 = 유사(09-04 사용자 — 띄어쓴 단어 전부 · 순서 무관)
 ];
 
 /// 항목 종류 — 우측 패널이 이 열거를 읽어 컨트롤을 동적 생성한다(새 설정 = Entry 1줄).
