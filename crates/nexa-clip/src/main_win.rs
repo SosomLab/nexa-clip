@@ -143,6 +143,8 @@ enum Tool {
     Delete,
     Copy,
     CopyPlain,
+    /// ★ 이미지로 복사(09-04 사용자 — 툴바 좌측 Copy · Plain · Image 순). 텍스트 계열 항목만 활성.
+    CopyImage,
     /// ★ 중복 제외 보기(09-04 사용자 — Material `compress` 아이콘 · 미리보기 위). 켜짐 = accent.
     Dedup,
     /// ★ 미리보기 패널 토글(09-02 K4 — CopyQ식 하단 패널). 켜짐 = accent.
@@ -156,12 +158,13 @@ enum Tool {
 }
 
 /// 툴바 배치(위에서부터) — `None` = 구분선. ⚙는 바닥 고정(VT-4).
-const TOOLS_TOP: [Option<Tool>; 11] = [
+const TOOLS_TOP: [Option<Tool>; 12] = [
     Some(Tool::Pin),
     Some(Tool::Delete),
     None,
     Some(Tool::Copy),
     Some(Tool::CopyPlain),
+    Some(Tool::CopyImage),
     None,
     // ★ 토글 그룹(09-04 사용자): 중복 제외 · 미리보기 · 최상위 — 그 아래 감시 끄기.
     Some(Tool::Dedup),
@@ -838,7 +841,27 @@ impl MainWin {
         self.rows.get(self.sel).map(|r| r.id)
     }
 
+    /// ★ 툴바 버튼 활성 규칙(09-04 사용자 — 우클릭 메뉴와 같은 규칙): 토글은 항상 · 복사/고정/삭제는 선택이 있을 때 ·
+    ///   **평문 복사** = 서식 있는 글(`PasteAs::applicable`에 Plain) · **이미지로 복사** = 텍스트 계열(Text·RichText).
+    fn tool_enabled(&self, t: Tool) -> bool {
+        match t {
+            Tool::Preview | Tool::Dedup | Tool::AlwaysTop | Tool::WatchOff | Tool::Settings => true,
+            Tool::CopyPlain => self
+                .rows
+                .get(self.sel)
+                .is_some_and(|r| nclip_core::PasteAs::applicable(r.kind).contains(&PasteAs::Plain)),
+            Tool::CopyImage => self
+                .rows
+                .get(self.sel)
+                .is_some_and(|r| matches!(r.kind, ClipKind::Text | ClipKind::RichText)),
+            Tool::Pin | Tool::Delete | Tool::Copy => !self.rows.is_empty(),
+        }
+    }
+
     fn act(&self, tool: Tool) -> MainAction {
+        if !self.tool_enabled(tool) {
+            return MainAction::None;
+        }
         match (tool, self.selected_id()) {
             (Tool::Settings, _) => MainAction::OpenSettings,
             (Tool::AlwaysTop, _) => MainAction::ToggleAlwaysTop,
@@ -857,6 +880,7 @@ impl MainWin {
                 id,
                 as_: PasteAs::Plain,
             },
+            (Tool::CopyImage, Some(id)) => MainAction::CopyImage(id),
         }
     }
 
@@ -1705,19 +1729,9 @@ impl MainWin {
         dc.fill_rect(Rect::new(tb_w, 0, w - tb_w, header_h), th.chrome_bg);
         self.search.paint(dc, &th);
         dc.fill_rect(Rect::new(tb_w, header_h - 1, w - tb_w, 1), th.border);
-        let has_sel = !self.rows.is_empty();
         for (k, t) in TOOLS_TOP.iter().enumerate() {
             match t {
-                Some(t) => self.draw_tool(
-                    dc,
-                    self.tool_rect(k),
-                    *t,
-                    has_sel
-                        || matches!(
-                            *t,
-                            Tool::Preview | Tool::Dedup | Tool::AlwaysTop | Tool::WatchOff
-                        ),
-                ),
+                Some(t) => self.draw_tool(dc, self.tool_rect(k), *t, self.tool_enabled(*t)),
                 None => {
                     let r = self.tool_rect(k);
                     dc.fill_rect(
@@ -2396,6 +2410,28 @@ impl MainWin {
                     ink,
                 );
             }
+            Tool::CopyImage => {
+                // Material `image` 근사 — 액자(둥근 사각 윤곽) + 해(작은 원) + 산(삼각형 2).
+                dc.stroke_round_rect(
+                    Rect::new(cx - px(8.5), cy - px(8.5), px(17.0), px(17.0)),
+                    px(2.5),
+                    ink,
+                    w2,
+                );
+                dc.fill_ellipse(Rect::new(cx - px(5.0), cy - px(5.5), px(3.5), px(3.5)), ink);
+                dc.fill_triangle(
+                    (cx - px(6.5), cy + px(6.0)),
+                    (cx - px(1.0), cy - px(1.5)),
+                    (cx + px(3.0), cy + px(6.0)),
+                    ink,
+                );
+                dc.fill_triangle(
+                    (cx + px(0.5), cy + px(6.0)),
+                    (cx + px(3.5), cy + px(1.5)),
+                    (cx + px(6.5), cy + px(6.0)),
+                    ink,
+                );
+            }
             Tool::Preview => {
                 // ★ Material `preview`(09-03 사용자 지정 SVG를 구운 알파) — 켜짐 = accent.
                 let c = if self.preview_open { th.accent } else { ink };
@@ -2946,6 +2982,7 @@ impl MainWin {
             Tool::Delete => tr(lang, Msg::TipDelete),
             Tool::Copy => tr(lang, Msg::TipCopy),
             Tool::CopyPlain => tr(lang, Msg::TipCopyPlain),
+            Tool::CopyImage => tr(lang, Msg::MenuCopyImage),
             Tool::Preview => tr(lang, Msg::TipPreview),
             Tool::Dedup => tr(lang, Msg::DedupLabel),
             Tool::AlwaysTop => tr(lang, Msg::TipAlwaysTop),
