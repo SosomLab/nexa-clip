@@ -846,6 +846,8 @@ impl Shell {
         println!("팝업: 열기 — 이력 {}개", self.history.len());
         self.popup
             .set_view_code(self.app.conf.state.get("ui.popup_view"));
+        self.popup
+            .set_dedup(self.app.conf.state.get("ui.dedup_view") != "off");
         // ★ 마지막 크기 복원(09-02) — 값이 없으면 기본 크기.
         let pw: u32 = self.app.conf.state.get("ui.popup_w").parse().unwrap_or(0);
         let ph: u32 = self.app.conf.state.get("ui.popup_h").parse().unwrap_or(0);
@@ -913,6 +915,8 @@ impl ApplicationHandler<ShellEvent> for Shell {
                     );
                     self.main.apply_dedup(on);
                     self.main.on_history_changed(&self.history);
+                    self.popup.set_dedup(on); // 팝업도 같은 규칙(09-04)
+                    self.popup.on_history_changed(&self.history);
                 }
                 MainAction::CopyImage(id) => self.copy_as_image(id),
                 MainAction::Delete(id) => {

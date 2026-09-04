@@ -69,6 +69,11 @@ struct Row {
     kind: ClipKind,
     label: String,
     copies: u32,
+    /// ★ 다른 기기에서 받은 항목(09-04) — 번호 아래 녹색 점(메인창과 동일).
+    remote: bool,
+    /// 내용 열쇠(병합) · 출처(메타).
+    key: u64,
+    origin: Option<String>,
     /// 이미지 썸네일(설정이 켜져 있고 디코드가 됐을 때) — 없으면 글리프.
     thumb: Option<nclip_ctl::theme::IconImage>,
     /// 본문(평문 순위 → SVG 추출) — Rich 본문·이미지 라벨 뒤 식별 보조(09-02).
@@ -93,6 +98,8 @@ pub(crate) struct Popup {
     caret_phase: bool,
     /// 필터 통과 행(최신이 위).
     rows: Vec<Row>,
+    /// ★ 병합 보기(09-04) — 메인창 설정과 동일.
+    dedup: bool,
     /// 선택(rows 인덱스).
     sel: usize,
     /// ★ 목록 세로 스크롤(**픽셀** · 09-02 실기 — 메인과 동일 규약).
@@ -207,6 +214,7 @@ impl Popup {
             },
             caret_phase: true,
             rows: Vec::new(),
+            dedup: true,
             sel: 0,
             scroll: 0,
             wheel_frac: 0.0,
@@ -283,6 +291,11 @@ impl Popup {
         } else if bot > self.scroll + list_h {
             self.scroll = bot - list_h;
         }
+    }
+
+    /// ★ 병합(중복 제외) 보기 — 메인창 설정(`ui.dedup_view`)을 그대로 따른다(09-04).
+    pub(crate) fn set_dedup(&mut self, on: bool) {
+        self.dedup = on;
     }
 
     pub(crate) fn set_view_code(&mut self, code: &str) {
@@ -556,6 +569,8 @@ impl Popup {
         let mut i = 0usize;
         while let Some(item) = hist.get(i) {
             if q.is_empty() || item.label.to_lowercase().contains(&q) {
+                let plain = crate::main_win::plain_of(&item.reps)
+                    .or_else(|| nclip_core::capture::svg_text(&item.reps));
                 let row = Row {
                     hist_index: i,
                     id: item.id,
@@ -563,11 +578,16 @@ impl Popup {
                     kind: item.kind,
                     label: item.label.clone(),
                     copies: item.copies,
+                    remote: item
+                        .source_app
+                        .as_deref()
+                        .is_some_and(|s| s.starts_with(crate::dedup::REMOTE_MARK)),
+                    key: crate::dedup::content_key_of(item, plain.as_deref()),
+                    origin: item.source_app.clone(),
                     thumb: item.thumb.as_ref().map(|(w, h, rgba)| {
                         nclip_ctl::theme::IconImage::from_rgba(*w, *h, rgba.clone())
                     }),
-                    plain: crate::main_win::plain_of(&item.reps)
-                        .or_else(|| nclip_core::capture::svg_text(&item.reps)),
+                    plain,
                     img_dims: crate::main_win::display_dims(&item.reps)
                         .or_else(|| crate::main_win::parse_dims(&item.label)),
                     rich: nclip_core::richtext::html_runs_of(&item.reps, 6),
@@ -582,6 +602,33 @@ impl Popup {
             i += 1;
         }
         self.rows.extend(normal);
+        // ★ 병합(09-04 사용자 "메인창의 설정대로") — 같은 내용 한 행(로컬 우선 · 복사 수 합).
+        if self.dedup {
+            let entries: Vec<crate::dedup::Entry> = self
+                .rows
+                .iter()
+                .map(|r| crate::dedup::Entry {
+                    key: r.key,
+                    remote: r.remote,
+                    origin: r.origin.clone(),
+                    copies: r.copies,
+                })
+                .collect();
+            let kept = crate::dedup::merge(&entries);
+            let mut rows: Vec<Option<Row>> = std::mem::take(&mut self.rows)
+                .into_iter()
+                .map(Some)
+                .collect();
+            self.rows = kept
+                .into_iter()
+                .filter_map(|k| {
+                    let mut r = rows.get_mut(k.keep)?.take()?;
+                    r.copies = k.copies;
+                    r.remote = k.remote;
+                    Some(r)
+                })
+                .collect();
+        }
         if self.sel >= self.rows.len() {
             self.sel = self.rows.len().saturating_sub(1);
         }
@@ -1070,6 +1117,18 @@ fn draw(
                     Rect::new(px(3.0), dot_y, px(5.0), px(5.0)),
                     px(2.5),
                     th.accent,
+                );
+            }
+        }
+        // ★ 수신 점(09-04 — 메인창과 동일): 핀 점 옆(점 5 + 간격 2) · 상태줄 릴레이 녹색.
+        if row.remote {
+            let dot_y = y + px(11.0);
+            let dot_x = if row.pinned { px(10.0) } else { px(3.0) };
+            if dot_y >= clip.y && dot_y + px(6.0) <= clip.y + clip.h {
+                dc.fill_round_rect(
+                    Rect::new(dot_x, dot_y, px(5.0), px(5.0)),
+                    px(2.5),
+                    nclip_ctl::theme::Color::from_rgb(46, 204, 64),
                 );
             }
         }

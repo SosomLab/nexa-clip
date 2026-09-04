@@ -14,6 +14,7 @@
 
 mod cliptext;
 mod conf;
+mod dedup;
 mod demo;
 mod devices;
 mod icon;

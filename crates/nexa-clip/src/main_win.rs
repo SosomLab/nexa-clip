@@ -441,46 +441,27 @@ impl MainWin {
     /// ★ 중복 제외(09-04 사용자) — 내용 열쇠가 같은 행들 중 **로컬 1건**(가장 최근), 로컬이 없으면
     ///   **가장 최근 수신 1건**만 남긴다(입력 순서 = 최신순 유지).
     fn dedup_rows(rows: Vec<Row>) -> Vec<Row> {
-        use std::collections::HashMap;
-        // key → (남길 행의 입력 인덱스, 로컬 여부, 합친 출처들, 복사 수 합).
-        let mut groups: HashMap<u64, (usize, bool, Vec<String>, u32)> = HashMap::new();
-        for (i, r) in rows.iter().enumerate() {
-            let local = !r.remote;
-            let e = groups
-                .entry(r.key)
-                .or_insert_with(|| (i, local, Vec::new(), 0));
-            if local && !e.1 {
-                e.0 = i; // 먼저 온 게 수신이고 이건 로컬 — 로컬이 대표
-                e.1 = true;
-            }
-            for o in &r.origins {
-                if !e.2.contains(o) {
-                    e.2.push(o.clone());
-                }
-            }
-            e.3 = e.3.saturating_add(r.copies);
-        }
-        // 로컬 출처를 앞으로(내 것이 먼저 · 수신은 뒤).
-        let mut out: Vec<Row> = Vec::with_capacity(groups.len());
-        for (i, mut r) in rows.into_iter().enumerate() {
-            let Some(g) = groups.get(&r.key) else {
-                continue;
-            };
-            if g.0 != i {
-                continue;
-            }
-            let mut origins: Vec<String> =
-                g.2.iter()
-                    .filter(|o| !o.starts_with("⇄ "))
-                    .cloned()
-                    .collect();
-            origins.extend(g.2.iter().filter(|o| o.starts_with("⇄ ")).cloned());
-            r.origins = origins;
-            r.copies = g.3;
-            r.remote = !g.1; // 로컬 출처가 하나라도 있으면 내 것(점 없음)
-            out.push(r);
-        }
-        out
+        // 공용 병합(crate::dedup) — 팝업과 같은 규칙.
+        let entries: Vec<crate::dedup::Entry> = rows
+            .iter()
+            .map(|r| crate::dedup::Entry {
+                key: r.key,
+                remote: r.remote,
+                origin: r.origins.first().cloned(),
+                copies: r.copies,
+            })
+            .collect();
+        let kept = crate::dedup::merge(&entries);
+        let mut rows: Vec<Option<Row>> = rows.into_iter().map(Some).collect();
+        kept.into_iter()
+            .filter_map(|k| {
+                let mut r = rows.get_mut(k.keep)?.take()?;
+                r.origins = k.origins;
+                r.copies = k.copies;
+                r.remote = k.remote;
+                Some(r)
+            })
+            .collect()
     }
 
     pub(crate) fn refresh(&mut self, hist: &History) {
@@ -505,7 +486,7 @@ impl MainWin {
                     .source_app
                     .as_deref()
                     .is_some_and(|s| s.starts_with("⇄ ")),
-                key: content_key_of(item, plain.as_deref()),
+                key: crate::dedup::content_key_of(item, plain.as_deref()),
                 origins: item.source_app.iter().cloned().collect(),
                 copies: item.copies,
                 thumb: item.thumb.as_ref().map(|(w, h, rgba)| {
@@ -2546,43 +2527,6 @@ pub(crate) fn plain_of(reps: &[nclip_core::RawRep]) -> Option<String> {
 /// PPT 래스터(PNG/DIB)는 ~150dpi 렌더라 화소 수 그대로 그리면 실물보다 ~1.56배
 /// 크다. CopyQ(Qt)는 SVG **선언 크기**(예: 447×51)로 그려 실물과 비슷하다.
 /// 우선순위: SVG width/height → EMF 프레임(0.01mm→96dpi) → 없음(래스터 화소 폴백).
-/// ★ 중복 제외 보기의 **내용 열쇠**(09-04 사용자 — "내용과 메타 분리"): 표현 집합이 아니라 **내용**으로 묶는다.
-///   텍스트 = 평문(개행 정규화·끝 공백 제거) · 이미지/개체 = PNG 바이트(없으면 DIB 바이트) · 그 외 = 이력 지문.
-///   로컬(HTML 등 표현이 많은 원본)과 수신(평문/PNG만)이 같은 내용이면 같은 열쇠가 된다.
-fn content_key_of(item: &nclip_core::history::HistoryItem, plain: Option<&str>) -> u64 {
-    use std::hash::{Hash, Hasher};
-    let mut h = std::hash::DefaultHasher::new();
-    let image_rep = matches!(item.kind, ClipKind::Image | ClipKind::Object).then(|| {
-        item.reps
-            .iter()
-            .find(|r| {
-                matches!(r.format.as_str(), "PNG" | "public.png" | "image/png")
-                    && !r.data.is_empty()
-            })
-            .or_else(|| {
-                item.reps.iter().find(|r| {
-                    matches!(r.format.as_str(), "CF_DIB" | "CF_DIBV5" | "image/bmp")
-                        && !r.data.is_empty()
-                })
-            })
-    });
-    match (image_rep.flatten(), plain) {
-        (Some(r), _) => {
-            "img".hash(&mut h);
-            r.data.hash(&mut h);
-        }
-        (None, Some(t)) if !t.trim().is_empty() => {
-            "txt".hash(&mut h);
-            t.replace('\r', "").trim_end().hash(&mut h);
-        }
-        _ => {
-            "fp".hash(&mut h);
-            History::content_key(item).hash(&mut h);
-        }
-    }
-    h.finish()
-}
-
 pub(crate) fn display_dims(reps: &[nclip_core::RawRep]) -> Option<(u32, u32)> {
     if let Some(r) = reps.iter().find(|r| r.format.starts_with("image/svg")) {
         if let Ok(xml) = std::str::from_utf8(&r.data) {
