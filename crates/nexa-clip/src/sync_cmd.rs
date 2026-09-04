@@ -84,8 +84,20 @@ pub(crate) fn my_display_name() -> String {
 static PEER_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 /// 동시 다이얼 상한(스레드 폭주 방지).
 static DIALING: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-/// 알려진 기기 재다이얼·페어링 탐색 주기.
+/// 알려진 기기 재다이얼·페어링 탐색 **기본** 주기 — 실패마다 2배(상한 아래) · 성공/상대 등장 시 초기화.
 const DIAL_EVERY: Duration = Duration::from_secs(10);
+/// 기기별 재다이얼 백오프 상한(5분) · 페어링 탐색 백오프 상한(2분).
+const DIAL_MAX: Duration = Duration::from_secs(300);
+const PAIR_MAX: Duration = Duration::from_secs(120);
+/// 인바운드 랑데부 동시 핸드셰이크 상한(폭주 시 나머지는 버림 — 상대가 다시 연다).
+const INBOUND_MAX: usize = 4;
+/// 피어별 수신 예산 — 10초 창에 24MB(항목 상한 32MB와 별개 · 홍수 차단).
+const RX_WINDOW: Duration = Duration::from_secs(10);
+const RX_BUDGET: usize = 24 * 1024 * 1024;
+/// 같은 페이로드 재전송 억제 창(승격 에코·연타).
+const DEDUPE_WINDOW: Duration = Duration::from_secs(2);
+static INBOUND_HS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+static LAST_SENT: std::sync::Mutex<Option<(u64, std::time::Instant)>> = std::sync::Mutex::new(None);
 /// 세션 핑 주기 · 무응답 한계.
 const PEER_PING: Duration = Duration::from_secs(15);
 const PEER_DEAD: Duration = Duration::from_secs(45);
@@ -105,6 +117,16 @@ pub(crate) fn has_peers() -> bool {
 
 /// ★ 클립보드 항목 전파(DR-6) — **승인된** 온라인 기기 전부에 보낸다. 반환 = 보낸 기기 수.
 pub(crate) fn broadcast(payload: Vec<u8>) -> usize {
+    // ★ 같은 내용 연타 억제(09-04 과다 트래픽 예방) — 승격 에코·앱의 반복 게시가 같은 바이트를 만든다.
+    let h = crate::syncitem::hash(&payload);
+    if let Ok(mut g) = LAST_SENT.lock() {
+        if let Some((lh, t)) = *g {
+            if lh == h && t.elapsed() < DEDUPE_WINDOW {
+                return 0;
+            }
+        }
+        *g = Some((h, std::time::Instant::now()));
+    }
     let arc = std::sync::Arc::new(payload);
     let Ok(g) = PEER_TX.lock() else {
         return 0;
@@ -157,6 +179,10 @@ pub(crate) fn run_peer(
     let mut greeted = false;
     let mut peer_name = String::new();
     let mut asm = nclip_sync::hello::Assembler::default();
+    // ★ 수신 예산(09-04 과다 트래픽 예방) — 창 안에서 예산을 넘긴 조각은 조립하지 않는다.
+    let mut rx_win = std::time::Instant::now();
+    let mut rx_bytes = 0usize;
+    let mut rx_warned = false;
     'session: loop {
         if gen_slot.load(std::sync::atomic::Ordering::Relaxed) != gen {
             break;
@@ -171,6 +197,24 @@ pub(crate) fn run_peer(
                         total,
                         data,
                     }) => {
+                        if rx_win.elapsed() > RX_WINDOW {
+                            rx_win = std::time::Instant::now();
+                            rx_bytes = 0;
+                            rx_warned = false;
+                        }
+                        rx_bytes += data.len();
+                        if rx_bytes > RX_BUDGET {
+                            if !rx_warned {
+                                eprintln!(
+                                    "동기화: {}({}…) 수신 예산 초과({}MB/10s) — 이 창의 나머지는 버림",
+                                    peer_name,
+                                    &hex[..8],
+                                    RX_BUDGET / 1_048_576
+                                );
+                                rx_warned = true;
+                            }
+                            continue;
+                        }
                         if let Some(payload) = asm.push(seq, idx, total, data) {
                             if crate::devices::is_approved(&hex) {
                                 // ★ 디코드·OS 표현 변환(PNG 디코드 포함)·에코 지문은 **여기(세션 스레드)**서 —
@@ -234,7 +278,16 @@ pub(crate) fn run_peer(
             Err(_) => break,
         }
         // ★ 송신 — 셸이 민 항목을 조각내 보낸다(승인 판정은 broadcast가 이미 했다).
+        // ★ 송신 합치기(09-04) — 밀린 항목은 **가장 최신 하나만** 보낸다(클립보드 의미: 마지막이 곧 현재).
+        let mut latest = None;
+        let mut skipped = 0usize;
         while let Ok(payload) = rx.try_recv() {
+            if latest.is_some() {
+                skipped += 1;
+            }
+            latest = Some(payload);
+        }
+        if let Some(payload) = latest {
             let seq = ITEM_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             for m in PeerMsg::chunks(seq, &payload) {
                 if s.send(&m.encode()).is_err() {
@@ -242,10 +295,15 @@ pub(crate) fn run_peer(
                 }
             }
             println!(
-                "동기화: → {}({}…) 항목 {}KB",
+                "동기화: → {}({}…) 항목 {}KB{}",
                 peer_name,
                 &hex[..8],
-                payload.len() / 1024
+                payload.len() / 1024,
+                if skipped > 0 {
+                    format!(" (밀린 {skipped}개 건너뜀)")
+                } else {
+                    String::new()
+                }
             );
         }
         if last_ping.elapsed() >= PEER_PING {
@@ -495,17 +553,40 @@ fn run(
                     nclip_sync::rid::rids_around(handle, pass).to_vec()
                 };
                 let mut last_dial = std::time::Instant::now() - DIAL_EVERY;
+                // ★ 백오프 상태(09-04 과다 트래픽 예방) — 기기별 다음 시도 시각·간격, 페어링 탐색 간격.
+                let mut dial_next: std::collections::HashMap<
+                    String,
+                    (std::time::Instant, Duration),
+                > = std::collections::HashMap::new();
+                let mut pair_wait = DIAL_EVERY;
+                let mut pair_next = std::time::Instant::now();
                 loop {
                     if let Some(inc) = client.accept_incoming(Duration::from_secs(1)) {
+                        if INBOUND_HS.load(std::sync::atomic::Ordering::Relaxed) >= INBOUND_MAX {
+                            eprintln!(
+                                "동기화: 인바운드 랑데부 폭주 — 동시 {INBOUND_MAX} 초과분은 버림"
+                            );
+                            drop(inc);
+                            continue;
+                        }
                         println!(
                             "동기화: 인바운드 랑데부(src RID {:02x}{:02x}…) — 종단 수락 시도",
                             inc.src[0], inc.src[1]
                         );
                         let (c, i, p, d) =
                             (client.clone(), id.clone(), proxy.clone(), dir.to_path_buf());
+                        INBOUND_HS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                         let _ = std::thread::Builder::new()
                             .name("nclip-peer-in".into())
                             .spawn(move || {
+                                struct Dec;
+                                impl Drop for Dec {
+                                    fn drop(&mut self) {
+                                        INBOUND_HS
+                                            .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+                                    }
+                                }
+                                let _dec = Dec;
                                 match nclip_sync::relay::accept_via(
                                     &c,
                                     inc,
@@ -528,11 +609,23 @@ fn run(
                     }
                     if last_dial.elapsed() >= DIAL_EVERY {
                         last_dial = std::time::Instant::now();
+                        let now = std::time::Instant::now();
                         // 알려진 기기 — 오프라인이고 **내 키가 작은 쪽**만 건다(글레어 회피 타이브레이크).
+                        //   ★ 기기별 지수 백오프(10s → … → 5분) — 꺼진 기기에 매 10초 릴레이 Open을 던지지 않는다.
                         for hex in crate::devices::known_hex() {
-                            if crate::devices::is_online(&hex) || me >= hex {
+                            if crate::devices::is_online(&hex) {
+                                dial_next.remove(&hex); // 붙었다 = 백오프 초기화
                                 continue;
                             }
+                            if me >= hex {
+                                continue;
+                            }
+                            let (next, wait) =
+                                dial_next.get(&hex).copied().unwrap_or((now, DIAL_EVERY));
+                            if now < next {
+                                continue;
+                            }
+                            dial_next.insert(hex.clone(), (now + wait, (wait * 2).min(DIAL_MAX)));
                             let Some(peer) = nclip_sync::relay::parse_peer_hex(&hex) else {
                                 continue;
                             };
@@ -566,7 +659,14 @@ fn run(
                         // 페어링 랑데부 — 아직 아무와도 안 붙었을 때만 만남 지점을 연다
                         //   (서버는 최신 등록자에게 잇고, 내가 등록자면 "대상 없음"으로 돌아온다).
                         let any_online = crate::devices::list().iter().any(|d| d.online);
-                        if !pair_rids.is_empty() && !any_online {
+                        if any_online {
+                            pair_wait = DIAL_EVERY; // 누군가 붙어 있으면 다음 탐색은 기본 주기부터
+                        }
+                        // ★ 페어링 탐색 백오프(10s → … → 2분) — 상대가 없을 때 릴레이에 Open을 연타하지 않는다.
+                        let pair_due = std::time::Instant::now() >= pair_next;
+                        if !pair_rids.is_empty() && !any_online && pair_due {
+                            pair_next = std::time::Instant::now() + pair_wait;
+                            pair_wait = (pair_wait * 2).min(PAIR_MAX);
                             let (c, i, p, d) =
                                 (client.clone(), id.clone(), proxy.clone(), dir.to_path_buf());
                             let rids = pair_rids.clone();

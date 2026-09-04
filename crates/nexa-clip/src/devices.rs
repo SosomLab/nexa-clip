@@ -55,6 +55,14 @@ pub(crate) fn known_hex() -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// 경로별 온라인 기기 수(LAN 비콘 주기 적응 등).
+pub(crate) fn online_via(via: &str) -> usize {
+    DEVICES
+        .lock()
+        .map(|g| g.iter().filter(|d| d.online && d.via == via).count())
+        .unwrap_or(0)
+}
+
 /// 지금 온라인인가.
 pub(crate) fn is_online(hex: &str) -> bool {
     DEVICES

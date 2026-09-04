@@ -20,6 +20,14 @@ const BEACON_EVERY: Duration = Duration::from_secs(5);
 const MAGIC: &[u8; 4] = b"NCLB";
 const DIAL_TIMEOUT: Duration = Duration::from_secs(3);
 const HS_TIMEOUT: Duration = Duration::from_secs(10);
+/// ★ 과다 트래픽 예방(09-04): LAN 피어가 붙어 있으면 비콘을 느리게(발견은 이미 됐다) · 초당 비콘 수신 상한 ·
+/// 동시 인바운드 핸드셰이크 상한 · 실패한 상대 IP 냉각 · 기기별 다이얼 백오프.
+const BEACON_SLOW: Duration = Duration::from_secs(30);
+const BEACON_RX_PER_SEC: u32 = 20;
+const INBOUND_MAX: usize = 4;
+const FAIL_COOLDOWN: Duration = Duration::from_secs(30);
+const DIAL_BACKOFF_MAX: Duration = Duration::from_secs(300);
+static INBOUND_HS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 /// LAN 세대 — 러너 재기동·해제 때 올리면 비콘·수락·세션 스레드가 스스로 물러난다.
 pub(crate) static LAN_GEN: AtomicU64 = AtomicU64::new(0);
@@ -91,6 +99,9 @@ pub(crate) fn spawn(
     };
     let port = listener.local_addr().map(|a| a.port()).unwrap_or(0);
     let _ = listener.set_nonblocking(true);
+    // 실패한 상대 IP → 냉각 만료 시각(핸드셰이크 스레드가 기록 · 수락 스레드가 참조).
+    let cooldown: Arc<std::sync::Mutex<std::collections::HashMap<IpAddr, Instant>>> =
+        Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
     {
         let (id, proxy, dir) = (id.clone(), proxy.clone(), dir.clone());
         let _ = std::thread::Builder::new()
@@ -103,18 +114,43 @@ pub(crate) fn spawn(
                             //   (Linux는 아님) — 되돌리지 않으면 핸드셰이크 읽기가 WouldBlock으로 즉시 실패
                             //   (09-04 실기: 여는 쪽 성립 · 받는 쪽만 실패의 원인).
                             let _ = stream.set_nonblocking(false);
+                            let ip = from.ip();
+                            let cooled = cooldown
+                                .lock()
+                                .ok()
+                                .and_then(|m| m.get(&ip).copied())
+                                .is_some_and(|until| Instant::now() < until);
+                            if cooled || INBOUND_HS.load(Ordering::Relaxed) >= INBOUND_MAX {
+                                drop(stream); // 냉각 중이거나 폭주 — 조용히 닫는다
+                                continue;
+                            }
+                            INBOUND_HS.fetch_add(1, Ordering::Relaxed);
                             let (id, proxy, dir) = (id.clone(), proxy.clone(), dir.clone());
+                            let cooldown = cooldown.clone();
                             let _ = std::thread::Builder::new()
                                 .name("nclip-lan-in".into())
-                                .spawn(move || match handshake(stream, &id, false) {
-                                    Ok(s) => {
-                                        println!("LAN 직결: ← {from} 수락");
-                                        crate::sync_cmd::run_peer(
-                                            s, me, &LAN_GEN, gen, proxy, dir, "LAN",
-                                        );
-                                    }
-                                    Err(e) => {
-                                        eprintln!("LAN 직결: {from} 핸드셰이크 실패({e})");
+                                .spawn(move || {
+                                    let r = handshake(stream, &id, false);
+                                    INBOUND_HS.fetch_sub(1, Ordering::Relaxed);
+                                    match r {
+                                        Ok(s) => {
+                                            println!("LAN 직결: ← {from} 수락");
+                                            crate::sync_cmd::run_peer(
+                                                s, me, &LAN_GEN, gen, proxy, dir, "LAN",
+                                            );
+                                        }
+                                        Err(e) => {
+                                            eprintln!(
+                                                "LAN 직결: {from} 핸드셰이크 실패({e}) — {}초 냉각",
+                                                FAIL_COOLDOWN.as_secs()
+                                            );
+                                            if let Ok(mut m) = cooldown.lock() {
+                                                m.insert(ip, Instant::now() + FAIL_COOLDOWN);
+                                                if m.len() > 256 {
+                                                    m.clear();
+                                                }
+                                            }
+                                        }
                                     }
                                 });
                         }
@@ -144,12 +180,21 @@ pub(crate) fn spawn(
             let targets = beacon_targets();
             let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
             let mut last_send = Instant::now() - BEACON_EVERY;
-            let mut last_dial: std::collections::HashMap<String, Instant> =
+            // 기기별 다음 다이얼 시각·간격(지수 백오프 8s → … → 5분 · 붙으면 초기화).
+            let mut dial_next: std::collections::HashMap<String, (Instant, Duration)> =
                 std::collections::HashMap::new();
+            let mut rx_sec = Instant::now();
+            let mut rx_count = 0u32;
             let mut buf = [0u8; 128];
             println!("LAN 직결: 비콘 {BEACON_PORT}/udp · 수락 {port}/tcp — 같은 핸들·암호 기기를 찾습니다");
             while LAN_GEN.load(Ordering::Relaxed) == gen {
-                if last_send.elapsed() >= BEACON_EVERY {
+                // LAN 피어가 붙어 있으면 30초 — 발견은 이미 됐고 새 기기 등장만 잡으면 된다.
+                let every = if crate::devices::online_via("LAN") > 0 {
+                    BEACON_SLOW
+                } else {
+                    BEACON_EVERY
+                };
+                if last_send.elapsed() >= every {
                     for t in &targets {
                         if let Err(e) = sock.send_to(&my_beacon, t) {
                             eprintln!("LAN 직결: 비콘 송신 실패({t} · {e})");
@@ -161,25 +206,46 @@ pub(crate) fn spawn(
                     Ok(v) => v,
                     Err(_) => continue, // 타임아웃·잡음
                 };
+                // 초당 수신 상한 — 비콘 홍수(같은 포트에 쏟아지는 잡음)에 CPU를 내주지 않는다.
+                if rx_sec.elapsed() >= Duration::from_secs(1) {
+                    rx_sec = Instant::now();
+                    rx_count = 0;
+                }
+                rx_count += 1;
+                if rx_count > BEACON_RX_PER_SEC {
+                    continue;
+                }
                 let Some((tag, hex, their_port)) = decode_beacon(&buf[..n]) else {
                     continue;
                 };
                 if hex == me_hex || !tags.contains(&tag) {
                     continue;
                 }
+                if seen.len() > 256 {
+                    seen.clear();
+                }
                 if seen.insert(hex.clone()) {
                     println!("LAN 직결: 비콘 수신 — {}… @ {} (tcp {their_port})", &hex[..8], from.ip());
                 }
-                if crate::devices::is_online(&hex) || me_hex >= hex {
-                    continue; // 이미 붙었거나 상대가 걸 차례(타이브레이크)
-                }
-                if last_dial
-                    .get(&hex)
-                    .is_some_and(|t| t.elapsed() < Duration::from_secs(8))
-                {
+                if crate::devices::is_online(&hex) {
+                    dial_next.remove(&hex); // 붙었다 = 백오프 초기화
                     continue;
                 }
-                last_dial.insert(hex.clone(), Instant::now());
+                if me_hex >= hex {
+                    continue; // 상대가 걸 차례(타이브레이크)
+                }
+                let now = Instant::now();
+                let (next, wait) = dial_next
+                    .get(&hex)
+                    .copied()
+                    .unwrap_or((now, Duration::from_secs(8)));
+                if now < next {
+                    continue;
+                }
+                if dial_next.len() > 256 {
+                    dial_next.clear();
+                }
+                dial_next.insert(hex.clone(), (now + wait, (wait * 2).min(DIAL_BACKOFF_MAX)));
                 let Some(peer) = nclip_sync::relay::parse_peer_hex(&hex) else {
                     continue;
                 };
