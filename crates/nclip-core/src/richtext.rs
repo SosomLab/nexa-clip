@@ -335,7 +335,13 @@ fn decode_entities(s: &str) -> String {
     while let Some(i) = rest.find('&') {
         out.push_str(&rest[..i]);
         rest = &rest[i..];
-        let Some(semi) = rest[..rest.len().min(12)].find(';') else {
+        // ★ 12바이트 창을 **문자 경계**로 내린다(09-04 실기 — `&` 뒤에 한글이 오면 12번째 바이트가
+        //   글자 안이라 슬라이스가 패닉했다 · 메인창 리치 행 생성 중 프로세스 종료).
+        let lim = (0..=rest.len().min(12))
+            .rev()
+            .find(|&n| rest.is_char_boundary(n))
+            .unwrap_or(0);
+        let Some(semi) = rest[..lim].find(';') else {
             out.push('&');
             rest = &rest[1..];
             continue;
@@ -375,6 +381,17 @@ fn decode_entities(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// ★ 09-04 실기: `&` 뒤 12바이트 안에 다중바이트 글자가 걸려도 패닉하지 않는다.
+    #[test]
+    fn entity_window_respects_char_boundary() {
+        assert_eq!(
+            decode_entities("a&b 한글 아이콘 텍스트"),
+            "a&b 한글 아이콘 텍스트"
+        );
+        assert_eq!(decode_entities("&amp;콘"), "&콘");
+        assert_eq!(decode_entities("&한글한글한글;"), "&한글한글한글;");
+    }
 
     fn rep(fmt: &str, html: &str) -> crate::RawRep {
         crate::RawRep {
