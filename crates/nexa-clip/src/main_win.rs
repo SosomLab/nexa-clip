@@ -57,6 +57,20 @@ pub(crate) struct OpenOpts<'a> {
     pub dedup_view: bool,
 }
 
+/// ★ 동기화 표시 모드(09-04 사용자) — 상태줄 점 색의 근거.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub(crate) enum SyncMode {
+    /// 동기화 미사용 — 진회색.
+    #[default]
+    Off,
+    /// 릴레이 None(같은 네트워크만) — 파랑.
+    Local,
+    /// 릴레이 설정됐지만 미연결(접속 중·실패·해제) — 흐림.
+    RelayDown,
+    /// 릴레이 연결됨 — 녹색.
+    Relay,
+}
+
 pub(crate) enum MainAction {
     /// 내부 처리 완료.
     None,
@@ -187,6 +201,8 @@ pub(crate) struct MainWin {
     total: usize,
     /// ★ 동기화 연결 상태(09-03) — None = 꺼짐 · Some(on) = 릴레이 연결 여부.
     sync_on: Option<bool>,
+    /// ★ 상태줄 점 모드(09-04) — 툴바 아이콘(`sync_on` = 릴레이 연결)과 별도.
+    sync_mode: SyncMode,
     /// 연결 아이콘 틴트 캐시 — (연결 여부, 색) 키(96² 재틴트를 매 프레임 안 하게).
     sync_icon: std::cell::RefCell<Option<(bool, u32, nclip_ctl::theme::IconImage)>>,
     /// 미리보기 아이콘 틴트 캐시(색 키 · 09-03 사용자 지정 아이콘).
@@ -248,6 +264,7 @@ impl MainWin {
             wrap_sw: None,
             total: 0,
             sync_on: None,
+            sync_mode: SyncMode::Off,
             sync_icon: std::cell::RefCell::new(None),
             preview_icon: std::cell::RefCell::new(None),
             preview_open: false,
@@ -908,6 +925,14 @@ impl MainWin {
     pub(crate) fn set_sync_state(&mut self, on: Option<bool>) {
         if self.sync_on != on {
             self.sync_on = on;
+            self.redraw();
+        }
+    }
+
+    /// ★ 상태줄 점 모드(09-04) — 녹(릴레이 연결) · 파랑(None 로컬) · 진회색(미사용) · 흐림(릴레이 미연결).
+    pub(crate) fn set_sync_mode(&mut self, mode: SyncMode) {
+        if self.sync_mode != mode {
+            self.sync_mode = mode;
             self.redraw();
         }
     }
@@ -1902,15 +1927,17 @@ impl MainWin {
         dc.select_font(FontSlot::Status, false);
         dc.text(pad, sy + px(4.0), full, &status, th.text_dim);
         dc.select_font(FontSlot::Base, false);
-        // ★ 동기화 인디케이터(09-03 — beep 화법) — 상태줄 우측: 녹 = 연결 · 흐림 = 끊김.
-        if let Some(on) = self.sync_on {
+        // ★ 동기화 인디케이터(09-03 · 09-04 사용자 3색) — 상태줄 우측 점:
+        //   녹 = 릴레이 연결 · 파랑 = None(같은 네트워크만) · 진회색 = 동기화 미사용 · 흐림 = 릴레이 미연결.
+        {
             let r = px(4.0);
             let cxp = w - pad - r;
             let cyp = sy + self.status_h() / 2;
-            let col = if on {
-                nclip_ctl::theme::Color::from_rgb(46, 204, 64)
-            } else {
-                th.text_dim
+            let col = match self.sync_mode {
+                SyncMode::Relay => nclip_ctl::theme::Color::from_rgb(46, 204, 64),
+                SyncMode::Local => nclip_ctl::theme::Color::from_rgb(52, 120, 246),
+                SyncMode::Off => nclip_ctl::theme::Color::from_rgb(96, 96, 96),
+                SyncMode::RelayDown => th.text_dim,
             };
             dc.fill_ellipse(Rect::new(cxp - r, cyp - r, r * 2, r * 2), col);
         }

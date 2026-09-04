@@ -482,21 +482,33 @@ impl Shell {
 
     /// ★ 연결 표시 재판정(09-04) — None = 기능 꺼짐(아이콘 없음) · Some(on) = 릴레이 연결 ∨ LAN 피어 연결.
     fn refresh_sync_indicator(&mut self) {
-        let next = if crate::sync_cmd::status() == crate::sync_cmd::SyncStatus::Off {
-            None
-        } else {
-            Some(crate::sync_cmd::is_connected() || crate::sync_cmd::has_lan_peers())
+        use crate::main_win::SyncMode;
+        use crate::sync_cmd::SyncStatus as S;
+        // ★ 09-04 사용자: 트레이 배지·툴바 아이콘은 **릴레이 연결** 기준(None = 네트워크 미연결 상태) ·
+        //   상태줄 점은 모드별 색(녹 릴레이 · 파랑 None · 진회색 미사용 · 흐림 릴레이 미연결).
+        let mode = match crate::sync_cmd::status() {
+            S::Off => SyncMode::Off,
+            S::LanOnly => SyncMode::Local,
+            S::Connected => SyncMode::Relay,
+            S::Connecting | S::Failed(_) | S::Stopped => SyncMode::RelayDown,
         };
+        let next = match mode {
+            SyncMode::Off => None,
+            SyncMode::Relay => Some(true),
+            SyncMode::Local | SyncMode::RelayDown => Some(false),
+        };
+        self.main.set_sync_mode(mode);
         if self.sync_on != next {
             self.sync_on = next;
             self.refresh_tray();
             self.main.set_sync_state(self.sync_on);
             println!(
                 "동기화 상태: {}",
-                match next {
-                    Some(true) => "연결됨",
-                    Some(false) => "끊김",
-                    None => "꺼짐",
+                match mode {
+                    SyncMode::Relay => "릴레이 연결됨",
+                    SyncMode::Local => "로컬(None) — 릴레이 미연결",
+                    SyncMode::RelayDown => "릴레이 끊김",
+                    SyncMode::Off => "꺼짐",
                 }
             );
         }
