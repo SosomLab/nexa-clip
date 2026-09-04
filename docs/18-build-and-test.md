@@ -460,3 +460,4 @@ git tag v0.1.0 && git push origin v0.1.0
 - ★ **직전 제출이 검수 대기 중이면 그 채널은 자동으로 건너뛴다**(guard 잡 — winget 열린 PR · choco 피드 부재). 릴리스·brew·다른 채널은 그대로.
   사람이 확인한 뒤 강제하려면 `publish-windows-packages` 수동 실행 `force=true`.
 - 태그 없이 산출물만 보려면 Actions → release → *Run workflow*(초안).
+- Linux 산출물은 **zig 링커로 glibc 2.17 기준** 링크(배포판 비종속 · 09-04) — 심볼 게이트가 2.17 초과·시스템 라이브러리 링크를 막는다([packaging/README §Linux](../packaging/README.md#linux--배포판-비종속09-04)).

@@ -79,3 +79,13 @@ Windows 설치본은 사용자 단위(`%LOCALAPPDATA%\Programs\NexaClip` · HKCU
 
 - **서명하지 않는다**(v1) — 인증서가 없다. 별도 결정으로 다룬다.
 - **Linux는 x86_64만**. arm64는 수요 확인 후.
+
+## Linux — 배포판 비종속(09-04)
+
+beep 서버는 musl 정적이지만 GUI 앱은 winit·xkbcommon·Wayland를 **런타임 dlopen**하므로 musl 정적이 불가하다.
+같은 목표(어느 배포판·glibc 버전에서든 바로 실행)를 **zig 링커로 glibc 2.17 기준 링크**해 얻는다:
+
+- `cargo zigbuild --target x86_64-unknown-linux-gnu.2.17` — 산출물이 요구하는 glibc 심볼 상한 = 2.17(CentOS 7·Ubuntu 14.04 이후 전부).
+- Cargo features `wayland-dlopen`(winit·softbuffer) + `wayland-backend/dlopen`(nclip-plat) — 시스템 라이브러리를 **빌드 시 링크하지 않는다**.
+- 워크플로 **심볼 게이트**: `NEEDED`에 glibc 계열 외 라이브러리가 있거나 `GLIBC_` 최고 버전이 2.17을 넘으면 배포를 멈춘다.
+- `.deb` Depends = `libc6 (>= 2.17)`. 런타임 필요 라이브러리(libxkbcommon · libX11/libwayland 중 쓰는 쪽)는 없으면 그 경로만 빠진다.

@@ -30,5 +30,7 @@ nexa-conf.workspace = true
 # 창·입력(winit) + CPU 픽셀 제출(softbuffer) — 원장 docs/10 §3.
 # 우리는 픽셀을 직접 그리므로(DR-1) GPU 스택이 필요 없다. 이 둘은 "창을 얻고
 # 버퍼를 화면에 올리는" 최소 경계만 담당한다(beep과 같은 판 — 실증된 조합).
-winit = "0.30"
-softbuffer = "0.4"
+# ★ Linux 배포판 비종속(09-04): Wayland/X11/xkbcommon은 전부 **런타임 dlopen** — 빌드 시 시스템 라이브러리를
+#   링크하지 않아 glibc만 남는다(그 glibc는 릴리스 워크플로가 zig 링커로 2.17 기준에 맞춘다).
+winit = { version = "0.30", features = ["wayland-dlopen"] }
+softbuffer = { version = "0.4", features = ["wayland-dlopen"] }

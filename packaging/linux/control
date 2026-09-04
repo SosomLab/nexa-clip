@@ -5,7 +5,7 @@ Priority: optional
 Architecture: amd64
 Maintainer: Sangyong Bae <kiros33@gmail.com>
 Installed-Size: @SIZE@
-Depends: libc6 (>= 2.31)
+Depends: libc6 (>= 2.17)
 Recommends: libx11-6, libxkbcommon0, libwayland-client0
 Homepage: https://github.com/SosomLab/nexa-clip
 Description: 3-OS 동일 화면 클립보드 매니저
