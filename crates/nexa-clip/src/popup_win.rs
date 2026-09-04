@@ -134,7 +134,12 @@ pub(crate) struct Popup {
     ///   (잠금 화면·창 관리자에 따라 초기 이벤트 순서가 다르다 — 08-28 실기.)
     was_focused: bool,
     /// 연 시각 — ★ **단축키의 `v`가 검색창으로 새는 것**을 막는 유예 기준(08-28 실기).
+    ///   ★ 09-05(T-15d): `Focused(true)`에서 **다시 찍는다** — Linux(XWayland)는 창 맵→포커스 왕복이
+    ///   150ms를 쉽게 넘겨 유예가 포커스 전에 끝나 있었다.
     opened_at: std::time::Instant,
+    /// ★ 열린 뒤 **오토리피트가 아닌** 키 누름을 봤는가(09-05 T-15d) — 그 전의 repeat는 단축키 손이
+    ///   아직 안 떨어진 X 서버 오토리피트(`v`/`c` 연속 입력)라 버린다.
+    fresh_press: bool,
     /// 마지막 커서 위치(winit은 클릭 이벤트에 좌표를 싣지 않는다).
     cursor: (i32, i32),
     /// ★ 검색 색인(09-04) — id → 소문자 검색문(셸이 채운다 · 없으면 라벨로).
@@ -289,6 +294,7 @@ impl Popup {
             alt: false,
             was_focused: false,
             opened_at: std::time::Instant::now(),
+            fresh_press: false,
             cursor: (0, 0),
             search_mode: nclip_core::search::Mode::Fuzzy,
             search_idx: None,
@@ -578,6 +584,7 @@ impl Popup {
         self.marked.clear();
         self.was_focused = false;
         self.opened_at = std::time::Instant::now();
+        self.fresh_press = false;
         self.refresh(hist);
         // ★ 열 때 선택 = 최신 항목(핀 구획 뒤에 있어도 · 09-02).
         self.sel = self
@@ -773,7 +780,13 @@ impl Popup {
         }
         match event {
             WindowEvent::CloseRequested => return PopupAction::Close,
-            WindowEvent::Focused(true) => self.was_focused = true,
+            WindowEvent::Focused(true) => {
+                if !self.was_focused {
+                    // ★ 유예는 "포커스를 받은 때"부터(09-05 T-15d) — 그 전엔 키가 오지도 않는다.
+                    self.opened_at = std::time::Instant::now();
+                }
+                self.was_focused = true;
+            }
             // ★ 포커스 상실 = 닫기(Maccy 관례) — 단, **받아 본 적이 있을 때만**.
             //   생성 직후 `Focused(false)`가 먼저 오는 환경(잠금·일부 WM)에서
             //   열리자마자 닫히는 것을 막는다(08-28 실기).
@@ -969,10 +982,24 @@ impl Popup {
                     self.redraw();
                 }
             }
-            WindowEvent::KeyboardInput { event, .. } => {
+            WindowEvent::KeyboardInput {
+                event,
+                is_synthetic,
+                ..
+            } => {
                 if event.state != ElementState::Pressed {
                     return PopupAction::None;
                 }
+                // ★ T-15d(09-05): X11 백엔드는 포커스 진입 때 **눌린 키 전부를 합성 Pressed로** 올린다
+                //   (수식키 상태 없이 → text="v") · 그 뒤 X 서버 오토리피트가 이어진다. 합성 이벤트와,
+                //   진짜 새 누름을 보기 전의 repeat는 단축키 잔향이다.
+                if *is_synthetic {
+                    return PopupAction::None;
+                }
+                if event.repeat && !self.fresh_press {
+                    return PopupAction::None;
+                }
+                self.fresh_press = true;
                 match event.logical_key.as_ref() {
                     Key::Named(NamedKey::Escape) => return PopupAction::Close,
                     Key::Named(NamedKey::ArrowUp) => {
