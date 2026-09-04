@@ -34,8 +34,12 @@ basicConstraints = critical, CA:false
 CFG
 openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
     -keyout "$tmp/key.pem" -out "$tmp/cert.pem" -config "$tmp/cfg" 2>/dev/null
+# ★ macOS `security import`는 OpenSSL 3 기본 PKCS12(AES-256 · SHA-256 MAC)를 못 읽는다
+#   ("MAC verification failed" — 실측 09-04). 구형 알고리즘(3DES · SHA1)을 명시하면
+#   OpenSSL 3·LibreSSL(/usr/bin/openssl) 어느 쪽이 잡혀도 임포트된다.
 openssl pkcs12 -export -inkey "$tmp/key.pem" -in "$tmp/cert.pem" \
-    -out "$tmp/id.p12" -passout pass:nexa-dev
+    -out "$tmp/id.p12" -passout pass:nexa-dev \
+    -keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES -macalg sha1
 # -T /usr/bin/codesign: codesign이 키를 쓸 때 매번 "허용" 대화창이 뜨지 않게 미리 허가.
 security import "$tmp/id.p12" -k "$KEYCHAIN" -P nexa-dev -T /usr/bin/codesign >/dev/null
 # 코드 서명 용도로 신뢰 — 여기서 로그인 암호 대화창이 한 번 뜬다.
