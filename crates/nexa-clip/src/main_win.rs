@@ -1645,7 +1645,7 @@ impl MainWin {
                 // ★ 수신 표식(09-04 사용자) — 상태줄 릴레이 점과 같은 녹색 · 핀 점 **옆**(핀 없으면 같은 자리).
                 if row.remote {
                     let dot_y = y + px(22.0);
-                    let dot_x = if row.pinned { tx + px(10.0) } else { tx };
+                    let dot_x = if row.pinned { tx + px(8.0) } else { tx }; // 점 6 + 간격 2
                     if dot_y >= clip.y && dot_y + px(6.0) <= clip.y + clip.h {
                         dc.fill_round_rect(
                             Rect::new(dot_x, dot_y, px(6.0), px(6.0)),
@@ -1758,7 +1758,8 @@ impl MainWin {
                 if dot_y >= clip.y && dot_y + px(6.0) <= clip.y + clip.h {
                     dc.fill_round_rect(Rect::new(lx, dot_y, px(6.0), px(6.0)), px(3.0), th.accent);
                 }
-                lx += px(12.0);
+                // 수신 점이 이어지면 2px만 띄운다(09-04 사용자) · 아니면 종전 간격.
+                lx += if row.remote { px(8.0) } else { px(12.0) };
             }
             // ★ 수신 표식(09-04 사용자) — 다른 기기에서 받은 항목 = 녹색 점(상태줄 연결 점과 같은 색).
             if row.remote {
