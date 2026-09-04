@@ -480,6 +480,28 @@ impl Shell {
         }
     }
 
+    /// ★ 연결 표시 재판정(09-04) — None = 기능 꺼짐(아이콘 없음) · Some(on) = 릴레이 연결 ∨ LAN 피어 연결.
+    fn refresh_sync_indicator(&mut self) {
+        let next = if crate::sync_cmd::status() == crate::sync_cmd::SyncStatus::Off {
+            None
+        } else {
+            Some(crate::sync_cmd::is_connected() || crate::sync_cmd::has_lan_peers())
+        };
+        if self.sync_on != next {
+            self.sync_on = next;
+            self.refresh_tray();
+            self.main.set_sync_state(self.sync_on);
+            println!(
+                "동기화 상태: {}",
+                match next {
+                    Some(true) => "연결됨",
+                    Some(false) => "끊김",
+                    None => "꺼짐",
+                }
+            );
+        }
+    }
+
     /// 캡처(감시) 또는 원격 항목(`remote = Some(기기명)`)을 이력에 넣는다 — 게이트·요약·썸네일·
     /// 영속·화면 갱신은 공용. ★ 우리 복사만 다른 기기로 전파한다(09-04 · DR-6).
     fn on_captured(&mut self, mut snap: Box<ClipSnapshot>, remote: Option<&str>) {
@@ -937,14 +959,12 @@ impl ApplicationHandler<ShellEvent> for Shell {
             ShellEvent::Hotkey => self.toggle_popup(el),
             ShellEvent::PasteAfterClose(as_) => self.paste_now(as_),
             ShellEvent::PasteStack(ids) => self.paste_stack(&ids),
-            ShellEvent::SyncTick => {}
+            // ★ 연결 표시(09-04) — 릴레이 이벤트든 LAN 세션 변화(SyncTick)든 **같은 판정**으로 갱신:
+            //   동기화 Off = 숨김 · 켜짐 = 릴레이 연결 ∨ LAN 피어 연결(릴레이 None·프로필 실행도 표시된다).
+            ShellEvent::SyncTick => self.refresh_sync_indicator(),
             ShellEvent::SyncState(on) => {
-                if self.sync_on != Some(on) {
-                    self.sync_on = Some(on);
-                    self.refresh_tray();
-                    self.main.set_sync_state(self.sync_on);
-                    println!("동기화 상태: {}", if on { "연결됨" } else { "끊김" });
-                }
+                let _ = on; // 값은 판정에 안 쓴다(러너 상태·LAN 피어를 직접 본다) — 이벤트는 깨우기용.
+                self.refresh_sync_indicator();
             }
             ShellEvent::SystemTheme => {
                 self.app.apply_theme();

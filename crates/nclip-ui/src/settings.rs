@@ -119,9 +119,30 @@ pub struct DevRow {
     approved: bool,
     approve: Option<Button>,
     del: Option<Button>,
-    /// 배치 결과(행 위 y · 텍스트 가용 폭).
+    /// 버튼 폭(라벨 길이 산정 · i18n) — 승인/해제 · 삭제.
+    bw: i32,
+    dw: i32,
+    /// 배치 결과(행 위 y · 텍스트 가용 폭 · 줄 수).
     y: i32,
     text_w: i32,
+    lines: i32,
+}
+
+/// 라벨 폭 추정(논리 px · ASCII 7 · 그 외 13) — 실측 없이 배치하는 설명 예약과 같은 방식.
+fn est_text_px(text: &str, scale: f32) -> i32 {
+    let logical: i32 = text
+        .chars()
+        .map(|c| if c.is_ascii() { 7 } else { 13 })
+        .sum();
+    #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+    let px = (logical as f32 * scale).round() as i32;
+    px
+}
+
+/// 줄 수 추정(1..=3) — 버튼 앞에서 감긴다(사용자 09-04 "설명이 버튼에 가리지 않게").
+fn est_lines(text: &str, avail: i32, scale: f32) -> i32 {
+    let avail = avail.max(1);
+    ((est_text_px(text, scale) + avail - 1) / avail).clamp(1, 3)
 }
 
 impl core::fmt::Debug for DevRow {
@@ -169,10 +190,27 @@ fn build_dev_rows(value: &str, scale: f32, lang: Lang) -> Vec<DevRow> {
             let text = it.next().unwrap_or("").to_string();
             let me = state == "me";
             let approved = state == "approved";
+            // 작은 버튼(09-04 사용자) — Status 폰트 · 폭 = 라벨 + 여백(i18n).
             let mk = |label: &str, tone: ButtonTone| {
-                let mut b = Button::new(label).with_tone(tone);
+                let mut b = Button::new(label)
+                    .with_tone(tone)
+                    .with_font(FontSlot::Status);
                 b.set_scale(scale);
                 b
+            };
+            #[allow(clippy::cast_possible_truncation)]
+            let bw_of = |label: &str| est_text_px(label, scale) + (18.0 * scale).round() as i32;
+            let (bw, dw) = if me {
+                (0, 0)
+            } else {
+                (
+                    bw_of(if approved {
+                        tr(lang, Msg::StSyncRevoke)
+                    } else {
+                        tr(lang, Msg::SyncApproveVerb)
+                    }),
+                    bw_of(tr(lang, Msg::StSyncDelete)),
+                )
             };
             DevRow {
                 approve: (!me).then(|| {
@@ -187,22 +225,50 @@ fn build_dev_rows(value: &str, scale: f32, lang: Lang) -> Vec<DevRow> {
                 approved,
                 hex,
                 text,
+                bw,
+                dw,
                 y: 0,
                 text_w: 0,
+                lines: 1,
             }
         })
         .collect()
 }
 
-/// 기기 목록 행들의 총 높이(빈 목록 = 설명 1줄).
-fn dev_rows_h(n: usize, ctl_h: i32, desc_line_h: i32) -> i32 {
-    if n == 0 {
-        desc_line_h
+/// 기기 목록 버튼 높이 — 컨트롤 높이의 3/4(텍스트 표현에 문제 없는 최소).
+fn dev_btn_h(ctl_h: i32) -> i32 {
+    ctl_h * 3 / 4
+}
+
+/// 행 하나의 텍스트 가용 폭(버튼·간격 제외).
+fn dev_text_w(r: &DevRow, rw: i32, pad: i32, g: i32) -> i32 {
+    if r.bw == 0 && r.dw == 0 {
+        rw - pad * 2
     } else {
-        i32::try_from(n)
-            .unwrap_or(i32::MAX)
-            .saturating_mul(ctl_h + 6)
+        rw - pad * 2 - r.bw - r.dw - g * 2
     }
+}
+
+/// 기기 목록 행들의 총 높이(빈 목록 = 설명 1줄) — 줄바꿈 예약 포함.
+fn dev_rows_h(
+    rows: &[DevRow],
+    rw: i32,
+    pad: i32,
+    g: i32,
+    ctl_h: i32,
+    desc_line_h: i32,
+    scale: f32,
+) -> i32 {
+    if rows.is_empty() {
+        return desc_line_h;
+    }
+    let bh = dev_btn_h(ctl_h);
+    rows.iter()
+        .map(|r| {
+            let lines = est_lines(&r.text, dev_text_w(r, rw, pad, g), scale);
+            (lines * desc_line_h).max(bh) + g
+        })
+        .sum()
 }
 
 /// 보고 행 줄 수(빈 값 = 설명 1줄).
@@ -1455,8 +1521,8 @@ impl SettingsWidget {
         let (h_font, h_entry, h_pos) = (self.s(FONT_SECTION_H), self.s(ENTRY_H), self.s(POS_ROW_H));
         // 토글 폭 = Switch 트랙(20) × 컨트롤 크기 배율(ui.control_size).
         let (combo_w, check_w) = (self.s(COMBO_W), self.s(nclip_ctl::controls::ctl_size(20)));
-        // 기기 목록 버튼 치수(승인/해제 · 삭제 · 간격) — 루프 밖에서(차용 분리).
-        let (dev_bw, dev_dw, dev_g) = (self.s(84), self.s(64), self.s(6));
+        // 기기 목록 버튼 간격 — 루프 밖에서(차용 분리 · 폭은 행이 라벨로 정한다).
+        let dev_g = self.s(6);
         let (family_w, size_w, gap10, dy32) =
             (self.s(FAMILY_W), self.s(SIZE_W), self.s(10), self.s(32));
         let note_hs: Vec<i32> = self.rows.iter().map(|r| self.note_h(r.idx)).collect();
@@ -1482,7 +1548,7 @@ impl SettingsWidget {
                         dy32 + report_lines(self.values.get(e.key)) * desc_line_h + pad
                     }
                     (RowCtl::Devices(rows), _) => {
-                        dy32 + dev_rows_h(rows.len(), ctl_h, desc_line_h) + pad
+                        dy32 + dev_rows_h(rows, rw, pad, dev_g, ctl_h, desc_line_h, scale) + pad
                     }
                     (_, SettingKind::FontSection { .. }) => h_font,
                     (_, SettingKind::PositionGrid) => h_pos,
@@ -1548,7 +1614,7 @@ impl SettingsWidget {
                     dy32 + report_lines(self.values.get(e.key)) * desc_line_h + pad
                 }
                 (RowCtl::Devices(rows), _) => {
-                    dy32 + dev_rows_h(rows.len(), ctl_h, desc_line_h) + pad
+                    dy32 + dev_rows_h(rows, rw, pad, dev_g, ctl_h, desc_line_h, scale) + pad
                 }
                 (_, SettingKind::FontSection { .. }) => h_font,
                 (_, SettingKind::PositionGrid) => h_pos,
@@ -1654,20 +1720,26 @@ impl SettingsWidget {
                 RowCtl::Report => {}
                 RowCtl::Devices(rows) => {
                     // 행마다: 텍스트(왼쪽) + [승인|해제][삭제](오른쪽 정렬).
-                    let (bw, dw, g) = (dev_bw, dev_dw, dev_g);
+                    let g = dev_g;
+                    let bh = dev_btn_h(ctl_h);
                     let mut y = top + dy32;
                     for r in rows.iter_mut() {
                         r.y = y;
-                        r.text_w = rw - pad * 2 - bw - dw - g * 2;
+                        r.text_w = dev_text_w(r, rw, pad, g);
+                        r.lines = est_lines(&r.text, r.text_w, scale);
+                        let row_h = (r.lines * desc_line_h).max(bh);
+                        let (bw, dw) = (r.bw, r.dw);
+                        // 버튼은 첫 줄에 맞춰 세로 중앙(한 줄 행은 곧 행 중앙).
+                        let by = y + (desc_line_h.max(bh) - bh) / 2;
                         if let Some(b) = r.del.as_mut() {
                             b.set_scale(self.scale);
-                            b.set_bounds(Rect::new(rx + rw - pad - dw, y, dw, ctl_h), inv);
+                            b.set_bounds(Rect::new(rx + rw - pad - dw, by, dw, bh), inv);
                         }
                         if let Some(b) = r.approve.as_mut() {
                             b.set_scale(self.scale);
-                            b.set_bounds(Rect::new(rx + rw - pad - dw - g - bw, y, bw, ctl_h), inv);
+                            b.set_bounds(Rect::new(rx + rw - pad - dw - g - bw, by, bw, bh), inv);
                         }
-                        y += ctl_h + g;
+                        y += row_h + g;
                     }
                 }
             }
@@ -2442,17 +2514,21 @@ impl Widget for SettingsWidget {
                         );
                     } else {
                         let th = ctx.text_height();
+                        let dlh = self.s(DESC_LINE_H);
                         for d in rows {
                             let col = if d.emph { theme.text } else { theme.text_dim };
-                            let clip =
-                                Rect::new(r.x + self.s(PAD), d.y, d.text_w.max(0), self.s(CTL_H));
-                            ctx.text(
-                                r.x + self.s(PAD),
-                                d.y + (self.s(CTL_H) - th) / 2,
-                                clip,
-                                &d.text,
-                                col,
-                            );
+                            #[allow(clippy::cast_sign_loss)]
+                            let lines =
+                                wrap_text(ctx, &d.text, d.text_w.max(1), d.lines.max(1) as usize);
+                            for (i, line) in lines.iter().enumerate() {
+                                #[allow(
+                                    clippy::cast_possible_truncation,
+                                    clippy::cast_possible_wrap
+                                )]
+                                let ly = d.y + i as i32 * dlh;
+                                let clip = Rect::new(r.x + self.s(PAD), ly, d.text_w.max(0), dlh);
+                                ctx.text(r.x + self.s(PAD), ly + (dlh - th) / 2, clip, line, col);
+                            }
                         }
                     }
                 }
