@@ -208,6 +208,9 @@ pub(crate) struct MainWin {
     sync_on: Option<bool>,
     /// ★ 상태줄 점 모드(09-04) — 툴바 아이콘(`sync_on` = 릴레이 연결)과 별도.
     sync_mode: SyncMode,
+    /// 상태줄 점의 hover 판정 영역(페인트가 기록 · 09-04 툴팁) + hover 여부.
+    sync_dot_rect: std::cell::Cell<Rect>,
+    sync_dot_hover: bool,
     /// 연결 아이콘 틴트 캐시 — (연결 여부, 색) 키(96² 재틴트를 매 프레임 안 하게).
     sync_icon: std::cell::RefCell<Option<(bool, u32, nclip_ctl::theme::IconImage)>>,
     /// 미리보기 아이콘 틴트 캐시(색 키 · 09-03 사용자 지정 아이콘).
@@ -270,6 +273,8 @@ impl MainWin {
             total: 0,
             sync_on: None,
             sync_mode: SyncMode::Off,
+            sync_dot_rect: std::cell::Cell::new(Rect::default()),
+            sync_dot_hover: false,
             sync_icon: std::cell::RefCell::new(None),
             preview_icon: std::cell::RefCell::new(None),
             dedup_icon: std::cell::RefCell::new(None),
@@ -1083,6 +1088,15 @@ impl MainWin {
                 let hovered = self.tool_at(self.cursor.0, self.cursor.1, h);
                 if hovered != self.hovered {
                     self.hovered = hovered;
+                    self.redraw();
+                }
+                // ★ 상태줄 점 hover(09-04) — 색의 뜻을 툴팁으로.
+                let dot_hover = self.sync_dot_rect.get().contains(nclip_ctl::geom::Point {
+                    x: self.cursor.0,
+                    y: self.cursor.1,
+                });
+                if dot_hover != self.sync_dot_hover {
+                    self.sync_dot_hover = dot_hover;
                     self.redraw();
                 }
             }
@@ -1937,6 +1951,14 @@ impl MainWin {
                 SyncMode::RelayDown => th.text_dim,
             };
             dc.fill_ellipse(Rect::new(cxp - r, cyp - r, r * 2, r * 2), col);
+            // hover 영역은 점보다 넉넉히(4px 점은 맞추기 어렵다).
+            let m = px(6.0);
+            self.sync_dot_rect.set(Rect::new(
+                cxp - r - m,
+                cyp - r - m,
+                (r + m) * 2,
+                (r + m) * 2,
+            ));
         }
 
         // ★ 툴팁 — **반드시 맨 끝**(09-01 실기 "일부만 보임" = 목록이 덤어버렸다).
@@ -1950,6 +1972,29 @@ impl MainWin {
                 r.x + r.w + px(6.0),
                 r.y + (r.h - tip_h) / 2,
                 tw + pad_x * 2,
+                tip_h,
+            );
+            dc.fill_round_rect(tip, px(5.0), th.chrome_bg);
+            dc.stroke_round_rect(tip, px(5.0), th.border, 1.0);
+            dc.text(tip.x + pad_x, tip.y + px(5.0), full, label, th.text);
+        }
+        // ★ 상태줄 점 툴팁(09-04 사용자) — 점 위쪽·오른쪽 끝 정렬(창 밖으로 안 나가게).
+        if self.sync_dot_hover {
+            let lang = current_lang();
+            let label = match self.sync_mode {
+                SyncMode::Relay => tr(lang, Msg::TipSyncRelay),
+                SyncMode::Local => tr(lang, Msg::TipSyncLocal),
+                SyncMode::Off => tr(lang, Msg::TipSyncOff),
+                SyncMode::RelayDown => tr(lang, Msg::TipSyncDown),
+            };
+            let tw = dc.text_width(label);
+            let (tip_h, pad_x) = (px(26.0), px(10.0));
+            let dot = self.sync_dot_rect.get();
+            let tip_w = tw + pad_x * 2;
+            let tip = Rect::new(
+                (dot.x + dot.w - tip_w).max(px(4.0)),
+                dot.y - tip_h - px(4.0),
+                tip_w,
                 tip_h,
             );
             dc.fill_round_rect(tip, px(5.0), th.chrome_bg);

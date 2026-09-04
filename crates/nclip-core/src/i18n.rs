@@ -343,6 +343,10 @@ pub enum Msg {
     TipAlwaysTop,
     /// 미리보기 패널 토글 툴팁(09-02 K4).
     TipPreview,
+    TipSyncRelay,
+    TipSyncLocal,
+    TipSyncOff,
+    TipSyncDown,
     MenuCopy,
     MenuCopyPlain,
     MenuCopyObject,
@@ -856,6 +860,30 @@ impl Msg {
             ],
             Msg::TipAlwaysTop => ["Always on top", "최상위 고정", "总在最前", "常に手前"],
             Msg::TipPreview => ["Preview", "미리보기", "预览", "プレビュー"],
+            Msg::TipSyncRelay => [
+                "Green: relay connected — syncing over the internet and the same network",
+                "녹색: 릴레이 서버 연결됨 — 인터넷·같은 네트워크 모두 동기화",
+                "绿色：已连接中继——通过互联网和同一网络同步",
+                "緑: リレー接続中 — インターネット・同一ネットワークで同期",
+            ],
+            Msg::TipSyncLocal => [
+                "Blue: relay None — syncing only on the same network",
+                "파랑: 릴레이 None — 같은 네트워크에서만 동기화",
+                "蓝色：中继为 None——仅在同一网络同步",
+                "青: リレー None — 同じネットワーク内のみ同期",
+            ],
+            Msg::TipSyncOff => [
+                "Gray: sync is off",
+                "회색: 동기화 사용 안 함",
+                "灰色：同步已关闭",
+                "灰: 同期オフ",
+            ],
+            Msg::TipSyncDown => [
+                "Dim: relay set but not connected (connecting / failed / disconnected)",
+                "흐림: 릴레이 설정됨, 미연결(접속 중 · 실패 · 해제)",
+                "暗淡：已设置中继但未连接（连接中 / 失败 / 已断开）",
+                "淡色: リレー設定済みだが未接続（接続中・失敗・切断）",
+            ],
             Msg::MenuCopy => ["Copy", "복사", "复制", "コピー"],
             Msg::MenuCopyPlain => ["Copy as plain text", "평문으로 복사", "复制为纯文本", "プレーンでコピー"],
             Msg::MenuCopyObject => ["Copy as object", "개체로 복사", "复制为对象", "オブジェクトでコピー"],
@@ -1114,7 +1142,7 @@ mod tests {
     use super::*;
 
     /// 카탈로그 전수 — 새 `Msg`를 더하면 여기도 더한다(빈칸 검사가 그걸 강제한다).
-    const ALL_MSG: [Msg; 208] = [
+    const ALL_MSG: [Msg; 212] = [
         Msg::AppName,
         Msg::SearchPlaceholder,
         Msg::EmptyHistory,
@@ -1251,6 +1279,10 @@ mod tests {
         Msg::TipCopyPlain,
         Msg::TipAlwaysTop,
         Msg::TipPreview,
+        Msg::TipSyncRelay,
+        Msg::TipSyncLocal,
+        Msg::TipSyncOff,
+        Msg::TipSyncDown,
         Msg::MenuCopy,
         Msg::MenuCopyPlain,
         Msg::MenuCopyObject,
