@@ -1244,6 +1244,11 @@ impl MainWin {
             }
             None => return MainAction::None,
         };
+        // ★ 커서는 드롭다운 분기보다 먼저 갱신한다(09-04 실기 — 열린 동안 분기가 이벤트를 삼켜 좌표가 멈췄고,
+        //   클릭(MouseInput)은 좌표가 없어 옛 좌표로 행을 판정했다).
+        if let WindowEvent::CursorMoved { position, .. } = event {
+            self.cursor = (position.x as i32, position.y as i32);
+        }
         // ★ 검색 방식 드롭다운(09-04) — 열려 있거나 그 자리를 눌렀으면 먼저 먹는다(메뉴와 같은 z순서 계약).
         if let Some(ev) = to_ctl_event(event, self.cursor) {
             let was_open = self.mode_drop.is_open();

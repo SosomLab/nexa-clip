@@ -434,6 +434,10 @@ impl Shell {
 
     /// ★ 검색 방식 선택(09-04 드롭다운) — 설정에 쓰면 박동 동기가 두 창의 방식·드롭다운·필터를 맞춘다.
     fn set_find_mode(&mut self, v: &str) {
+        println!(
+            "검색 방식 선택: {v} (현재 {})",
+            self.app.conf.state.get("find.mode")
+        );
         if self.app.conf.state.get("find.mode") != v {
             self.app
                 .conf

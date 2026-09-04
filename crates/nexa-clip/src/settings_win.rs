@@ -332,6 +332,12 @@ impl App {
     fn poll_sync_status(&mut self) {
         self.refresh_devices();
         self.expire_clear_arm();
+        // ★ 검색 방식은 창 밖(드롭다운)에서도 바뀐다(09-04) — 설정값을 라디오에 되비춘다(같으면 무효화 없음).
+        {
+            let mode = self.conf.state.get("find.mode").to_string();
+            let mut inv = Invalidations::default();
+            self.widget.set_value("find.mode", &mode, &mut inv);
+        }
         use crate::sync_cmd::SyncStatus as S;
         let st = crate::sync_cmd::status();
         // ★ 활성 규칙(09-03·09-04 사용자): 동기화가 꺼져 있으면 **아래 설정 전부 잠금**(의미가 없다) ·
