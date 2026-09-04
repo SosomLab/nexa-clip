@@ -921,7 +921,7 @@ impl SettingsWidget {
             self.sync_query(inv);
             return Some(t);
         }
-        self.rows.iter_mut().find_map(|r| match &mut r.ctl {
+        let got = self.rows.iter_mut().find_map(|r| match &mut r.ctl {
             RowCtl::Font { family, size } => family
                 .cut_selection(inv)
                 .or_else(|| size.editing_input().and_then(|tb| tb.cut_selection(inv))),
@@ -929,7 +929,9 @@ impl SettingsWidget {
             RowCtl::Combo(c) => c.editing_input().and_then(|tb| tb.cut_selection(inv)),
             RowCtl::List(l) => l.editing_input().and_then(|tb| tb.cut_selection(inv)),
             _ => None,
-        })
+        });
+        self.drain_changes(inv);
+        got
     }
 
     /// 붙여넣기(①) — 포커스된 텍스트 입력만 받는다.
@@ -958,6 +960,9 @@ impl SettingsWidget {
                 _ => {}
             }
         }
+        // ★ 붙여넣기는 `on_event`를 거치지 않는다 — 수거를 여기서도 돌린다(09-04 사용자 실기
+        //   "빈 칸에 붙여넣으면 Test가 안 열린다": 키 입력은 on_event 끝의 수거로 즉시 보고됐고 붙여넣기만 빠졌다).
+        self.drain_changes(inv);
     }
 
     /// 우클릭 편집 메뉴 행동(1회성 — 08-13 전수 검사) — 어느 텍스트 입력에서든.

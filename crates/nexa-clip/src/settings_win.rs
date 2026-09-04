@@ -785,7 +785,12 @@ impl App {
             // ★ 즉시 적용 계약 — 값은 바로 반영하고, **파일 쓰기는 미룬다**
             //   (조용해진 뒤 1초 · 늦어도 10초 — [`crate::conf`]).
             self.conf.set(key, val.clone(), now);
-            println!("설정 변경: {key} = {val}");
+            // 비밀값은 찍지 않는다(09-04 — 페어링 암호가 로그에 남지 않게).
+            if key.contains("passphrase") {
+                println!("설정 변경: {key} = ••• ({}자)", val.chars().count());
+            } else {
+                println!("설정 변경: {key} = {val}");
+            }
             if key == "ui.theme" {
                 self.apply_theme();
             }

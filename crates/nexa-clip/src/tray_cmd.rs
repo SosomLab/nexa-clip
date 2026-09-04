@@ -97,6 +97,51 @@ fn decode_one(r: &RawRep, side: u32) -> Option<(u32, u32, Vec<u8>)> {
     }
 }
 
+/// ★ 창 기하를 **보이는 모니터 안**으로 되민다(09-04 사용자 — "2모니터에서 1모니터로 바뀌면 화면에 보이게"):
+/// 창 중심이 든 모니터가 있으면 그 안으로 클램프, 없으면 주 모니터 좌상단 + 40px(크기는 모니터에 맞춰 줄임).
+fn fit_geom_to_monitors(
+    el: &ActiveEventLoop,
+    (x, y, w, h): (i32, i32, u32, u32),
+) -> (i32, i32, u32, u32) {
+    #[allow(clippy::cast_possible_wrap)]
+    let (cx, cy) = (x + w as i32 / 2, y + h as i32 / 2);
+    let contains = |m: &winit::monitor::MonitorHandle| {
+        let p = m.position();
+        let s = m.size();
+        cx >= p.x
+            && cy >= p.y
+            && cx < p.x + i32::try_from(s.width).unwrap_or(i32::MAX)
+            && cy < p.y + i32::try_from(s.height).unwrap_or(i32::MAX)
+    };
+    let hit = el.available_monitors().find(contains);
+    let lost = hit.is_none();
+    let Some(mon) = hit.or_else(|| el.primary_monitor()) else {
+        return (x, y, w, h);
+    };
+    let (mp, ms) = (mon.position(), mon.size());
+    let (mw, mh) = (ms.width.max(200), ms.height.max(200));
+    let (w2, h2) = (w.min(mw), h.min(mh));
+    #[allow(clippy::cast_possible_wrap)]
+    let (mw_i, mh_i, w_i, h_i) = (mw as i32, mh as i32, w2 as i32, h2 as i32);
+    let (nx, ny) = if lost {
+        #[allow(clippy::cast_possible_truncation)]
+        let off = (40.0 * mon.scale_factor()).round() as i32;
+        (
+            (mp.x + off).min(mp.x + mw_i - w_i),
+            (mp.y + off).min(mp.y + mh_i - h_i),
+        )
+    } else {
+        (
+            x.clamp(mp.x, (mp.x + mw_i - w_i).max(mp.x)),
+            y.clamp(mp.y, (mp.y + mh_i - h_i).max(mp.y)),
+        )
+    };
+    if lost {
+        println!("메인창 위치 보정: 저장 위치({x},{y})가 모니터 밖 → ({nx},{ny})");
+    }
+    (nx, ny, w2, h2)
+}
+
 /// 검색 색인 배경 로더 작업 단위 — (항목 id, 라벨, 텍스트 blob 참조들(형식·id·길이)).
 type PendingText = (u64, String, Vec<(String, [u8; 32], u64)>);
 
@@ -1224,6 +1269,14 @@ impl ApplicationHandler<ShellEvent> for Shell {
 
     fn window_event(&mut self, el: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
         if self.main.window_id() == Some(id) {
+            // ★ 이동·크기 변경 때도 기하를 저장한다(09-04 사용자 — 강제 종료·크래시 뒤에도 같은 자리). 최소화(-32000)는 제외.
+            if matches!(event, WindowEvent::Moved(_) | WindowEvent::Resized(_)) {
+                if let Some((x, y, _, _)) = self.main.geometry() {
+                    if x > -20000 && y > -20000 {
+                        self.save_main_geom();
+                    }
+                }
+            }
             match self.main.handle_event(&event) {
                 MainAction::None => {}
                 MainAction::Close => self.close_main(),
@@ -1347,7 +1400,8 @@ impl ApplicationHandler<ShellEvent> for Shell {
             ShellEvent::Open => {
                 // ★ 08-30 사용자 확정: 트레이 좌클릭/"열기" = **메인창**(설정은 메인 ⚙).
                 let theme = self.app.theme();
-                let geom = self.saved_main_geom();
+                // ★ 저장 기하가 지금 모니터 밖이면(2→1 모니터 등) 보이는 자리로 보정(09-04 사용자).
+                let geom = self.saved_main_geom().map(|g| fit_geom_to_monitors(el, g));
                 let view = self.app.conf.state.get("ui.view_mode").to_string();
                 let atop = self.app.conf.state.get("ui.always_on_top") == "on";
                 let pv = self.app.conf.state.get("ui.preview_open") == "on";
