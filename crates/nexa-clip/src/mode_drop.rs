@@ -14,8 +14,11 @@ pub(crate) const SIDE: u32 = 96;
 const REGEX_ALPHA: &[u8] = include_bytes!("../assets/icon-regex-96.alpha");
 /// 정확히 아이콘(09-04 사용자 지정 — Material `equal` 96² 알파).
 const EXACT_ALPHA: &[u8] = include_bytes!("../assets/icon-exact-96.alpha");
+/// 유사 아이콘(09-04 사용자 지정 — Material `robot` 96² 알파).
+const FUZZY_ALPHA: &[u8] = include_bytes!("../assets/icon-fuzzy-96.alpha");
 
 /// 글리프 → 96² 알파(가운데 정렬 · 굵게). 한 번 굽고 누수시켜 `'static`으로(항목 3 × 창 2 · 9KB씩).
+#[allow(dead_code)]
 fn glyph_alpha(font: &Font, text: &str, size: f32) -> &'static [u8] {
     let side = SIDE as usize;
     let mut buf = vec![0u32; side * side];
@@ -47,6 +50,8 @@ fn glyph_alpha(font: &Font, text: &str, size: f32) -> &'static [u8] {
 
 /// 드롭다운 생성 — `value` = 현재 `find.mode`.
 pub(crate) fn build(font: &Font, value: &str) -> IconDropdown {
+    // 세 아이콘 모두 사용자 지정 SVG 알파 — 글리프 굽기는 폴백으로만 남긴다(자산 누락 시).
+    let _ = font;
     let lang = current_lang();
     let items = vec![
         IconDropItem {
@@ -59,7 +64,8 @@ pub(crate) fn build(font: &Font, value: &str) -> IconDropdown {
         IconDropItem {
             value: "fuzzy",
             label: tr(lang, Msg::ValFuzzy).to_string(),
-            alpha: glyph_alpha(font, "≈", 84.0),
+            // ★ 사용자 지정 Material `robot`(유사) SVG(09-04)를 구운 알파.
+            alpha: FUZZY_ALPHA,
             size: SIDE,
         },
         IconDropItem {
