@@ -343,6 +343,10 @@ pub enum Msg {
     TipAlwaysTop,
     /// 미리보기 패널 토글 툴팁(09-02 K4).
     TipPreview,
+    /// ★ 감시 토글 툴팁(09-04) — 감시 중: 누르면 중지.
+    TipCaptureStop,
+    /// 감시 중지됨: 누르면 재개.
+    TipCaptureResume,
     TipSyncRelay,
     TipSyncLocal,
     TipSyncOff,
@@ -860,6 +864,18 @@ impl Msg {
             ],
             Msg::TipAlwaysTop => ["Always on top", "최상위 고정", "总在最前", "常に手前"],
             Msg::TipPreview => ["Preview", "미리보기", "预览", "プレビュー"],
+            Msg::TipCaptureStop => [
+                "Capturing — click to stop",
+                "캡처 중 — 누르면 캡처 중지",
+                "采集中 — 点击停止",
+                "取り込み中 — 押すと停止",
+            ],
+            Msg::TipCaptureResume => [
+                "Capture stopped — click to resume",
+                "캡처 중지됨 — 누르면 캡처 재개",
+                "已停止采集 — 点击恢复",
+                "取り込み停止中 — 押すと再開",
+            ],
             Msg::TipSyncRelay => [
                 "Green: relay connected — syncing over the internet and the same network",
                 "녹색: 릴레이 서버 연결됨 — 인터넷·같은 네트워크 모두 동기화",
@@ -1142,7 +1158,7 @@ mod tests {
     use super::*;
 
     /// 카탈로그 전수 — 새 `Msg`를 더하면 여기도 더한다(빈칸 검사가 그걸 강제한다).
-    const ALL_MSG: [Msg; 212] = [
+    const ALL_MSG: [Msg; 214] = [
         Msg::AppName,
         Msg::SearchPlaceholder,
         Msg::EmptyHistory,
@@ -1279,6 +1295,8 @@ mod tests {
         Msg::TipCopyPlain,
         Msg::TipAlwaysTop,
         Msg::TipPreview,
+        Msg::TipCaptureStop,
+        Msg::TipCaptureResume,
         Msg::TipSyncRelay,
         Msg::TipSyncLocal,
         Msg::TipSyncOff,

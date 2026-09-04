@@ -149,7 +149,8 @@ enum Tool {
     Preview,
     /// ★ 최상위 고정(09-02 사용자 요청) — 모든 창 위에 표시. 09-04: 토글 그룹(중복제외·미리보기·최상위)으로 이동.
     AlwaysTop,
-    /// ★ 감시 끄기 토글(09-04 사용자) — 켜짐(accent) = 클립보드 캡처를 받지 않는다(이 세션만 · 영속 없음).
+    /// ★ 감시 토글(09-04 사용자) — 2상: 감시 중 = `stop_circle` 벽돌색(누르면 중지) · 중지됨 = `play_circle`
+    ///   초록(누르면 재개). 아이콘·색·툴팁이 현재 상태와 다음 동작을 함께 말한다. 세션 한정(영속 없음).
     WatchOff,
     Settings,
 }
@@ -2078,7 +2079,7 @@ impl MainWin {
         //   글자는 본문 크기(Base) — Status는 작다는 사용자 피드백.
         if let Some(t) = self.hovered {
             let r = self.tool_rect_of(t, h);
-            let label = tool_label(t);
+            let label = self.tool_label(t);
             let tw = dc.text_width(label);
             let (tip_h, pad_x) = (px(26.0), px(10.0));
             let tip = Rect::new(
@@ -2326,19 +2327,26 @@ impl MainWin {
                 }
             }
             Tool::WatchOff => {
-                // ★ Material `stop_circle`(09-04 사용자 지정 SVG를 구운 알파) — 켜짐(감시 꺼짐) = **danger 빨강**
-                //   (사용자 09-04 "더 강한 인상" — 캡처가 멈춘 상태는 놓치면 안 된다).
-                let c = if self.watch_off { th.danger } else { ink };
+                // ★ 2상 아이콘(09-04 사용자 지정 Material SVG 2종) — 감시 중: `stop_circle` **벽돌색**(누르면 멈춘다),
+                //   중지됨: `play_circle` **초록**(누르면 다시 잡는다). 색 = 다음 동작의 성격(멈춤 = 경고 계열 ·
+                //   재개 = 진행 계열). 비활성(enabled=false)은 없다 — 항상 누를 수 있다.
+                let stopped = self.watch_off;
+                let (alpha, c): (&[u8], nclip_ctl::theme::Color) = if stopped {
+                    (WATCH_PLAY_ALPHA, WATCH_RESUME_COLOR)
+                } else {
+                    (WATCH_ALPHA, WATCH_STOP_COLOR)
+                };
+                let key = c.0 | if stopped { 0x8000_0000 } else { 0 };
                 let mut cache = self.watch_icon.borrow_mut();
-                let stale = !matches!(cache.as_ref(), Some((k, _)) if *k == c.0);
+                let stale = !matches!(cache.as_ref(), Some((k, _)) if *k == key);
                 if stale {
                     let (r0, g0, b0) = ((c.0 >> 16) as u8, (c.0 >> 8) as u8, c.0 as u8);
-                    let mut rgba = Vec::with_capacity(WATCH_ALPHA.len() * 4);
-                    for &a in WATCH_ALPHA {
+                    let mut rgba = Vec::with_capacity(alpha.len() * 4);
+                    for &a in alpha {
                         rgba.extend_from_slice(&[r0, g0, b0, a]);
                     }
                     *cache = Some((
-                        c.0,
+                        key,
                         nclip_ctl::theme::IconImage::from_rgba(PREVIEW_SIDE, PREVIEW_SIDE, rgba),
                     ));
                 }
@@ -2743,8 +2751,14 @@ fn svg_attr(xml: &str, name: &str) -> Option<u32> {
 const PREVIEW_ALPHA: &[u8] = include_bytes!("../assets/icon-preview-96.alpha");
 /// ★ 중복 제외 툴바 아이콘(09-04 사용자 지정 — Material `compress` 96² 알파).
 const DEDUP_ALPHA: &[u8] = include_bytes!("../assets/icon-dedup-96.alpha");
-/// ★ 감시 끄기 툴바 아이콘(09-04 사용자 지정 — Material `stop_circle` 96² 알파).
+/// ★ 감시 토글 아이콘(09-04 사용자 지정 — Material `stop_circle` 96² 알파 · 감시 중 = 누르면 중지).
 const WATCH_ALPHA: &[u8] = include_bytes!("../assets/icon-watch-96.alpha");
+/// 중지됨 = `play_circle`(누르면 재개).
+const WATCH_PLAY_ALPHA: &[u8] = include_bytes!("../assets/icon-watch-play-96.alpha");
+/// 멈춤 동작 = 벽돌색(사용자 09-04 "붉은 계열") — 라이트·다크 양쪽에서 읽히는 채도.
+const WATCH_STOP_COLOR: nclip_ctl::theme::Color = nclip_ctl::theme::Color(0x00B2_4C34);
+/// 재개 동작 = Material Green 600(#43A047) — 상태줄 연결 녹색(46,204,64)보다 한 톤 가라앉혀 "진행" 신호로.
+const WATCH_RESUME_COLOR: nclip_ctl::theme::Color = nclip_ctl::theme::Color(0x0043_A047);
 /// 미리보기 자산 변(px).
 const PREVIEW_SIDE: u32 = 96;
 
@@ -2779,18 +2793,28 @@ pub(crate) fn parse_dims(label: &str) -> Option<(u32, u32)> {
 }
 
 use nclip_core::capture::svg_text;
-fn tool_label(t: Tool) -> &'static str {
-    let lang = current_lang();
-    match t {
-        Tool::Pin => tr(lang, Msg::TipPin),
-        Tool::Delete => tr(lang, Msg::TipDelete),
-        Tool::Copy => tr(lang, Msg::TipCopy),
-        Tool::CopyPlain => tr(lang, Msg::TipCopyPlain),
-        Tool::Preview => tr(lang, Msg::TipPreview),
-        Tool::Dedup => tr(lang, Msg::DedupLabel),
-        Tool::AlwaysTop => tr(lang, Msg::TipAlwaysTop),
-        Tool::WatchOff => tr(lang, Msg::ActionPauseCapture),
-        Tool::Settings => tr(lang, Msg::TraySettings),
+impl MainWin {
+    /// 툴바 툴팁 — ★ 감시 토글은 상태 의존(현재 상태 + 누르면 바뀌는 상태 · 09-04).
+    fn tool_label(&self, t: Tool) -> &'static str {
+        let lang = current_lang();
+        match t {
+            Tool::Pin => tr(lang, Msg::TipPin),
+            Tool::Delete => tr(lang, Msg::TipDelete),
+            Tool::Copy => tr(lang, Msg::TipCopy),
+            Tool::CopyPlain => tr(lang, Msg::TipCopyPlain),
+            Tool::Preview => tr(lang, Msg::TipPreview),
+            Tool::Dedup => tr(lang, Msg::DedupLabel),
+            Tool::AlwaysTop => tr(lang, Msg::TipAlwaysTop),
+            Tool::WatchOff => tr(
+                lang,
+                if self.watch_off {
+                    Msg::TipCaptureResume
+                } else {
+                    Msg::TipCaptureStop
+                },
+            ),
+            Tool::Settings => tr(lang, Msg::TraySettings),
+        }
     }
 }
 
