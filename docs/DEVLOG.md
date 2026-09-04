@@ -4,7 +4,7 @@
 
 ## 2026-09-05 (mac 1차) — ★ 수신 이미지 "[이미지]"만 = 팔레트 PNG 디코드 거부 → EXPAND 정규화
 
-- `dump_item` 예제로 저장 바이트 확인(8-bit colormap) · `nclip-imgdec` `Indexed => None` 근인 · `Transformations::EXPAND|STRIP_16` + 회귀 테스트 · `decode_probe` 예제(3-OS 워커 경로) 실제 바이트 384×33 ✓ · 함정: `--example`과 함께 빌드하면 bin 미갱신 → [journal](journal/2026-09-05.md)
+- `dump_item` 예제로 저장 바이트 확인(8-bit colormap) · `nclip-imgdec` `Indexed => None` 근인 · `Transformations::EXPAND|STRIP_16` + 회귀 테스트 · `decode_probe` 예제(3-OS 워커 경로) 실제 바이트 384×33 ✓ · 함정: `--example`과 함께 빌드하면 bin 미갱신 · 회신: ★ **섬네일 자가 치유**(참조 없는 이미지 항목 본문에서 생성·영속) · 수신 표시 사라짐 = 로컬 재캡처+중복 제외 로컬 우선(결함 아님) → [journal](journal/2026-09-05.md)
 
 ## 2026-09-04 (mac 6차) — ★ 붙여넣기 불능 근인 = TCC 요구사항 고착 · 권한 대화상자 · 붙여넣기 자동 실기 3/3(사용자 ✅)
 
