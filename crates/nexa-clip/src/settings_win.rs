@@ -308,6 +308,7 @@ impl App {
         //   켜져 있으면 연결 중엔 Test 잠금(정보 변경 = 해제 → 다시 열림) · Disconnect는 연결 중에만.
         //   매 폴마다 계산(값싸다 · set_disabled는 바뀔 때만 무효화).
         let enabled = self.conf.state.get("sync.enabled") == "on";
+        let relay_none = self.conf.state.get("sync.relay").trim() == "none";
         let locked: &[&'static str] = if !enabled {
             &[
                 "sync.device_name",
@@ -320,6 +321,9 @@ impl App {
                 "sync.disconnect",
                 "sync.devices",
             ]
+        } else if relay_none {
+            // ★ 릴레이 None(09-04 사용자) — 서버가 없으니 포트·Test·Disconnect는 의미가 없다.
+            &["sync.port", "sync.test", "sync.disconnect"]
         } else if st == S::Connected {
             &["sync.test"]
         } else {
@@ -670,6 +674,16 @@ impl App {
                 "sync.handle" | "sync.passphrase" | "sync.relay" | "sync.port"
             ) {
                 self.sync_drop_now();
+            }
+            // ★ 릴레이 None(09-04 사용자) — Test 없이 바로 LAN 전용으로 적용(동기화가 켜져 있으면).
+            //   None → 서버로 바꾸는 경우는 종전대로 해제 후 Test.
+            let relay_none_now = self.conf.state.get("sync.relay").trim() == "none";
+            if relay_none_now
+                && self.conf.state.get("sync.enabled") == "on"
+                && (key == "sync.relay" || key == "sync.enabled")
+            {
+                self.sync_respawn = true;
+                self.sync_shown = None;
             }
             // ★ Enable Sync 끔 = 즉시 해제(09-03 사용자).
             if key == "sync.enabled" && val != "on" {
