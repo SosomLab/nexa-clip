@@ -334,9 +334,7 @@ pub(crate) const REGISTRY: &[Entry] = &[
         Msg::CatShortcuts,
         Msg::SetHotkeyOpenAlt,
         Msg::SetHotkeyDesc,
-        SettingKind::Hotkey {
-            default: "Ctrl+Shift+V",
-        },
+        SettingKind::Hotkey { default: "" }, // ★ 보조 = 기본 없음(09-04 사용자)
         "key.open_alt",
     ),
     e(

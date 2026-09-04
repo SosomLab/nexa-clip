@@ -13,7 +13,7 @@ pub const ID_PASTE_PLAIN: u32 = 3;
 /// (설정 키, 동작 id, 기본 조합) — 화면 순서.
 pub const ACTIONS: &[(&str, u32, &str)] = &[
     ("key.open", ID_OPEN, "Shift+Alt+C"),
-    ("key.open_alt", ID_OPEN_ALT, "Ctrl+Shift+V"),
+    ("key.open_alt", ID_OPEN_ALT, ""), // 보조 = 기본 없음(09-04 사용자) — 원하면 지정
     ("key.paste_plain", ID_PASTE_PLAIN, "Shift+Alt+X"),
 ];
 
@@ -419,7 +419,7 @@ mod tests {
         assert!(Hotkey::from_parts(true, false, false, false, "Escape").is_none());
         assert_eq!(ACTIONS.len(), 3);
         for (_, _, d) in ACTIONS {
-            assert!(Hotkey::parse(d).is_some(), "{d}");
+            assert!(d.is_empty() || Hotkey::parse(d).is_some(), "{d}");
         }
     }
 }

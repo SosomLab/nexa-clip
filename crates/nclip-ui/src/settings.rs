@@ -2860,7 +2860,6 @@ impl Widget for SettingsWidget {
 #[cfg(test)]
 mod paste_tests {
     use super::*;
-    use nclip_ctl::Control as _;
 
     /// 한 행의 TextBox를 직접 포커스하고 붙여넣기 → 변경 보고(09-04 실기 "암호 붙여넣기가 안 먹는다").
     fn paste_into(key: &'static str, text: &str) -> Vec<(&'static str, String)> {
