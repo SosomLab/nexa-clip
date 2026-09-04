@@ -131,6 +131,8 @@ impl App {
             self.clear_arm = None;
             let mut inv = Invalidations::default();
             self.widget.set_row_note("hist.clear", "", &mut inv);
+            self.widget
+                .set_action_tone("hist.clear", nclip_ctl::ButtonTone::Default, &mut inv);
             self.redraw();
         }
     }
@@ -727,6 +729,16 @@ impl App {
                 let armed = self
                     .clear_arm
                     .is_some_and(|t| t.elapsed() < Duration::from_secs(2));
+                // ★ 버튼 자체도 무장 중엔 Danger(사용자 — 암호 재생성과 같은 패턴).
+                self.widget.set_action_tone(
+                    "hist.clear",
+                    if armed {
+                        nclip_ctl::ButtonTone::Default
+                    } else {
+                        nclip_ctl::ButtonTone::Danger
+                    },
+                    &mut inv,
+                );
                 if armed {
                     self.clear_arm = None;
                     self.clear_request = true;

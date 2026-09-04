@@ -127,6 +127,11 @@ impl Button {
         self
     }
 
+    /// ★ 톤 변경(09-04 — 2단계 확인 무장 표시처럼 상태에 따라 바뀌는 버튼).
+    pub fn set_tone(&mut self, tone: ButtonTone) {
+        self.tone = tone;
+    }
+
     /// 라벨 폰트 슬롯 지정(체이닝 · 08-17) — 카드 본문에 맞추려면 Status.
     #[must_use]
     pub fn with_font(mut self, font: FontSlot) -> Self {

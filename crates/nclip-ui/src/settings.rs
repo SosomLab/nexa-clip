@@ -1378,6 +1378,23 @@ impl SettingsWidget {
         }
     }
 
+    /// ★ 행위 버튼 톤(09-04 사용자 — 암호 재생성 버튼과 같은 2단계 무장 표시): 무장 중 = Danger.
+    pub fn set_action_tone(
+        &mut self,
+        key: &'static str,
+        tone: ButtonTone,
+        inv: &mut Invalidations,
+    ) {
+        for r in &mut self.rows {
+            if registry()[r.idx].key == key {
+                if let RowCtl::Act(b) = &mut r.ctl {
+                    b.set_tone(tone);
+                    inv.push(r.rect);
+                }
+            }
+        }
+    }
+
     /// 설정 행 아래 한 줄 정보 지정 — **자리가 고정**된다(빈 문자열 = 제거).
     /// 값이 바뀔 때만 재배치·무효화하므로 1초 갱신에도 낭비가 없다.
     pub fn set_row_note(&mut self, key: &'static str, text: &str, inv: &mut Invalidations) {
