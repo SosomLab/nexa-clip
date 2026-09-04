@@ -8,10 +8,18 @@
 //! - 인라인: `<span style>`·`<font color>`·`<b>/<strong>`·`<i>/<em>` — 색·굵기·기울임
 //! - 블록: `<br>`·`<div>`·`<p>`·`<li>`·`<tr>` = 줄 바꿈. `<style>`·`<script>` 내용 스킵
 //! - 엔티티: 기본 5종 + `&nbsp;` + 수치(`&#..;`·`&#x..;`)
-//! - 표·목록 구조·배경색·글꼴 크기는 본편(T-18d)
+//!
+//! ## 2단(09-04 — 새 Outlook 메일 복사 실기 "n ■" · CopyQ 비교)
+//! - ★ **심볼 글꼴 치환**: `font-family: Wingdings/Symbol` 런의 글자를 유니코드 등가로(Word·Outlook 불릿은
+//!   "심볼 글꼴 + 일반 문자"라 글꼴을 버리면 `n`이 보인다 — 평문 표현도 `n`이므로 이 치환은 리치 경로에서만).
+//! - **목록**: `<ul>/<ol>` 깊이별 불릿(• ◦ ▪ · `1.`) 합성 + `<li>` 들여쓰기.
+//! - **들여쓰기**: 블록의 `margin-left`·`padding-left`·`text-indent`(pt·px·cm·in·em)를 em으로 — 줄의 첫 런에 실린다.
+//! - **글자 배율**: `font-size` 상대값(본문 10pt 기준 ±15% 안은 1.0 · 0.8~1.3으로 묶음).
+//! - `<img>`: `[image]` 자리표시(Outlook은 표를 `data:` PNG로 넣는다 — 인라인 이미지는 3단).
+//! - 표 구조·배경색은 아직 밖.
 
 /// 스타일 런 — 같은 스타일이 이어지는 텍스트 조각.
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct Run {
     /// 조각 텍스트(엔티티 해제 후).
     pub text: String,
@@ -21,6 +29,49 @@ pub struct Run {
     pub bold: bool,
     /// 기울임.
     pub italic: bool,
+    /// ★ 2단: 줄 들여쓰기(em) — 줄의 **첫 런**에만 실린다(목록 · `margin-left`). 그리는 쪽은
+    /// `x += em × indent` 한 줄이면 된다([`em_px`]).
+    pub indent: f32,
+    /// ★ 2단: 글자 배율(1.0 = 본문) — 0.8~1.3. 줄 간격은 고정이라 이 범위를 넘기지 않는다.
+    pub scale: f32,
+}
+
+impl Default for Run {
+    fn default() -> Self {
+        Self {
+            text: String::new(),
+            color: None,
+            bold: false,
+            italic: false,
+            indent: 0.0,
+            scale: 1.0,
+        }
+    }
+}
+
+/// em 단위 → px(반올림). 그리기 쪽이 들여쓰기에 쓴다 — `em`은 본문 글꼴의 전각 폭.
+#[must_use]
+#[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+pub fn em_px(em: i32, factor: f32) -> i32 {
+    (em as f32 * factor).round() as i32
+}
+
+/// 배율 → 글꼴 크기 증분(px) — `select_font_sized`의 delta.
+#[must_use]
+#[allow(clippy::cast_precision_loss)]
+pub fn size_delta(em: i32, scale: f32) -> f32 {
+    em as f32 * (scale - 1.0)
+}
+
+/// 심볼 글꼴 — 글자 코드가 곧 그림인 글꼴(Word·Outlook 불릿).
+#[derive(Clone, Copy, Default, PartialEq, Eq, Debug)]
+enum Sym {
+    #[default]
+    None,
+    Wingdings,
+    Symbol,
+    /// 그 밖의 심볼 글꼴(Webdings·Wingdings 2/3) — 표는 없고 PUA만 벗긴다.
+    Other,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -31,6 +82,21 @@ struct Style {
     /// ★ 공백 보존(`<pre>`·`white-space: pre*` · 09-03 실기 — Sublime계 HTML은
     /// 블록 태그 없이 **원시 개행**으로 줄을 나눈다): 켜지면 개행 = 줄 바꿈.
     pre: bool,
+    /// ★ 2단: 심볼 글꼴 — 텍스트 노드의 글자를 치환한다.
+    sym: Sym,
+    /// ★ 2단: 인라인 `font-size` 배율 — 0.0 = 미지정(블록 값을 따른다).
+    scale: f32,
+}
+
+/// 블록(문단·목록·항목) — 들여쓰기·배율·목록 번호를 쌓는다.
+struct Block {
+    name: String,
+    /// 이 블록이 더하는 들여쓰기(em).
+    indent: f32,
+    /// 블록 글자 배율(부모 상속).
+    scale: f32,
+    /// `<ol>`이면 번호 카운터.
+    ordered: Option<u32>,
 }
 
 /// 표현 목록에서 HTML을 찾아 줄×런으로 푼다 — 없거나 못 풀면 `None`(평문 폴백).
@@ -42,12 +108,13 @@ pub fn html_runs_of(reps: &[crate::RawRep], max_lines: usize) -> Option<Vec<Vec<
         .iter()
         .find(|r| matches!(r.format.as_str(), "CF_HTML" | "HTML Format" | "text/html"))?;
     let html = core::str::from_utf8(&r.data).ok()?;
-    let runs = parse(fragment_of(html), max_lines);
+    let (runs, structured) = parse(fragment_of(html), max_lines);
     // 색·서식이 하나도 없으면 평문과 같다 — 굳이 리치 경로를 태우지 않는다.
-    let styled = runs
-        .iter()
-        .flatten()
-        .any(|run| run.color.is_some() || run.bold || run.italic);
+    // ★ 2단: 목록 불릿·들여쓰기·심볼 치환·이미지 자리표시는 평문이 잃은 구조라 리치로 친다.
+    let styled = structured
+        || runs.iter().flatten().any(|run| {
+            run.color.is_some() || run.bold || run.italic || (run.scale - 1.0).abs() > f32::EPSILON
+        });
     (styled && !runs.is_empty()).then_some(runs)
 }
 
@@ -62,10 +129,15 @@ fn fragment_of(html: &str) -> &str {
 }
 
 /// 본체 — 태그 스택 워커(파싱 실패 지점은 그냥 지나친다: 클립보드는 남의 데이터다).
-fn parse(frag: &str, max_lines: usize) -> Vec<Vec<Run>> {
+///
+/// 반환 = (줄×런, 구조 있음) — 구조 = 불릿·들여쓰기·심볼 치환·이미지 자리표시 중 하나라도.
+fn parse(frag: &str, max_lines: usize) -> (Vec<Vec<Run>>, bool) {
     let mut lines: Vec<Vec<Run>> = vec![Vec::new()];
     let mut stack: Vec<Style> = Vec::new();
     let mut cur = Style::default();
+    let mut blocks: Vec<Block> = Vec::new();
+    // 구조 사건 수(불릿·들여쓰기·심볼 치환·이미지) — 0이면 평문과 같다.
+    let mut marks = 0u32;
     let mut text = String::new();
     let bytes = frag.as_bytes();
     let mut i = 0usize;
@@ -76,12 +148,34 @@ fn parse(frag: &str, max_lines: usize) -> Vec<Vec<Run>> {
         () => {
             if !text.is_empty() {
                 let line = lines.last_mut().unwrap_or_else(|| unreachable!());
+                let indent = if line.is_empty() {
+                    block_indent(&blocks)
+                } else {
+                    0.0
+                };
+                if indent > 0.0 {
+                    marks += 1;
+                }
+                let scale = if cur.scale > 0.0 {
+                    cur.scale
+                } else {
+                    blocks.last().map_or(1.0, |b| b.scale)
+                };
                 line.push(Run {
                     text: core::mem::take(&mut text),
                     color: cur.color,
                     bold: cur.bold,
                     italic: cur.italic,
+                    indent,
+                    scale,
                 });
+            }
+        };
+    }
+    macro_rules! new_line {
+        () => {
+            if !lines.last().is_none_or(Vec::is_empty) {
+                lines.push(Vec::new());
             }
         };
     }
@@ -113,20 +207,56 @@ fn parse(frag: &str, max_lines: usize) -> Vec<Vec<Run>> {
                     lines.push(Vec::new());
                     last_ws = true;
                 }
-                // 블록 시작·끝 = 줄 바꿈(빈 줄 중복은 만들지 않는다).
-                (_, "div" | "p" | "li" | "tr" | "h1" | "h2" | "h3") => {
+                // ★ 2단: 이미지 = 자리표시(Outlook은 표를 data: PNG로 넣는다 — 빠졌음을 알린다).
+                (false, "img") => {
                     flush!();
-                    if !lines.last().is_none_or(Vec::is_empty) {
-                        lines.push(Vec::new());
+                    text.push_str("[image]");
+                    flush!();
+                    marks += 1;
+                    last_ws = true;
+                }
+                // 표 행 = 줄 바꿈(표 구조는 아직 밖).
+                (_, "tr") => {
+                    flush!();
+                    new_line!();
+                    last_ws = true;
+                }
+                // ★ 2단: 블록 = 줄 바꿈 + 들여쓰기·배율 스택. 목록(ul/ol)은 줄을 바꾸지 않고 깊이만 더한다.
+                (false, "div" | "p" | "li" | "h1" | "h2" | "h3" | "ul" | "ol") => {
+                    flush!();
+                    let is_list = matches!(name.as_str(), "ul" | "ol");
+                    if !is_list {
+                        new_line!();
+                    }
+                    let (indent, scale) = block_attrs(tag);
+                    let parent_scale = blocks.last().map_or(1.0, |b| b.scale);
+                    blocks.push(Block {
+                        name: name.clone(),
+                        // 목록 기본 들여쓰기 1.5em(브라우저 40px에 해당 — 행 폭이 좁아 조금 줄인다).
+                        indent: indent.unwrap_or(if is_list { 1.5 } else { 0.0 }),
+                        scale: scale.unwrap_or(parent_scale),
+                        ordered: (name == "ol").then_some(0),
+                    });
+                    if name == "li" {
+                        marks += 1;
+                        text.push_str(&list_marker(&mut blocks));
+                    }
+                    last_ws = true;
+                }
+                (true, "div" | "p" | "li" | "h1" | "h2" | "h3" | "ul" | "ol") => {
+                    flush!();
+                    if let Some(pos) = blocks.iter().rposition(|b| b.name == name) {
+                        blocks.truncate(pos);
+                    }
+                    if !matches!(name.as_str(), "ul" | "ol") {
+                        new_line!();
                     }
                     last_ws = true;
                 }
                 // ★ pre = 공백 보존 구간(09-03) — 스타일 스택으로 복원된다.
                 (false, "pre") => {
                     flush!();
-                    if !lines.last().is_none_or(Vec::is_empty) {
-                        lines.push(Vec::new());
-                    }
+                    new_line!();
                     stack.push(cur);
                     cur.pre = true;
                     last_ws = true;
@@ -136,9 +266,7 @@ fn parse(frag: &str, max_lines: usize) -> Vec<Vec<Run>> {
                     if let Some(prev) = stack.pop() {
                         cur = prev;
                     }
-                    if !lines.last().is_none_or(Vec::is_empty) {
-                        lines.push(Vec::new());
-                    }
+                    new_line!();
                     last_ws = true;
                 }
                 (false, "b" | "strong") => {
@@ -192,8 +320,13 @@ fn parse(frag: &str, max_lines: usize) -> Vec<Vec<Run>> {
                         last_ws = false;
                     }
                     c => {
-                        text.push(c);
-                        last_ws = c == '\t';
+                        // ★ 2단: 심볼 글꼴 치환 — Wingdings 'n' → ■ (Outlook 불릿).
+                        let m = sym_map(cur.sym, c);
+                        if m != c {
+                            marks += 1;
+                        }
+                        text.push(m);
+                        last_ws = m == '\t';
                     }
                 }
             }
@@ -205,7 +338,180 @@ fn parse(frag: &str, max_lines: usize) -> Vec<Vec<Run>> {
         lines.pop();
     }
     lines.truncate(max_lines);
-    lines
+    (lines, marks > 0)
+}
+
+/// 활성 블록의 들여쓰기 합(em) — 0~12로 묶는다(행 폭 방어).
+fn block_indent(blocks: &[Block]) -> f32 {
+    blocks
+        .iter()
+        .map(|b| b.indent)
+        .sum::<f32>()
+        .clamp(0.0, 12.0)
+}
+
+/// `<li>` 불릿 — 가장 안쪽 목록이 `<ol>`이면 번호, 아니면 깊이별 • ◦ ▪.
+fn list_marker(blocks: &mut [Block]) -> String {
+    let depth = blocks
+        .iter()
+        .filter(|b| matches!(b.name.as_str(), "ul" | "ol"))
+        .count();
+    if let Some(list) = blocks
+        .iter_mut()
+        .rev()
+        .find(|b| matches!(b.name.as_str(), "ul" | "ol"))
+    {
+        if let Some(n) = list.ordered.as_mut() {
+            *n += 1;
+            return format!("{n}. ");
+        }
+    }
+    match depth {
+        0 | 1 => "• ",
+        2 => "◦ ",
+        _ => "▪ ",
+    }
+    .to_string()
+}
+
+/// 심볼 글꼴 글자 → 유니코드 등가. Word/Outlook 불릿 라이브러리(■ ● ◆ ❖ ➢ ✓ …)를 덮는다 —
+/// 표에 없는 글자는 그대로. PUA(`U+F0xx` — Word가 심볼 글꼴 글자를 이렇게 내보내기도 한다)는 먼저 벗긴다.
+fn sym_map(sym: Sym, c: char) -> char {
+    let (sym, c) = match c {
+        '\u{F020}'..='\u{F0FF}' => (
+            if sym == Sym::None {
+                Sym::Wingdings
+            } else {
+                sym
+            },
+            char::from_u32(c as u32 - 0xF000).unwrap_or(c),
+        ),
+        _ => (sym, c),
+    };
+    match sym {
+        Sym::Wingdings => match c {
+            'l' => '●',
+            'm' => '❍',
+            'n' => '■',
+            'o' => '□',
+            'p' => '❑',
+            'q' => '❒',
+            'u' => '◆',
+            'v' => '❖',
+            '§' => '▪',
+            'Ø' => '➢',
+            'ü' => '✓',
+            'ý' => '✔',
+            'û' => '✗',
+            'þ' => '☑',
+            'è' => '➔',
+            'ð' => '⇨',
+            'J' => '☺',
+            'L' => '☹',
+            _ => c,
+        },
+        Sym::Symbol => match c {
+            '·' => '•',
+            _ => c,
+        },
+        Sym::None | Sym::Other => c,
+    }
+}
+
+/// `font-family` 값 → 심볼 글꼴 분류.
+fn sym_of(v: &str) -> Sym {
+    // 속성값은 엔티티 해제 전 — Outlook은 글꼴 이름을 `&quot;…&quot;`로 감싼다.
+    let low = v.to_ascii_lowercase().replace("&quot;", "\"");
+    let first = low
+        .split(',')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .trim_matches(|c| c == '"' || c == '\'')
+        .trim();
+    match first {
+        "wingdings" => Sym::Wingdings,
+        "symbol" => Sym::Symbol,
+        _ if first.starts_with("wingdings") || first == "webdings" => Sym::Other,
+        _ => Sym::None,
+    }
+}
+
+/// CSS 길이 → em(본문 10pt = 13.33px 기준). 단위 없는 0만 허용.
+fn len_em(v: &str) -> Option<f32> {
+    let v = v.trim();
+    let split = v
+        .find(|c: char| c.is_ascii_alphabetic() || c == '%')
+        .unwrap_or(v.len());
+    let n: f32 = v[..split].trim().parse().ok()?;
+    let unit = v[split..].trim().to_ascii_lowercase();
+    Some(match unit.as_str() {
+        "pt" => n / 10.0,
+        "px" => n / 13.333,
+        "cm" => n * 2.835,
+        "mm" => n * 0.2835,
+        "in" => n * 7.2,
+        "em" | "rem" => n,
+        "" if n.abs() < f32::EPSILON => 0.0,
+        _ => return None,
+    })
+}
+
+/// `font-size` → 배율. 본문(10pt·13.33px) ±15%는 1.0 — Outlook은 15px/10pt를 섞어 쓴다. 0.8~1.3.
+fn scale_of(v: &str) -> Option<f32> {
+    let v = v.trim();
+    let s = if let Some(p) = v.strip_suffix('%') {
+        p.trim().parse::<f32>().ok()? / 100.0
+    } else {
+        len_em(v)?
+    };
+    if !(0.05..10.0).contains(&s) {
+        return None;
+    }
+    Some(if (s - 1.0).abs() < 0.15 {
+        1.0
+    } else {
+        s.clamp(0.8, 1.3)
+    })
+}
+
+/// 블록 태그의 `style`에서 (들여쓰기 em, 배율) — 들여쓰기 = margin-left(단축형 포함) + padding-left + text-indent.
+fn block_attrs(tag: &str) -> (Option<f32>, Option<f32>) {
+    let low = tag.to_ascii_lowercase();
+    let Some(v) = attr_value(&low, tag, "style") else {
+        return (None, None);
+    };
+    let (mut indent, mut has, mut scale) = (0.0f32, false, None);
+    for decl in v.split(';') {
+        let Some((k, val)) = decl.split_once(':') else {
+            continue;
+        };
+        let (k, val) = (k.trim().to_ascii_lowercase(), val.trim());
+        match k.as_str() {
+            "margin-left" | "padding-left" | "text-indent" => {
+                if let Some(e) = len_em(val) {
+                    indent += e;
+                    has = true;
+                }
+            }
+            "margin" | "padding" => {
+                let parts: Vec<&str> = val.split_whitespace().collect();
+                let left = match parts.len() {
+                    1 => parts[0],
+                    2 | 3 => parts[1],
+                    4 => parts[3],
+                    _ => continue,
+                };
+                if let Some(e) = len_em(left) {
+                    indent += e;
+                    has = true;
+                }
+            }
+            "font-size" => scale = scale_of(val),
+            _ => {}
+        }
+    }
+    (has.then_some(indent.max(0.0)), scale)
 }
 
 /// 태그 이름(소문자) + 닫는 태그 여부.
@@ -228,8 +534,8 @@ fn apply_attrs(tag: &str, st: &mut Style) {
             let Some((k, val)) = decl.split_once(':') else {
                 continue;
             };
-            let (k, val) = (k.trim(), val.trim());
-            match k {
+            let (k, val) = (k.trim().to_ascii_lowercase(), val.trim());
+            match k.as_str() {
                 "color" => {
                     if let Some(c) = parse_color(val) {
                         st.color = Some(c);
@@ -256,6 +562,13 @@ fn apply_attrs(tag: &str, st: &mut Style) {
                         st.italic = true;
                     } else if val.eq_ignore_ascii_case("normal") {
                         st.italic = false;
+                    }
+                }
+                // ★ 2단: 심볼 글꼴 · 인라인 글자 배율.
+                "font-family" => st.sym = sym_of(val),
+                "font-size" => {
+                    if let Some(sc) = scale_of(val) {
+                        st.scale = sc;
                     }
                 }
                 _ => {}
@@ -450,6 +763,108 @@ mod tests {
         let html2 = "<span style=\"white-space: pre-wrap; color:#111\">a\nb</span>";
         let runs2 = html_runs_of(&[rep("text/html", html2)], 9).expect("리치 런");
         assert_eq!(runs2.len(), 2, "{runs2:?}");
+    }
+
+    /// ★ 2단(09-04 실기 — 새 Outlook 메일 복사, 구조만 옮긴 축약본): Wingdings 'n' = ■ ·
+    /// `<ul><li>` 불릿 합성 + 들여쓰기 · `margin-left: 58pt` 문단 · `data:` 이미지 자리표시 ·
+    /// 15px/10pt는 본문 배율 1.0.
+    #[test]
+    fn outlook_list_bullets_and_indent() {
+        let html = concat!(
+            "<p style=\"margin: 0cm 0cm 0.0001pt 40pt; font-size: 10pt; text-indent: -20pt\">",
+            "<span style=\"font-family: Wingdings\">n<span style=\"font: 7pt Times\">&nbsp;&nbsp;</span></span>",
+            "<b><span style=\"font-family: &quot;A&quot;\">S&amp;OP</span></b></p>",
+            "<ul style=\"font-size: 15px\"><li style=\"margin: 0cm 0cm 0.0001pt 22pt; font-size: 10pt\">일시 : 9/8</li>",
+            "<li style=\"margin-left: 22pt\">장소</li></ul>",
+            "<p style=\"margin-left: 58pt\">* 참고</p>",
+            "<p><img src=\"data:image/png;base64,AAAA\"></p>",
+        );
+        let runs = html_runs_of(&[rep("HTML Format", html)], 20).expect("리치 런");
+        let joined: Vec<String> = runs
+            .iter()
+            .map(|l| l.iter().map(|r| r.text.as_str()).collect())
+            .collect();
+        assert_eq!(joined.len(), 5, "{joined:?}");
+        assert!(joined[0].starts_with("■  S&OP"), "{joined:?}");
+        assert!(
+            (runs[0][0].indent - 2.0).abs() < 0.01,
+            "40pt−20pt = 2em: {:?}",
+            runs[0][0]
+        );
+        assert!(runs[0].iter().any(|r| r.bold && r.text == "S&OP"));
+        assert!(joined[1].starts_with("• 일시"), "{joined:?}");
+        assert!(
+            (runs[1][0].indent - 3.7).abs() < 0.01,
+            "ul 1.5 + li 2.2: {:?}",
+            runs[1][0]
+        );
+        assert!(
+            (runs[1][0].scale - 1.0).abs() < f32::EPSILON,
+            "15px/10pt = 본문"
+        );
+        assert!(joined[2].starts_with("• 장소"), "{joined:?}");
+        assert!((runs[3][0].indent - 5.8).abs() < 0.01, "{:?}", runs[3][0]);
+        assert_eq!(joined[4], "[image]");
+        // 두 번째 줄부터의 런은 들여쓰기를 다시 싣지 않는다.
+        assert!(runs[0]
+            .iter()
+            .skip(1)
+            .all(|r| r.indent.abs() < f32::EPSILON));
+    }
+
+    /// 심볼 치환·번호 목록·배율·PUA.
+    #[test]
+    fn symbols_ordered_lists_and_scale() {
+        assert_eq!(sym_map(Sym::Wingdings, 'n'), '■');
+        assert_eq!(sym_map(Sym::Wingdings, 'Ø'), '➢');
+        assert_eq!(sym_map(Sym::Symbol, '·'), '•');
+        assert_eq!(
+            sym_map(Sym::None, '\u{F06E}'),
+            '■',
+            "PUA는 Wingdings로 본다"
+        );
+        assert_eq!(sym_map(Sym::None, 'n'), 'n');
+        assert_eq!(sym_of("&quot;Wingdings&quot;, serif"), Sym::Wingdings);
+        assert_eq!(sym_of("Wingdings 2"), Sym::Other);
+        assert_eq!(scale_of("10pt"), Some(1.0));
+        assert_eq!(scale_of("13.3333px"), Some(1.0));
+        assert_eq!(scale_of("14pt"), Some(1.3), "상한");
+        assert_eq!(scale_of("7pt"), Some(0.8), "하한");
+        assert_eq!(len_em("2.5cm").map(|e| (e * 100.0).round()), Some(709.0));
+        let html = "<ol><li style=\"color:#111\">a</li><li>b<ul><li>c</li></ul></li></ol>";
+        let runs = html_runs_of(&[rep("text/html", html)], 9).expect("리치 런");
+        let joined: Vec<String> = runs
+            .iter()
+            .map(|l| l.iter().map(|r| r.text.as_str()).collect())
+            .collect();
+        assert_eq!(joined, ["1. a", "2. b", "◦ c"], "{joined:?}");
+        assert!(runs[2][0].indent > runs[1][0].indent);
+        // 큰 제목은 배율이 실리고 본문은 1.0.
+        let html2 = "<p style=\"font-size: 18pt\">T</p><p>body</p>";
+        let runs2 = html_runs_of(&[rep("text/html", html2)], 9).expect("배율은 구조");
+        assert!((runs2[0][0].scale - 1.3).abs() < f32::EPSILON);
+        assert!((runs2[1][0].scale - 1.0).abs() < f32::EPSILON);
+    }
+
+    /// 개발용 — 실기 HTML 덤프를 런으로 풀어 찍는다(내용이 남의 데이터라 저장소에 넣지 않는다):
+    /// `NCLIP_HTML_FIXTURE=<path> cargo test -p nclip-core dump_fixture -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "NCLIP_HTML_FIXTURE 경로가 있을 때만"]
+    fn dump_fixture() {
+        let Ok(path) = std::env::var("NCLIP_HTML_FIXTURE") else {
+            return;
+        };
+        let html = std::fs::read(path).expect("fixture 읽기");
+        let reps = [crate::RawRep {
+            format: "HTML Format".into(),
+            data: html,
+        }];
+        let runs = html_runs_of(&reps, 200).expect("리치 런");
+        for line in &runs {
+            let text: String = line.iter().map(|r| r.text.as_str()).collect();
+            let (ind, sc) = line.first().map_or((0.0, 1.0), |r| (r.indent, r.scale));
+            println!("[{ind:>4.1}em ×{sc:.2}] {text}");
+        }
     }
 
     /// style 본문은 글로 새지 않는다.

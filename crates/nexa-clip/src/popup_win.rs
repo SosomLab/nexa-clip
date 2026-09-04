@@ -1180,12 +1180,18 @@ fn draw(
             } else if let Some(rich) = &row.rich {
                 // ★ T-18d 1단 — 메인과 동일(색·굵기 · 탭 스톱 열맞춤).
                 let tab_w = dc.text_width("    ").max(8);
+                let em = dc.text_width("한").max(8);
                 for (k, line) in rich.iter().take(5).enumerate() {
                     #[allow(clippy::cast_precision_loss)]
                     let ly = y + px(6.0 + 22.0 * k as f32);
                     let mut xoff = 0i32;
                     for run in line {
-                        dc.select_font(FontSlot::Base, run.bold);
+                        dc.select_font_sized(
+                            FontSlot::Base,
+                            run.bold,
+                            nclip_core::richtext::size_delta(em, run.scale),
+                        );
+                        xoff += nclip_core::richtext::em_px(em, run.indent);
                         let col = run.color.map_or(th.text, |c| {
                             nclip_ctl::theme::Color::from_rgb(c[0], c[1], c[2])
                         });

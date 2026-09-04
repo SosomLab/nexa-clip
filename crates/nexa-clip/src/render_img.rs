@@ -21,38 +21,40 @@ pub(crate) fn plain_runs(text: &str) -> Vec<Vec<Run>> {
         .map(|l| {
             vec![Run {
                 text: l.to_string(),
-                color: None,
-                bold: false,
-                italic: false,
+                ..Run::default()
             }]
         })
         .collect()
 }
 
-/// 런들을 흰 바탕 RGBA로 렌더 — ★ 탭 스톱 열맞춤(공백 4칸 격자) 포함.
+/// 런들을 흰 바탕 RGBA로 렌더 — ★ 탭 스톱 열맞춤(공백 4칸 격자) + ★ 2단 들여쓰기(em)·배율(줄 높이 = 줄의 최대 배율).
 pub(crate) fn render_runs(font: &Font, lines: &[Vec<Run>]) -> Option<(u32, u32, Vec<u8>)> {
     if lines.is_empty() {
         return None;
     }
-    let line_h = (font.line_height(SIZE) * 1.15).ceil();
+    let base_h = (font.line_height(SIZE) * 1.15).ceil();
     let tab_w = font.measure("    ", SIZE).max(8.0);
+    let em = font.measure("한", SIZE).max(8.0);
+    let line_scale = |line: &[Run]| line.iter().map(|r| r.scale).fold(1.0f32, f32::max);
     let advance = |x: f32, line: &[Run]| -> f32 {
         let mut x = x;
         for run in line {
+            x += em * run.indent;
             for (ti, seg) in run.text.split('\t').enumerate() {
                 if ti > 0 {
                     x = ((x / tab_w).floor() + 1.0) * tab_w;
                 }
-                x += font.measure(seg, SIZE);
+                x += font.measure(seg, SIZE * run.scale);
             }
         }
         x
     };
     let max_w = lines.iter().map(|l| advance(0.0, l)).fold(0.0f32, f32::max);
+    let total_h: f32 = lines.iter().map(|l| (base_h * line_scale(l)).ceil()).sum();
     #[allow(clippy::cast_possible_truncation)]
     let w = (max_w.ceil() as i32 + PAD * 2).clamp(40, SIDE_MAX);
-    #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
-    let h = ((lines.len() as f32 * line_h).ceil() as i32 + PAD * 2).clamp(30, SIDE_MAX);
+    #[allow(clippy::cast_possible_truncation)]
+    let h = (total_h.ceil() as i32 + PAD * 2).clamp(30, SIDE_MAX);
     if i64::from(w) * i64::from(h) > 16_000_000 {
         return None;
     }
@@ -60,14 +62,18 @@ pub(crate) fn render_runs(font: &Font, lines: &[Vec<Run>]) -> Option<(u32, u32, 
     let mut buf = vec![0u32; uw * uh];
     let mut surf = Surface::new(&mut buf, uw, uh);
     surf.fill_rect(0, 0, w as u32, h as u32, Color::from_rgb(255, 255, 255));
-    let ascent = font.ascent(SIZE);
     let clip = (0, 0, w, h);
-    for (k, line) in lines.iter().enumerate() {
-        #[allow(clippy::cast_precision_loss)]
-        let y = PAD as f32 + k as f32 * line_h + ascent;
+    #[allow(clippy::cast_precision_loss)]
+    let mut top = PAD as f32;
+    for line in lines {
+        let sc = line_scale(line);
+        let line_h = (base_h * sc).ceil();
+        let y = top + font.ascent(SIZE * sc);
         #[allow(clippy::cast_precision_loss)]
         let mut x = PAD as f32;
         for run in line {
+            x += em * run.indent;
+            let size = SIZE * run.scale;
             let col = run.color.map_or(Color::from_rgb(20, 20, 20), |c| {
                 Color::from_rgb(c[0], c[1], c[2])
             });
@@ -87,10 +93,11 @@ pub(crate) fn render_runs(font: &Font, lines: &[Vec<Run>]) -> Option<(u32, u32, 
                 if seg.is_empty() {
                     continue;
                 }
-                font.draw_styled(&mut surf, x, y, SIZE, col, seg, clip, style);
-                x += font.measure(seg, SIZE);
+                font.draw_styled(&mut surf, x, y, size, col, seg, clip, style);
+                x += font.measure(seg, size);
             }
         }
+        top += line_h;
     }
     // 0RGB u32 → RGBA(불투명).
     let mut rgba = Vec::with_capacity(uw * uh * 4);
