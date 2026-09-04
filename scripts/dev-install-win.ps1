@@ -40,8 +40,9 @@ foreach ($f in "nexa-clip.exe", "nclip-imgdec.exe") {
 }
 
 $exe = Join-Path $dst "nexa-clip.exe"
-$ver = & $exe --version
-Write-Host "실행: $ver ($profile) · $dst"
+# 버전은 Cargo.toml에서 읽는다 — 설치본 exe는 콘솔이 없어 `--version` 출력을 파이프로 받으면 stdout 패닉(os error 232).
+$ver = (Select-String -Path (Join-Path $root "Cargo.toml") -Pattern '^version = "([^"]+)"' | Select-Object -First 1).Matches[0].Groups[1].Value
+Write-Host "실행: nexa-clip $ver ($profile) · $dst"
 Start-Process -FilePath $exe -WorkingDirectory $dst   # 인자 없음 = 트레이 상주(설치본 규약)
 Start-Sleep -Seconds 2
 Get-Process nexa-clip -ErrorAction SilentlyContinue | Select-Object Id, Path, StartTime | Format-Table -AutoSize

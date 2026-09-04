@@ -471,7 +471,8 @@ cargo build --release -p nexa-clip -p nclip-imgdec
 ls -la target/release/nexa-clip* target/release/nclip-imgdec*      # 크기 게이트 ≤ 10MB
 ./target/release/nexa-clip --version                               # 워크스페이스 버전 확인
 ./target/release/nexa-clip tray                                    # 릴리스 바이너리로 상주(데이터는 exe 옆 data/)
-#   Windows(PowerShell): Start-Process .	argetelease
+#   Windows(PowerShell): Start-Process .	arget
+elease
 exa-clip.exe -ArgumentList tray
 
 # ── 디버그 빌드 재시작(개발 반복) — Linux는 scripts/dev-restart.sh · Windows는 아래 두 줄
@@ -492,5 +493,15 @@ git tag -a v0.1.0 -m "Nexa Clip 0.1.0" && git push origin v0.1.0
 gh run list -R SosomLab/nexa-clip --workflow homebrew -L 1         # 릴리스 뒤 brew 탭 갱신 잡
 ```
 
+- ★ **설치본 자리에서 실기**(Windows · 09-04 사용자 요청) — setup으로 설치한 폴더(`%LOCALAPPDATA%\Programs\NexaClip`)에
+  빌드한 실행 파일 2개를 덮어쓰고 기존 프로세스(개발 인스턴스 포함 — 단일 인스턴스 가드)를 끝낸 뒤 설치본을 다시 띄운다:
+
+  ```powershell
+  pwsh scripts/dev-install-win.ps1           # 릴리스 프로필(기본 · 배포본과 같은 최적화)
+  pwsh scripts/dev-install-win.ps1 -Debug    # 디버그 프로필(진단)
+  ```
+
+  설치본은 exe 옆 `data\`를 쓰므로 개발 인스턴스(`target\debug\data`)와 이력·설정이 **다르다**. 설치본은 콘솔이 없어
+  `--version`을 파이프로 받으면 stdout 패닉(os error 232)이 난다 — 스크립트는 버전을 `Cargo.toml`에서 읽는다.
 - 릴리스 워크플로는 **태그 = `Cargo.toml` 버전**이어야 meta 잡을 통과한다. 드라이런은 `0.0.0-dev.<sha>`로 이름 붙는다.
 - 로컬 릴리스 빌드는 CI와 프로필이 같지만 Linux의 zig 링커(glibc 2.17)·심볼 게이트는 CI에서만 돈다.
