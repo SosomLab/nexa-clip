@@ -43,25 +43,36 @@ mod win {
 }
 
 /// 뮤텍스/잠금 이름 — 사용자 세션 단위(전역 아님: 다중 사용자 PC 배려).
+/// ★ `tag`(프로필 · 09-04)가 있으면 이름 뒤에 붙어 **프로필마다 별개 인스턴스**가 된다.
 #[cfg(windows)]
-const MUTEX_NAME: &str = "Local\\NexaClip.SingleInstance";
+fn mutex_name(tag: Option<&str>) -> String {
+    match tag {
+        Some(t) => format!("Local\\NexaClip.SingleInstance.{t}"),
+        None => "Local\\NexaClip.SingleInstance".to_string(),
+    }
+}
 #[cfg(windows)]
-const OPEN_EVENT_NAME: &str = "Local\\NexaClip.OpenRequest";
+fn open_event_name(tag: Option<&str>) -> String {
+    match tag {
+        Some(t) => format!("Local\\NexaClip.OpenRequest.{t}"),
+        None => "Local\\NexaClip.OpenRequest".to_string(),
+    }
+}
 
 /// 인스턴스 소유를 시도한다.
 ///
 /// - `Some(guard)` = 우리가 첫 인스턴스 — 가드를 프로세스 수명만큼 유지할 것.
 /// - `None` = 이미 상주 중 — [`signal_open`]으로 위임하고 종료하라.
 ///
-/// `lock_path`는 Unix 잠금 파일 위치(Windows에선 무시).
+/// `lock_path`는 Unix 잠금 파일 위치(Windows에선 무시 — 프로필은 `tag`로 가른다).
 #[must_use]
-pub fn acquire(lock_path: &std::path::Path) -> Option<InstanceGuard> {
+pub fn acquire(lock_path: &std::path::Path, tag: Option<&str>) -> Option<InstanceGuard> {
     #[cfg(windows)]
     {
         let _ = lock_path;
         // SAFETY: 실패는 널/0으로 돌아오고 그때마다 빠져나간다.
         unsafe {
-            let h = win::CreateMutexW(core::ptr::null(), 0, win::wide(MUTEX_NAME).as_ptr());
+            let h = win::CreateMutexW(core::ptr::null(), 0, win::wide(&mutex_name(tag)).as_ptr());
             if h == 0 {
                 // 뮤텍스조차 못 만들면 가드 없이 진행(안 뜨는 것보다 낫다 · DR-31).
                 return Some(InstanceGuard { _mutex: 0 });
@@ -76,6 +87,7 @@ pub fn acquire(lock_path: &std::path::Path) -> Option<InstanceGuard> {
     #[cfg(unix)]
     {
         use std::os::fd::AsRawFd as _;
+        let _ = tag; // Unix는 잠금 파일이 프로필 데이터 폴더 안이라 저절로 갈린다.
         if let Some(dir) = lock_path.parent() {
             let _ = std::fs::create_dir_all(dir);
         }
@@ -101,11 +113,18 @@ extern "C" {
 }
 
 /// 둘째 실행 — 기존 인스턴스에 "열기"를 알린다(Windows · Unix는 후속).
-pub fn signal_open() {
+pub fn signal_open(tag: Option<&str>) {
+    #[cfg(not(windows))]
+    let _ = tag;
     #[cfg(windows)]
     // SAFETY: 이름으로 열기 실패 = 0 → SetEvent가 그냥 실패한다.
     unsafe {
-        let h = win::CreateEventW(core::ptr::null(), 0, 0, win::wide(OPEN_EVENT_NAME).as_ptr());
+        let h = win::CreateEventW(
+            core::ptr::null(),
+            0,
+            0,
+            win::wide(&open_event_name(tag)).as_ptr(),
+        );
         if h != 0 {
             win::SetEvent(h);
             win::CloseHandle(h);
@@ -114,20 +133,18 @@ pub fn signal_open() {
 }
 
 /// 첫 인스턴스 — "열기" 신호를 기다렸다가 `on_open`을 부른다(백그라운드 스레드).
-pub fn watch_open_requests(on_open: impl Fn() + Send + 'static) {
+pub fn watch_open_requests(tag: Option<&str>, on_open: impl Fn() + Send + 'static) {
+    #[cfg(not(windows))]
+    let _ = tag;
     #[cfg(windows)]
     {
+        let name = open_event_name(tag);
         std::thread::Builder::new()
             .name("nclip-single".into())
             .spawn(move || {
                 // SAFETY: 자동 리셋 이벤트를 만들어(이미 있으면 그 핸들) 무한 대기 루프.
                 unsafe {
-                    let h = win::CreateEventW(
-                        core::ptr::null(),
-                        0,
-                        0,
-                        win::wide(OPEN_EVENT_NAME).as_ptr(),
-                    );
+                    let h = win::CreateEventW(core::ptr::null(), 0, 0, win::wide(&name).as_ptr());
                     if h == 0 {
                         return;
                     }

@@ -942,6 +942,14 @@ pub(crate) fn bring_to_front(win: &winit::window::Window) {
 }
 
 pub(crate) fn win_name(attrs: winit::window::WindowAttributes) -> winit::window::WindowAttributes {
+    // ★ 프로필 실행(09-04)은 창 제목 끝에 `[프로필]` — 두 인스턴스를 눈으로 가른다.
+    let attrs = match crate::conf::profile() {
+        Some(p) => {
+            let t = format!("{} [{p}]", attrs.title);
+            attrs.with_title(t)
+        }
+        None => attrs,
+    };
     #[cfg(target_os = "linux")]
     {
         use winit::platform::wayland::WindowAttributesExtWayland;

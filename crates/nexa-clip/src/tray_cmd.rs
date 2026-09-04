@@ -131,10 +131,15 @@ pub(crate) enum ShellEvent {
 
 /// 툴팁 문자열 — 보관 수를 함께 보여 준다(감시가 실제로 도는 것이 보인다).
 fn tooltip(held: usize) -> String {
+    // ★ 프로필 실행(09-04)은 트레이가 둘 — 어느 것인지 툴팁에 표기.
+    let name = match crate::conf::profile() {
+        Some(p) => format!("Nexa Clip [{p}]"),
+        None => "Nexa Clip".to_string(),
+    };
     if held == 0 {
-        "Nexa Clip".to_string()
+        name
     } else {
-        format!("Nexa Clip — {held}개 보관")
+        format!("{name} — {held}개 보관")
     }
 }
 
@@ -187,6 +192,10 @@ fn content(held: usize, recent: Vec<String>, sync_on: bool) -> TrayContent {
 
 /// 시작마다 자동 시작 등록을 설정값과 동기화한다(멱등 · 외부 삭제 존중).
 fn sync_autostart(conf: &mut Settings) {
+    // ★ 프로필 실행(09-04)은 시험용 — 로그인 자동 시작 등록을 건드리지 않는다(기본 인스턴스 몫).
+    if crate::conf::profile().is_some() {
+        return;
+    }
     let want = conf.state.get("app.autostart") == "on";
     let was = conf.state.get("app.autostart_reg") == "on";
     let now = Instant::now();
@@ -1033,9 +1042,12 @@ pub(crate) fn run() {
 
     // ★ T-12e4 단일 인스턴스(09-03) — 이미 상주 중이면 "열기"만 위임하고 조용히 끝낸다
     //   (자동 시작 상주 + 런처 재실행 = 감시 2중·트레이 2개이던 관찰의 처방).
-    let single_guard = nclip_plat::single::acquire(&crate::conf::data_dir().join("instance.lock"));
+    let single_guard = nclip_plat::single::acquire(
+        &crate::conf::data_dir().join("instance.lock"),
+        crate::conf::profile(),
+    );
     if single_guard.is_none() {
-        nclip_plat::single::signal_open();
+        nclip_plat::single::signal_open(crate::conf::profile());
         println!("이미 실행 중 — 기존 인스턴스에 열기를 위임했습니다");
         return;
     }
@@ -1216,7 +1228,7 @@ pub(crate) fn run() {
     {
         // ★ 둘째 실행의 "열기" 신호 → 메인창(Windows · 09-03).
         let proxy = el.create_proxy();
-        nclip_plat::single::watch_open_requests(move || {
+        nclip_plat::single::watch_open_requests(crate::conf::profile(), move || {
             println!("단일 인스턴스: 열기 위임 수신 — 메인창을 앞으로");
             let _ = proxy.send_event(ShellEvent::Open);
         });

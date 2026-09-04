@@ -57,7 +57,12 @@ pub(crate) fn display_name(me: &nclip_sync::PeerId) -> nclip_sync::name::Display
     if let Ok(n) = nclip_sync::name::DisplayName::parse(&raw) {
         return n;
     }
-    nclip_sync::name::default_display_name(nclip_plat::host::hostname().as_deref(), me)
+    let base = nclip_sync::name::default_display_name(nclip_plat::host::hostname().as_deref(), me);
+    // ★ 프로필 실행(09-04) — 같은 PC의 두 인스턴스가 같은 이름으로 보이지 않게 접미를 붙인다.
+    match crate::conf::profile() {
+        Some(p) => nclip_sync::name::DisplayName::parse(&format!("{base}-{p}")).unwrap_or(base),
+        None => base,
+    }
 }
 
 /// 이 기기의 PeerId 16진(설정 창 "이 기기" 표시) — 러너가 신원을 읽은 뒤 채운다.

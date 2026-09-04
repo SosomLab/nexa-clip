@@ -49,7 +49,33 @@ fn main() {
         }
     });
 
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    // ★ `--profile <이름>` / `--profile=<이름>`(09-04) — 어느 명령 앞뒤에 와도 되는 전역 옵션.
+    let mut args: Vec<String> = Vec::new();
+    let mut raw = std::env::args().skip(1);
+    while let Some(a) = raw.next() {
+        let name = if a == "--profile" {
+            raw.next()
+        } else {
+            a.strip_prefix("--profile=").map(str::to_string)
+        };
+        match (name, a.starts_with("--profile")) {
+            (Some(n), _) => {
+                if !conf::valid_profile_name(&n) {
+                    eprintln!("프로필 이름은 영문·숫자·-·_ 1~32자: {n:?}");
+                    std::process::exit(2);
+                }
+                conf::set_profile(&n);
+            }
+            (None, true) => {
+                eprintln!("--profile 뒤에 이름이 필요합니다");
+                std::process::exit(2);
+            }
+            (None, false) => args.push(a),
+        }
+    }
+    if let Some(p) = conf::profile() {
+        println!("프로필: {p} — 데이터 {}", conf::data_dir().display());
+    }
     match args.first().map(String::as_str) {
         Some("spike-paste") => spike_paste(&args[1..]),
         Some("demo") => demo::run(),
@@ -90,6 +116,9 @@ nexa-clip [명령]
       --plain        평문 붙여넣기 경로로 시도
       --wait <초>    대상 앱을 고를 시간(기본 5)
   --help         이 도움말
+  --profile <이름>  ★ 별도 프로필로 실행(09-04) — 데이터 폴더 data/profiles/<이름>
+                 (설정·저장소·신원·기기 목록 분리 · 단일 인스턴스 가드도 분리)
+                 → 한 PC에서 두 인스턴스로 동기화 시험: `nexa-clip --profile b`
 
 점검 절차는 docs/21-manual-test.md 를 따른다."
     );

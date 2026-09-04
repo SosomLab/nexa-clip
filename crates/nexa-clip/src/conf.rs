@@ -43,8 +43,45 @@ const MAX_DELAY_MS: u64 = 10_000;
 /// ★ **업그레이드 때 폴더째 교체되는 자리는 1을 건너뛴다**
 /// ([`nexa_conf::is_replaced_on_upgrade`]). mac `.app` 번들과 Homebrew keg는 **쓰기가 되는데도**
 /// 업그레이드가 디렉터리를 갈아 끼워 그 안의 설정이 함께 사라진다 — beep이 실제로 겪은 사고다.
+/// ★ 실행 프로필(09-04 사용자 — "인자로 지정해 인스턴스 중복을 피해 실행"): `--profile <이름>`이면
+/// 데이터 폴더가 `…/data/profiles/<이름>`으로 갈라져 설정·저장소·신원·기기 목록이 전부 따로다 =
+/// 한 PC에서 두 인스턴스가 **서로 다른 기기**로 동기화 시험을 할 수 있다. 단일 인스턴스 가드도 프로필별.
+static PROFILE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+/// 프로필 지정(부팅 1회 · 인자 파싱 직후).
+pub(crate) fn set_profile(name: &str) {
+    let _ = PROFILE.set(name.to_string());
+}
+
+/// 현재 프로필(기본 실행 = `None`).
+pub(crate) fn profile() -> Option<&'static str> {
+    PROFILE.get().map(String::as_str)
+}
+
+/// 프로필 이름 규칙 — 파일 이름·뮤텍스 이름에 그대로 쓰므로 영문·숫자·`-`·`_` 1~32자.
+pub(crate) fn valid_profile_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 32
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+}
+
 #[must_use]
 pub(crate) fn data_dir() -> PathBuf {
+    let base = base_data_dir();
+    match profile() {
+        Some(p) => {
+            let dir = base.join("profiles").join(p);
+            let _ = std::fs::create_dir_all(&dir);
+            dir
+        }
+        None => base,
+    }
+}
+
+/// 프로필 없는 기본 데이터 폴더(포터블 = exe 옆 `data` · 아니면 사용자 설정 폴더).
+fn base_data_dir() -> PathBuf {
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
             if !nexa_conf::is_replaced_on_upgrade(dir) {
