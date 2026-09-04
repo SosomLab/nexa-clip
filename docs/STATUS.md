@@ -6,7 +6,7 @@
 
 ## 2026-09-04 (4차 · macOS) — 승격 확정 · ★ mac 자동 왕복 검사 · ★ set/read 공용 직렬화(SIGSEGV 근절)
 
-15차(Windows): ★ 배포 파이프라인(brew·winget·choco · 검수 대기 자동 판정 · secrets/vars 준비). ⏳ 첫 태그로 실검증.
+15차(Windows): ★ 배포 파이프라인(brew·winget·choco · 검수 대기 자동 판정 · secrets/vars 준비 · Linux 배포판 비종속 zig/glibc 2.17). 드라이런 전부 녹색 ✅ · ⏳ 첫 태그 `v0.1.0`은 사용자 결정.
 
 14차(Windows): 점 툴팁 · 팝업 = 메인창 규칙(공용 dedup) · 문서 최신화(14·21) · **위키 6페이지**. 한 PC 2인스턴스 시험 완료(사용자 확인) → 기본 인스턴스만 상주.
 
