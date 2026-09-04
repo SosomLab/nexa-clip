@@ -404,6 +404,54 @@ mod imp {
         }
     }
 
+    /// ★ 손쉬운 사용 권한 요청 대화상자(09-04 실기 — 재서명마다 권한이 풀려 사용자가 설정을
+    /// 뒤지던 것): 미허용이면 **OS 표준 대화상자**가 뜨고 항목이 목록에 등록/갱신된다
+    /// (`AXIsProcessTrustedWithOptions` + `kAXTrustedCheckOptionPrompt`). 반환 = 지금 허용 여부.
+    pub(super) fn prompt_trust() -> bool {
+        use std::ffi::c_void;
+        #[link(name = "CoreFoundation", kind = "framework")]
+        extern "C" {
+            static kCFTypeDictionaryKeyCallBacks: [usize; 6];
+            static kCFTypeDictionaryValueCallBacks: [usize; 5];
+            static kCFBooleanTrue: CFTypeRef;
+            fn CFDictionaryCreate(
+                alloc: CFTypeRef,
+                keys: *const CFTypeRef,
+                values: *const CFTypeRef,
+                count: isize,
+                key_cb: *const c_void,
+                value_cb: *const c_void,
+            ) -> CFTypeRef;
+        }
+        #[link(name = "ApplicationServices", kind = "framework")]
+        extern "C" {
+            static kAXTrustedCheckOptionPrompt: CFTypeRef;
+            fn AXIsProcessTrustedWithOptions(options: CFTypeRef) -> bool;
+        }
+        // SAFETY: CF 상수는 프레임워크가 소유한 불변 전역 · 만든 사전은 짝 맞춰 해제.
+        unsafe {
+            if AXIsProcessTrusted() {
+                return true;
+            }
+            let keys = [kAXTrustedCheckOptionPrompt];
+            let vals = [kCFBooleanTrue];
+            let dict = CFDictionaryCreate(
+                std::ptr::null_mut(),
+                keys.as_ptr(),
+                vals.as_ptr(),
+                1,
+                (&raw const kCFTypeDictionaryKeyCallBacks).cast(),
+                (&raw const kCFTypeDictionaryValueCallBacks).cast(),
+            );
+            if dict.is_null() {
+                return false;
+            }
+            let ok = AXIsProcessTrustedWithOptions(dict);
+            CFRelease(dict);
+            ok
+        }
+    }
+
     pub(super) fn capability() -> PasteCapability {
         if unsafe { AXIsProcessTrusted() } {
             PasteCapability::Full {
@@ -828,6 +876,16 @@ pub fn warm_up(token_path: Option<std::path::PathBuf>) -> Result<(), String> {
                 crate::remote_input_linux::configure_token_path(p);
             }
             return crate::remote_input_linux::ensure_session();
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        // ★ 손쉬운 사용 권한(09-04) — 없으면 OS 대화상자를 띄운다(허용하면 재시작 없이 동작).
+        if !imp::prompt_trust() {
+            return Err(
+                "손쉬운 사용 권한 미허용 — 시스템 대화상자를 띄웠습니다(허용하면 재시작 없이 붙여넣기 동작)"
+                    .into(),
+            );
         }
     }
     let _ = token_path;
