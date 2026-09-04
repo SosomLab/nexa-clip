@@ -1366,6 +1366,7 @@ impl ApplicationHandler for App {
                 }
                 let shift = self.mods.shift_key();
                 let primary = self.primary();
+                // ★ 편집 단축키는 **물리 키**로 판정(09-04 실기 — 한글 자판에서 Ctrl+V의 논리 키가 'ㅍ'이라 붙여넣기가 안 먹었다).
                 let named = |k: CtlKey| InputEvent::Key {
                     key: k,
                     shift,
@@ -1392,16 +1393,22 @@ impl ApplicationHandler for App {
                             now_ms: now,
                         });
                     }
-                    Key::Character(t) if primary && t.eq_ignore_ascii_case("a") => {
+                    _ if primary
+                        && phys_is(&event.physical_key, winit::keyboard::KeyCode::KeyA) =>
+                    {
                         self.feed(InputEvent::SelectAll);
                     }
                     // ★ 클립보드 단축(09-03 — 암호·핸들 입력란): 복사·잘라내기·붙여넣기.
-                    Key::Character(t) if primary && t.eq_ignore_ascii_case("c") => {
+                    _ if primary
+                        && phys_is(&event.physical_key, winit::keyboard::KeyCode::KeyC) =>
+                    {
                         if let Some(s) = self.widget.clipboard_copy() {
                             crate::cliptext::set_text(&s);
                         }
                     }
-                    Key::Character(t) if primary && t.eq_ignore_ascii_case("x") => {
+                    _ if primary
+                        && phys_is(&event.physical_key, winit::keyboard::KeyCode::KeyX) =>
+                    {
                         let mut inv = Invalidations::default();
                         if let Some(s) = self.widget.clipboard_cut(&mut inv) {
                             crate::cliptext::set_text(&s);
@@ -1409,7 +1416,9 @@ impl ApplicationHandler for App {
                         self.drain_changes();
                         self.redraw();
                     }
-                    Key::Character(t) if primary && t.eq_ignore_ascii_case("v") => {
+                    _ if primary
+                        && phys_is(&event.physical_key, winit::keyboard::KeyCode::KeyV) =>
+                    {
                         if let Some(s) = crate::cliptext::get_text() {
                             let mut inv = Invalidations::default();
                             self.widget
@@ -1698,4 +1707,9 @@ fn keycode_token(pk: &winit::keyboard::PhysicalKey) -> Option<&'static str> {
         K::ArrowRight => "Right",
         _ => return None,
     })
+}
+
+/// 물리 키 비교(09-04) — 한글/다른 자판에서도 Ctrl+C/V/X/A가 같은 자리로 잡힌다.
+fn phys_is(pk: &winit::keyboard::PhysicalKey, code: winit::keyboard::KeyCode) -> bool {
+    matches!(pk, winit::keyboard::PhysicalKey::Code(c) if *c == code)
 }

@@ -2858,6 +2858,49 @@ impl Widget for SettingsWidget {
 }
 
 #[cfg(test)]
+mod paste_tests {
+    use super::*;
+    use nclip_ctl::Control as _;
+
+    /// 한 행의 TextBox를 직접 포커스하고 붙여넣기 → 변경 보고(09-04 실기 "암호 붙여넣기가 안 먹는다").
+    fn paste_into(key: &'static str, text: &str) -> Vec<(&'static str, String)> {
+        let state = SettingsState::with_defaults();
+        let mut w = SettingsWidget::new(&state);
+        let mut inv = Invalidations::default();
+        w.set_bounds(Rect::new(0, 0, 900, 700), &mut inv);
+        w.select_category(Msg::CatSync, &mut inv);
+        let mut found = false;
+        for r in &mut w.rows {
+            if registry()[r.idx].key == key {
+                if let RowCtl::Face(f) = &mut r.ctl {
+                    f.set_focused(true);
+                    found = true;
+                }
+            }
+        }
+        assert!(found, "행 없음: {key}");
+        w.clipboard_paste(text, &mut inv);
+        w.take_changes()
+    }
+
+    #[test]
+    fn paste_reports_handle_and_passphrase() {
+        let got = paste_into("sync.handle", "myhandle");
+        assert!(
+            got.iter()
+                .any(|(k, v)| *k == "sync.handle" && v == "myhandle"),
+            "{got:?}"
+        );
+        let got = paste_into("sync.passphrase", "correct horse battery");
+        assert!(
+            got.iter()
+                .any(|(k, v)| *k == "sync.passphrase" && v == "correct horse battery"),
+            "{got:?}"
+        );
+    }
+}
+
+#[cfg(test)]
 mod validate_tests {
     use super::{validate, SettingsState};
     use nclip_core::Msg;
