@@ -1642,11 +1642,16 @@ impl MainWin {
                         );
                     }
                 }
-                // ★ 수신 표식(09-04) — 상태줄 연결 점과 같은 녹색 점(핀 점 아래).
+                // ★ 수신 표식(09-04 사용자) — 상태줄 릴레이 점과 같은 녹색 · 핀 점 **옆**(핀 없으면 같은 자리).
                 if row.remote {
-                    let dot_y = y + px(32.0);
+                    let dot_y = y + px(22.0);
+                    let dot_x = if row.pinned { tx + px(10.0) } else { tx };
                     if dot_y >= clip.y && dot_y + px(6.0) <= clip.y + clip.h {
-                        dc.fill_round_rect(Rect::new(tx, dot_y, px(6.0), px(6.0)), px(3.0), th.ok);
+                        dc.fill_round_rect(
+                            Rect::new(dot_x, dot_y, px(6.0), px(6.0)),
+                            px(3.0),
+                            nclip_ctl::theme::Color::from_rgb(46, 204, 64),
+                        );
                     }
                 }
                 let mut right = list.x + list.w - pad;
@@ -1759,7 +1764,11 @@ impl MainWin {
             if row.remote {
                 let dot_y = text_y + px(4.0);
                 if dot_y >= clip.y && dot_y + px(6.0) <= clip.y + clip.h {
-                    dc.fill_round_rect(Rect::new(lx, dot_y, px(6.0), px(6.0)), px(3.0), th.ok);
+                    dc.fill_round_rect(
+                        Rect::new(lx, dot_y, px(6.0), px(6.0)),
+                        px(3.0),
+                        nclip_ctl::theme::Color::from_rgb(46, 204, 64),
+                    );
                 }
                 lx += px(12.0);
             }
@@ -2518,13 +2527,7 @@ fn content_key_of(item: &nclip_core::history::HistoryItem, plain: Option<&str>) 
         }
         (None, Some(t)) if !t.trim().is_empty() => {
             "txt".hash(&mut h);
-            t.replace(
-                "
-", "
-",
-            )
-            .trim_end()
-            .hash(&mut h);
+            t.replace('\r', "").trim_end().hash(&mut h);
         }
         _ => {
             "fp".hash(&mut h);
