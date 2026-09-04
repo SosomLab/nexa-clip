@@ -107,7 +107,32 @@ pub(crate) fn is_approved(hex: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// ★ 지금 연결된 기기를 전부 승인(설정 버튼) — 반환 = 새로 승인된 수.
+/// ★ 기기 하나 승인/해제(09-04 사용자 — 행별 버튼). 반환 = 바뀌었는가.
+pub(crate) fn set_approved(hex: &str, on: bool) -> bool {
+    let Ok(mut g) = DEVICES.lock() else {
+        return false;
+    };
+    match g.iter_mut().find(|d| d.hex == hex) {
+        Some(d) if d.approved != on => {
+            d.approved = on;
+            true
+        }
+        _ => false,
+    }
+}
+
+/// 기기 삭제(목록·승인 모두) — 다시 만나면 새 기기로 온다.
+pub(crate) fn remove(hex: &str) -> bool {
+    let Ok(mut g) = DEVICES.lock() else {
+        return false;
+    };
+    let before = g.len();
+    g.retain(|d| d.hex != hex);
+    g.len() != before
+}
+
+/// 지금 연결된 기기를 전부 승인(테스트용 — 화면은 행별 `set_approved`).
+#[cfg(test)]
 pub(crate) fn approve_online() -> usize {
     let Ok(mut g) = DEVICES.lock() else {
         return 0;

@@ -308,6 +308,16 @@ pub enum Msg {
     TraySettings,
     /// ★ Dock 아이콘 표시(T-12e mac · 09-03).
     SetDockIcon,
+    StSyncRevoke,
+    StSyncDelete,
+    StSyncSas,
+    SetSyncRetry,
+    SetSyncRetryDesc,
+    SyncRetryNormal,
+    SyncRetryPatient,
+    SyncRetryEager,
+    SyncRelayOff,
+    StSyncLanOnly,
     SyncApprove,
     SyncApproveDesc,
     SyncApproveVerb,
@@ -765,10 +775,10 @@ impl Msg {
             ],
             Msg::SyncApprove => ["Approve devices", "기기 승인", "批准设备", "端末を承認"],
             Msg::SyncApproveDesc => [
-                "Allow clipboard sharing with the devices connected right now — once per device. Unapproved devices only appear in the list.",
-                "지금 연결된 기기와 클립보드를 주고받도록 허용합니다 — 기기당 한 번. 승인 전 기기는 목록에만 보입니다.",
-                "允许与当前已连接的设备共享剪贴板——每台设备一次。未批准的设备只出现在列表中。",
-                "現在接続中の端末とクリップボードを共有できるようにします — 端末ごとに一度。未承認の端末は一覧にのみ表示されます。",
+                "Approve each device on its row (the same 6-digit code must show on both devices). Clipboard is shared only with approved devices.",
+                "각 기기 행에서 승인합니다(같은 6자리 대조 코드가 양쪽에 떠야 합니다). 클립보드는 승인된 기기와만 오갑니다.",
+                "在各设备行上批准（两台设备须显示相同的 6 位校验码）。剪贴板仅与已批准的设备共享。",
+                "各端末の行で承認します（同じ6桁の照合コードが両端末に出ること）。クリップボードは承認済み端末とのみ共有します。",
             ],
             Msg::SyncApproveVerb => ["Approve", "승인", "批准", "承認"],
             Msg::StSyncApproved => [
@@ -785,6 +795,26 @@ impl Msg {
             ],
             Msg::StSyncDevApproved => ["approved", "승인됨", "已批准", "承認済み"],
             Msg::StSyncDevNeedsApproval => ["approval needed", "승인 필요", "需要批准", "要承認"],
+            Msg::SetSyncRetry => ["Retry backoff", "재시도 대기", "重试退避", "再試行の待機"],
+            Msg::SetSyncRetryDesc => [
+                "Wait doubles after each failure (5→10→20 s…, up to 5 min), ±20% random, reset on success. Same rule for relay reconnect, device redial, pairing search and LAN dial. Patient: 15 s→15 min · Eager: 2 s→1 min",
+                "실패할 때마다 대기가 2배(5→10→20초…, 최대 5분), ±20% 무작위, 성공하면 초기화. 릴레이 재접속·기기 재다이얼·페어링 탐색·LAN 직결 모두 같은 규칙. 느긋: 15초→15분 · 적극: 2초→1분",
+                "每次失败后等待翻倍（5→10→20 秒…，最长 5 分钟），±20% 随机，成功后重置。中继重连、设备重拨、配对搜索、局域网直连同一规则。耐心：15 秒→15 分钟 · 积极：2 秒→1 分钟",
+                "失敗ごとに待機が2倍（5→10→20秒…、最大5分）、±20%ランダム、成功で初期化。リレー再接続・端末再ダイヤル・ペアリング探索・LAN直結すべて同じ規則。のんびり: 15秒→15分 · 積極: 2秒→1分",
+            ],
+            Msg::SyncRetryNormal => ["Normal (5 s → 5 min)", "표준 (5초 → 5분)", "标准（5 秒 → 5 分钟）", "標準（5秒 → 5分）"],
+            Msg::SyncRetryPatient => ["Patient (15 s → 15 min)", "느긋 (15초 → 15분)", "耐心（15 秒 → 15 分钟）", "のんびり（15秒 → 15分）"],
+            Msg::SyncRetryEager => ["Eager (2 s → 1 min)", "적극 (2초 → 1분)", "积极（2 秒 → 1 分钟）", "積極（2秒 → 1分）"],
+            Msg::SyncRelayOff => ["None (same network only)", "None (같은 네트워크만)", "None（仅同一网络）", "None（同じネットワークのみ）"],
+            Msg::StSyncLanOnly => [
+                "Relay: None — devices on the same network connect directly",
+                "릴레이 None — 같은 네트워크의 기기끼리 직접 연결됩니다",
+                "中继已关闭——同一网络的设备直接连接",
+                "リレー未使用 — 同じネットワークの端末同士が直接つながります",
+            ],
+            Msg::StSyncRevoke => ["Revoke", "해제", "撤销", "解除"],
+            Msg::StSyncDelete => ["Remove", "삭제", "删除", "削除"],
+            Msg::StSyncSas => ["code {}", "대조 {}", "校验 {}", "照合 {}"],
             Msg::SetDockIconDesc => [
                 "macOS only: off hides the app from Dock and Cmd+Tab — open it from the menu bar icon",
                 "macOS 전용: 끄면 Dock·Cmd+Tab에서 사라지고 메뉴 막대 아이콘에서만 엽니다",
@@ -854,7 +884,7 @@ impl Msg {
             ],
             Msg::SetSyncDevices => ["Devices", "기기 목록", "设备", "端末一覧"],
             Msg::SetSyncDevicesDesc => [
-                "No devices met yet — enter the same handle and passphrase on another device, then Test",
+                "No devices met yet — enter the same handle and passphrase on another device, then Test. Approve each device on its row once the same 6-digit code shows on both.",
                 "아직 만난 기기가 없습니다 — 다른 기기에 같은 아이디·페어링 암호를 넣고 Test",
                 "尚未遇到设备——在另一台设备输入相同的账号和配对口令后按 Test",
                 "まだ端末に出会っていません — 別の端末に同じ ID とパスフレーズを入れて Test",
@@ -1080,7 +1110,7 @@ mod tests {
     use super::*;
 
     /// 카탈로그 전수 — 새 `Msg`를 더하면 여기도 더한다(빈칸 검사가 그걸 강제한다).
-    const ALL_MSG: [Msg; 196] = [
+    const ALL_MSG: [Msg; 206] = [
         Msg::AppName,
         Msg::SearchPlaceholder,
         Msg::EmptyHistory,
@@ -1186,6 +1216,16 @@ mod tests {
         Msg::TrayQuit,
         Msg::TraySettings,
         Msg::SetDockIcon,
+        Msg::StSyncRevoke,
+        Msg::StSyncDelete,
+        Msg::StSyncSas,
+        Msg::SetSyncRetry,
+        Msg::SetSyncRetryDesc,
+        Msg::SyncRetryNormal,
+        Msg::SyncRetryPatient,
+        Msg::SyncRetryEager,
+        Msg::SyncRelayOff,
+        Msg::StSyncLanOnly,
         Msg::SyncApprove,
         Msg::SyncApproveDesc,
         Msg::SyncApproveVerb,

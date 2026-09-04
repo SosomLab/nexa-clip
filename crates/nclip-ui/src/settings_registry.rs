@@ -369,7 +369,13 @@ pub(crate) const REGISTRY: &[Entry] = &[
         Msg::CatSync,
         Msg::SetSyncRelay,
         Msg::SetSyncRelayDesc,
-        SettingKind::RadioInput(&[("beepd.sosomlab.com", Msg::SyncRelayDefault)], ""),
+        SettingKind::RadioInput(
+            &[
+                ("beepd.sosomlab.com", Msg::SyncRelayDefault),
+                ("none", Msg::SyncRelayOff), // ★ None = 서버 없이 LAN만(09-04 사용자) · 서버 선택 = LAN + 릴레이
+            ],
+            "",
+        ),
         "sync.relay",
     ),
     e(
@@ -389,6 +395,18 @@ pub(crate) const REGISTRY: &[Entry] = &[
         },
         "sync.test",
     ),
+    // ★ 재시도 대기 정책(09-04 사용자) — 실패 횟수 비례 지수 백오프의 기준·설명.
+    e(
+        Msg::CatSync,
+        Msg::SetSyncRetry,
+        Msg::SetSyncRetryDesc,
+        SettingKind::Radio(&[
+            ("normal", Msg::SyncRetryNormal),
+            ("patient", Msg::SyncRetryPatient),
+            ("eager", Msg::SyncRetryEager),
+        ]),
+        "sync.retry",
+    ),
     // ★ 연결 해제(09-03 사용자) — 성공 노트 아래쪽 자리(테스트 다음 행).
     e(
         Msg::CatSync,
@@ -404,18 +422,8 @@ pub(crate) const REGISTRY: &[Entry] = &[
         Msg::CatSync,
         Msg::SetSyncDevices,
         Msg::SetSyncDevicesDesc,
-        SettingKind::Report,
+        SettingKind::DeviceList, // ★ 행별 [승인|해제][삭제] + 대조 코드(09-04 사용자)
         "sync.devices",
-    ),
-    // ★ 승인(09-04 · docs/09 §6-3) — 지금 연결된 기기를 승인해야 클립보드가 오간다(기기당 1회).
-    e(
-        Msg::CatSync,
-        Msg::SyncApprove,
-        Msg::SyncApproveDesc,
-        SettingKind::Action {
-            verb: Msg::SyncApproveVerb,
-        },
-        "sync.approve",
     ),
     // ── 고급 ────────────────────────────────────────────────
     e(

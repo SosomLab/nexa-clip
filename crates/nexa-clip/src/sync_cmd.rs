@@ -7,8 +7,71 @@
 
 use std::time::Duration;
 
-/// 재접속 백오프(ms) — beep `RECONNECT_BACKOFF_MS` 관례 승계.
-const BACKOFF_MS: [u64; 4] = [5_000, 15_000, 60_000, 300_000];
+/// ★ 재시도 정책(09-04 사용자 — "실패 횟수에 비례해 지수적으로"): **실패 n회째 대기 = base × 2^(n−1)**,
+/// 상한 `cap`, ±20% 지터(여러 기기가 같은 순간에 몰리지 않게). 성공하면 0으로 초기화.
+/// 릴레이 재접속 · 알려진 기기 재다이얼 · 페어링 탐색 · LAN 직결 다이얼이 **같은 규칙**을 쓴다.
+/// 설정 `sync.retry`: normal(5s→5분) · patient(15s→15분) · eager(2s→1분).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Backoff {
+    pub base: Duration,
+    pub cap: Duration,
+}
+
+impl Backoff {
+    pub(crate) const NORMAL: Self = Self {
+        base: Duration::from_secs(5),
+        cap: Duration::from_secs(300),
+    };
+    pub(crate) const PATIENT: Self = Self {
+        base: Duration::from_secs(15),
+        cap: Duration::from_secs(900),
+    };
+    pub(crate) const EAGER: Self = Self {
+        base: Duration::from_secs(2),
+        cap: Duration::from_secs(60),
+    };
+
+    /// 설정값 → 정책(미지 값 = 표준).
+    pub(crate) fn from_setting(v: &str) -> Self {
+        match v {
+            "patient" => Self::PATIENT,
+            "eager" => Self::EAGER,
+            _ => Self::NORMAL,
+        }
+    }
+
+    /// 실패 `failures`회 뒤 대기(지터 없음 — 테스트·표시용). 0회 = base.
+    pub(crate) fn wait_raw(&self, failures: u32) -> Duration {
+        let n = failures.saturating_sub(1).min(16);
+        self.base.saturating_mul(1u32 << n).min(self.cap)
+    }
+
+    /// 실패 `failures`회 뒤 대기(±20% 지터).
+    pub(crate) fn wait(&self, failures: u32) -> Duration {
+        let raw = self.wait_raw(failures);
+        // 값싼 무작위 — 시각 나노초 하위 비트(암호학적일 필요 없음).
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.subsec_nanos())
+            .unwrap_or(0);
+        let pct = 80 + (nanos % 41); // 80..=120 %
+        raw.mul_f64(f64::from(pct) / 100.0)
+    }
+}
+
+static POLICY: std::sync::Mutex<Backoff> = std::sync::Mutex::new(Backoff::NORMAL);
+
+/// 현재 재시도 정책.
+pub(crate) fn policy() -> Backoff {
+    POLICY.lock().map(|g| *g).unwrap_or(Backoff::NORMAL)
+}
+
+/// 설정에서 정책 갱신(부팅·변경 즉시).
+pub(crate) fn set_policy(v: &str) {
+    if let Ok(mut g) = POLICY.lock() {
+        *g = Backoff::from_setting(v);
+    }
+}
 /// 기본 릴레이 — beep 공식 서버(같은 서버 공유 · DP-1 · 포트 기본 47300).
 const DEFAULT_RELAY: &str = "beepd.sosomlab.com";
 
@@ -23,6 +86,8 @@ static RUNNING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::n
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum SyncStatus {
     Off,
+    /// ★ 릴레이 사용 안 함(09-04) — 같은 네트워크 직결만.
+    LanOnly,
     Connecting,
     Connected,
     Failed(String),
@@ -84,11 +149,8 @@ pub(crate) fn my_display_name() -> String {
 static PEER_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 /// 동시 다이얼 상한(스레드 폭주 방지).
 static DIALING: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-/// 알려진 기기 재다이얼·페어링 탐색 **기본** 주기 — 실패마다 2배(상한 아래) · 성공/상대 등장 시 초기화.
+/// 다이얼 루프 점검 주기(백오프 자체는 [`Backoff`] 정책이 정한다).
 const DIAL_EVERY: Duration = Duration::from_secs(10);
-/// 기기별 재다이얼 백오프 상한(5분) · 페어링 탐색 백오프 상한(2분).
-const DIAL_MAX: Duration = Duration::from_secs(300);
-const PAIR_MAX: Duration = Duration::from_secs(120);
 /// 인바운드 랑데부 동시 핸드셰이크 상한(폭주 시 나머지는 버림 — 상대가 다시 연다).
 const INBOUND_MAX: usize = 4;
 /// 피어별 수신 예산 — 10초 창에 24MB(항목 상한 32MB와 별개 · 홍수 차단).
@@ -390,6 +452,25 @@ pub(crate) fn request_disconnect() {
     crate::lan::bump(); // LAN 직결도 함께 내린다(설정 변경 = 태그 변경).
 }
 
+/// ★ 동기화 전부 끔(09-04 사용자 "동기화 사용을 끄면 동기화 자체가 꺼진다") — 릴레이·LAN·세션 모두 내리고
+///   상태를 `Off`로(노트 없음).
+pub(crate) fn stop_all() {
+    request_disconnect();
+    set_status(SyncStatus::Off);
+}
+
+/// 릴레이 러너만 내린다(LAN 유지 — 릴레이 `None` 전환).
+fn request_disconnect_relay_only() {
+    if RUNNING.load(std::sync::atomic::Ordering::Relaxed) {
+        STOP_REQ.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+/// LAN 세션이 하나라도 있는가(해제 판정에 릴레이와 함께 본다).
+pub(crate) fn has_lan_peers() -> bool {
+    crate::devices::online_via("LAN") > 0
+}
+
 /// `sync.enabled`가 켜져 있으면 접속 스레드를 띄운다(부팅 시 1회 — 동적 반영은 후속).
 pub(crate) fn spawn_if_enabled(
     conf: &crate::conf::Settings,
@@ -401,6 +482,7 @@ pub(crate) fn spawn_if_enabled(
     let handle = conf.state.get("sync.handle").trim().to_string();
     let pass = conf.state.get("sync.passphrase").trim().to_string();
     set_device_name(conf.state.get("sync.device_name"));
+    set_policy(conf.state.get("sync.retry"));
     // ★ 핸들/암호 없이도 접속은 한다(09-03 — 연결 상태 유지 계약: Test 성공 시 자동 켬).
     //   페어링 랑데부만 생략되고, 기기 RID 등록·상태 표시는 그대로다.
     if handle.is_empty() || pass.is_empty() {
@@ -449,6 +531,14 @@ pub(crate) fn spawn_if_enabled(
     crate::devices::load(&dir.join("devices.txt"));
     // ★ 같은 네트워크 직결(09-04) — 릴레이와 독립(서버 없이도 만난다).
     crate::lan::spawn(&handle, &pass, id.clone(), proxy.clone(), dir.clone());
+    // ★ 릴레이 `off`(09-04 사용자 실기 절차) — 서버 없이 LAN만. 러너는 띄우지 않고 상태만 알린다.
+    if relay_raw == "none" || relay_raw.starts_with("none:") {
+        println!("동기화: 릴레이 None — 같은 네트워크 직결만");
+        request_disconnect_relay_only();
+        set_status(SyncStatus::LanOnly);
+        wake(&proxy);
+        return;
+    }
     std::thread::Builder::new()
         .name("nclip-sync".into())
         .spawn(move || {
@@ -505,7 +595,8 @@ fn run(
     let pin_path = dir.join("server.pin");
 
     // ③ 등록할 RID — 기기 3(에폭 오차) + ★ 페어링 3(같은 핸들·암호 기기가 만나는 지점).
-    let mut stage = 0usize;
+    let mut failures = 0u32;
+    let mut pending_wait: Option<Duration> = None;
     loop {
         set_status(SyncStatus::Connecting);
         tick();
@@ -518,7 +609,7 @@ fn run(
         let expected = nclip_sync::relay::pinfile::lookup(&pin_path, &addr_str);
         match nclip_sync::relay::RelayClient::connect(addr, &id, &rids, expected) {
             Ok(client) => {
-                stage = 0;
+                failures = 0;
                 set_status(SyncStatus::Connected);
                 notify(true);
                 note_last_ok(
@@ -554,11 +645,9 @@ fn run(
                 };
                 let mut last_dial = std::time::Instant::now() - DIAL_EVERY;
                 // ★ 백오프 상태(09-04 과다 트래픽 예방) — 기기별 다음 시도 시각·간격, 페어링 탐색 간격.
-                let mut dial_next: std::collections::HashMap<
-                    String,
-                    (std::time::Instant, Duration),
-                > = std::collections::HashMap::new();
-                let mut pair_wait = DIAL_EVERY;
+                let mut dial_next: std::collections::HashMap<String, (std::time::Instant, u32)> =
+                    std::collections::HashMap::new();
+                let mut pair_fail = 0u32;
                 let mut pair_next = std::time::Instant::now();
                 loop {
                     if let Some(inc) = client.accept_incoming(Duration::from_secs(1)) {
@@ -620,12 +709,13 @@ fn run(
                             if me >= hex {
                                 continue;
                             }
-                            let (next, wait) =
-                                dial_next.get(&hex).copied().unwrap_or((now, DIAL_EVERY));
+                            // 기기별 실패 횟수 → 정책 대기(성공 = 목록 초기화).
+                            let (next, fails) = dial_next.get(&hex).copied().unwrap_or((now, 0u32));
                             if now < next {
                                 continue;
                             }
-                            dial_next.insert(hex.clone(), (now + wait, (wait * 2).min(DIAL_MAX)));
+                            let wait = policy().wait(fails + 1);
+                            dial_next.insert(hex.clone(), (now + wait, fails + 1));
                             let Some(peer) = nclip_sync::relay::parse_peer_hex(&hex) else {
                                 continue;
                             };
@@ -660,13 +750,13 @@ fn run(
                         //   (서버는 최신 등록자에게 잇고, 내가 등록자면 "대상 없음"으로 돌아온다).
                         let any_online = crate::devices::list().iter().any(|d| d.online);
                         if any_online {
-                            pair_wait = DIAL_EVERY; // 누군가 붙어 있으면 다음 탐색은 기본 주기부터
+                            pair_fail = 0; // 누군가 붙어 있으면 다음 탐색은 처음부터
                         }
-                        // ★ 페어링 탐색 백오프(10s → … → 2분) — 상대가 없을 때 릴레이에 Open을 연타하지 않는다.
+                        // ★ 페어링 탐색도 같은 정책 — 상대가 없을 때 릴레이에 Open을 연타하지 않는다.
                         let pair_due = std::time::Instant::now() >= pair_next;
                         if !pair_rids.is_empty() && !any_online && pair_due {
-                            pair_next = std::time::Instant::now() + pair_wait;
-                            pair_wait = (pair_wait * 2).min(PAIR_MAX);
+                            pair_fail += 1;
+                            pair_next = std::time::Instant::now() + policy().wait(pair_fail);
                             let (c, i, p, d) =
                                 (client.clone(), id.clone(), proxy.clone(), dir.to_path_buf());
                             let rids = pair_rids.clone();
@@ -715,12 +805,18 @@ fn run(
                 }
             }
             Err(e) => {
-                set_status(SyncStatus::Failed(format!("{e:?}")));
+                failures += 1;
+                let wait = policy().wait(failures);
+                set_status(SyncStatus::Failed(format!(
+                    "{e:?} · {}s 뒤 재시도(실패 {failures}회)",
+                    wait.as_secs()
+                )));
                 notify(false);
                 eprintln!(
-                    "동기화: 접속 실패({e:?}) — {}s 뒤 재시도",
-                    BACKOFF_MS[stage] / 1000
+                    "동기화: 접속 실패({e:?}) — {}s 뒤 재시도(실패 {failures}회 · 지수 백오프)",
+                    wait.as_secs()
                 );
+                pending_wait = Some(wait);
             }
         }
         if STOP_REQ.swap(false, std::sync::atomic::Ordering::Relaxed) {
@@ -729,7 +825,31 @@ fn run(
             tick();
             return;
         }
-        std::thread::sleep(Duration::from_millis(BACKOFF_MS[stage]));
-        stage = (stage + 1).min(BACKOFF_MS.len() - 1);
+        // 끊김(성공 뒤 종료)도 한 번의 실패로 세어 같은 규칙을 탄다.
+        let wait = pending_wait.take().unwrap_or_else(|| {
+            failures += 1;
+            policy().wait(failures)
+        });
+        std::thread::sleep(wait);
+    }
+}
+
+#[cfg(test)]
+mod backoff_tests {
+    use super::*;
+
+    #[test]
+    fn doubles_per_failure_and_caps() {
+        let p = Backoff::NORMAL;
+        assert_eq!(p.wait_raw(1).as_secs(), 5);
+        assert_eq!(p.wait_raw(2).as_secs(), 10);
+        assert_eq!(p.wait_raw(3).as_secs(), 20);
+        assert_eq!(p.wait_raw(7).as_secs(), 300, "5×2^6 = 320 → 상한 300");
+        assert_eq!(p.wait_raw(40).as_secs(), 300, "시프트 과다도 상한");
+        assert_eq!(Backoff::EAGER.wait_raw(9).as_secs(), 60);
+        assert_eq!(Backoff::from_setting("patient"), Backoff::PATIENT);
+        assert_eq!(Backoff::from_setting("???"), Backoff::NORMAL);
+        let w = p.wait(2).as_millis();
+        assert!((8_000..=12_000).contains(&w), "±20% 지터 안: {w}");
     }
 }

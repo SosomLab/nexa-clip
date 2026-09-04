@@ -114,7 +114,7 @@ impl App {
     /// ★ 즉시 연결 해제(09-03 사용자) — Disconnect 버튼·연결 정보 변경·Enable 끔 공용.
     ///   Connected 메시지 자리(sync.test)에 Disconnected를 표시하고 시드도 지운다.
     fn sync_drop_now(&mut self) {
-        if !crate::sync_cmd::is_connected() {
+        if !crate::sync_cmd::is_connected() && !crate::sync_cmd::has_lan_peers() {
             return;
         }
         crate::sync_cmd::request_disconnect();
@@ -250,6 +250,18 @@ impl App {
                 a
             }
         };
+        // ★ 릴레이 None(09-04) — 서버 시험 없이 LAN 전용으로 켜고 러너(LAN)를 띄운다.
+        if addr == "none" {
+            if self.conf.state.get("sync.enabled") != "on" {
+                self.conf
+                    .set("sync.enabled", "on".to_string(), Instant::now());
+                self.widget.set_value("sync.enabled", "on", &mut inv);
+            }
+            self.sync_respawn = true;
+            self.sync_shown = None; // LanOnly 상태를 노트로
+            self.redraw();
+            return;
+        }
         let port = {
             let p = self.conf.state.get("sync.port").trim().to_string();
             if p.is_empty() {
@@ -290,29 +302,53 @@ impl App {
     ///   수동 Test가 진행 중이면 그 결과가 우선(끝나면 러너 상태가 이어받는다).
     fn poll_sync_status(&mut self) {
         self.refresh_devices();
-        if self.sync_test.is_some() {
-            return;
-        }
-        let st = crate::sync_cmd::status();
-        if self.sync_shown.as_ref() == Some(&st) {
-            return;
-        }
         use crate::sync_cmd::SyncStatus as S;
-        let lang = nclip_core::current_lang();
-        let mut inv = Invalidations::default();
-        // ★ 활성 규칙(09-03 사용자): 연결 중엔 Test 잠금(정보 변경 = 해제 → 다시 열림) ·
-        //   Disconnect는 연결 중에만.
-        let locked: &[&'static str] = if st == S::Connected {
+        let st = crate::sync_cmd::status();
+        // ★ 활성 규칙(09-03·09-04 사용자): 동기화가 꺼져 있으면 **아래 설정 전부 잠금**(의미가 없다) ·
+        //   켜져 있으면 연결 중엔 Test 잠금(정보 변경 = 해제 → 다시 열림) · Disconnect는 연결 중에만.
+        //   매 폴마다 계산(값싸다 · set_disabled는 바뀔 때만 무효화).
+        let enabled = self.conf.state.get("sync.enabled") == "on";
+        let locked: &[&'static str] = if !enabled {
+            &[
+                "sync.device_name",
+                "sync.handle",
+                "sync.passphrase",
+                "sync.relay",
+                "sync.port",
+                "sync.retry",
+                "sync.test",
+                "sync.disconnect",
+                "sync.devices",
+            ]
+        } else if st == S::Connected {
             &["sync.test"]
         } else {
             &["sync.disconnect"]
         };
-        self.widget.set_disabled(locked, &mut inv);
+        {
+            let mut inv0 = Invalidations::default();
+            self.widget.set_disabled(locked, &mut inv0);
+            if !inv0.is_empty() {
+                self.redraw();
+            }
+        }
+        if self.sync_test.is_some() {
+            return;
+        }
+        if self.sync_shown.as_ref() == Some(&st) {
+            return;
+        }
+        let lang = nclip_core::current_lang();
+        let mut inv = Invalidations::default();
         let (msg, tone) = match &st {
             S::Off => (String::new(), nclip_ui::NoteTone::Plain),
             S::Connecting => (
                 nclip_core::tr(lang, nclip_core::Msg::StSyncTesting).to_string(),
                 nclip_ui::NoteTone::Info,
+            ),
+            S::LanOnly => (
+                nclip_core::tr(lang, nclip_core::Msg::StSyncLanOnly).to_string(),
+                nclip_ui::NoteTone::Ok,
             ),
             S::Connected => {
                 let (raw, pin8) = crate::sync_cmd::last_ok().unwrap_or_default();
@@ -345,12 +381,13 @@ impl App {
         let me = crate::sync_cmd::my_hex();
         if me.len() >= 8 {
             lines.push(format!(
-                "*{}: {} · {}",
+                "{me}\tme\t{}: {} · {}",
                 nclip_core::tr(lang, nclip_core::Msg::StSyncDevMe),
                 crate::sync_cmd::my_display_name(),
                 &me[..8]
             ));
         }
+        let me_peer = nclip_sync::relay::parse_peer_hex(&me);
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs())
@@ -369,9 +406,26 @@ impl App {
                     nclip_core::Msg::StSyncDevNeedsApproval
                 },
             );
+            let state = if d.approved { "approved" } else { "pending" };
+            // ★ 6자리 대조 코드(docs/09 §6-3 "입력이 아니라 보기") — 두 키의 안전번호 앞 6자리(양쪽 동일).
+            let sas = me_peer
+                .zip(nclip_sync::relay::parse_peer_hex(&d.hex))
+                .map(|(mp, p)| {
+                    let n: String = nclip_sync::sas::safety_number(mp, p)
+                        .chars()
+                        .filter(char::is_ascii_digit)
+                        .take(6)
+                        .collect();
+                    format!(
+                        " · {}",
+                        nclip_core::tr(lang, nclip_core::Msg::StSyncSas).replacen("{}", &n, 1)
+                    )
+                })
+                .unwrap_or_default();
             if d.online {
                 lines.push(format!(
-                    "*{} · {} · {} · {} ({}) · {}",
+                    "{}\t{state}\t{} · {} · {} · {} ({}) · {}{sas}",
+                    d.hex,
                     d.name,
                     short,
                     d.os,
@@ -389,7 +443,8 @@ impl App {
                     format!("{}d", ago / 86_400)
                 };
                 lines.push(format!(
-                    "{} · {} · {} · {} · {}",
+                    "{}\t{state}\t{} · {} · {} · {} · {}",
+                    d.hex,
                     d.name,
                     short,
                     d.os,
@@ -563,39 +618,29 @@ impl App {
                     self.redraw();
                 }
             }
-            // ★ 기기 승인(09-04) — 지금 연결된 기기 전부(기기당 1회 · 파일에 남는다).
-            if key == "sync.approve" && val == "run" {
-                let n = crate::devices::approve_online();
-                let lang = nclip_core::current_lang();
-                let mut inv2 = Invalidations::default();
-                if n > 0 {
+            // ★ 기기별 승인/해제/삭제(09-04 사용자 — 행별 버튼). 값 = `approve:hex|revoke:hex|delete:hex`.
+            if key == "sync.devices" {
+                let (verb, hex) = val.split_once(':').unwrap_or(("", ""));
+                let changed = match verb {
+                    "approve" => crate::devices::set_approved(hex, true),
+                    "revoke" => crate::devices::set_approved(hex, false),
+                    "delete" => crate::devices::remove(hex),
+                    _ => false,
+                };
+                if changed {
                     if let Err(e) =
                         crate::devices::save(&crate::conf::data_dir().join("devices.txt"))
                     {
                         eprintln!("동기화: 기기 목록 저장 실패({e})");
                     }
-                    let msg = nclip_core::tr(lang, nclip_core::Msg::StSyncApproved).replacen(
-                        "{}",
-                        &n.to_string(),
-                        1,
-                    );
-                    self.widget.set_row_note_toned(
-                        "sync.approve",
-                        &msg,
-                        nclip_ui::NoteTone::Ok,
-                        &mut inv2,
-                    );
-                    println!("동기화: 기기 {n}대 승인");
-                } else {
-                    self.widget.set_row_note_toned(
-                        "sync.approve",
-                        nclip_core::tr(lang, nclip_core::Msg::StSyncApproveNone),
-                        nclip_ui::NoteTone::Warn,
-                        &mut inv2,
-                    );
+                    println!("동기화: 기기 {}… {verb}", &hex[..hex.len().min(8)]);
+                    self.devices_text.clear(); // 목록 재구성
                 }
-                self.devices_text.clear(); // 목록의 승인 표기 갱신
-                self.redraw();
+                continue; // 값 키가 아니다 — 아래 핸들러는 무관
+            }
+            // ★ 재시도 정책(09-04) — 즉시 반영(다음 실패부터 새 대기).
+            if key == "sync.retry" {
+                crate::sync_cmd::set_policy(&val);
             }
             // ★ 기기 이름(09-03) — 다음 세션부터 새 이름으로 인사한다.
             if key == "sync.device_name" {
@@ -628,7 +673,9 @@ impl App {
             }
             // ★ Enable Sync 끔 = 즉시 해제(09-03 사용자).
             if key == "sync.enabled" && val != "on" {
-                self.sync_drop_now();
+                self.sync_drop_now(); // Connected 자리에 Disconnected 노트(연결 중이었다면)
+                crate::sync_cmd::stop_all(); // ★ 릴레이·LAN·세션 전부 끔(09-04 사용자)
+                self.sync_shown = None;
             }
             // ★ 연결 테스트(09-03 — beep 화법: 진행/성공/실패를 행 노트로).
             if key == "sync.test" && val == "run" {

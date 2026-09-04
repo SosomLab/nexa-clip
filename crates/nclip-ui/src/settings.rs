@@ -111,6 +111,100 @@ const PW_EYE_SIDE: u32 = 96;
 /// 생성 버튼 무장 유지 시간(09-03 사용자 — "2초 내에 다시 누르지 않으면 원복").
 const PW_ARM_WINDOW: std::time::Duration = std::time::Duration::from_secs(2);
 
+/// ★ 기기 목록 한 행(09-04) — 텍스트 + [승인|해제] + [삭제]. `me` 행은 버튼이 없다.
+pub struct DevRow {
+    hex: String,
+    text: String,
+    emph: bool,
+    approved: bool,
+    approve: Option<Button>,
+    del: Option<Button>,
+    /// 배치 결과(행 위 y · 텍스트 가용 폭).
+    y: i32,
+    text_w: i32,
+}
+
+impl core::fmt::Debug for DevRow {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("DevRow")
+            .field("hex", &self.hex)
+            .finish_non_exhaustive()
+    }
+}
+
+impl DevRow {
+    fn tick(&mut self, now_ms: u64) -> bool {
+        let a = self.approve.as_mut().is_some_and(|b| b.tick(now_ms));
+        let d = self.del.as_mut().is_some_and(|b| b.tick(now_ms));
+        a | d
+    }
+    fn on_event(&mut self, ev: &InputEvent, inv: &mut Invalidations) {
+        if let Some(b) = self.approve.as_mut() {
+            b.on_event(ev, inv);
+        }
+        if let Some(b) = self.del.as_mut() {
+            b.on_event(ev, inv);
+        }
+    }
+    fn set_focused(&mut self, p: Point) {
+        if let Some(b) = self.approve.as_mut() {
+            b.set_focused(b.bounds().contains(p));
+        }
+        if let Some(b) = self.del.as_mut() {
+            b.set_focused(b.bounds().contains(p));
+        }
+    }
+}
+
+/// 호스트 값(`hex\tstate\ttext` 줄들) → 행들. state: `me`(버튼 없음) · `approved` · `pending`.
+fn build_dev_rows(value: &str, scale: f32, lang: Lang) -> Vec<DevRow> {
+    use nclip_ctl::controls::ButtonTone;
+    value
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| {
+            let mut it = l.splitn(3, '\t');
+            let hex = it.next().unwrap_or("").to_string();
+            let state = it.next().unwrap_or("");
+            let text = it.next().unwrap_or("").to_string();
+            let me = state == "me";
+            let approved = state == "approved";
+            let mk = |label: &str, tone: ButtonTone| {
+                let mut b = Button::new(label).with_tone(tone);
+                b.set_scale(scale);
+                b
+            };
+            DevRow {
+                approve: (!me).then(|| {
+                    if approved {
+                        mk(tr(lang, Msg::StSyncRevoke), ButtonTone::Default)
+                    } else {
+                        mk(tr(lang, Msg::SyncApproveVerb), ButtonTone::Safe)
+                    }
+                }),
+                del: (!me).then(|| mk(tr(lang, Msg::StSyncDelete), ButtonTone::Danger)),
+                emph: me || approved,
+                approved,
+                hex,
+                text,
+                y: 0,
+                text_w: 0,
+            }
+        })
+        .collect()
+}
+
+/// 기기 목록 행들의 총 높이(빈 목록 = 설명 1줄).
+fn dev_rows_h(n: usize, ctl_h: i32, desc_line_h: i32) -> i32 {
+    if n == 0 {
+        desc_line_h
+    } else {
+        i32::try_from(n)
+            .unwrap_or(i32::MAX)
+            .saturating_mul(ctl_h + 6)
+    }
+}
+
 /// 보고 행 줄 수(빈 값 = 설명 1줄).
 fn report_lines(v: Option<&String>) -> i32 {
     let n = v.map_or(0, |s| s.lines().filter(|l| !l.trim().is_empty()).count());
@@ -230,6 +324,10 @@ pub enum SettingKind {
     /// ★ **보고 행**(09-03 — 기기 목록) — 컨트롤 없이 호스트가 `set_value`로 채우는 읽기 전용
     /// 줄들(개행 구분 · 줄 앞 `*` = 강조). 비면 설명이 대신 보인다.
     Report,
+    /// ★ **기기 목록**(09-04 — 행별 승인) — 호스트가 `set_value`로 `hex\tstate\ttext` 줄들을 주면
+    /// 행마다 [승인|해제][삭제] 버튼을 붙인다(state = me|approved|pending · me는 버튼 없음).
+    /// 클릭 = `(key, "approve:hex" | "revoke:hex" | "delete:hex")` 변경 방출.
+    DeviceList,
     /// 실행 버튼 — 값이 아니라 **행위**(백업·복원 등). 클릭 = `(key, "run")` 변경 방출.
     /// 값 키가 없어(`default_values` 빈 목록) 영속 파일에 실리지 않는다.
     Action {
@@ -299,7 +397,7 @@ impl Entry {
             // 목록 — 기본 표(차단 URL 기본 목록)에 있으면 그 값, 없으면 **빈 값으로 키 등록**
             // (RadioInput과 같은 이유 — 키가 없으면 저장값이 미지 키로 증발한다 · 08-22).
             // 보고 행 — 키는 등록(호스트 set_value 대상), 값은 비어 시작.
-            SettingKind::Report => vec![(self.key, String::new())],
+            SettingKind::Report | SettingKind::DeviceList => vec![(self.key, String::new())],
             SettingKind::ListEdit => vec![(
                 self.key,
                 RADIO_DEFAULTS
@@ -440,7 +538,7 @@ impl SettingsState {
             // 직접 입력 허용 — 빈 값만 거른다(빈 문자열은 기본값 의미가 아니다).
             SettingKind::RadioInput(..) => !value.is_empty(),
             // 목록은 빈 것도 유효(제외 앱 기본 = 비어 있음).
-            SettingKind::ListEdit | SettingKind::Report => true,
+            SettingKind::ListEdit | SettingKind::Report | SettingKind::DeviceList => true,
             // ★ 숫자 항목 — 파일에서 온 값도 **숫자여야** 받는다. 범위는 validate가 본다.
             SettingKind::Number { .. } => value.parse::<u64>().is_ok(),
             SettingKind::Toggle => value == "on" || value == "off",
@@ -582,6 +680,8 @@ enum RowCtl {
     List(Box<ListEditor>),
     /// ★ 보고 행(09-03) — 컨트롤 없음(줄들은 values에서 읽어 그린다).
     Report,
+    /// ★ 기기 목록(09-04) — 행별 버튼.
+    Devices(Vec<DevRow>),
     /// 글꼴 **얼굴만**(고정폭 — 크기는 Base UI를 따른다).
     Face(TextBox),
     /// 색상(스와치 + hex + 프리셋 · 08-10).
@@ -1093,6 +1193,11 @@ impl SettingsWidget {
                     RowCtl::Color(c)
                 }
                 SettingKind::Report => RowCtl::Report,
+                SettingKind::DeviceList => RowCtl::Devices(build_dev_rows(
+                    self.values.get(e.key).map_or("", String::as_str),
+                    self.scale,
+                    lang,
+                )),
                 SettingKind::ListEdit => {
                     let mut l = ListEditor::new(
                         self.values.get(e.key).map_or("", String::as_str),
@@ -1185,6 +1290,8 @@ impl SettingsWidget {
             match &mut row.ctl {
                 RowCtl::Combo(c) => c.select_value(value),
                 RowCtl::List(l) => l.set_value(value),
+                // ★ 기기 목록(09-04) — 줄들로 행·버튼을 다시 만든다(레이아웃은 호출자가 강제).
+                RowCtl::Devices(rows) => *rows = build_dev_rows(value, self.scale, current_lang()),
                 // 토글도 역반영(08-15 — 쌍방 동기화: 다른 경로가 켠/끈 것을 표시).
                 RowCtl::Check(c) => c.set_on(value == "on"),
                 // ★ 텍스트 입력도(09-03 — 패스프레이즈 추천/생성을 재구성 없이 반영).
@@ -1296,6 +1403,7 @@ impl SettingsWidget {
             dirty |= match &mut row.ctl {
                 RowCtl::Combo(c) => c.tick_hover(now_ms),
                 RowCtl::Act(b) => b.tick(now_ms),
+                RowCtl::Devices(rows) => rows.iter_mut().fold(false, |d, r| d | r.tick(now_ms)),
                 RowCtl::List(l) => l.tick(now_ms),
                 RowCtl::Font { size, .. } => size.tick_hover(now_ms),
                 _ => false,
@@ -1347,6 +1455,8 @@ impl SettingsWidget {
         let (h_font, h_entry, h_pos) = (self.s(FONT_SECTION_H), self.s(ENTRY_H), self.s(POS_ROW_H));
         // 토글 폭 = Switch 트랙(20) × 컨트롤 크기 배율(ui.control_size).
         let (combo_w, check_w) = (self.s(COMBO_W), self.s(nclip_ctl::controls::ctl_size(20)));
+        // 기기 목록 버튼 치수(승인/해제 · 삭제 · 간격) — 루프 밖에서(차용 분리).
+        let (dev_bw, dev_dw, dev_g) = (self.s(84), self.s(64), self.s(6));
         let (family_w, size_w, gap10, dy32) =
             (self.s(FAMILY_W), self.s(SIZE_W), self.s(10), self.s(32));
         let note_hs: Vec<i32> = self.rows.iter().map(|r| self.note_h(r.idx)).collect();
@@ -1371,6 +1481,9 @@ impl SettingsWidget {
                     (RowCtl::Report, _) => {
                         dy32 + report_lines(self.values.get(e.key)) * desc_line_h + pad
                     }
+                    (RowCtl::Devices(rows), _) => {
+                        dy32 + dev_rows_h(rows.len(), ctl_h, desc_line_h) + pad
+                    }
                     (_, SettingKind::FontSection { .. }) => h_font,
                     (_, SettingKind::PositionGrid) => h_pos,
                     // ★ 비밀 행(09-03) — 상자 위 버튼 줄(ctl_h + 간격)만큼 더 높다.
@@ -1384,7 +1497,9 @@ impl SettingsWidget {
                     RowCtl::Face(_) => family_w,
                     RowCtl::Pos(p) => p.preferred_size().0,
                     RowCtl::Color(c) => c.preferred_width().min(rw - pad * 2),
-                    RowCtl::Font { .. } | RowCtl::List(_) | RowCtl::Report => 0,
+                    RowCtl::Font { .. } | RowCtl::List(_) | RowCtl::Report | RowCtl::Devices(_) => {
+                        0
+                    }
                 };
                 let desc_avail = (rw - pad * 2 - ctl_w - gap10).max(min_avail);
                 let est_logical: i32 = tr(lang, e.desc)
@@ -1417,7 +1532,7 @@ impl SettingsWidget {
                 RowCtl::Pos(p) => p.preferred_size().0,
                 RowCtl::Color(c) => c.preferred_width().min(rw - pad * 2),
                 // 설명이 전폭을 쓴다(컨트롤이 아래 줄).
-                RowCtl::Font { .. } | RowCtl::List(_) | RowCtl::Report => 0,
+                RowCtl::Font { .. } | RowCtl::List(_) | RowCtl::Report | RowCtl::Devices(_) => 0,
             };
             row.desc_avail = (rw - pad * 2 - ctl_w - gap10).max(min_avail);
             let est_logical: i32 = tr(lang, e.desc)
@@ -1431,6 +1546,9 @@ impl SettingsWidget {
                 (RowCtl::List(l), _) => dy32 + l.preferred_height() + pad,
                 (RowCtl::Report, _) => {
                     dy32 + report_lines(self.values.get(e.key)) * desc_line_h + pad
+                }
+                (RowCtl::Devices(rows), _) => {
+                    dy32 + dev_rows_h(rows.len(), ctl_h, desc_line_h) + pad
                 }
                 (_, SettingKind::FontSection { .. }) => h_font,
                 (_, SettingKind::PositionGrid) => h_pos,
@@ -1534,6 +1652,24 @@ impl SettingsWidget {
                     l.set_bounds(Rect::new(rx + pad, top + dy32, rw - pad * 2, lh), inv);
                 }
                 RowCtl::Report => {}
+                RowCtl::Devices(rows) => {
+                    // 행마다: 텍스트(왼쪽) + [승인|해제][삭제](오른쪽 정렬).
+                    let (bw, dw, g) = (dev_bw, dev_dw, dev_g);
+                    let mut y = top + dy32;
+                    for r in rows.iter_mut() {
+                        r.y = y;
+                        r.text_w = rw - pad * 2 - bw - dw - g * 2;
+                        if let Some(b) = r.del.as_mut() {
+                            b.set_scale(self.scale);
+                            b.set_bounds(Rect::new(rx + rw - pad - dw, y, dw, ctl_h), inv);
+                        }
+                        if let Some(b) = r.approve.as_mut() {
+                            b.set_scale(self.scale);
+                            b.set_bounds(Rect::new(rx + rw - pad - dw - g - bw, y, bw, ctl_h), inv);
+                        }
+                        y += ctl_h + g;
+                    }
+                }
             }
             top += h;
         }
@@ -1579,6 +1715,17 @@ impl SettingsWidget {
                     }
                 }
                 RowCtl::Report => {}
+                RowCtl::Devices(rows) => {
+                    for r in rows.iter_mut() {
+                        if r.approve.as_mut().is_some_and(Button::take_clicked) {
+                            let verb = if r.approved { "revoke" } else { "approve" };
+                            got.push((e.key, format!("{verb}:{}", r.hex)));
+                        }
+                        if r.del.as_mut().is_some_and(Button::take_clicked) {
+                            got.push((e.key, format!("delete:{}", r.hex)));
+                        }
+                    }
+                }
                 RowCtl::Face(family) => {
                     // ★ 글자마다 폰트를 찾으면 낭비다 — **Enter로 확정할 때만** 보고한다
                     //   (사용자 지적 08-09: 입력해도 적용되지 않는다).
@@ -1711,9 +1858,12 @@ impl Widget for SettingsWidget {
         //    포커스된 글꼴명 밖을 클릭하면 미확정 텍스트를 그 자리에서 확정 보고한다
         //    (Enter의 take_committed와 같은 경로 · Esc는 취소라 여기 안 온다).
         if let &InputEvent::MouseDown { x, y, .. } = ev {
-            // ★ 비밀 행 눈 버튼(09-03) — 마스킹 보기 토글(값·포커스 불변).
+            // ★ 비밀 행 눈 버튼(09-03) — 마스킹 보기 토글(값·포커스 불변). 잠긴 행은 건너뛴다(09-04).
             for r in &mut self.rows {
                 let e = &registry()[r.idx];
+                if self.disabled.contains(e.key) {
+                    continue;
+                }
                 if let (RowCtl::Face(f), SettingKind::Text { secret: true, .. }) =
                     (&mut r.ctl, e.kind)
                 {
@@ -1973,6 +2123,11 @@ impl Widget for SettingsWidget {
                         RowCtl::Check(c) => c.set_focused(c.bounds().contains(p)),
                         RowCtl::Act(b) => b.set_focused(b.bounds().contains(p)),
                         RowCtl::Report => {}
+                        RowCtl::Devices(rows) => {
+                            for r in rows.iter_mut() {
+                                r.set_focused(p);
+                            }
+                        }
                     }
                 }
                 // 사이드바 트리 — ★트리 영역 안의 클릭만 전달한다(08-22 실기: 우측
@@ -2014,6 +2169,11 @@ impl Widget for SettingsWidget {
                         RowCtl::Color(c) => c.on_event(ev, inv),
                         RowCtl::Act(b) => b.on_event(ev, inv),
                         RowCtl::Report => {}
+                        RowCtl::Devices(rows) => {
+                            for r in rows.iter_mut() {
+                                r.on_event(ev, inv);
+                            }
+                        }
                     }
                 }
                 self.drain_changes(inv);
@@ -2026,6 +2186,11 @@ impl Widget for SettingsWidget {
                     match &mut row.ctl {
                         RowCtl::Act(b) => b.on_event(ev, inv),
                         RowCtl::List(l) => l.on_event(ev, inv),
+                        RowCtl::Devices(rows) => {
+                            for r in rows.iter_mut() {
+                                r.on_event(ev, inv);
+                            }
+                        }
                         _ => {}
                     }
                 }
@@ -2153,8 +2318,14 @@ impl Widget for SettingsWidget {
                 // 마우스 이동은 목록 버튼 hover 페이드에도 필요하다(09-01).
                 if matches!(*ev, InputEvent::MouseMove { .. }) {
                     for row in &mut self.rows {
-                        if let RowCtl::List(l) = &mut row.ctl {
-                            l.on_event(ev, inv);
+                        match &mut row.ctl {
+                            RowCtl::List(l) => l.on_event(ev, inv),
+                            RowCtl::Devices(rows) => {
+                                for r in rows.iter_mut() {
+                                    r.on_event(ev, inv);
+                                }
+                            }
+                            _ => {}
                         }
                     }
                 }
@@ -2251,6 +2422,40 @@ impl Widget for SettingsWidget {
                         ctx.text(r.x + self.s(PAD), r.y + dy, r, line, theme.text_dim);
                     }
                 }
+                RowCtl::Devices(rows) => {
+                    ctx.select_font(FontSlot::Base, true);
+                    ctx.text(
+                        r.x + self.s(PAD),
+                        r.y + self.s(6),
+                        r,
+                        tr(lang, e.label),
+                        theme.text,
+                    );
+                    ctx.select_font(FontSlot::Status, false);
+                    if rows.is_empty() {
+                        ctx.text(
+                            r.x + self.s(PAD),
+                            r.y + self.s(30),
+                            r,
+                            tr(lang, e.desc),
+                            theme.text_dim,
+                        );
+                    } else {
+                        let th = ctx.text_height();
+                        for d in rows {
+                            let col = if d.emph { theme.text } else { theme.text_dim };
+                            let clip =
+                                Rect::new(r.x + self.s(PAD), d.y, d.text_w.max(0), self.s(CTL_H));
+                            ctx.text(
+                                r.x + self.s(PAD),
+                                d.y + (self.s(CTL_H) - th) / 2,
+                                clip,
+                                &d.text,
+                                col,
+                            );
+                        }
+                    }
+                }
                 RowCtl::Report => {
                     ctx.select_font(FontSlot::Base, true);
                     ctx.text(
@@ -2320,6 +2525,16 @@ impl Widget for SettingsWidget {
             }
             match &row.ctl {
                 RowCtl::Report => {}
+                RowCtl::Devices(rows) => {
+                    for r in rows {
+                        if let Some(b) = &r.approve {
+                            b.paint(ctx, theme);
+                        }
+                        if let Some(b) = &r.del {
+                            b.paint(ctx, theme);
+                        }
+                    }
+                }
                 RowCtl::Combo(c) => c.paint(ctx, theme),
                 RowCtl::Check(c) => c.paint(ctx, theme),
                 RowCtl::Act(b) => b.paint(ctx, theme),

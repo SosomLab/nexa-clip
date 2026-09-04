@@ -26,7 +26,6 @@ const BEACON_SLOW: Duration = Duration::from_secs(30);
 const BEACON_RX_PER_SEC: u32 = 20;
 const INBOUND_MAX: usize = 4;
 const FAIL_COOLDOWN: Duration = Duration::from_secs(30);
-const DIAL_BACKOFF_MAX: Duration = Duration::from_secs(300);
 static INBOUND_HS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 /// LAN 세대 — 러너 재기동·해제 때 올리면 비콘·수락·세션 스레드가 스스로 물러난다.
@@ -181,7 +180,7 @@ pub(crate) fn spawn(
             let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
             let mut last_send = Instant::now() - BEACON_EVERY;
             // 기기별 다음 다이얼 시각·간격(지수 백오프 8s → … → 5분 · 붙으면 초기화).
-            let mut dial_next: std::collections::HashMap<String, (Instant, Duration)> =
+            let mut dial_next: std::collections::HashMap<String, (Instant, u32)> =
                 std::collections::HashMap::new();
             let mut rx_sec = Instant::now();
             let mut rx_count = 0u32;
@@ -235,17 +234,16 @@ pub(crate) fn spawn(
                     continue; // 상대가 걸 차례(타이브레이크)
                 }
                 let now = Instant::now();
-                let (next, wait) = dial_next
-                    .get(&hex)
-                    .copied()
-                    .unwrap_or((now, Duration::from_secs(8)));
+                // 기기별 실패 횟수 → 공용 재시도 정책(sync.retry) — 붙으면 초기화.
+                let (next, fails) = dial_next.get(&hex).copied().unwrap_or((now, 0u32));
                 if now < next {
                     continue;
                 }
                 if dial_next.len() > 256 {
                     dial_next.clear();
                 }
-                dial_next.insert(hex.clone(), (now + wait, (wait * 2).min(DIAL_BACKOFF_MAX)));
+                let wait = crate::sync_cmd::policy().wait(fails + 1);
+                dial_next.insert(hex.clone(), (now + wait, fails + 1));
                 let Some(peer) = nclip_sync::relay::parse_peer_hex(&hex) else {
                     continue;
                 };
