@@ -140,8 +140,19 @@ pub(crate) fn render_runs(
                 if seg.is_empty() {
                     continue;
                 }
+                let sw = font.measure(seg, size);
+                if let Some(b) = run.bg {
+                    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                    surf.fill_rect(
+                        x.round() as i32,
+                        top.round() as i32,
+                        sw.ceil().max(0.0) as u32,
+                        line_h.ceil().max(0.0) as u32,
+                        Color::from_rgb(b[0], b[1], b[2]),
+                    );
+                }
                 font.draw_styled(&mut surf, x, y, size, col, seg, clip, style);
-                x += font.measure(seg, size);
+                x += sw;
             }
         }
         top += line_h;

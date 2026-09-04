@@ -176,6 +176,8 @@ pub(crate) struct MainWin {
     ctx: Option<softbuffer::Context<Rc<Window>>>,
     surface: Option<softbuffer::Surface<Rc<Window>, Rc<Window>>>,
     font: Font,
+    /// ★ 고정폭 글꼴(09-04 — `ui.font_mono` · 터미널/코드 리치 런의 Mono 슬롯). 없으면 기본 글꼴.
+    font_mono: Option<Font>,
     theme: Theme,
     scale: f32,
     /// ★ 검색 입력(09-01 — 사용자 요청 "캐럿·복사/붙여넣기·드래그 선택") — 이식 `TextBox`
@@ -287,6 +289,7 @@ impl MainWin {
             ctx: None,
             surface: None,
             font,
+            font_mono: None,
             theme: Theme::dark(),
             scale: 1.0,
             search: {
@@ -390,6 +393,11 @@ impl MainWin {
     }
 
     /// ★ 최상위 고정 적용(09-02) — 토글 즉시 창 레벨 반영.
+    /// ★ 고정폭 글꼴 주입(09-04) — 셸이 `ui.font_mono`로 만든 것.
+    pub(crate) fn set_mono_font(&mut self, font: Option<Font>) {
+        self.font_mono = font;
+    }
+
     /// ★ 감시 끄기 토글 표시(09-04) — 값은 셸이 갖는다(캡처 차단).
     pub(crate) fn apply_watch_off(&mut self, on: bool) {
         self.watch_off = on;
@@ -1665,7 +1673,9 @@ impl MainWin {
             if let Ok(mut buf) = surface.buffer_mut() {
                 {
                     let mut gfx = Surface::new(&mut buf, size.width as usize, size.height as usize);
-                    let mut dc = RasterCtx::new(&mut gfx, &self.font, self.scale)
+                    let mut fonts = nclip_ctl::raster::FontSet::single(&self.font);
+                    fonts.mono = self.font_mono.as_ref();
+                    let mut dc = RasterCtx::with_font_set(&mut gfx, fonts, self.scale)
                         .with_caret_on(self.caret_phase);
                     self.draw(&mut dc, w, h);
                 }
@@ -1870,7 +1880,11 @@ impl MainWin {
                         let mut xoff = 0i32;
                         for run in line {
                             dc.select_font_sized(
-                                FontSlot::Base,
+                                if run.mono {
+                                    FontSlot::Mono
+                                } else {
+                                    FontSlot::Base
+                                },
                                 run.bold,
                                 nclip_core::richtext::size_delta(em, run.scale),
                             );
@@ -1883,8 +1897,19 @@ impl MainWin {
                                     xoff = (xoff / tab_w + 1) * tab_w;
                                 }
                                 if !seg.is_empty() {
+                                    let sw = dc.text_width(seg);
+                                    // ★ 런 배경(09-04 터미널) — 글자 폭만큼 · 줄 높이.
+                                    if let Some(b) = run.bg {
+                                        dc.fill_rect(
+                                            clip_to(
+                                                Rect::new(cx0 + xoff, ly, sw, px(22.0)),
+                                                content_clip,
+                                            ),
+                                            nclip_ctl::theme::Color::from_rgb(b[0], b[1], b[2]),
+                                        );
+                                    }
                                     dc.text(cx0 + xoff, ly, content_clip, seg, col);
-                                    xoff += dc.text_width(seg);
+                                    xoff += sw;
                                 }
                             }
                         }
@@ -2111,10 +2136,25 @@ impl MainWin {
                                 xoff = (xoff / tab_w + 1) * tab_w;
                             }
                             if !seg.is_empty() {
+                                let sw = dc.text_width(seg);
                                 if in_view {
+                                    if let Some(b) = run.bg {
+                                        dc.fill_rect(
+                                            clip_to(
+                                                Rect::new(
+                                                    inner.x - self.preview_hs + xoff,
+                                                    ly,
+                                                    sw,
+                                                    line_h,
+                                                ),
+                                                inner,
+                                            ),
+                                            nclip_ctl::theme::Color::from_rgb(b[0], b[1], b[2]),
+                                        );
+                                    }
                                     dc.text(inner.x - self.preview_hs + xoff, ly, inner, seg, col);
                                 }
-                                xoff += dc.text_width(seg);
+                                xoff += sw;
                             }
                         }
                     }
@@ -2947,6 +2987,15 @@ fn draw_tooltip(
         label,
         th.chrome_bg.lerp(th.text, g),
     );
+}
+
+/// 사각형을 클립에 맞춘다(배경 채우기용 — `fill_rect`는 클립 인자가 없다).
+pub(crate) fn clip_to(r: Rect, c: Rect) -> Rect {
+    let x0 = r.x.max(c.x);
+    let y0 = r.y.max(c.y);
+    let x1 = (r.x + r.w).min(c.x + c.w);
+    let y1 = (r.y + r.h).min(c.y + c.h);
+    Rect::new(x0, y0, (x1 - x0).max(0), (y1 - y0).max(0))
 }
 
 /// 벽시계 ms — hover 의도의 시계(셸 박동과 같은 원천).

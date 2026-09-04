@@ -302,6 +302,16 @@ pub(crate) const REGISTRY: &[Entry] = &[
         },
         "ui.font_family",
     ),
+    // ★ 고정폭 글꼴(09-04 사용자 — 터미널 복사본을 색·글꼴 그대로): 비면 Nerd Font → D2Coding → … 후보 순.
+    e(
+        Msg::CatAppearance,
+        Msg::SetMonoFont,
+        Msg::SetMonoFontDesc,
+        SettingKind::FontFace {
+            family_key: "ui.font_mono",
+        },
+        "ui.font_mono",
+    ),
     // ★ 이미지 썸네일(08-28 사용자 요청) — 기본 켜짐. 끄면 "[이미지] W×H"만.
     e(
         Msg::CatAppearance,

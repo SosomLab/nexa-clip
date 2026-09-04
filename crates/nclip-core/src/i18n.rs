@@ -196,6 +196,9 @@ pub enum Msg {
     /// UI 글꼴 설정(09-01 사용자 요청 — JetBrains Mono 등 시스템 글꼴 지정).
     SetUiFont,
     SetUiFontDesc,
+    /// ★ 고정폭 글꼴(09-04 — 터미널/코드 리치 런).
+    SetMonoFont,
+    SetMonoFontDesc,
     /// 보관 기간(T-13 · 09-01).
     SetMaxAge,
     SetMaxAgeDesc,
@@ -600,6 +603,13 @@ impl Msg {
                 "글꼴 이름(예: JetBrains Mono) · 비우면 시스템 기본 · 재시작 후 적용",
                 "字体名称（例：JetBrains Mono）。空 = 系统默认。重启后生效",
                 "フォント名（例: JetBrains Mono）。空欄 = システム既定。再起動後に適用",
+            ],
+            Msg::SetMonoFont => ["Monospace font", "고정폭 글꼴", "等宽字体", "等幅フォント"],
+            Msg::SetMonoFontDesc => [
+                "Used for terminal/code copies (colors kept). Empty = Nerd Font → D2Coding → Consolas… first installed. Applies after restart",
+                "터미널·코드 복사본(색 유지)에 쓰는 글꼴 · 비우면 Nerd Font → D2Coding → Consolas… 설치된 첫 후보 · 재시작 후 적용",
+                "用于终端/代码副本（保留颜色）。空 = Nerd Font → D2Coding → Consolas… 首个已安装。重启后生效",
+                "ターミナル/コードのコピー（色保持）に使用。空欄 = Nerd Font → D2Coding → Consolas… 最初の導入済み。再起動後に適用",
             ],
             Msg::SystemDefaultFont => ["System default", "시스템 기본", "系统默认", "システム標準"],
             Msg::CatGeneral => ["General", "일반", "常规", "一般"],
@@ -1158,7 +1168,7 @@ mod tests {
     use super::*;
 
     /// 카탈로그 전수 — 새 `Msg`를 더하면 여기도 더한다(빈칸 검사가 그걸 강제한다).
-    const ALL_MSG: [Msg; 214] = [
+    const ALL_MSG: [Msg; 216] = [
         Msg::AppName,
         Msg::SearchPlaceholder,
         Msg::EmptyHistory,
@@ -1207,6 +1217,8 @@ mod tests {
         Msg::ListEmpty,
         Msg::SetUiFont,
         Msg::SetUiFontDesc,
+        Msg::SetMonoFont,
+        Msg::SetMonoFontDesc,
         Msg::SetMaxAge,
         Msg::SetMaxAgeDesc,
         Msg::SetMaxTotal,

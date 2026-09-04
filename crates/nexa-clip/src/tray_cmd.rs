@@ -1317,6 +1317,8 @@ pub(crate) fn run() {
 
     // 메인창 폰트 — 팝업과 같은 이유로 자기 것을 따로 든다(mmap 정적 데이터).
     let main_font = font.clone();
+    // ★ 고정폭 글꼴(09-04) — 터미널/코드 리치 런의 Mono 슬롯(없으면 주 글꼴).
+    let mono_font = crate::conf::load_mono_font(&conf, &font);
     // ★ M2 동기화 기반(09-03) — 켜져 있으면 릴레이 접속 스레드 상주(상태는 proxy로 통지).
     crate::sync_cmd::spawn_if_enabled(&conf, el.create_proxy());
 
@@ -1347,6 +1349,8 @@ pub(crate) fn run() {
         atop_effective,
         watch_off: false,
     };
+    shell.main.set_mono_font(mono_font.clone());
+    shell.popup.set_mono_font(mono_font);
     // ★ 복원 직후 트레이 메뉴·툴팁 갱신(09-01 사용자 실기 "우클릭에 최근이 안 보임") —
     //   spawn 때는 빈 내용이었고 첫 캡처까지는 아무도 불러주지 않았다.
     shell.refresh_tray();

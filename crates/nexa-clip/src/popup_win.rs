@@ -89,6 +89,8 @@ pub(crate) struct Popup {
     ctx: Option<softbuffer::Context<Rc<Window>>>,
     surface: Option<softbuffer::Surface<Rc<Window>, Rc<Window>>>,
     font: Font,
+    /// ★ 고정폭 글꼴(09-04) — 리치 런 Mono 슬롯.
+    font_mono: Option<Font>,
     theme: Theme,
     scale: f32,
     /// ★ 검색 입력(09-02 — "메인 검색창의 모든 기능을 팝업에도") — 이식 `TextBox`
@@ -199,12 +201,18 @@ pub(crate) fn kind_glyph(kind: ClipKind) -> &'static str {
 }
 
 impl Popup {
+    /// ★ 고정폭 글꼴 주입(09-04).
+    pub(crate) fn set_mono_font(&mut self, font: Option<Font>) {
+        self.font_mono = font;
+    }
+
     pub(crate) fn new(font: Font) -> Self {
         Self {
             window: None,
             ctx: None,
             surface: None,
             font,
+            font_mono: None,
             theme: Theme::dark(),
             scale: 1.0,
             search: {
@@ -1003,8 +1011,10 @@ impl Popup {
         {
             let mut gfx = Surface::new(&mut buf, size.width as usize, size.height as usize);
             // ★ 배율은 레이아웃과 같은 값(08-27 macOS 회귀의 교훈).
-            let mut dc =
-                RasterCtx::new(&mut gfx, &self.font, self.scale).with_caret_on(self.caret_phase);
+            let mut fonts = nclip_ctl::raster::FontSet::single(&self.font);
+            fonts.mono = self.font_mono.as_ref();
+            let mut dc = RasterCtx::with_font_set(&mut gfx, fonts, self.scale)
+                .with_caret_on(self.caret_phase);
             draw(
                 &mut dc,
                 iw,
@@ -1187,7 +1197,11 @@ fn draw(
                     let mut xoff = 0i32;
                     for run in line {
                         dc.select_font_sized(
-                            FontSlot::Base,
+                            if run.mono {
+                                FontSlot::Mono
+                            } else {
+                                FontSlot::Base
+                            },
                             run.bold,
                             nclip_core::richtext::size_delta(em, run.scale),
                         );
@@ -1200,8 +1214,18 @@ fn draw(
                                 xoff = (xoff / tab_w + 1) * tab_w;
                             }
                             if !seg.is_empty() {
+                                let sw = dc.text_width(seg);
+                                if let Some(b) = run.bg {
+                                    dc.fill_rect(
+                                        crate::main_win::clip_to(
+                                            Rect::new(cx0 + xoff, ly, sw, px(22.0)),
+                                            content_clip,
+                                        ),
+                                        nclip_ctl::theme::Color::from_rgb(b[0], b[1], b[2]),
+                                    );
+                                }
                                 dc.text(cx0 + xoff, ly, content_clip, seg, col);
-                                xoff += dc.text_width(seg);
+                                xoff += sw;
                             }
                         }
                     }

@@ -78,6 +78,11 @@ impl Font {
     }
 
     /// 글자가 있는 첫 보 — 없으면 주 폰트(.notdef 표시가 정직하다).
+    /// ★ 다른 글꼴의 얼굴 전부를 폴백으로 잇는다(09-04 — 고정폭 글꼴에 주 글꼴 체인을 통째로).
+    pub fn push_fallback_font(&mut self, other: &Font) {
+        self.faces.extend(other.faces.iter().cloned());
+    }
+
     fn face_for(&self, ch: char) -> &FontRef<'static> {
         self.faces
             .iter()

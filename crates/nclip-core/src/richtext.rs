@@ -17,7 +17,10 @@
 //! - **글자 배율**: `font-size` 상대값(본문 10pt 기준 ±15% 안은 1.0 · 0.8~1.3으로 묶음).
 //! - `<img>`: `data:image/…;base64` 원본 바이트를 [`Run::image`]로(Outlook은 표를 이렇게 넣는다 — 09-04 사용자
 //!   "붙여넣기는 이미지가 나오니 미리보기도"). 텍스트는 `[image]`(행·폴백). 디코드는 앱(격리 워커) 몫.
-//! - 표 구조·배경색은 아직 밖.
+//! - ★ 터미널 복사(09-04 사용자 — Windows Terminal "복사할 텍스트 형식 = HTML"): 블록 `white-space:pre` 존중 ·
+//!   `font-family`가 고정폭이면 [`Run::mono`](Mono 슬롯) · `background-color` → [`Run::bg`] · 기울임.
+//! - ★ ANSI SGR([`ansi_runs_of`]): 평문에 `ESC[…m`이 살아 있으면(원시 로그) 색·굵게·기울임을 런으로.
+//! - 표 구조는 아직 밖.
 
 /// 스타일 런 — 같은 스타일이 이어지는 텍스트 조각.
 #[derive(Clone, PartialEq, Debug)]
@@ -38,6 +41,10 @@ pub struct Run {
     /// ★ 인라인 이미지 원본 바이트(PNG/JPEG — `data:` URI에서 풀어 둔 것). 그리는 쪽이 디코드해 그리고,
     /// 못 그리면 `text`(`[image]`)를 쓴다. `Arc` = 행·미리보기가 런을 복제해도 바이트는 한 벌.
     pub image: Option<std::sync::Arc<Vec<u8>>>,
+    /// ★ 고정폭(09-04 — 터미널·코드): 그리는 쪽이 Mono 슬롯 글꼴을 쓴다.
+    pub mono: bool,
+    /// ★ 런 배경색(09-04 — 터미널 검정 바탕 · 형광펜).
+    pub bg: Option<[u8; 3]>,
 }
 
 impl Default for Run {
@@ -50,6 +57,8 @@ impl Default for Run {
             indent: 0.0,
             scale: 1.0,
             image: None,
+            mono: false,
+            bg: None,
         }
     }
 }
@@ -91,6 +100,10 @@ struct Style {
     sym: Sym,
     /// ★ 2단: 인라인 `font-size` 배율 — 0.0 = 미지정(블록 값을 따른다).
     scale: f32,
+    /// ★ 고정폭 글꼴명(터미널·코드) — Mono 슬롯.
+    mono: bool,
+    /// ★ 배경색.
+    bg: Option<[u8; 3]>,
 }
 
 /// 블록(문단·목록·항목) — 들여쓰기·배율·목록 번호를 쌓는다.
@@ -102,6 +115,21 @@ struct Block {
     scale: f32,
     /// `<ol>`이면 번호 카운터.
     ordered: Option<u32>,
+    /// ★ 블록 `white-space: pre*`(터미널 HTML은 DIV에 건다) — 자식 텍스트의 공백·개행 보존.
+    pre: bool,
+    /// ★ 블록 고정폭 글꼴 · 배경색(부모 상속).
+    mono: bool,
+    bg: Option<[u8; 3]>,
+}
+
+/// 블록 태그 `style`에서 읽은 값 묶음.
+#[derive(Default)]
+struct BlockAttrs {
+    indent: Option<f32>,
+    scale: Option<f32>,
+    pre: Option<bool>,
+    mono: Option<bool>,
+    bg: Option<[u8; 3]>,
 }
 
 /// 표현 목록에서 HTML을 찾아 줄×런으로 푼다 — 없거나 못 풀면 `None`(평문 폴백).
@@ -109,16 +137,30 @@ struct Block {
 /// `max_lines` 줄에서 끊는다(목록 행은 몇 줄만 필요 — 거대 문서 방어).
 #[must_use]
 pub fn html_runs_of(reps: &[crate::RawRep], max_lines: usize) -> Option<Vec<Vec<Run>>> {
-    let r = reps
+    let Some(r) = reps
         .iter()
-        .find(|r| matches!(r.format.as_str(), "CF_HTML" | "HTML Format" | "text/html"))?;
+        .find(|r| matches!(r.format.as_str(), "CF_HTML" | "HTML Format" | "text/html"))
+    else {
+        // ★ HTML이 없으면 평문의 ANSI SGR(원시 로그 · 09-04) — ESC가 없으면 None.
+        let best = reps
+            .iter()
+            .filter_map(|r| crate::capture::plain_rank(&r.format).map(|k| (k, r)))
+            .min_by_key(|(k, _)| *k)?;
+        let text = crate::capture::decode_plain(&best.1.format, &best.1.data)?;
+        return ansi_runs_of(&text, max_lines);
+    };
     let html = core::str::from_utf8(&r.data).ok()?;
     let (runs, structured) = parse(fragment_of(html), max_lines);
     // 색·서식이 하나도 없으면 평문과 같다 — 굳이 리치 경로를 태우지 않는다.
     // ★ 2단: 목록 불릿·들여쓰기·심볼 치환·이미지 자리표시는 평문이 잃은 구조라 리치로 친다.
     let styled = structured
         || runs.iter().flatten().any(|run| {
-            run.color.is_some() || run.bold || run.italic || (run.scale - 1.0).abs() > f32::EPSILON
+            run.color.is_some()
+                || run.bold
+                || run.italic
+                || run.mono
+                || run.bg.is_some()
+                || (run.scale - 1.0).abs() > f32::EPSILON
         });
     (styled && !runs.is_empty()).then_some(runs)
 }
@@ -166,6 +208,7 @@ fn parse(frag: &str, max_lines: usize) -> (Vec<Vec<Run>>, bool) {
                 } else {
                     blocks.last().map_or(1.0, |b| b.scale)
                 };
+                let blk = blocks.last();
                 line.push(Run {
                     text: core::mem::take(&mut text),
                     color: cur.color,
@@ -174,6 +217,8 @@ fn parse(frag: &str, max_lines: usize) -> (Vec<Vec<Run>>, bool) {
                     indent,
                     scale,
                     image: None,
+                    mono: cur.mono || blk.is_some_and(|b| b.mono),
+                    bg: cur.bg.or(blk.and_then(|b| b.bg)),
                 });
             }
         };
@@ -241,14 +286,21 @@ fn parse(frag: &str, max_lines: usize) -> (Vec<Vec<Run>>, bool) {
                     if !is_list {
                         new_line!();
                     }
-                    let (indent, scale) = block_attrs(tag);
-                    let parent_scale = blocks.last().map_or(1.0, |b| b.scale);
+                    let ba = block_attrs(tag);
+                    let parent = blocks.last();
+                    let (parent_scale, parent_pre, parent_mono, parent_bg) = parent
+                        .map_or((1.0, false, false, None), |b| {
+                            (b.scale, b.pre, b.mono, b.bg)
+                        });
                     blocks.push(Block {
                         name: name.clone(),
                         // 목록 기본 들여쓰기 1.5em(브라우저 40px에 해당 — 행 폭이 좁아 조금 줄인다).
-                        indent: indent.unwrap_or(if is_list { 1.5 } else { 0.0 }),
-                        scale: scale.unwrap_or(parent_scale),
+                        indent: ba.indent.unwrap_or(if is_list { 1.5 } else { 0.0 }),
+                        scale: ba.scale.unwrap_or(parent_scale),
                         ordered: (name == "ol").then_some(0),
+                        pre: ba.pre.unwrap_or(parent_pre),
+                        mono: ba.mono.unwrap_or(parent_mono),
+                        bg: ba.bg.or(parent_bg),
                     });
                     if name == "li" {
                         marks += 1;
@@ -308,16 +360,18 @@ fn parse(frag: &str, max_lines: usize) -> (Vec<Vec<Run>>, bool) {
         } else {
             // 텍스트 노드 — 엔티티 해제 + 공백 붕괴(개행 포함 · 탭은 보존).
             let next = frag[i..].find('<').map_or(frag.len(), |n| i + n);
+            // pre = 인라인(`<pre>`·span white-space) ∨ 블록(터미널 HTML의 DIV).
+            let pre = cur.pre || blocks.last().is_some_and(|b| b.pre);
             for ch in decode_entities(&frag[i..next]).chars() {
                 match ch {
                     '\r' => {}
                     // ★ pre 구간: 개행 = 줄 바꿈 · 공백 그대로(09-03 — Sublime계 HTML).
-                    '\n' if cur.pre => {
+                    '\n' if pre => {
                         flush!();
                         lines.push(Vec::new());
                         last_ws = true;
                     }
-                    ' ' if cur.pre => {
+                    ' ' if pre => {
                         text.push(' ');
                         last_ws = false;
                     }
@@ -529,13 +583,14 @@ fn scale_of(v: &str) -> Option<f32> {
     })
 }
 
-/// 블록 태그의 `style`에서 (들여쓰기 em, 배율) — 들여쓰기 = margin-left(단축형 포함) + padding-left + text-indent.
-fn block_attrs(tag: &str) -> (Option<f32>, Option<f32>) {
+/// 블록 태그의 `style` — 들여쓰기(margin-left 단축형 포함 + padding-left + text-indent) · 배율 · pre · 고정폭 · 배경.
+fn block_attrs(tag: &str) -> BlockAttrs {
     let low = tag.to_ascii_lowercase();
+    let mut out = BlockAttrs::default();
     let Some(v) = attr_value(&low, tag, "style") else {
-        return (None, None);
+        return out;
     };
-    let (mut indent, mut has, mut scale) = (0.0f32, false, None);
+    let (mut indent, mut has) = (0.0f32, false);
     for decl in v.split(';') {
         let Some((k, val)) = decl.split_once(':') else {
             continue;
@@ -561,11 +616,243 @@ fn block_attrs(tag: &str) -> (Option<f32>, Option<f32>) {
                     has = true;
                 }
             }
-            "font-size" => scale = scale_of(val),
+            "font-size" => out.scale = scale_of(val),
+            "white-space" => {
+                let v = val.to_ascii_lowercase();
+                out.pre = Some(v.starts_with("pre"));
+            }
+            "font-family" => out.mono = Some(is_mono_family(val)),
+            "background-color" | "background" => {
+                if let Some(c) = bg_color_of(val) {
+                    out.bg = Some(c);
+                }
+            }
             _ => {}
         }
     }
-    (has.then_some(indent.max(0.0)), scale)
+    out.indent = has.then_some(indent.max(0.0));
+    out
+}
+
+/// 고정폭 글꼴명인가 — 터미널·코드 편집기가 내보내는 이름들.
+fn is_mono_family(v: &str) -> bool {
+    let low = v.to_ascii_lowercase().replace("&quot;", "");
+    const HINTS: [&str; 16] = [
+        "mono",
+        "consolas",
+        "courier",
+        "cascadia",
+        "fira code",
+        "source code",
+        "menlo",
+        "d2coding",
+        "nerd font",
+        "hack",
+        "inconsolata",
+        "iosevka",
+        "nanum gothic coding",
+        "nanumgothiccoding",
+        "lucida console",
+        "terminal",
+    ];
+    HINTS.iter().any(|h| low.contains(h))
+}
+
+/// `background`/`background-color` 값에서 색 토큰 하나(`#rgb` · `rgb()` · 단축형 첫 색). `transparent`·`none`은 None.
+fn bg_color_of(v: &str) -> Option<[u8; 3]> {
+    v.split_whitespace().find_map(parse_color)
+}
+
+/// ★ ANSI SGR(`ESC[…m`) → 줄×런(09-04 사용자 — 원시 로그). ESC가 없으면 `None`(평문 경로).
+///
+/// 지원: 0 리셋 · 1 굵게 · 3 기울임 · 22/23 해제 · 30~37/90~97 전경 · 40~47/100~107 배경 · 39/49 기본 ·
+/// 38;5;n / 48;5;n(256색) · 38;2;r;g;b / 48;2;r;g;b(트루컬러). 그 밖의 CSI·OSC는 조용히 버린다.
+/// 팔레트 = Windows Terminal Campbell(기본 색 16).
+#[must_use]
+pub fn ansi_runs_of(text: &str, max_lines: usize) -> Option<Vec<Vec<Run>>> {
+    if !text.contains("\x1b[") {
+        return None;
+    }
+    let mut lines: Vec<Vec<Run>> = vec![Vec::new()];
+    let (mut fg, mut bg, mut bold, mut italic) = (None::<[u8; 3]>, None::<[u8; 3]>, false, false);
+    let mut buf = String::new();
+    let chars: Vec<char> = text.chars().collect();
+    let mut i = 0usize;
+    macro_rules! flush {
+        () => {
+            if !buf.is_empty() {
+                if let Some(line) = lines.last_mut() {
+                    line.push(Run {
+                        text: core::mem::take(&mut buf),
+                        color: fg,
+                        bold,
+                        italic,
+                        mono: true,
+                        bg,
+                        ..Run::default()
+                    });
+                }
+            }
+        };
+    }
+    while i < chars.len() && lines.len() <= max_lines {
+        let c = chars[i];
+        match c {
+            '\x1b' => {
+                match chars.get(i + 1) {
+                    Some('[') => {
+                        // CSI: 매개변수 … 종결 바이트(0x40~0x7E).
+                        let start = i + 2;
+                        let mut j = start;
+                        while j < chars.len() && !('\u{40}'..='\u{7e}').contains(&chars[j]) {
+                            j += 1;
+                        }
+                        if j < chars.len() && chars[j] == 'm' {
+                            flush!();
+                            let params: String = chars[start..j].iter().collect();
+                            apply_sgr(&params, &mut fg, &mut bg, &mut bold, &mut italic);
+                        }
+                        i = j + 1;
+                    }
+                    Some(']') => {
+                        // OSC: BEL 또는 ESC \ 까지.
+                        let mut j = i + 2;
+                        while j < chars.len()
+                            && chars[j] != '\u{7}'
+                            && !(chars[j] == '\x1b' && chars.get(j + 1) == Some(&'\\'))
+                        {
+                            j += 1;
+                        }
+                        i = if j < chars.len() && chars[j] == '\x1b' {
+                            j + 2
+                        } else {
+                            j + 1
+                        };
+                    }
+                    _ => i += 2,
+                }
+            }
+            '\r' => i += 1,
+            '\n' => {
+                flush!();
+                lines.push(Vec::new());
+                i += 1;
+            }
+            c => {
+                buf.push(c);
+                i += 1;
+            }
+        }
+    }
+    flush!();
+    while lines.last().is_some_and(Vec::is_empty) && lines.len() > 1 {
+        lines.pop();
+    }
+    lines.truncate(max_lines);
+    Some(lines)
+}
+
+fn apply_sgr(
+    params: &str,
+    fg: &mut Option<[u8; 3]>,
+    bg: &mut Option<[u8; 3]>,
+    bold: &mut bool,
+    italic: &mut bool,
+) {
+    let ps: Vec<u16> = params
+        .split([';', ':'])
+        .map(|p| p.trim().parse::<u16>().unwrap_or(0))
+        .collect();
+    let ps = if ps.is_empty() { vec![0] } else { ps };
+    let mut k = 0usize;
+    while k < ps.len() {
+        let p = ps[k];
+        match p {
+            0 => {
+                *fg = None;
+                *bg = None;
+                *bold = false;
+                *italic = false;
+            }
+            1 => *bold = true,
+            3 => *italic = true,
+            22 => *bold = false,
+            23 => *italic = false,
+            30..=37 => *fg = Some(ansi_palette(p - 30)),
+            90..=97 => *fg = Some(ansi_palette(p - 90 + 8)),
+            40..=47 => *bg = Some(ansi_palette(p - 40)),
+            100..=107 => *bg = Some(ansi_palette(p - 100 + 8)),
+            39 => *fg = None,
+            49 => *bg = None,
+            38 | 48 => {
+                let target = if p == 38 { &mut *fg } else { &mut *bg };
+                match ps.get(k + 1) {
+                    Some(5) => {
+                        if let Some(&n) = ps.get(k + 2) {
+                            *target = Some(ansi_256(n));
+                        }
+                        k += 2;
+                    }
+                    Some(2) => {
+                        if let (Some(&r), Some(&g), Some(&b)) =
+                            (ps.get(k + 2), ps.get(k + 3), ps.get(k + 4))
+                        {
+                            *target = Some([r.min(255) as u8, g.min(255) as u8, b.min(255) as u8]);
+                        }
+                        k += 4;
+                    }
+                    _ => {}
+                }
+            }
+            _ => {}
+        }
+        k += 1;
+    }
+}
+
+/// 기본 16색 — Windows Terminal Campbell.
+fn ansi_palette(i: u16) -> [u8; 3] {
+    const P: [[u8; 3]; 16] = [
+        [0x0C, 0x0C, 0x0C],
+        [0xC5, 0x0F, 0x1F],
+        [0x13, 0xA1, 0x0E],
+        [0xC1, 0x9C, 0x00],
+        [0x00, 0x37, 0xDA],
+        [0x88, 0x17, 0x98],
+        [0x3A, 0x96, 0xDD],
+        [0xCC, 0xCC, 0xCC],
+        [0x76, 0x76, 0x76],
+        [0xE7, 0x48, 0x56],
+        [0x16, 0xC6, 0x0C],
+        [0xF9, 0xF1, 0xA5],
+        [0x3B, 0x78, 0xFF],
+        [0xB4, 0x00, 0x9E],
+        [0x61, 0xD6, 0xD6],
+        [0xF2, 0xF2, 0xF2],
+    ];
+    P[(i as usize).min(15)]
+}
+
+/// 256색: 0~15 기본 · 16~231 6×6×6 큐브 · 232~255 회색.
+fn ansi_256(n: u16) -> [u8; 3] {
+    match n {
+        0..=15 => ansi_palette(n),
+        16..=231 => {
+            let v = n - 16;
+            let step = |x: u16| -> u8 {
+                if x == 0 {
+                    0
+                } else {
+                    (55 + x * 40) as u8
+                }
+            };
+            [step(v / 36), step((v / 6) % 6), step(v % 6)]
+        }
+        _ => {
+            let g = (8 + (n.min(255) - 232) * 10) as u8;
+            [g, g, g]
+        }
+    }
 }
 
 /// 태그 이름(소문자) + 닫는 태그 여부.
@@ -618,8 +905,16 @@ fn apply_attrs(tag: &str, st: &mut Style) {
                         st.italic = false;
                     }
                 }
-                // ★ 2단: 심볼 글꼴 · 인라인 글자 배율.
-                "font-family" => st.sym = sym_of(val),
+                // ★ 2단: 심볼 글꼴 · 인라인 글자 배율 · ★ 고정폭 · 배경(09-04 터미널).
+                "font-family" => {
+                    st.sym = sym_of(val);
+                    st.mono = is_mono_family(val);
+                }
+                "background-color" | "background" => {
+                    if let Some(c) = bg_color_of(val) {
+                        st.bg = Some(c);
+                    }
+                }
                 "font-size" => {
                     if let Some(sc) = scale_of(val) {
                         st.scale = sc;
@@ -869,6 +1164,56 @@ mod tests {
             .iter()
             .skip(1)
             .all(|r| r.indent.abs() < f32::EPSILON));
+    }
+
+    /// ★ 터미널 HTML(09-04 Windows Terminal 실기 축약본): DIV pre + 고정폭 글꼴 + 배경 · 공백 열 보존 · 기울임.
+    #[test]
+    fn terminal_html_keeps_columns_mono_and_bg() {
+        let html = concat!(
+            "<!--StartFragment --><DIV STYLE=\"display:inline-block;white-space:pre;background-color:#0C0C0C;",
+            "font-family:'D2Coding, JetBrainsMono Nerd Font',monospace;font-size:12pt;padding:4px;\">",
+            "<SPAN STYLE=\"color:#16C60C;background-color:#0C0C0C;\">Mode      Last</SPAN>",
+            "<SPAN STYLE=\"color:#16C60C;background-color:#0C0C0C;font-style:italic;\">   Length</SPAN><BR>",
+            "<SPAN STYLE=\"color:#CCCCCC;background-color:#0C0C0C;\">d----   2026</SPAN></DIV><!--EndFragment-->",
+        );
+        let runs = html_runs_of(&[rep("HTML Format", html)], 9).expect("리치 런");
+        assert_eq!(runs.len(), 2, "{runs:?}");
+        assert_eq!(runs[0][0].text, "Mode      Last", "pre 블록 — 공백 열 보존");
+        assert!(runs[0][0].mono, "고정폭");
+        assert_eq!(runs[0][0].bg, Some([0x0C, 0x0C, 0x0C]));
+        assert_eq!(runs[0][0].color, Some([0x16, 0xC6, 0x0C]));
+        assert!(runs[0][1].italic);
+        assert_eq!(runs[1][0].text, "d----   2026");
+        assert!(is_mono_family("Consolas") && is_mono_family("&quot;Cascadia Mono&quot;"));
+        assert!(!is_mono_family("맑은 고딕"));
+    }
+
+    /// ★ ANSI SGR — 16색·굵게·256·트루컬러·리셋·OSC 스킵 · ESC 없으면 None.
+    #[test]
+    fn ansi_sgr_to_runs() {
+        assert!(ansi_runs_of("plain", 3).is_none());
+        let t = "\x1b[1;32mOK\x1b[0m done\n\x1b[38;5;196mred\x1b[48;2;1;2;3m bg\x1b[0m\x1b]0;title\x07x";
+        let runs = ansi_runs_of(t, 9).expect("ansi");
+        assert_eq!(runs.len(), 2, "{runs:?}");
+        assert_eq!(runs[0][0].text, "OK");
+        assert!(runs[0][0].bold && runs[0][0].mono);
+        assert_eq!(runs[0][0].color, Some(ansi_palette(2)));
+        assert_eq!(runs[0][1].text, " done");
+        assert_eq!(runs[0][1].color, None);
+        assert_eq!(runs[1][0].color, Some(ansi_256(196)));
+        assert_eq!(runs[1][1].bg, Some([1, 2, 3]));
+        assert_eq!(runs[1][2].text, "x", "OSC는 버린다");
+        assert_eq!(ansi_256(231), [255, 255, 255]);
+        assert_eq!(ansi_256(232), [8, 8, 8]);
+        // reps 경로 — HTML 없고 평문에 ESC.
+        let reps = [crate::RawRep {
+            format: "text/plain".into(),
+            data: b"\x1b[31mE\x1b[0m".to_vec(),
+        }];
+        assert_eq!(
+            html_runs_of(&reps, 3).expect("ansi 폴백")[0][0].color,
+            Some(ansi_palette(1))
+        );
     }
 
     /// base64·data: URI — PNG 시그니처 왕복 · 비이미지/비base64는 None · 잡문자는 None.

@@ -229,6 +229,7 @@ General 안내문 그대로:
 | `ui.tray_show_recent` | Checkbox | on | ★ 트레이 아이콘 옆 최근 항목 표시 | M |
 | `ui.dock_icon` | Checkbox | on | ★ **Dock 아이콘 표시**(mac 전용 — 끔 = Accessory·메뉴바에서만 · 09-04) | N |
 | `ui.font.*` | 폰트 슬롯 | — | 글꼴·크기(beep 슬롯 구조 그대로) | B |
+| `ui.font_mono` | FontFace | (비움) | ★ **고정폭 글꼴**(09-04) — 터미널·코드 리치 런의 Mono 슬롯 · 비우면 Nerd Font → D2Coding → JetBrains Mono → Cascadia → Consolas → Menlo → DejaVu 순 첫 설치본 · 주 글꼴에도 폴백으로 붙어 PUA 아이콘 글리프가 산다 · 재시작 후 적용 | N |
 
 ### 3-8. 검색 (Search)
 

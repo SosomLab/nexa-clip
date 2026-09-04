@@ -718,7 +718,10 @@ mod tests {
         hi.settle(3_050);
         assert_eq!(hi.take_due(3_100), None);
         assert!(hi.is_waiting(3_100));
-        assert_eq!(hi.take_due(3_050 + HoverIntent::<usize>::SETTLE_MS), Some(9));
+        assert_eq!(
+            hi.take_due(3_050 + HoverIntent::<usize>::SETTLE_MS),
+            Some(9)
+        );
         hi.set(1, 4_000);
         hi.clear();
         assert_eq!(hi.take_due(5_000), None);

@@ -358,6 +358,12 @@ pub(crate) fn load_ui_font(conf: &Settings) -> Option<nclip_gfx::Font> {
     let mut names = Vec::new();
     for (data, idx, name) in nclip_plat::font::symbol_fallback_fonts() {
         if font.push_fallback(data, idx).is_ok() {
+            names.push(name.to_string());
+        }
+    }
+    // ★ 고정폭(Nerd Font) 폴백(09-04) — 평문 행에서도 터미널 아이콘 글리프(PUA)가 두부가 되지 않게.
+    if let Some((d, i, name)) = mono_family(conf) {
+        if font.push_fallback(d, i).is_ok() {
             names.push(name);
         }
     }
@@ -373,6 +379,50 @@ pub(crate) fn load_ui_font(conf: &Settings) -> Option<nclip_gfx::Font> {
         );
     }
     Some(font)
+}
+
+/// ★ 고정폭 글꼴 후보(09-04 — 터미널/코드 리치 런): `ui.font_mono`가 있으면 그것, 없으면 OS별 후보 중 첫 설치본.
+/// Nerd Font를 앞에 둔다 — 터미널 복사본의 아이콘 글리프(PUA)가 여기서만 산다.
+fn mono_family(conf: &Settings) -> Option<(&'static [u8], u32, String)> {
+    let want = conf.state.get("ui.font_mono").trim().to_string();
+    if !want.is_empty() {
+        return match nclip_plat::font::find_font_by_family(&want) {
+            Some((d, i)) => Some((d, i, want)),
+            None => {
+                eprintln!("⚠️ 고정폭 글꼴 '{want}'을(를) 못 찾았습니다 — 기본 후보로 대신합니다");
+                mono_default()
+            }
+        };
+    }
+    mono_default()
+}
+
+fn mono_default() -> Option<(&'static [u8], u32, String)> {
+    const CANDIDATES: &[&str] = &[
+        "JetBrainsMono Nerd Font",
+        "JetBrainsMono NF",
+        "CaskaydiaCove Nerd Font",
+        "D2Coding",
+        "JetBrains Mono",
+        "Cascadia Mono",
+        "Consolas",
+        "Menlo",
+        "SF Mono",
+        "DejaVu Sans Mono",
+        "Noto Sans Mono",
+    ];
+    CANDIDATES.iter().find_map(|n| {
+        nclip_plat::font::find_font_by_family(n).map(|(d, i)| (d, i, (*n).to_string()))
+    })
+}
+
+/// ★ 고정폭 글꼴 슬롯(09-04) — 주 글꼴을 폴백으로 붙여 한글·기호는 주 글꼴이 받는다. 없으면 None(= 주 글꼴).
+pub(crate) fn load_mono_font(conf: &Settings, ui: &nclip_gfx::Font) -> Option<nclip_gfx::Font> {
+    let (d, i, name) = mono_family(conf)?;
+    let mut f = nclip_gfx::Font::from_static(d, i).ok()?;
+    f.push_fallback_font(ui);
+    println!("고정폭 글꼴: {name} (+주 글꼴 폴백)");
+    Some(f)
 }
 
 /// ★ `app.lang` 적용(09-02 "재시작 없는 설정") — 부팅·변경 즉시 전역 언어를 바꾼다.
