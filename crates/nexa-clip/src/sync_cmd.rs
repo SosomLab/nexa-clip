@@ -166,8 +166,14 @@ static LAST_SENT: std::sync::Mutex<Option<(u64, std::time::Instant)>> = std::syn
 const PEER_PING: Duration = Duration::from_secs(15);
 const PEER_DEAD: Duration = Duration::from_secs(45);
 
-/// ★ 피어별 송신 채널(09-04) — 세션 스레드가 등록·해제, `broadcast`가 밀어 넣는다.
-type PeerTx = std::sync::mpsc::Sender<std::sync::Arc<Vec<u8>>>;
+/// 세션 스레드에 미는 명령(09-05) — 항목 페이로드(밀리면 최신 하나만) · ★ 이름 재소개(Hello 재전송).
+pub(crate) enum PeerCmd {
+    Item(std::sync::Arc<Vec<u8>>),
+    Hello,
+}
+
+/// ★ 피어별 송신 채널(09-04) — 세션 스레드가 등록·해제, `broadcast`/`announce_name`이 밀어 넣는다.
+type PeerTx = std::sync::mpsc::Sender<PeerCmd>;
 static PEER_TX: std::sync::Mutex<Vec<(String, PeerTx)>> = std::sync::Mutex::new(Vec::new());
 static ITEM_SEQ: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
 
@@ -197,7 +203,20 @@ pub(crate) fn broadcast(payload: Vec<u8>) -> usize {
     };
     g.iter()
         .filter(|(hex, _)| crate::devices::is_approved(hex) && crate::devices::is_online(hex))
-        .filter(|(_, tx)| tx.send(arc.clone()).is_ok())
+        .filter(|(_, tx)| tx.send(PeerCmd::Item(arc.clone())).is_ok())
+        .count()
+}
+
+/// ★ 기기 이름 재소개(09-05 사용자 — "저장 시점에 바뀐 이름을 연결된 기기에 다시 소개"):
+///   지금 살아 있는 **모든** 세션(릴레이·LAN · 승인 여부 무관 — 미승인 기기도 최신 이름을 보고
+///   승인할 수 있어야 한다)에 Hello를 다시 보낸다. 받는 쪽은 PeerId 기준으로 이름을 갱신한다.
+///   반환 = 요청을 넣은 세션 수. 끊긴 기기는 다음 접속의 첫 인사가 새 이름을 나른다.
+pub(crate) fn announce_name() -> usize {
+    let Ok(g) = PEER_TX.lock() else {
+        return 0;
+    };
+    g.iter()
+        .filter(|(_, tx)| tx.send(PeerCmd::Hello).is_ok())
         .count()
 }
 
@@ -231,7 +250,7 @@ pub(crate) fn run_peer(
         return;
     }
     // ★ 송신 채널 등록(09-04) — 셸의 broadcast가 여기로 항목을 민다.
-    let (tx, rx) = std::sync::mpsc::channel::<std::sync::Arc<Vec<u8>>>();
+    let (tx, rx) = std::sync::mpsc::channel::<PeerCmd>();
     if let Ok(mut g) = PEER_TX.lock() {
         g.retain(|(h, _)| h != &hex);
         g.push((hex.clone(), tx));
@@ -315,18 +334,31 @@ pub(crate) fn run_peer(
                         }
                     }
                     Some(PeerMsg::Hello(h)) => {
-                        peer_name = h.name.as_str().to_string();
+                        // ★ 세션 중 재인사(09-05) = 상대가 이름을 바꿨다 — PeerId 기준 갱신(승인 무관).
+                        let renamed = greeted && peer_name != h.name.as_str();
+                        let old_name =
+                            std::mem::replace(&mut peer_name, h.name.as_str().to_string());
                         let new = crate::devices::upsert_online(&hex, h.name.as_str(), &h.os, via);
                         if let Err(e) = crate::devices::save(&devices_path) {
                             eprintln!("동기화: 기기 목록 저장 실패({e})");
                         }
-                        println!(
-                            "동기화: ★ 기기 연결({via}) — {} ({}… · {}){}",
-                            h.name,
-                            &hex[..8],
-                            h.os,
-                            if new { " · 새 기기" } else { "" }
-                        );
+                        if greeted {
+                            if renamed {
+                                println!(
+                                    "동기화: 기기 이름 갱신({via}) — {old_name} → {} ({}…)",
+                                    h.name,
+                                    &hex[..8]
+                                );
+                            }
+                        } else {
+                            println!(
+                                "동기화: ★ 기기 연결({via}) — {} ({}… · {}){}",
+                                h.name,
+                                &hex[..8],
+                                h.os,
+                                if new { " · 새 기기" } else { "" }
+                            );
+                        }
                         greeted = true;
                         wake(&proxy);
                     }
@@ -345,11 +377,30 @@ pub(crate) fn run_peer(
         // ★ 송신 합치기(09-04) — 밀린 항목은 **가장 최신 하나만** 보낸다(클립보드 의미: 마지막이 곧 현재).
         let mut latest = None;
         let mut skipped = 0usize;
-        while let Ok(payload) = rx.try_recv() {
-            if latest.is_some() {
-                skipped += 1;
+        let mut reintroduce = false;
+        while let Ok(cmd) = rx.try_recv() {
+            match cmd {
+                PeerCmd::Item(payload) => {
+                    if latest.is_some() {
+                        skipped += 1;
+                    }
+                    latest = Some(payload);
+                }
+                PeerCmd::Hello => reintroduce = true,
             }
-            latest = Some(payload);
+        }
+        // ★ 이름 재소개(09-05) — 바뀐 표시 이름으로 Hello를 다시 보낸다(승인 무관 · 릴레이/LAN 공통).
+        if reintroduce {
+            let hello = Hello::local(display_name(&me));
+            println!(
+                "동기화: → {}({}…) 이름 재소개 — {}",
+                peer_name,
+                &hex[..8],
+                hello.name
+            );
+            if s.send(&PeerMsg::Hello(hello).encode()).is_err() {
+                break 'session;
+            }
         }
         if let Some(payload) = latest {
             let seq = ITEM_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);

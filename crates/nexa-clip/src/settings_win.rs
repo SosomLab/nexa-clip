@@ -60,6 +60,8 @@ pub(crate) struct App {
     /// ★ 릴레이 None 자동 재기동 예약(09-05 사용자 — VM 실기: 핸들·암호를 **뒤늦게** 채우면 Test·재시작 전엔
     ///   러너가 안 섰다). 자유 문자열 행은 글자마다 오므로 마지막 입력 뒤 잠잠해지면 한 번만 건다(디바운스).
     sync_respawn_at: Option<Instant>,
+    /// ★ 기기 이름 재소개 예약(09-05) — 연속 입력은 마지막만(설정 저장 quiet 1s와 같은 박자).
+    name_announce_at: Option<Instant>,
     /// ★ 기록 모두 삭제 무장(09-04 사용자 — 2단계 확인): 첫 클릭 시각 · 2초 지나면 풀린다.
     clear_arm: Option<Instant>,
     /// ★ 둘째 클릭 확정 → 셸이 소비해 실제로 지운다(`take_clear_history`).
@@ -117,6 +119,7 @@ impl App {
             sync_test: None,
             sync_respawn: false,
             sync_respawn_at: None,
+            name_announce_at: None,
             clear_arm: None,
             clear_request: false,
             sync_shown: None,
@@ -163,6 +166,12 @@ impl App {
             self.sync_respawn_at = None;
             self.sync_respawn = true;
             self.sync_shown = None; // 러너가 서면 LanOnly 노트로 갱신
+        }
+        // ★ 이름 재소개(09-05) — 디바운스 만료에 살아 있는 세션 전부(릴레이·LAN · 승인 무관)로.
+        if self.name_announce_at.is_some_and(|at| Instant::now() >= at) {
+            self.name_announce_at = None;
+            let n = crate::sync_cmd::announce_name();
+            println!("동기화: 기기 이름 재소개 → 세션 {n}개 (끊긴 기기는 다음 접속의 첫 인사로)");
         }
     }
 
@@ -1114,9 +1123,10 @@ impl App {
             if key == "sync.retry" {
                 crate::sync_cmd::set_policy(&val);
             }
-            // ★ 기기 이름(09-03) — 다음 세션부터 새 이름으로 인사한다.
+            // ★ 기기 이름(09-03) — 즉시 반영 + ★ 저장 박자(1s 디바운스)에 연결된 기기 전부에 재소개(09-05).
             if key == "sync.device_name" {
                 crate::sync_cmd::set_device_name(&val);
+                self.name_announce_at = Some(now + NAME_ANNOUNCE_DEBOUNCE);
             }
             // ★ 비밀번호 생성 버튼(09-03 사용자) — 새 패스프레이즈로 교체 + 안내.
             if key == "sync.passphrase.regen" && val == "run" {
@@ -1498,7 +1508,11 @@ impl ApplicationHandler for App {
             None
         };
         // ★ 자동 재기동 예약이 있으면 그 만료에도 깨어난다(Wait만 두면 타이머가 영영 안 돈다).
-        let next = match (next, self.sync_respawn_at) {
+        let deadline = match (self.sync_respawn_at, self.name_announce_at) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        };
+        let next = match (next, deadline) {
             (Some(d), Some(at)) => Some(d.min(at.saturating_duration_since(wall))),
             (None, Some(at)) => Some(at.saturating_duration_since(wall)),
             (d, None) => d,
@@ -1755,6 +1769,8 @@ fn phys_is(pk: &winit::keyboard::PhysicalKey, code: winit::keyboard::KeyCode) ->
 
 /// ★ 릴레이 None 자동 재기동 디바운스(09-05) — 자유 문자열 행은 글자마다 오므로 마지막 입력 뒤 이만큼 잠잠해야 건다.
 const LAN_RESPAWN_DEBOUNCE: Duration = Duration::from_millis(800);
+/// ★ 이름 재소개 디바운스(09-05) — nexa-conf SaveScheduler의 quiet(1s)와 같은 박자 = "저장 시점".
+const NAME_ANNOUNCE_DEBOUNCE: Duration = Duration::from_millis(1000);
 
 /// 릴레이 None 자동 재기동 조건(순수 판정) — 동기화 켜짐 · 릴레이 `none` · 핸들·암호 둘 다 있음.
 ///   서버 릴레이는 종전 계약(정보 변경 = 해제 → Test로 재접속)을 유지한다.
@@ -1772,14 +1788,29 @@ mod lan_respawn_tests {
     #[test]
     fn ready_only_when_none_enabled_and_identity_full() {
         assert!(lan_auto_respawn_ready("none", "on", "kiros33", "pw"));
-        assert!(lan_auto_respawn_ready(" none ", "on", " kiros33 ", "pw"), "공백 무시");
-        assert!(!lan_auto_respawn_ready("none", "on", "", "pw"), "핸들 비면 안 건다");
-        assert!(!lan_auto_respawn_ready("none", "on", "kiros33", "  "), "암호 비면 안 건다");
-        assert!(!lan_auto_respawn_ready("none", "off", "kiros33", "pw"), "동기화 꺼짐");
+        assert!(
+            lan_auto_respawn_ready(" none ", "on", " kiros33 ", "pw"),
+            "공백 무시"
+        );
+        assert!(
+            !lan_auto_respawn_ready("none", "on", "", "pw"),
+            "핸들 비면 안 건다"
+        );
+        assert!(
+            !lan_auto_respawn_ready("none", "on", "kiros33", "  "),
+            "암호 비면 안 건다"
+        );
+        assert!(
+            !lan_auto_respawn_ready("none", "off", "kiros33", "pw"),
+            "동기화 꺼짐"
+        );
         assert!(
             !lan_auto_respawn_ready("beepd.sosomlab.com", "on", "kiros33", "pw"),
             "서버 릴레이는 종전 계약(Test) 유지"
         );
-        assert!(!lan_auto_respawn_ready("", "on", "kiros33", "pw"), "빈 릴레이 = 기본 서버");
+        assert!(
+            !lan_auto_respawn_ready("", "on", "kiros33", "pw"),
+            "빈 릴레이 = 기본 서버"
+        );
     }
 }
