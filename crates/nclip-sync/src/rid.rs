@@ -90,6 +90,22 @@ pub fn derive_rid(handle: &str, passphrase: &str, epoch_day: u64) -> Rid {
 
 /// 어제·오늘·내일 3개 — 시계 오차 흡수(docs/07 §3-3의 beep 관례 승계).
 #[must_use]
+/// ★ LAN 비콘 태그(09-04 · T-25) — 페어링 RID를 도메인 분리 해시로 한 번 더 감싼다
+/// (`sha256("nclip-lan-v1" ‖ RID)[..16]`). 같은 핸들·암호 기기만 같은 태그를 내고, LAN 도청자는
+/// 태그로 릴레이 만남 지점(RID)을 얻지 못한다. 순서 = [어제, 오늘, 내일](`rids_around`와 동일).
+pub fn lan_tags(handle: &str, passphrase: &str) -> [[u8; 16]; 3] {
+    let rids = rids_around(handle, passphrase);
+    let mut out = [[0u8; 16]; 3];
+    for (o, rid) in out.iter_mut().zip(rids.iter()) {
+        let mut h = Sha256::new();
+        h.update(b"nclip-lan-v1");
+        h.update(rid);
+        o.copy_from_slice(&h.finalize()[..16]);
+    }
+    out
+}
+
+#[must_use]
 pub fn rids_around(handle: &str, passphrase: &str) -> [Rid; 3] {
     let d = current_epoch_day();
     [

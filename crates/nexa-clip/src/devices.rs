@@ -27,6 +27,8 @@ pub(crate) struct DeviceEntry {
     pub online: bool,
     /// ★ 사용자가 승인한 기기(09-04 — docs/09 §6-3: 승인 전엔 클립보드를 주고받지 않는다).
     pub approved: bool,
+    /// 지금 세션의 경로(`LAN`/`relay`) — 표시용 · 비영속.
+    pub via: String,
 }
 
 static DEVICES: Mutex<Vec<DeviceEntry>> = Mutex::new(Vec::new());
@@ -62,7 +64,7 @@ pub(crate) fn is_online(hex: &str) -> bool {
 }
 
 /// 세션 성립 + 인사 수신 — 있으면 갱신, 없으면 추가. 반환 = 새 기기였는가.
-pub(crate) fn upsert_online(hex: &str, name: &str, os: &str) -> bool {
+pub(crate) fn upsert_online(hex: &str, name: &str, os: &str, via: &str) -> bool {
     let now = now_secs();
     let Ok(mut g) = DEVICES.lock() else {
         return false;
@@ -72,6 +74,7 @@ pub(crate) fn upsert_online(hex: &str, name: &str, os: &str) -> bool {
         d.os = os.to_string();
         d.last_seen = now;
         d.online = true;
+        d.via = via.to_string();
         false
     } else {
         g.push(DeviceEntry {
@@ -82,6 +85,7 @@ pub(crate) fn upsert_online(hex: &str, name: &str, os: &str) -> bool {
             last_seen: now,
             online: true,
             approved: false,
+            via: via.to_string(),
         });
         true
     }
@@ -118,11 +122,23 @@ pub(crate) fn set_offline(hex: &str) {
     }
 }
 
-/// 러너 종료 — 전부 오프라인(세션 스레드도 곧 끝난다).
+/// 전부 오프라인(테스트용 — 실경로는 `all_offline_via`).
+#[cfg(test)]
 pub(crate) fn all_offline() {
     if let Ok(mut g) = DEVICES.lock() {
         let now = now_secs();
         for d in g.iter_mut().filter(|d| d.online) {
+            d.online = false;
+            d.last_seen = now;
+        }
+    }
+}
+
+/// ★ 한 경로만 오프라인(09-04) — 릴레이가 끊겨도 LAN 세션은 산다(그 역도).
+pub(crate) fn all_offline_via(via: &str) {
+    if let Ok(mut g) = DEVICES.lock() {
+        let now = now_secs();
+        for d in g.iter_mut().filter(|d| d.online && d.via == via) {
             d.online = false;
             d.last_seen = now;
         }
@@ -163,6 +179,7 @@ pub(crate) fn load(path: &std::path::Path) {
             last_seen: last.parse().unwrap_or(0),
             online: false,
             approved,
+            via: String::new(),
         });
     }
     if let Ok(mut g) = DEVICES.lock() {
@@ -211,11 +228,12 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("nclip-devices-{}", std::process::id()));
         let path = dir.join("devices.txt");
         let hex = "ab".repeat(32);
-        assert!(upsert_online(&hex, "작업용 PC 2", "windows"));
+        assert!(upsert_online(&hex, "작업용 PC 2", "windows", "relay"));
         assert!(
-            !upsert_online(&hex, "작업용 PC 2", "windows"),
+            !upsert_online(&hex, "작업용 PC 2", "windows", "LAN"),
             "두 번째는 갱신"
         );
+        assert_eq!(list()[0].via, "LAN");
         save(&path).expect("저장");
         all_offline();
         load(&path);
@@ -226,7 +244,7 @@ mod tests {
         assert!(!d.online);
         assert!(!d.approved, "v2 미승인 필드");
         // 승인은 온라인 기기만 · 파일을 왕복해도 남는다.
-        assert!(!upsert_online(&hex, "작업용 PC 2", "windows"));
+        assert!(!upsert_online(&hex, "작업용 PC 2", "windows", "relay"));
         assert_eq!(approve_online(), 1);
         save(&path).expect("저장");
         load(&path);

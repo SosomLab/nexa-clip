@@ -17,6 +17,22 @@ use std::time::Duration;
 /// 프레임 상한 — Noise 메시지 상한과 정합([docs/08 §3]).
 const MAX_FRAME: usize = 65_535;
 
+/// ★ LAN 비콘용 UDP 소켓(09-04 · T-25) — **주소 재사용 + 브로드캐스트**: 같은 PC의 두 인스턴스
+/// (`--profile`)가 함께 듣고, 서브넷 전체에 보낸다. 수신 타임아웃 500ms(세대 폴링과 교대).
+///
+/// # Errors
+/// 소켓 생성·옵션·바인드 실패 시 `io::Error`.
+pub fn udp_beacon_socket(port: u16) -> std::io::Result<std::net::UdpSocket> {
+    use socket2::{Domain, Protocol, Socket, Type};
+    let s = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))?;
+    s.set_reuse_address(true)?;
+    s.set_broadcast(true)?;
+    s.bind(&std::net::SocketAddr::from(([0, 0, 0, 0], port)).into())?;
+    let u: std::net::UdpSocket = s.into();
+    u.set_read_timeout(Some(Duration::from_millis(500)))?;
+    Ok(u)
+}
+
 /// 길이 접두 프레이밍 TCP 링크.
 #[derive(Debug)]
 pub struct TcpLink {

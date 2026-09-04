@@ -17,6 +17,7 @@ mod conf;
 mod demo;
 mod devices;
 mod icon;
+mod lan;
 mod main_win;
 mod popup_win;
 mod render_img;

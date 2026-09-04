@@ -75,7 +75,7 @@ pub fn rid_for(peer: &PeerId, epoch_day: u64) -> Rid {
 /// ★ 종단(A↔B) prologue — 앱 격리 2차(docs/07 §3-4-2 AP-1).
 /// ⚠️ **서버 제어 세션에는 넣지 않는다** — beepd는 prologue를 쓰지 않으므로
 /// 넣으면 접속 자체가 수학적으로 실패한다(이식 최대 함정 — beep 탐사 09-03).
-const E2E_PROLOGUE: &[u8] = b"nexa-clip/1";
+pub const E2E_PROLOGUE: &[u8] = b"nexa-clip/1";
 
 /// 지금 시각의 에폭 일 번호(UTC).
 #[must_use]

@@ -107,8 +107,14 @@ pub(crate) enum ShellEvent {
     SyncState(bool),
     /// ★ 러너 상태만 바뀜(접속 중·실패·중단) — 루프를 깨워 설정 창 폴링을 돌린다(09-03).
     SyncTick,
-    /// ★ 다른 기기의 클립보드 항목(09-04 · DR-6) — 승인된 기기에서 온 휴대 페이로드.
-    SyncItem { from: String, payload: Vec<u8> },
+    /// ★ 다른 기기의 클립보드 항목(09-04 · DR-6) — 승인된 기기에서 온 것. **디코드·OS 표현 변환·에코
+    ///   지문까지 세션 스레드가 끝내고** 온다(UI 스레드는 이력 등재·게시만 — "네트워크가 UI를 멈추지 않는다").
+    SyncItem {
+        from: String,
+        reps: Vec<RawRep>,
+        summary: String,
+        skip_hash: Option<u64>,
+    },
     /// 트레이 메뉴 "종료".
     Quit,
     /// 감시가 항목을 잡았다 — 게이트를 지나면 이력에 넣는다.
@@ -600,44 +606,50 @@ impl Shell {
     /// ★ 전파(DR-6) — 릴레이에 붙어 있고 승인된 기기가 있을 때, 휴대 페이로드로 보낸다.
     ///   방금 원격에서 받아 게시한 항목의 에코(같은 페이로드 지문)는 보내지 않는다.
     fn maybe_broadcast(&mut self, snap: &ClipSnapshot) {
-        if !crate::sync_cmd::is_connected() {
-            return;
+        // 릴레이 연결 여부로 막지 않는다(09-04 LAN 직결) — 승인·온라인 피어가 없으면 broadcast가 0을 돌려준다.
+        if !crate::sync_cmd::has_peers() {
+            return; // 보낼 곳이 없으면 워커도 띄우지 않는다(대부분의 복사).
         }
-        let Some(payload) = crate::syncitem::from_reps(&snap.reps) else {
-            return;
-        };
-        let h = crate::syncitem::hash(&payload);
-        if let Some((sh, t)) = self.sync_skip {
-            if sh == h && t.elapsed() < std::time::Duration::from_secs(10) {
-                return; // 원격 항목의 에코 — 되돌려 보내지 않는다.
-            }
-        }
-        let n = crate::sync_cmd::broadcast(payload);
-        if n > 0 {
-            println!("동기화: 항목 전파 → 기기 {n}대");
-        }
+        // ★ 페이로드 생성(DIB→PNG 인코드 등)은 **워커 스레드**에서 — UI 스레드는 표현 복제만(09-04 사용자:
+        //   "네트워크 처리가 프로그램을 멈추거나 지연시키지 않게").
+        let reps = snap.reps.clone();
+        let skip = self.sync_skip;
+        let _ = std::thread::Builder::new()
+            .name("nclip-sync-out".into())
+            .spawn(move || {
+                let Some(payload) = crate::syncitem::from_reps(&reps) else {
+                    return;
+                };
+                let h = crate::syncitem::hash(&payload);
+                if let Some((sh, t)) = skip {
+                    if sh == h && t.elapsed() < std::time::Duration::from_secs(10) {
+                        return; // 원격 항목의 에코 — 되돌려 보내지 않는다.
+                    }
+                }
+                let n = crate::sync_cmd::broadcast(payload);
+                if n > 0 {
+                    println!("동기화: 항목 전파 → 기기 {n}대");
+                }
+            });
     }
 
     /// ★ 원격 항목 적용(09-04) — 이력 등재(출처 = 기기명) + **클립보드 게시**(다른 기기에서
     ///   바로 Ctrl+V) + 에코 흡수(감시가 다시 잡으면 승격 · 되돌려 보내지 않음).
-    fn apply_remote(&mut self, from: &str, payload: &[u8]) {
-        let Some(parts) = crate::syncitem::decode(payload) else {
-            eprintln!("동기화: {from}의 항목 형식 오류 — 버림");
-            return;
-        };
-        let reps = crate::syncitem::to_local_reps(&parts);
+    fn apply_remote(
+        &mut self,
+        from: &str,
+        reps: Vec<RawRep>,
+        summary: &str,
+        skip_hash: Option<u64>,
+    ) {
         if reps.is_empty() {
-            eprintln!("동기화: {from}의 항목에 이 OS로 옮길 표현이 없음 — 버림");
             return;
         }
-        // 에코 지문은 **우리가 게시할 표현**으로 계산한다 — 감시가 다시 읽어 오는 것이 이것이다.
-        if let Some(p) = crate::syncitem::from_reps(&reps) {
-            self.sync_skip = Some((crate::syncitem::hash(&p), std::time::Instant::now()));
+        // 에코 지문(세션 스레드가 **우리가 게시할 표현**으로 계산) — 감시가 다시 읽어 오는 것이 이것이다.
+        if let Some(h) = skip_hash {
+            self.sync_skip = Some((h, std::time::Instant::now()));
         }
-        println!(
-            "동기화: ← {from} 항목 수신 — {}",
-            crate::syncitem::describe(&parts)
-        );
+        println!("동기화: ← {from} 항목 수신 — {summary}");
         let snap = ClipSnapshot {
             reps: reps.clone(),
             source_app: Some(format!("{REMOTE_MARK}{from}")),
@@ -962,7 +974,12 @@ impl ApplicationHandler<ShellEvent> for Shell {
                 }
             }
             ShellEvent::Captured(snap) => self.on_captured(snap, None),
-            ShellEvent::SyncItem { from, payload } => self.apply_remote(&from, &payload),
+            ShellEvent::SyncItem {
+                from,
+                reps,
+                summary,
+                skip_hash,
+            } => self.apply_remote(&from, reps, &summary, skip_hash),
             ShellEvent::Recent(i) => self.repost(i),
         }
         self.pump_preview();

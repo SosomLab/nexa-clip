@@ -371,11 +371,12 @@ impl App {
             );
             if d.online {
                 lines.push(format!(
-                    "*{} · {} · {} · {} · {}",
+                    "*{} · {} · {} · {} ({}) · {}",
                     d.name,
                     short,
                     d.os,
                     nclip_core::tr(lang, nclip_core::Msg::StSyncDevOnline),
+                    d.via,
                     appr
                 ));
             } else {

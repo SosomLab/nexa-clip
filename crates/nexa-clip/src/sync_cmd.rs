@@ -95,6 +95,14 @@ type PeerTx = std::sync::mpsc::Sender<std::sync::Arc<Vec<u8>>>;
 static PEER_TX: std::sync::Mutex<Vec<(String, PeerTx)>> = std::sync::Mutex::new(Vec::new());
 static ITEM_SEQ: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
 
+/// 보낼 수 있는 기기(승인 + 온라인)가 하나라도 있는가 — UI 스레드가 워커를 띄울지 판정(값싼 검사).
+pub(crate) fn has_peers() -> bool {
+    PEER_TX.lock().is_ok_and(|g| {
+        g.iter()
+            .any(|(hex, _)| crate::devices::is_approved(hex) && crate::devices::is_online(hex))
+    })
+}
+
 /// ★ 클립보드 항목 전파(DR-6) — **승인된** 온라인 기기 전부에 보낸다. 반환 = 보낸 기기 수.
 pub(crate) fn broadcast(payload: Vec<u8>) -> usize {
     let arc = std::sync::Arc::new(payload);
@@ -113,12 +121,14 @@ fn wake(proxy: &winit::event_loop::EventLoopProxy<crate::tray_cmd::ShellEvent>) 
 
 /// ★ 종단 세션 하나의 수명(09-03) — 인사 교환 → 목록 등재 → 핑/퐁 상주 → 종료 시 오프라인.
 ///   같은 기기와 세션이 이미 있으면 새 것을 버린다(글레어·중복 다이얼 흡수).
-fn run_peer(
+pub(crate) fn run_peer(
     mut s: nclip_sync::NoiseSession<Box<dyn nclip_sync::Link>>,
     me: nclip_sync::PeerId,
+    gen_slot: &'static std::sync::atomic::AtomicU64,
     gen: u64,
     proxy: winit::event_loop::EventLoopProxy<crate::tray_cmd::ShellEvent>,
     dir: std::path::PathBuf,
+    via: &'static str,
 ) {
     use nclip_sync::hello::{Hello, PeerMsg};
     use nclip_sync::session::{Session as _, SessionError};
@@ -148,7 +158,7 @@ fn run_peer(
     let mut peer_name = String::new();
     let mut asm = nclip_sync::hello::Assembler::default();
     'session: loop {
-        if PEER_GEN.load(std::sync::atomic::Ordering::Relaxed) != gen {
+        if gen_slot.load(std::sync::atomic::Ordering::Relaxed) != gen {
             break;
         }
         match s.recv() {
@@ -163,10 +173,30 @@ fn run_peer(
                     }) => {
                         if let Some(payload) = asm.push(seq, idx, total, data) {
                             if crate::devices::is_approved(&hex) {
-                                let _ = proxy.send_event(crate::tray_cmd::ShellEvent::SyncItem {
-                                    from: peer_name.clone(),
-                                    payload,
-                                });
+                                // ★ 디코드·OS 표현 변환(PNG 디코드 포함)·에코 지문은 **여기(세션 스레드)**서 —
+                                //   UI 스레드는 이력 등재·게시만 한다(09-04 사용자 요구).
+                                match crate::syncitem::decode(&payload) {
+                                    Some(parts) => {
+                                        let reps = crate::syncitem::to_local_reps(&parts);
+                                        if reps.is_empty() {
+                                            eprintln!("동기화: {peer_name}의 항목에 이 OS로 옮길 표현이 없음 — 버림");
+                                        } else {
+                                            let skip_hash = crate::syncitem::from_reps(&reps)
+                                                .map(|p| crate::syncitem::hash(&p));
+                                            let _ = proxy.send_event(
+                                                crate::tray_cmd::ShellEvent::SyncItem {
+                                                    from: peer_name.clone(),
+                                                    summary: crate::syncitem::describe(&parts),
+                                                    reps,
+                                                    skip_hash,
+                                                },
+                                            );
+                                        }
+                                    }
+                                    None => {
+                                        eprintln!("동기화: {peer_name}의 항목 형식 오류 — 버림")
+                                    }
+                                }
                             } else {
                                 println!(
                                     "동기화: {}({}…)의 클립보드 항목 — 승인 전이라 버림(설정 → 동기화 → 승인)",
@@ -178,12 +208,12 @@ fn run_peer(
                     }
                     Some(PeerMsg::Hello(h)) => {
                         peer_name = h.name.as_str().to_string();
-                        let new = crate::devices::upsert_online(&hex, h.name.as_str(), &h.os);
+                        let new = crate::devices::upsert_online(&hex, h.name.as_str(), &h.os, via);
                         if let Err(e) = crate::devices::save(&devices_path) {
                             eprintln!("동기화: 기기 목록 저장 실패({e})");
                         }
                         println!(
-                            "동기화: ★ 기기 연결 — {} ({}… · {}){}",
+                            "동기화: ★ 기기 연결({via}) — {} ({}… · {}){}",
                             h.name,
                             &hex[..8],
                             h.os,
@@ -299,6 +329,7 @@ pub(crate) fn clear_last_ok() {
 /// ★ 연결 해제 요청 — 러너가 세션을 끊고 스레드를 마친다(재연결 = 다음 시작).
 pub(crate) fn request_disconnect() {
     STOP_REQ.store(true, std::sync::atomic::Ordering::Relaxed);
+    crate::lan::bump(); // LAN 직결도 함께 내린다(설정 변경 = 태그 변경).
 }
 
 /// `sync.enabled`가 켜져 있으면 접속 스레드를 띄운다(부팅 시 1회 — 동적 반영은 후속).
@@ -332,6 +363,34 @@ pub(crate) fn spawn_if_enabled(
         }
     };
     let dir = crate::conf::data_dir();
+    // ★ 신원은 여기서 **한 번** 로드(09-04) — 릴레이 러너와 LAN 직결이 같은 키를 쓴다
+    //   (각자 load_or_generate하면 첫 실행에 서로 다른 키를 만들 수 있다).
+    let key_path = dir.join("identity.key");
+    let id = match nclip_sync::keyfile::load_or_generate(&key_path) {
+        Ok((id, fresh)) => {
+            let me = nclip_sync::relay::peer_hex(&id.peer_id());
+            if let Ok(mut g) = MY_HEX.lock() {
+                *g = me.clone();
+            }
+            println!(
+                "동기화: 기기 신원 {}{} — {} · 표시 이름 {}",
+                &me[..16],
+                if fresh { " (새로 생성)" } else { "" },
+                key_path.display(),
+                display_name(&id.peer_id())
+            );
+            std::sync::Arc::new(id)
+        }
+        Err(e) => {
+            eprintln!("동기화: 신원 키 실패({e}) — 중단");
+            set_status(SyncStatus::Failed(format!("identity: {e}")));
+            wake(&proxy);
+            return;
+        }
+    };
+    crate::devices::load(&dir.join("devices.txt"));
+    // ★ 같은 네트워크 직결(09-04) — 릴레이와 독립(서버 없이도 만난다).
+    crate::lan::spawn(&handle, &pass, id.clone(), proxy.clone(), dir.clone());
     std::thread::Builder::new()
         .name("nclip-sync".into())
         .spawn(move || {
@@ -351,7 +410,7 @@ pub(crate) fn spawn_if_enabled(
                 return;
             }
             let _alive = RunGuard;
-            run(&relay_raw, &handle, &pass, &dir, &proxy);
+            run(&relay_raw, &handle, &pass, &dir, &proxy, id);
         })
         .ok();
 }
@@ -363,6 +422,7 @@ fn run(
     pass: &str,
     dir: &std::path::Path,
     proxy: &winit::event_loop::EventLoopProxy<crate::tray_cmd::ShellEvent>,
+    id: std::sync::Arc<nclip_sync::Identity>,
 ) {
     // ★ 연결 상태 통지(09-03) — 트레이 녹색 점·메인창 인디케이터가 이 신호를 그린다.
     let notify = |on: bool| {
@@ -374,30 +434,8 @@ fn run(
         let _ = proxy.send_event(crate::tray_cmd::ShellEvent::SyncTick);
     };
     STOP_REQ.store(false, std::sync::atomic::Ordering::Relaxed);
-    // ① 기기 신원(NCK1) — 없으면 생성(포터블: data/ 아래).
-    let key_path = dir.join("identity.key");
-    let (id, fresh) = match nclip_sync::keyfile::load_or_generate(&key_path) {
-        Ok(v) => v,
-        Err(e) => {
-            eprintln!("동기화: 신원 키 실패({e}) — 중단");
-            set_status(SyncStatus::Failed(format!("identity: {e}")));
-            tick();
-            return;
-        }
-    };
+    // ① 기기 신원은 spawn_if_enabled가 로드해 넘겼다(릴레이·LAN 공용).
     let me = nclip_sync::relay::peer_hex(&id.peer_id());
-    if let Ok(mut g) = MY_HEX.lock() {
-        *g = me.clone();
-    }
-    println!(
-        "동기화: 기기 신원 {}{} — {} · 표시 이름 {}",
-        &me[..16],
-        if fresh { " (새로 생성)" } else { "" },
-        key_path.display(),
-        display_name(&id.peer_id())
-    );
-    let id = std::sync::Arc::new(id);
-    crate::devices::load(&dir.join("devices.txt"));
 
     // ② 서버 주소·핀 준비.
     let Some((addr_str, addr)) = nclip_sync::relay::resolve_server(relay_raw) else {
@@ -475,7 +513,15 @@ fn run(
                                     true,
                                     Duration::from_secs(10),
                                 ) {
-                                    Ok(via) => run_peer(via.session, me_peer, gen, p, d),
+                                    Ok(via) => run_peer(
+                                        via.session,
+                                        me_peer,
+                                        &PEER_GEN,
+                                        gen,
+                                        p,
+                                        d,
+                                        "relay",
+                                    ),
                                     Err(e) => eprintln!("동기화: 인바운드 수락 실패({e:?})"),
                                 }
                             });
@@ -500,7 +546,15 @@ fn run(
                                     true,
                                     Duration::from_secs(3),
                                 ) {
-                                    Ok(via) => run_peer(via.session, me_peer, gen, p, d),
+                                    Ok(via) => run_peer(
+                                        via.session,
+                                        me_peer,
+                                        &PEER_GEN,
+                                        gen,
+                                        p,
+                                        d,
+                                        "relay",
+                                    ),
                                     Err(nclip_sync::relay::ViaError::NotFound) => {}
                                     Err(e) => {
                                         eprintln!("동기화: 기기 {}… 다이얼 실패({e:?})", &hex[..8])
@@ -525,7 +579,9 @@ fn run(
                                         Duration::from_secs(3),
                                     ) {
                                         Ok(session) => {
-                                            run_peer(session, me_peer, gen, p, d);
+                                            run_peer(
+                                                session, me_peer, &PEER_GEN, gen, p, d, "relay",
+                                            );
                                             break;
                                         }
                                         Err(nclip_sync::relay::ViaError::NotFound) => {}
@@ -543,7 +599,7 @@ fn run(
                     if STOP_REQ.swap(false, std::sync::atomic::Ordering::Relaxed) {
                         drop(client);
                         PEER_GEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        crate::devices::all_offline();
+                        crate::devices::all_offline_via("relay");
                         set_status(SyncStatus::Stopped);
                         notify(false);
                         println!("동기화: 사용자 요청으로 연결 해제 — 다음 시작 때 재연결");
@@ -552,7 +608,7 @@ fn run(
                     if !client.is_alive() {
                         eprintln!("동기화: 릴레이 세션 끊김 — 재접속");
                         PEER_GEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        crate::devices::all_offline();
+                        crate::devices::all_offline_via("relay");
                         notify(false);
                         break;
                     }
