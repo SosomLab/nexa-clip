@@ -239,6 +239,8 @@ pub(crate) struct MainWin {
     dedup_icon: std::cell::RefCell<Option<(u32, nclip_ctl::theme::IconImage)>>,
     /// ★ 감시 끄기 아이콘 캐시(09-04 사용자 지정 `stop_circle`) — 색별 틴트 1장.
     watch_icon: std::cell::RefCell<Option<(u32, nclip_ctl::theme::IconImage)>>,
+    /// ★ 설정 아이콘 캐시(09-04 사용자 지정 Material `settings`).
+    settings_icon: std::cell::RefCell<Option<(u32, nclip_ctl::theme::IconImage)>>,
     /// ★ 미리보기 패널 열림(09-02 K4 · `ui.preview_open` 영속 — 기본 접힘).
     preview_open: bool,
     /// ★ 중복 제외 보기(09-04 사용자) — 같은 내용은 **로컬 1건**, 로컬이 없으면 **가장 최근 수신 1건**만.
@@ -308,6 +310,7 @@ impl MainWin {
             preview_icon: std::cell::RefCell::new(None),
             dedup_icon: std::cell::RefCell::new(None),
             watch_icon: std::cell::RefCell::new(None),
+            settings_icon: std::cell::RefCell::new(None),
             preview_open: false,
             preview_tb: None,
             preview_scroll: 0,
@@ -2357,27 +2360,26 @@ impl MainWin {
                 }
             }
             Tool::Settings => {
-                // Material `settings` — 톱니 8개(4방 + 대각) + 링 + 중심 구멍.
-                let ring = Rect::new(cx - px(6.5), cy - px(6.5), px(13.0), px(13.0));
-                for (dx, dy, ww, hh) in [
-                    (-px(1.5), -px(10.0), px(3.0), px(4.0)),
-                    (-px(1.5), px(6.0), px(3.0), px(4.0)),
-                    (-px(10.0), -px(1.5), px(4.0), px(3.0)),
-                    (px(6.0), -px(1.5), px(4.0), px(3.0)),
-                ] {
-                    dc.fill_round_rect(Rect::new(cx + dx, cy + dy, ww, hh), px(1.0), ink);
+                // ★ Material `settings`(09-04 사용자 지정 SVG를 구운 알파 — 톱니 벡터 근사 대체).
+                let c = ink;
+                let mut cache = self.settings_icon.borrow_mut();
+                let stale = !matches!(cache.as_ref(), Some((k, _)) if *k == c.0);
+                if stale {
+                    let (r0, g0, b0) = ((c.0 >> 16) as u8, (c.0 >> 8) as u8, c.0 as u8);
+                    let mut rgba = Vec::with_capacity(SETTINGS_ALPHA.len() * 4);
+                    for &a in SETTINGS_ALPHA {
+                        rgba.extend_from_slice(&[r0, g0, b0, a]);
+                    }
+                    *cache = Some((
+                        c.0,
+                        nclip_ctl::theme::IconImage::from_rgba(PREVIEW_SIDE, PREVIEW_SIDE, rgba),
+                    ));
                 }
-                for (dx, dy) in [
-                    (-px(7.5), -px(7.5)),
-                    (px(4.5), -px(7.5)),
-                    (-px(7.5), px(4.5)),
-                    (px(4.5), px(4.5)),
-                ] {
-                    dc.fill_round_rect(Rect::new(cx + dx, cy + dy, px(3.0), px(3.0)), px(1.0), ink);
+                if let Some((_, img)) = cache.as_ref() {
+                    let half = px(10.0);
+                    let dst = Rect::new(cx - half, cy - half, half * 2, half * 2);
+                    dc.image_scaled(dst, img, r);
                 }
-                dc.fill_ellipse(ring, ink);
-                let hole = Rect::new(cx - px(2.8), cy - px(2.8), px(5.6), px(5.6));
-                dc.fill_ellipse(hole, th.chrome_bg);
             }
         }
     }
@@ -2753,6 +2755,8 @@ const PREVIEW_ALPHA: &[u8] = include_bytes!("../assets/icon-preview-96.alpha");
 const DEDUP_ALPHA: &[u8] = include_bytes!("../assets/icon-dedup-96.alpha");
 /// ★ 감시 토글 아이콘(09-04 사용자 지정 — Material `stop_circle` 96² 알파 · 감시 중 = 누르면 중지).
 const WATCH_ALPHA: &[u8] = include_bytes!("../assets/icon-watch-96.alpha");
+/// ★ 설정 아이콘(09-04 사용자 지정 — Material `settings` 96² 알파).
+const SETTINGS_ALPHA: &[u8] = include_bytes!("../assets/icon-settings-96.alpha");
 /// 중지됨 = `play_circle`(누르면 재개).
 const WATCH_PLAY_ALPHA: &[u8] = include_bytes!("../assets/icon-watch-play-96.alpha");
 /// 멈춤 동작 = 벽돌색(사용자 09-04 "붉은 계열") — 라이트·다크 양쪽에서 읽히는 채도.
