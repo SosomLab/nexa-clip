@@ -192,6 +192,12 @@ pub(crate) struct MainWin {
     alt: bool,
     /// 더블클릭 판정 — (시각, 행).
     last_click: Option<(Instant, usize)>,
+    /// ★ 활성 대상 따라가기(09-04 사용자 — "선택이 아니라 **활성 대상**을 바꾸는 것"): 더블클릭/Enter로
+    ///   승격한 항목이 최상위로 옮겨가면 선택도 따라간다. 미리보기는 id 키라 그대로, 목록은 새 자리가 보이게
+    ///   스크롤. (id, 내용 열쇠 — 새 로컬 항목으로 다시 잡힌 경우 대비, 시각 — 5초 시효).
+    follow: Option<(u64, u64, Instant)>,
+    /// refresh가 선택을 옮겼다 — 다음 paint에서 스크롤을 새 자리로.
+    follow_scroll: bool,
     /// 툴바 hover — 머티리얼 상태 레이어 + 툴팁(09-01 사용자 요청).
     hovered: Option<Tool>,
     /// ★ 보기 모드(Ctrl+1/2/3 · `ui.view_mode` 영속).
@@ -265,6 +271,8 @@ impl MainWin {
             primary: false,
             alt: false,
             last_click: None,
+            follow: None,
+            follow_scroll: false,
             hovered: None,
             view: ViewMode::Compact,
             menu: ContextMenu::new(),
@@ -511,7 +519,31 @@ impl MainWin {
         if self.sel >= self.rows.len() {
             self.sel = self.rows.len().saturating_sub(1);
         }
+        // ★ 활성 대상 따라가기(09-04) — 승격으로 옮겨간 자리를 찾아 선택을 옮긴다(id → 내용 열쇠 · 5초 시효).
+        if let Some((id, key, t)) = self.follow {
+            if t.elapsed().as_secs() >= 5 {
+                self.follow = None;
+            } else if let Some(ix) = self
+                .rows
+                .iter()
+                .position(|r| r.id == id)
+                .or_else(|| self.rows.iter().position(|r| r.key == key))
+            {
+                if ix != self.sel {
+                    self.sel = ix;
+                    self.follow_scroll = true;
+                }
+            }
+        }
         // 스크롤은 paint에서 최대값으로만 죄인다 — 휠 위치를 존중(09-02).
+    }
+
+    /// 활성화(더블클릭·Enter) 직후 — 승격으로 자리가 바뀌어도 이 항목을 계속 선택한다.
+    fn arm_follow(&mut self) {
+        self.follow = self
+            .rows
+            .get(self.sel)
+            .map(|r| (r.id, r.key, Instant::now()));
     }
 
     /// 이력이 바뀌었다(캡처·핀·삭제) — 열려 있으면 다시 채우고 그린다.
@@ -1197,6 +1229,7 @@ impl MainWin {
                     let (x, y) = self.cursor;
                     if let Some(vi) = self.row_at(x, y, w, h) {
                         self.sel = vi;
+                        self.follow = None;
                         self.open_menu(x, y, w, h);
                         self.redraw();
                     }
@@ -1248,9 +1281,11 @@ impl MainWin {
                             .is_some_and(|(t, r)| r == vi && t.elapsed().as_millis() < DBLCLICK_MS);
                         self.last_click = Some((now, vi));
                         self.sel = vi;
+                        self.follow = None;
                         self.redraw();
                         if dbl {
                             if let Some(id) = self.selected_id() {
+                                self.arm_follow();
                                 return MainAction::Copy {
                                     id,
                                     as_: if self.shift {
@@ -1272,6 +1307,7 @@ impl MainWin {
                     Key::Named(NamedKey::Escape) => return MainAction::Close,
                     Key::Named(NamedKey::ArrowUp) => {
                         self.sel = self.sel.saturating_sub(1);
+                        self.follow = None;
                         self.ensure_visible(h);
                         self.redraw();
                     }
@@ -1279,11 +1315,13 @@ impl MainWin {
                         if self.sel + 1 < self.rows.len() {
                             self.sel += 1;
                         }
+                        self.follow = None;
                         self.ensure_visible(h);
                         self.redraw();
                     }
                     Key::Named(NamedKey::Enter) => {
                         if let Some(id) = self.selected_id() {
+                            self.arm_follow();
                             return MainAction::Copy {
                                 id,
                                 as_: if self.shift {
@@ -1427,6 +1465,17 @@ impl MainWin {
             self.rebuild_offsets(l.w);
             let total = *self.row_offs.last().unwrap_or(&0);
             self.scroll = self.scroll.clamp(0, (total - l.h).max(0));
+            if self.follow_scroll {
+                self.follow_scroll = false;
+                // 새 자리가 첫 화면 안이면 맨 위(1·2번이 보이게), 아니면 그 행을 위에 붙인다.
+                if let Some(&top) = self.row_offs.get(self.sel) {
+                    self.scroll = if top < l.h {
+                        0
+                    } else {
+                        top.min((total - l.h).max(0))
+                    };
+                }
+            }
         }
         {
             let pad = (self.scale * 10.0).round() as i32;
@@ -1674,12 +1723,19 @@ impl MainWin {
                     // ★ T-18d 1단(09-03) — 원본 편집기의 색·굵기 그대로 + ★ 탭 스톱
                     //   열맞춤(공백 4칸 격자 — CopyQ 비교 실기의 "열이 안 맞는다" 해소).
                     let tab_w = dc.text_width("    ").max(8);
+                    // ★ 2단: em(전각 폭) — 들여쓰기·배율의 자.
+                    let em = dc.text_width("한").max(8);
                     for (k, line) in rich.iter().take(5).enumerate() {
                         #[allow(clippy::cast_precision_loss)]
                         let ly = y + px(6.0 + 22.0 * k as f32);
                         let mut xoff = 0i32;
                         for run in line {
-                            dc.select_font(FontSlot::Base, run.bold);
+                            dc.select_font_sized(
+                                FontSlot::Base,
+                                run.bold,
+                                nclip_core::richtext::size_delta(em, run.scale),
+                            );
+                            xoff += nclip_core::richtext::em_px(em, run.indent);
                             let col = run.color.map_or(th.text, |c| {
                                 nclip_ctl::theme::Color::from_rgb(c[0], c[1], c[2])
                             });
@@ -1854,6 +1910,7 @@ impl MainWin {
                 );
                 let line_h = px(22.0);
                 let tab_w = dc.text_width("    ").max(8);
+                let em = dc.text_width("한").max(8);
                 // ★ 픽셀 스크롤(횡/종) — 부분 줄까지 · 콘텐츠 크기는 캐시로(사건 처리 몫).
                 let start = (self.preview_scroll / line_h).max(0) as usize;
                 let off = self.preview_scroll.rem_euclid(line_h);
@@ -1865,7 +1922,12 @@ impl MainWin {
                     #[allow(clippy::cast_possible_wrap)]
                     let ly = inner.y - off + ((k as i32) - start as i32) * line_h;
                     for run in line {
-                        dc.select_font(FontSlot::Base, run.bold);
+                        dc.select_font_sized(
+                            FontSlot::Base,
+                            run.bold,
+                            nclip_core::richtext::size_delta(em, run.scale),
+                        );
+                        xoff += nclip_core::richtext::em_px(em, run.indent);
                         let col = run.color.map_or(th.text, |c| {
                             nclip_ctl::theme::Color::from_rgb(c[0], c[1], c[2])
                         });
