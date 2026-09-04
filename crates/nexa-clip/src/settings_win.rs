@@ -75,6 +75,10 @@ pub(crate) struct App {
     /// ★ 상주 모드(트레이 셸 안 — T-12e2) — 닫기가 `ui.close_to_tray`를 따른다.
     ///   단독 `settings` 명령에서는 거짓 — 닫기 = 종료(설정과 무관).
     resident: bool,
+    /// ★ 배치 앵커(09-04 사용자) — 열 때 셸이 준 메인창 기하(x, y, w, h). 없으면 주 모니터.
+    anchor: Option<(i32, i32, u32, u32)>,
+    /// ★ 메인창이 최상위면 설정 창도 최상위(가려지지 않게).
+    on_top: bool,
 }
 
 impl App {
@@ -104,6 +108,8 @@ impl App {
             col_resize: false,
             ui_refresh: false,
             resident,
+            anchor: None,
+            on_top: false,
         }
     }
 
@@ -160,6 +166,121 @@ impl App {
     }
 
     /// 창이 없으면 만들고, 있으면 앞으로 가져온다(트레이 "열기"의 재진입 경로).
+    /// ★ 열기 직전 셸이 준다(09-04) — 메인창 기하 + 메인창 최상위 여부.
+    pub(crate) fn set_anchor(&mut self, main_geom: Option<(i32, i32, u32, u32)>, on_top: bool) {
+        self.anchor = main_geom;
+        self.set_level(on_top);
+    }
+
+    /// ★ 창 레벨(09-04) — 메인창 최상위 토글을 따라간다.
+    pub(crate) fn set_level(&mut self, on_top: bool) {
+        self.on_top = on_top;
+        if let Some(w) = &self.window {
+            w.set_window_level(if on_top {
+                winit::window::WindowLevel::AlwaysOnTop
+            } else {
+                winit::window::WindowLevel::Normal
+            });
+        }
+    }
+
+    /// ★ 첫 위치(09-04 사용자): 메인창이 있는 모니터에서 — 같은 모니터에 저장된 마지막 위치가 있으면 그것,
+    ///   아니면(첫 실행 · 메인창이 모니터를 옮김) 메인창 오른쪽 → 안 들어가면 왼쪽 → 그래도 안 되면 메인창 위에 살짝 겹쳐.
+    ///   모니터 안으로 죈다. 반환 = (물리 좌표, 물리 크기, 모니터 키).
+    fn initial_placement(&self, el: &ActiveEventLoop) -> Option<Placement> {
+        let (ax, ay, aw, ah) = self.anchor.unwrap_or((0, 0, 0, 0));
+        #[allow(clippy::cast_possible_wrap)]
+        let (acx, acy) = (ax + aw as i32 / 2, ay + ah as i32 / 2);
+        let contains = |m: &winit::monitor::MonitorHandle| {
+            let p = m.position();
+            let sz = m.size();
+            acx >= p.x
+                && acy >= p.y
+                && acx < p.x + i32::try_from(sz.width).unwrap_or(i32::MAX)
+                && acy < p.y + i32::try_from(sz.height).unwrap_or(i32::MAX)
+        };
+        let mon = if self.anchor.is_some() {
+            el.available_monitors().find(contains)
+        } else {
+            None
+        }
+        .or_else(|| el.primary_monitor())?;
+        let key = monitor_key(&mon);
+        let (mp, ms) = (mon.position(), mon.size());
+        #[allow(clippy::cast_possible_wrap)]
+        let (mx, my, mw, mh) = (mp.x, mp.y, ms.width as i32, ms.height as i32);
+        let scale = mon.scale_factor();
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let (sw, sh) = {
+            let gw = self.conf.state.get("ui.set_w").parse::<u32>().unwrap_or(0);
+            let gh = self.conf.state.get("ui.set_h").parse::<u32>().unwrap_or(0);
+            if gw >= 320 && gh >= 240 {
+                (gw, gh)
+            } else {
+                (
+                    (760.0 * scale).round() as u32,
+                    (560.0 * scale).round() as u32,
+                )
+            }
+        };
+        #[allow(clippy::cast_possible_wrap)]
+        let (swi, shi) = (sw as i32, sh as i32);
+        let clamp = |x: i32, y: i32| -> (i32, i32) {
+            (
+                x.clamp(mx, (mx + mw - swi).max(mx)),
+                y.clamp(my, (my + mh - shi).max(my)),
+            )
+        };
+        // 같은 모니터에 저장된 마지막 위치 → 복원. 모니터가 다르면(메인창 이동) 버린다 = 초기화.
+        let saved_mon = self.conf.state.get("ui.set_mon").to_string();
+        let sx = self.conf.state.get("ui.set_x").parse::<i32>().ok();
+        let sy = self.conf.state.get("ui.set_y").parse::<i32>().ok();
+        if saved_mon == key {
+            if let (Some(x), Some(y)) = (sx, sy) {
+                return Some((clamp(x, y), (sw, sh), key));
+            }
+        }
+        #[allow(clippy::cast_possible_truncation)]
+        let gap = (12.0 * scale).round() as i32;
+        let (x, y) = if self.anchor.is_some() {
+            #[allow(clippy::cast_possible_wrap)]
+            let right = ax + aw as i32 + gap;
+            if right + swi <= mx + mw {
+                (right, ay)
+            } else if ax - gap - swi >= mx {
+                (ax - gap - swi, ay)
+            } else {
+                #[allow(clippy::cast_possible_truncation)]
+                let off = (40.0 * scale).round() as i32;
+                (ax + off, ay + off)
+            }
+        } else {
+            (mx + (mw - swi) / 2, my + (mh - shi) / 2)
+        };
+        Some((clamp(x, y), (sw, sh), key))
+    }
+
+    /// ★ 위치·크기·모니터 저장(09-04) — 닫을 때·종료 때.
+    fn save_geom(&mut self) {
+        let Some(w) = &self.window else {
+            return;
+        };
+        let Ok(pos) = w.outer_position() else {
+            return;
+        };
+        let size = w.inner_size();
+        let key = w
+            .current_monitor()
+            .map(|m| monitor_key(&m))
+            .unwrap_or_default();
+        let now = Instant::now();
+        self.conf.set("ui.set_x", pos.x.to_string(), now);
+        self.conf.set("ui.set_y", pos.y.to_string(), now);
+        self.conf.set("ui.set_w", size.width.to_string(), now);
+        self.conf.set("ui.set_h", size.height.to_string(), now);
+        self.conf.set("ui.set_mon", key, now);
+    }
+
     pub(crate) fn ensure_window(&mut self, el: &ActiveEventLoop) {
         if let Some(w) = &self.window {
             w.set_visible(true);
@@ -191,6 +312,14 @@ impl App {
                 })
                 .with_inner_size(winit::dpi::LogicalSize::new(760.0, 560.0)),
         ));
+        // ★ 배치(09-04) — 메인창 모니터 · 메인창 옆 · 같은 모니터의 마지막 위치.
+        let placement = self.initial_placement(el);
+        let attrs = match &placement {
+            Some(((x, y), (w, h), _)) => attrs
+                .with_position(winit::dpi::PhysicalPosition::new(*x, *y))
+                .with_inner_size(winit::dpi::PhysicalSize::new(*w, *h)),
+            None => attrs,
+        };
         // 새 창도 토큰이 있으면 그것으로 활성화한다(트레이 → 첫 열기).
         #[cfg(target_os = "linux")]
         let attrs = {
@@ -210,6 +339,16 @@ impl App {
             return;
         };
         let win = Rc::new(win);
+        // ★ 메인창이 최상위면 설정 창도 최상위(09-04 사용자 — 메인창 뒤로 숨지 않게).
+        win.set_window_level(if self.on_top {
+            winit::window::WindowLevel::AlwaysOnTop
+        } else {
+            winit::window::WindowLevel::Normal
+        });
+        if let Some((_, _, key)) = &placement {
+            let now = Instant::now();
+            self.conf.set("ui.set_mon", key.clone(), now);
+        }
         bring_to_front(&win);
         self.scale = win.scale_factor() as f32;
         let mut inv = Invalidations::default();
@@ -234,12 +373,14 @@ impl App {
         if self.resident && self.conf.state.get("ui.close_to_tray") == "on" {
             self.hide_window();
         } else {
+            self.save_geom();
             el.exit();
         }
     }
 
     /// 창을 걷는다(상주는 유지) — ★ 미저장 변경은 여기서 강제 수거한다.
     fn hide_window(&mut self) {
+        self.save_geom();
         self.surface = None;
         self.ctx = None;
         self.window = None;
@@ -1188,4 +1329,17 @@ fn sync_test_once(raw: &str, dir: &std::path::Path) -> Result<(String, String), 
         let _ = nclip_sync::relay::pinfile::store(&pin_path, &addr_str, &client.server_peer());
     }
     Ok((addr_str, pin[..8].to_string()))
+}
+
+/// 설정 창 첫 배치 — (물리 좌표, 물리 크기, 모니터 키).
+type Placement = ((i32, i32), (u32, u32), String);
+
+/// 모니터 식별 키(09-04) — 이름이 있으면 이름, 없으면 원점+크기. 설정 창 마지막 위치를 "같은 모니터일 때만" 복원하는 열쇠.
+fn monitor_key(m: &winit::monitor::MonitorHandle) -> String {
+    let p = m.position();
+    let s = m.size();
+    match m.name() {
+        Some(n) if !n.is_empty() => format!("{n}@{}x{}", s.width, s.height),
+        _ => format!("{}:{}@{}x{}", p.x, p.y, s.width, s.height),
+    }
 }

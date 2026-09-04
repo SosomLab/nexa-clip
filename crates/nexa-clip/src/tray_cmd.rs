@@ -432,6 +432,14 @@ impl Shell {
         }
     }
 
+    /// ★ 설정 창 열기(09-04 사용자) — 메인창 기하·최상위 여부를 앵커로 넘긴다(메인창 모니터·옆 배치 · 위에 뜨게).
+    fn open_settings(&mut self, el: &ActiveEventLoop) {
+        let on_top =
+            self.app.conf.state.get("ui.always_on_top") == "on" && self.main.window_id().is_some();
+        self.app.set_anchor(self.main.geometry(), on_top);
+        self.app.ensure_window(el);
+    }
+
     /// ★ 검색 방식 선택(09-04 드롭다운) — 설정에 쓰면 박동 동기가 두 창의 방식·드롭다운·필터를 맞춘다.
     fn set_find_mode(&mut self, v: &str) {
         println!(
@@ -1220,7 +1228,7 @@ impl ApplicationHandler<ShellEvent> for Shell {
                 MainAction::None => {}
                 MainAction::Close => self.close_main(),
                 MainAction::QueryChanged => self.main.on_history_changed(&self.history),
-                MainAction::OpenSettings => self.app.ensure_window(el),
+                MainAction::OpenSettings => self.open_settings(el),
                 MainAction::Copy { id, as_ } => self.copy_from_main(id, as_),
                 MainAction::SetViewMode(code) => {
                     self.app
@@ -1236,6 +1244,8 @@ impl ApplicationHandler<ShellEvent> for Shell {
                         Instant::now(),
                     );
                     self.main.apply_always_top(on);
+                    // ★ 설정 창도 따라간다(09-04) — 메인창 위에 있어야 한다.
+                    self.app.set_level(on && self.main.window_id().is_some());
                     println!("최상위 고정: {}", if on { "켜짐" } else { "꺼짐" });
                     if on && !self.atop_effective {
                         println!(
@@ -1355,7 +1365,7 @@ impl ApplicationHandler<ShellEvent> for Shell {
                     },
                 );
             }
-            ShellEvent::OpenSettings => self.app.ensure_window(el),
+            ShellEvent::OpenSettings => self.open_settings(el),
             ShellEvent::Quit => {
                 self.save_main_geom();
                 el.exit();

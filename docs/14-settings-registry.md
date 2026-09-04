@@ -229,6 +229,7 @@ General 안내문 그대로:
 | `ui.tray_show_recent` | Checkbox | on | ★ 트레이 아이콘 옆 최근 항목 표시 | M |
 | `ui.dock_icon` | Checkbox | on | ★ **Dock 아이콘 표시**(mac 전용 — 끔 = Accessory·메뉴바에서만 · 09-04) | N |
 | `ui.font.*` | 폰트 슬롯 | — | 글꼴·크기(beep 슬롯 구조 그대로) | B |
+| `ui.set_x` · `ui.set_y` · `ui.set_w` · `ui.set_h` · `ui.set_mon` | 숨김 | — | ★ **설정 창 마지막 기하 + 모니터 키**(09-04 사용자) — 닫을 때 저장 · 열 때 **메인창이 같은 모니터에 있을 때만** 복원, 아니면 메인창 옆(오른쪽 → 왼쪽 → 겹침)으로 초기화 · 메인창 최상위면 설정 창도 최상위 | N |
 | `hist.clear` | Action | — | ★ **기록 모두 삭제**(09-04 · 고급) — **2단계 확인**: 첫 클릭 = 경고 노트 + 2초 무장 · 그 안의 둘째 클릭 = 고정 제외 전부 삭제(메모리 + 암호화 저장소) · 2초 지나면 자동 해제 · 값 키 없음(행위) | N |
 | `ui.font_mono` | FontFace | (비움) | ★ **고정폭 글꼴**(09-04) — 터미널·코드 리치 런의 Mono 슬롯 · 비우면 Nerd Font → D2Coding → JetBrains Mono → Cascadia → Consolas → Menlo → DejaVu 순 첫 설치본 · 주 글꼴에도 폴백으로 붙어 PUA 아이콘 글리프가 산다 · 재시작 후 적용 | N |
 
