@@ -218,6 +218,8 @@ pub(crate) struct MainWin {
     tool_fade: nclip_ctl::tokens::HoverFade,
     /// ★ 상태줄 점 툴팁 페이드(09-04) — 툴바 툴팁과 같은 곡선.
     dot_fade: nclip_ctl::tokens::Fade,
+    /// ★ 목록 행 hover 페이드(09-04 사용자 — "기본색보다 조금 진하게 서서히"): Material 상태 레이어(본문색 6%).
+    row_fade: nclip_ctl::tokens::HoverFade,
     /// ★ 보기 모드(Ctrl+1/2/3 · `ui.view_mode` 영속).
     view: ViewMode,
     /// ★ 우클릭 컨텍스트 메뉴(VT-5).
@@ -303,6 +305,7 @@ impl MainWin {
             hovered: None,
             tool_fade: nclip_ctl::tokens::HoverFade::default(),
             dot_fade: nclip_ctl::tokens::Fade::hover(),
+            row_fade: nclip_ctl::tokens::HoverFade::default(),
             view: ViewMode::Compact,
             menu: ContextMenu::new(),
             editor: None,
@@ -921,10 +924,13 @@ impl MainWin {
             | self.preview_bars.tick(now_ms)
             | self.tool_fade.tick(now_ms)
             | self.dot_fade.tick(now_ms)
+            | self.row_fade.tick(now_ms)
         {
             self.redraw();
         }
-        self.tool_fade.is_animating() || self.dot_fade.is_animating()
+        self.tool_fade.is_animating()
+            || self.dot_fade.is_animating()
+            || self.row_fade.is_animating()
     }
 
     /// ★ 미리보기 내용을 현재 선택과 동기(09-02 K4) — id 비교만이라 매 사건 호출해도 값싸다.
@@ -1146,6 +1152,12 @@ impl MainWin {
                 if !inv.is_empty() {
                     self.redraw();
                 }
+                // ★ 행 hover 페이드(09-04) — 선택(하늘색)과 별개로 살짝 진해진다.
+                let row_hover = self.row_at(self.cursor.0, self.cursor.1, w, h);
+                if row_hover != self.row_fade.current() {
+                    self.row_fade.set(row_hover);
+                    self.redraw();
+                }
                 let hovered = self.tool_at(self.cursor.0, self.cursor.1, h);
                 if hovered != self.hovered {
                     self.hovered = hovered;
@@ -1166,6 +1178,10 @@ impl MainWin {
             WindowEvent::CursorLeft { .. } => {
                 if self.hovered.take().is_some() {
                     self.tool_fade.set(None);
+                    self.redraw();
+                }
+                if self.row_fade.current().is_some() {
+                    self.row_fade.set(None);
                     self.redraw();
                 }
             }
@@ -1712,6 +1728,11 @@ impl MainWin {
                 dc.fill_rect(clip, th.sel_bg);
             } else if vi % 2 == 1 {
                 dc.fill_rect(clip, th.panel_bg_alt);
+            }
+            // ★ hover 상태 레이어(09-04) — 선택 행은 제외 · 본문색 6% × 페이드 진행도(라이트 = 진해짐 · 다크 = 밝아짐).
+            let g = self.row_fade.value(vi);
+            if vi != self.sel && g > 0.0 {
+                dc.fill_rect_alpha(clip, th.text, 0.06 * g);
             }
             // 핀 구획 경계 — 첫 비고정 행 위에 한 줄.
             if !pin_divider_done && !row.pinned && vi > 0 {
