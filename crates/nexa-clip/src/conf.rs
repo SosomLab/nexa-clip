@@ -302,6 +302,7 @@ pub(crate) fn load_ui_font(conf: &Settings) -> Option<nclip_gfx::Font> {
     use nclip_gfx::Font;
     let sys = nclip_plat::font::system_ui_font();
     let fam = conf.state.get("ui.font_family").trim().to_string();
+    // ① 주 글꼴(+ 사용자 지정이면 시스템 본을 첫 폴백으로).
     let mut font = if fam.is_empty() {
         Font::from_static(sys?.0, sys?.1).ok()?
     } else if let Some((d, i)) = nclip_plat::font::find_font_by_family(&fam) {
@@ -310,12 +311,30 @@ pub(crate) fn load_ui_font(conf: &Settings) -> Option<nclip_gfx::Font> {
         if let Some((sd, si)) = sys {
             let _ = f.push_fallback(sd, si);
         }
-        return Some(f);
+        f
     } else {
         eprintln!("⚠️ 글꼴 '{fam}'을(를) 못 찾았습니다 — 시스템 기본으로 실행합니다");
         Font::from_static(sys?.0, sys?.1).ok()?
     };
-    let _ = &mut font;
+    // ② ★ OS별 기호·이모지 폴백 체인(09-04 사용자 "두부 제거") — 설정과 무관하게 항상 붙는다.
+    //   글자 단위 폴백이라 기준선·줄 높이는 주 글꼴이 계속 정한다.
+    let mut names = Vec::new();
+    for (data, idx, name) in nclip_plat::font::symbol_fallback_fonts() {
+        if font.push_fallback(data, idx).is_ok() {
+            names.push(name);
+        }
+    }
+    if names.is_empty() {
+        println!("글꼴 폴백: 기호·이모지 본 없음 — 주 글꼴에 없는 기호는 □로 보입니다");
+    } else {
+        // 진단 — 실기에서 두부가 보이면 이 줄로 어느 본이 빠졌는지 안다.
+        println!(
+            "글꼴 폴백: {} · 커버 ✓={} 🎉={}",
+            names.join(" → "),
+            font.covers('\u{2713}'),
+            font.covers('\u{1F389}')
+        );
+    }
     Some(font)
 }
 
