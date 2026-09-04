@@ -131,8 +131,11 @@ impl App {
             self.clear_arm = None;
             let mut inv = Invalidations::default();
             self.widget.set_row_note("hist.clear", "", &mut inv);
-            self.widget
-                .set_action_tone("hist.clear", nclip_ctl::ButtonTone::Default, &mut inv);
+            self.widget.set_action_tone(
+                "hist.clear",
+                nclip_ctl::controls::ButtonTone::Default,
+                &mut inv,
+            );
             self.redraw();
         }
     }
@@ -733,9 +736,9 @@ impl App {
                 self.widget.set_action_tone(
                     "hist.clear",
                     if armed {
-                        nclip_ctl::ButtonTone::Default
+                        nclip_ctl::controls::ButtonTone::Default
                     } else {
-                        nclip_ctl::ButtonTone::Danger
+                        nclip_ctl::controls::ButtonTone::Danger
                     },
                     &mut inv,
                 );
