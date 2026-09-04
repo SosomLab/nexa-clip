@@ -122,6 +122,8 @@ struct Row {
     remote: bool,
     /// 내용 열쇠(중복 제외 보기 묶음).
     key: u64,
+    /// ★ 메타(09-04 사용자 "내용과 메타 분리") — 이 내용을 만든 출처들(로컬 앱 · ⇄ 기기). 합친 행은 여럿.
+    origins: Vec<String>,
     copies: u32,
     thumb: Option<nclip_ctl::theme::IconImage>,
     /// 원본 화소 치수(라벨 "W×H" 파싱 · 09-02 가변 행 — 섬네일은 축소본이라 절대 크기를 모른다).
@@ -139,6 +141,8 @@ enum Tool {
     Delete,
     Copy,
     CopyPlain,
+    /// ★ 중복 제외 보기(09-04 사용자 — Material `compress` 아이콘 · 미리보기 위). 켜짐 = accent.
+    Dedup,
     /// ★ 미리보기 패널 토글(09-02 K4 — CopyQ식 하단 패널). 켜짐 = accent.
     Preview,
     /// ★ 최상위 고정(09-02 사용자 요청) — 모든 창 위에 표시. ⚙ 위 바닥 고정.
@@ -147,13 +151,14 @@ enum Tool {
 }
 
 /// 툴바 배치(위에서부터) — `None` = 구분선. ⚙는 바닥 고정(VT-4).
-const TOOLS_TOP: [Option<Tool>; 7] = [
+const TOOLS_TOP: [Option<Tool>; 8] = [
     Some(Tool::Pin),
     Some(Tool::Delete),
     None,
     Some(Tool::Copy),
     Some(Tool::CopyPlain),
     None,
+    Some(Tool::Dedup),
     Some(Tool::Preview),
 ];
 
@@ -207,12 +212,12 @@ pub(crate) struct MainWin {
     sync_icon: std::cell::RefCell<Option<(bool, u32, nclip_ctl::theme::IconImage)>>,
     /// 미리보기 아이콘 틴트 캐시(색 키 · 09-03 사용자 지정 아이콘).
     preview_icon: std::cell::RefCell<Option<(u32, nclip_ctl::theme::IconImage)>>,
+    /// 중복 제외 아이콘 틴트 캐시(색 키 · 09-04 사용자 지정 Material `compress`).
+    dedup_icon: std::cell::RefCell<Option<(u32, nclip_ctl::theme::IconImage)>>,
     /// ★ 미리보기 패널 열림(09-02 K4 · `ui.preview_open` 영속 — 기본 접힘).
     preview_open: bool,
     /// ★ 중복 제외 보기(09-04 사용자) — 같은 내용은 **로컬 1건**, 로컬이 없으면 **가장 최근 수신 1건**만.
     dedup_view: bool,
-    /// 중복 제외 스위치(검색줄 오른쪽).
-    dedup_sw: Switch,
     /// 미리보기 텍스트 — (항목 id, 읽기용 멀티라인 · wrap · 휠 스크롤만 라우팅).
     preview_tb: Option<(u64, TextBox)>,
     /// ★ 리치 미리보기 세로 스크롤(px · 09-03 — 스크롤바와 짝).
@@ -267,11 +272,11 @@ impl MainWin {
             sync_mode: SyncMode::Off,
             sync_icon: std::cell::RefCell::new(None),
             preview_icon: std::cell::RefCell::new(None),
+            dedup_icon: std::cell::RefCell::new(None),
             preview_open: false,
             preview_tb: None,
             preview_scroll: 0,
             dedup_view: false,
-            dedup_sw: Switch::new("", false).with_label_side(LabelSide::None),
             preview_hs: 0,
             preview_bars: ScrollBars::new(),
             preview_content: std::cell::Cell::new((0, 0)),
@@ -357,7 +362,6 @@ impl MainWin {
         self.always_top = opts.always_top;
         self.preview_open = opts.preview_open;
         self.dedup_view = opts.dedup_view;
-        self.dedup_sw.set_on(opts.dedup_view);
         self.view = ViewMode::from_code(opts.view_code).unwrap_or_default();
         if let Some(w) = &self.window {
             w.set_visible(true);
@@ -433,25 +437,45 @@ impl MainWin {
     ///   **가장 최근 수신 1건**만 남긴다(입력 순서 = 최신순 유지).
     fn dedup_rows(rows: Vec<Row>) -> Vec<Row> {
         use std::collections::HashMap;
-        let mut pick: HashMap<u64, u64> = HashMap::new(); // key → 남길 id
-        let mut has_local: HashMap<u64, bool> = HashMap::new();
-        for r in &rows {
+        // key → (남길 행의 입력 인덱스, 로컬 여부, 합친 출처들, 복사 수 합).
+        let mut groups: HashMap<u64, (usize, bool, Vec<String>, u32)> = HashMap::new();
+        for (i, r) in rows.iter().enumerate() {
             let local = !r.remote;
-            match pick.get(&r.key) {
-                None => {
-                    pick.insert(r.key, r.id);
-                    has_local.insert(r.key, local);
-                }
-                Some(_) if local && !has_local.get(&r.key).copied().unwrap_or(false) => {
-                    pick.insert(r.key, r.id); // 먼저 온 게 수신이고 이건 로컬 — 로컬이 이긴다
-                    has_local.insert(r.key, true);
-                }
-                Some(_) => {}
+            let e = groups
+                .entry(r.key)
+                .or_insert_with(|| (i, local, Vec::new(), 0));
+            if local && !e.1 {
+                e.0 = i; // 먼저 온 게 수신이고 이건 로컬 — 로컬이 대표
+                e.1 = true;
             }
+            for o in &r.origins {
+                if !e.2.contains(o) {
+                    e.2.push(o.clone());
+                }
+            }
+            e.3 = e.3.saturating_add(r.copies);
         }
-        rows.into_iter()
-            .filter(|r| pick.get(&r.key) == Some(&r.id))
-            .collect()
+        // 로컬 출처를 앞으로(내 것이 먼저 · 수신은 뒤).
+        let mut out: Vec<Row> = Vec::with_capacity(groups.len());
+        for (i, mut r) in rows.into_iter().enumerate() {
+            let Some(g) = groups.get(&r.key) else {
+                continue;
+            };
+            if g.0 != i {
+                continue;
+            }
+            let mut origins: Vec<String> =
+                g.2.iter()
+                    .filter(|o| !o.starts_with("⇄ "))
+                    .cloned()
+                    .collect();
+            origins.extend(g.2.iter().filter(|o| o.starts_with("⇄ ")).cloned());
+            r.origins = origins;
+            r.copies = g.3;
+            r.remote = !g.1; // 로컬 출처가 하나라도 있으면 내 것(점 없음)
+            out.push(r);
+        }
+        out
     }
 
     pub(crate) fn refresh(&mut self, hist: &History) {
@@ -476,6 +500,7 @@ impl MainWin {
                     .as_deref()
                     .is_some_and(|s| s.starts_with("⇄ ")),
                 key: History::content_key(item),
+                origins: item.source_app.iter().cloned().collect(),
                 copies: item.copies,
                 thumb: item.thumb.as_ref().map(|(w, h, rgba)| {
                     nclip_ctl::theme::IconImage::from_rgba(*w, *h, rgba.clone())
@@ -730,6 +755,8 @@ impl MainWin {
             (Tool::Settings, _) => MainAction::OpenSettings,
             (Tool::AlwaysTop, _) => MainAction::ToggleAlwaysTop,
             (Tool::Preview, _) => MainAction::TogglePreview,
+            // 값 적용은 셸 왕복(`apply_dedup`) — 영속과 화면이 한 곳에서 맞는다(미리보기 토글과 같은 문법).
+            (Tool::Dedup, _) => MainAction::DedupView(!self.dedup_view),
             (_, None) => MainAction::None, // VT-3: 선택 없으면 비활성
             (Tool::Pin, Some(id)) => MainAction::TogglePin(id),
             (Tool::Delete, Some(id)) => MainAction::Delete(id),
@@ -879,9 +906,10 @@ impl MainWin {
         self.preview_rich_id = None;
         if self.preview_tb.as_ref().map(|(id, _)| *id) != Some(row.id) {
             let mut text = row.plain.clone().unwrap_or_else(|| row.label.clone());
-            // ★ 수신 항목은 첫 줄에 출처 기기(09-04 사용자 — "어디서 받은 건지").
-            if row.remote {
-                let origin = tr(current_lang(), Msg::MenuOrigin).replacen("{}", &row.source, 1);
+            // ★ 출처 메타(09-04 사용자 — "어디서 받은 건지"): 수신 항목 또는 합친 행(출처 여럿)은 첫 줄에.
+            if row.remote || row.origins.len() > 1 {
+                let origin =
+                    tr(current_lang(), Msg::MenuOrigin).replacen("{}", &row.origins.join(" · "), 1);
                 text = format!("{origin}\n{text}");
             }
             let mut tb = TextBox::new("").with_multiline().with_text(&text);
@@ -933,6 +961,14 @@ impl MainWin {
     pub(crate) fn set_sync_mode(&mut self, mode: SyncMode) {
         if self.sync_mode != mode {
             self.sync_mode = mode;
+            self.redraw();
+        }
+    }
+
+    /// ★ 중복 제외 보기 적용(토글 셸 왕복 · 09-04) — 행 재구성은 셸이 `on_history_changed`로.
+    pub(crate) fn apply_dedup(&mut self, on: bool) {
+        if self.dedup_view != on {
+            self.dedup_view = on;
             self.redraw();
         }
     }
@@ -1121,32 +1157,6 @@ impl MainWin {
                     return MainAction::None;
                 }
                 let (sx, sy) = self.cursor;
-                // ★ 중복 제외 스위치(09-04) — 검색줄 오른쪽. 토글 = 셸이 영속 + refresh.
-                if *button == winit::event::MouseButton::Left
-                    && self
-                        .dedup_sw
-                        .bounds()
-                        .contains(nclip_ctl::geom::Point { x: sx, y: sy })
-                {
-                    let mut inv = Invalidations::default();
-                    let ev = if *state == ElementState::Pressed {
-                        CtlEvent::MouseDown {
-                            x: sx,
-                            y: sy,
-                            shift: false,
-                            primary: false,
-                        }
-                    } else {
-                        CtlEvent::MouseUp { x: sx, y: sy }
-                    };
-                    self.dedup_sw.on_event(&ev, &mut inv);
-                    self.redraw();
-                    if let Some(on) = self.dedup_sw.take_toggled() {
-                        self.dedup_view = on;
-                        return MainAction::DedupView(on);
-                    }
-                    return MainAction::None;
-                }
                 // ★ 검색 우클릭 = 편집 메뉴(09-02) · 메뉴 열림 동안은 전부 검색 몫.
                 if *state == ElementState::Pressed
                     && *button == winit::event::MouseButton::Right
@@ -1427,20 +1437,12 @@ impl MainWin {
             let mut inv = Invalidations::default();
             self.search.set_scale(self.scale);
             let tbw = self.toolbar_w();
-            // ★ 중복 제외 스위치(09-04) — 검색줄 오른쪽 끝(라벨은 페인트가 왼쪽에 그린다).
-            let sww = (self.scale * 40.0).round() as i32;
-            let label_w = (self.scale * 64.0).round() as i32;
-            let sy = (self.scale * 7.0).round() as i32;
-            let sh = (self.scale * 24.0).round() as i32;
-            self.dedup_sw.set_scale(self.scale);
-            self.dedup_sw
-                .set_bounds(Rect::new(w - pad - sww, sy + 2, sww, sh - 4), &mut inv);
             self.search.set_bounds(
                 Rect::new(
                     tbw + pad,
-                    sy,
-                    (w - tbw - pad * 3 - sww - label_w).max(40),
-                    sh,
+                    (self.scale * 7.0).round() as i32,
+                    (w - tbw - pad * 2).max(40),
+                    (self.scale * 24.0).round() as i32,
                 ),
                 &mut inv,
             );
@@ -1516,32 +1518,16 @@ impl MainWin {
         // ── ① 검색 1줄 — 툴바 오른쪽(정식 TextBox · 09-01) ──
         dc.fill_rect(Rect::new(tb_w, 0, w - tb_w, header_h), th.chrome_bg);
         self.search.paint(dc, &th);
-        {
-            // ★ 중복 제외 스위치 + 라벨(09-04).
-            let r = self.dedup_sw.bounds();
-            dc.select_font(FontSlot::Status, false);
-            let label = tr(current_lang(), Msg::DedupLabel);
-            let tw = dc.text_width(label);
-            dc.text(
-                r.x - tw - px(8.0),
-                r.y + px(3.0),
-                full,
-                label,
-                if self.dedup_view {
-                    th.text
-                } else {
-                    th.text_dim
-                },
-            );
-            self.dedup_sw.paint(dc, &th);
-        }
         dc.fill_rect(Rect::new(tb_w, header_h - 1, w - tb_w, 1), th.border);
         let has_sel = !self.rows.is_empty();
         for (k, t) in TOOLS_TOP.iter().enumerate() {
             match t {
-                Some(t) => {
-                    self.draw_tool(dc, self.tool_rect(k), *t, has_sel || *t == Tool::Preview)
-                }
+                Some(t) => self.draw_tool(
+                    dc,
+                    self.tool_rect(k),
+                    *t,
+                    has_sel || matches!(*t, Tool::Preview | Tool::Dedup),
+                ),
                 None => {
                     let r = self.tool_rect(k);
                     dc.fill_rect(
@@ -2122,6 +2108,28 @@ impl MainWin {
                     dc.image_scaled(dst, img, r);
                 }
             }
+            Tool::Dedup => {
+                // ★ Material `compress`(09-04 사용자 지정 SVG) — 켜짐(중복 제외 보기) = accent.
+                let c = if self.dedup_view { th.accent } else { ink };
+                let mut cache = self.dedup_icon.borrow_mut();
+                let stale = !matches!(cache.as_ref(), Some((k, _)) if *k == c.0);
+                if stale {
+                    let (r0, g0, b0) = ((c.0 >> 16) as u8, (c.0 >> 8) as u8, c.0 as u8);
+                    let mut rgba = Vec::with_capacity(DEDUP_ALPHA.len() * 4);
+                    for &a in DEDUP_ALPHA {
+                        rgba.extend_from_slice(&[r0, g0, b0, a]);
+                    }
+                    *cache = Some((
+                        c.0,
+                        nclip_ctl::theme::IconImage::from_rgba(PREVIEW_SIDE, PREVIEW_SIDE, rgba),
+                    ));
+                }
+                if let Some((_, img)) = cache.as_ref() {
+                    let half = px(10.0);
+                    let dst = Rect::new(cx - half, cy - half, half * 2, half * 2);
+                    dc.image_scaled(dst, img, r);
+                }
+            }
             Tool::AlwaysTop => {
                 // ★ Material `layers`(09-02 사용자 시안) — 꺼짐 = 윗장 윤곽선 + 밴드 1,
                 //   켜짐 = accent 적층 3장. 마름모 = 삼각형 2장 합성.
@@ -2189,13 +2197,13 @@ impl MainWin {
             CtxItem::item("copy", tr(lang, Msg::MenuCopy)),
             CtxItem::item("plain", tr(lang, Msg::MenuCopyPlain)),
         ];
-        // ★ 수신 항목 — 출처 기기를 맨 위에(정보 항목 · 클릭 없음 · 09-04).
-        if row.remote {
+        // ★ 출처 메타 — 수신 항목/합친 행은 출처들을 맨 위에(정보 항목 · 클릭 없음 · 09-04).
+        if row.remote || row.origins.len() > 1 {
             items.insert(
                 0,
                 CtxItem::maybe(
                     "origin",
-                    tr(lang, Msg::MenuOrigin).replacen("{}", &row.source, 1),
+                    tr(lang, Msg::MenuOrigin).replacen("{}", &row.origins.join(" · "), 1),
                     false,
                 ),
             );
@@ -2522,6 +2530,8 @@ fn svg_attr(xml: &str, name: &str) -> Option<u32> {
 
 /// ★ 미리보기 툴바 아이콘(09-03 사용자 지정 — Material `preview` 96² 알파).
 const PREVIEW_ALPHA: &[u8] = include_bytes!("../assets/icon-preview-96.alpha");
+/// ★ 중복 제외 툴바 아이콘(09-04 사용자 지정 — Material `compress` 96² 알파).
+const DEDUP_ALPHA: &[u8] = include_bytes!("../assets/icon-dedup-96.alpha");
 /// 미리보기 자산 변(px).
 const PREVIEW_SIDE: u32 = 96;
 
@@ -2564,6 +2574,7 @@ fn tool_label(t: Tool) -> &'static str {
         Tool::Copy => tr(lang, Msg::TipCopy),
         Tool::CopyPlain => tr(lang, Msg::TipCopyPlain),
         Tool::Preview => tr(lang, Msg::TipPreview),
+        Tool::Dedup => tr(lang, Msg::DedupLabel),
         Tool::AlwaysTop => tr(lang, Msg::TipAlwaysTop),
         Tool::Settings => tr(lang, Msg::TraySettings),
     }

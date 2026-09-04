@@ -911,6 +911,7 @@ impl ApplicationHandler<ShellEvent> for Shell {
                         if on { "on" } else { "off" }.to_string(),
                         Instant::now(),
                     );
+                    self.main.apply_dedup(on);
                     self.main.on_history_changed(&self.history);
                 }
                 MainAction::CopyImage(id) => self.copy_as_image(id),
@@ -971,7 +972,7 @@ impl ApplicationHandler<ShellEvent> for Shell {
                 let view = self.app.conf.state.get("ui.view_mode").to_string();
                 let atop = self.app.conf.state.get("ui.always_on_top") == "on";
                 let pv = self.app.conf.state.get("ui.preview_open") == "on";
-                let dd = self.app.conf.state.get("ui.dedup_view") == "on";
+                let dd = self.app.conf.state.get("ui.dedup_view") != "off"; // 기본 켬(09-04)
                 self.main.open(
                     el,
                     &self.history,
