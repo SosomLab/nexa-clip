@@ -86,6 +86,8 @@ fn main() {
         Some("peek") => watch_cmd::peek(),
         Some("tray") => tray_cmd::run(),
         Some("status") => status(),
+        // ★ 배포 검증용(brew formula test · 09-04) — 워크스페이스 버전을 그대로 찍는다.
+        Some("--version" | "-V") => println!("nexa-clip {}", env!("CARGO_PKG_VERSION")),
         Some("--help" | "-h" | "help") => usage(),
         Some(other) => {
             eprintln!("알 수 없는 명령: {other}\n");
@@ -117,6 +119,7 @@ nexa-clip [명령]
   spike-paste    K-1 스파이크 — 포커스 복원 + 붙여넣기 키 주입 검증
       --plain        평문 붙여넣기 경로로 시도
       --wait <초>    대상 앱을 고를 시간(기본 5)
+  --version      버전 출력(배포 검증용)
   --help         이 도움말
   --profile <이름>  ★ 별도 프로필로 실행(09-04) — 데이터 폴더 data/profiles/<이름>
                  (설정·저장소·신원·기기 목록 분리 · 단일 인스턴스 가드도 분리)

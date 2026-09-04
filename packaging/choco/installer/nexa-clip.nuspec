@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
+  <metadata>
+    <id>nexa-clip</id>
+    <version>@VERSION@</version>
+    <packageSourceUrl>https://github.com/SosomLab/nexa-clip/tree/main/packaging/choco/installer</packageSourceUrl>
+    <owners>SosomLab</owners>
+    <title>Nexa Clip</title>
+    <authors>Sangyong Bae</authors>
+    <projectUrl>https://github.com/SosomLab/nexa-clip</projectUrl>
+    <iconUrl>https://raw.githubusercontent.com/SosomLab/nexa-clip/main/packaging/branding/nexa-clip-256.png</iconUrl>
+    <licenseUrl>https://github.com/SosomLab/nexa-clip/blob/main/LICENSE.md</licenseUrl>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <projectSourceUrl>https://github.com/SosomLab/nexa-clip</projectSourceUrl>
+    <bugTrackerUrl>https://github.com/SosomLab/nexa-clip/issues</bugTrackerUrl>
+    <releaseNotes>https://github.com/SosomLab/nexa-clip/releases/tag/v@VERSION@</releaseNotes>
+    <tags>clipboard clipboard-manager sync encrypted cross-platform</tags>
+    <summary>3-OS 동일 화면 클립보드 매니저</summary>
+    <description>
+3-OS(Windows · macOS · Linux)에서 똑같이 생긴 화면으로 동작하는 클립보드 매니저입니다.
+전부 Rust로 만든 단일 실행 파일이며, 자체 래스터라이저로 그려 Qt·WebView·Electron을 쓰지 않습니다.
+이력은 로컬에 암호화 저장되고(기본 켜짐), 기기 사이 동기화는 승인한 기기와만 E2E로 이루어집니다
+(같은 네트워크 직결 또는 릴레이 경유). 런타임 의존이 없습니다.
+
+라이선스: PolyForm Noncommercial 1.0.0 (비상업적 사용).
+    </description>
+  </metadata>
+  <files>
+    <file src="tools\**" target="tools" />
+  </files>
+</package>

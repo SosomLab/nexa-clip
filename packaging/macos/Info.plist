@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key>                 <string>Nexa Clip</string>
+  <key>CFBundleDisplayName</key>          <string>Nexa Clip</string>
+  <key>CFBundleIdentifier</key>           <string>io.github.sosomlab.nexa-clip</string>
+  <key>CFBundleExecutable</key>           <string>nexa-clip</string>
+  <key>CFBundleIconFile</key>             <string>AppIcon</string>
+  <key>CFBundleVersion</key>              <string>@VERSION@</string>
+  <key>CFBundleShortVersionString</key>   <string>@VERSION@</string>
+  <key>CFBundlePackageType</key>          <string>APPL</string>
+  <key>LSMinimumSystemVersion</key>       <string>11.0</string>
+  <key>NSHighResolutionCapable</key>      <true/>
+  <!-- 같은 네트워크 직결(09-04): UDP 비콘으로 같은 아이디·암호의 내 기기를 찾는다 — macOS는 이 접근에
+       사용자 동의를 요구하므로 무엇을 왜 하는지 그대로 적는다. -->
+  <key>NSLocalNetworkUsageDescription</key>
+  <string>같은 네트워크에 있는 내 다른 기기를 찾아 클립보드를 동기화하기 위해 로컬 네트워크를 사용합니다. 내용은 기기 사이에 암호화되며 승인한 기기와만 주고받습니다.</string>
+</dict>
+</plist>

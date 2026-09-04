@@ -1,0 +1,92 @@
+# homebrew — 탭 저장소(kiros33/homebrew-tap) 갱신 · macOS/Linux 채널
+#
+# 이식 원본: nexa-beep `homebrew.yml`. 내가 운영하는 탭이라 검수가 없고 되돌리기도 커밋 하나 —
+# 스위치 변수 없이 `TAP_TOKEN` 유무만 본다. 토큰이 없으면 파일만 아티팩트로 올리고 **왜 안 나갔는지 말한다**.
+name: homebrew
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+      dry_run:
+        required: false
+        default: false
+        type: boolean
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "릴리스 태그(예: v0.1.0)"
+        required: true
+        type: string
+      dry_run:
+        description: "탭에 push하지 않고 정의만 확인"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  tap:
+    runs-on: macos-latest
+    env:
+      TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 릴리스 자산 내려받기
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p assets
+          gh release download "${{ inputs.tag }}" --dir assets --pattern 'nexa-clip-*'
+          ls -lh assets
+
+      - name: 매니페스트 생성
+        env:
+          TAG: ${{ inputs.tag }}
+        run: ./packaging/render-manifests.sh "${TAG#v}" assets out
+
+      - name: 정의 검증
+        run: |
+          set -euo pipefail
+          ruby -c out/homebrew/Casks/nexa-clip.rb
+          ruby -c out/homebrew/Formula/nexa-clip-portable.rb
+          brew style out/homebrew/Casks/nexa-clip.rb || true
+          brew style out/homebrew/Formula/nexa-clip-portable.rb || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: homebrew-${{ inputs.tag }}
+          path: out/homebrew/**
+
+      - name: 탭에 반영
+        if: ${{ inputs.dry_run != true }}
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TAP_TOKEN:-}" ]; then
+            echo "::warning::시크릿 TAP_TOKEN이 없어 탭에 push하지 않았다."
+            echo "아티팩트 homebrew-${TAG}를 받아 kiros33/homebrew-tap에 직접 커밋하면 된다: Casks/nexa-clip.rb · Formula/nexa-clip-portable.rb"
+            exit 0
+          fi
+          git clone --depth 1 "https://x-access-token:${TAP_TOKEN}@github.com/kiros33/homebrew-tap.git" tap
+          mkdir -p tap/Casks tap/Formula
+          cp out/homebrew/Casks/nexa-clip.rb            tap/Casks/
+          cp out/homebrew/Formula/nexa-clip-portable.rb tap/Formula/
+          cd tap
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/nexa-clip.rb Formula/nexa-clip-portable.rb
+          if git diff --cached --quiet; then
+            echo "변경 없음 — 이미 ${TAG#v}가 반영되어 있다."
+            exit 0
+          fi
+          git commit -m "nexa-clip ${TAG#v}"
+          git push
+          echo "탭 반영 완료 — brew install --cask kiros33/tap/nexa-clip"

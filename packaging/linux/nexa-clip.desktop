@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Nexa Clip
+GenericName=Clipboard Manager
+Comment=3-OS 동일 화면 클립보드 매니저 — 로컬 암호화 저장 · 승인한 기기와만 E2E 동기화
+Exec=nexa-clip
+Icon=nexa-clip
+Terminal=false
+Categories=Utility;
+Keywords=clipboard;history;paste;sync;
+StartupWMClass=nexa-clip

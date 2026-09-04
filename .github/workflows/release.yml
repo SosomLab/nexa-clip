@@ -1,0 +1,367 @@
+# release — 5타깃 배포 산출물(설치본 + 포터블) · GitHub Releases 게시 · 패키지 관리자 제출
+#
+# 이식 원본: nexa-beep `.github/workflows/release.yml`(08-11 사용자 확정 정책 승계).
+# 채널 = 설치본 + 포터블 2채널 · 타깃 = Windows(x64·ARM64) · macOS(Apple Silicon·Intel) · Linux(x86_64).
+# 압축은 플랫폼 관례(Windows zip · mac/Linux tar.gz). ⚠️ v1은 **서명하지 않는다**(인증서 없음) —
+# 릴리스 노트에 우회 방법을 숨기지 않고 적는다.
+#
+# 트리거 정책
+# - `v*` 태그 push = 산출물 생성 + 릴리스 **바로 공개** + brew 탭 반영 + (스위치 켜져 있으면) winget·choco 제출.
+# - workflow_dispatch = 초안(publish=true면 공개).
+# - ★ 패키지 관리자 제출은 **직전 제출이 검수 대기 중이면 자동으로 건너뛴다**(09-04 사용자 요청 ·
+#   beep 08-24 규칙 "검수 통과 전 새 버전 제출 금지"를 워크플로가 스스로 판정) —
+#   `publish-windows-packages.yml`의 guard 잡 참고.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "릴리스 태그(예: v0.1.0) — 없으면 커밋 SHA로 초안 생성"
+        required: false
+        type: string
+      publish:
+        description: "수동 실행에서도 바로 공개할지 — 기본은 초안"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write # 릴리스 생성·자산 업로드
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  # ── 버전 산정: 태그 → 0.1.0 / 수동 실행 → 0.0.0-dev.<sha> ─────────
+  meta:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      tag: ${{ steps.v.outputs.tag }}
+      prerelease: ${{ steps.v.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        shell: bash
+        run: |
+          set -euo pipefail
+          input_tag="${{ inputs.tag }}"
+          if [ -n "${GITHUB_REF_NAME:-}" ] && [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            tag="$GITHUB_REF_NAME"
+          elif [ -n "$input_tag" ]; then
+            tag="$input_tag"
+          else
+            tag="v0.0.0-dev.${GITHUB_SHA::7}"
+          fi
+          version="${tag#v}"
+          case "$version" in *-*) pre=true ;; *) pre=false ;; esac
+          echo "tag=$tag"         >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$pre"  >> "$GITHUB_OUTPUT"
+          echo "릴리스 $tag (버전 $version · prerelease=$pre)"
+          # 태그와 Cargo 버전이 어긋나면 여기서 멈춘다(brew formula test가 잡기 전에).
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            cargo_v=$(grep -m1 '^version = ' Cargo.toml | sed -E 's/version = "(.*)"/\1/')
+            [ "$cargo_v" = "$version" ] || { echo "::error::태그 $version ≠ Cargo.toml $cargo_v"; exit 1; }
+          fi
+
+  # ── 타깃별 빌드 + 포장 ────────────────────────────────────────────
+  package:
+    needs: meta
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            slug: windows-x64
+          - os: windows-latest
+            target: aarch64-pc-windows-msvc
+            slug: windows-arm64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            slug: macos-arm64
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            slug: macos-x64
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            slug: linux-x64
+    runs-on: ${{ matrix.os }}
+    env:
+      VERSION: ${{ needs.meta.outputs.version }}
+      TARGET: ${{ matrix.target }}
+      SLUG: ${{ matrix.slug }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-${{ matrix.target }}
+
+      - name: 타깃 추가
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Linux 시스템 패키지(빌드 링크)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libxkbcommon-dev libwayland-dev libx11-dev libxcb1-dev dpkg-dev
+
+      - name: 릴리스 빌드
+        # nclip-imgdec = 이미지 격리 디코드 워커(형제 실행 파일) — 없으면 PNG 썸네일·전파 이미지 변환이 빠진다.
+        run: cargo build --release -p nexa-clip -p nclip-imgdec --target ${{ matrix.target }}
+
+      # 예산 게이트(DR-9) — 릴리스 산출물에도 건다. 넘치면 배포를 멈춘다.
+      - name: 크기 게이트(≤10MB)
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in nexa-clip nclip-imgdec; do
+            bin="target/$TARGET/release/$name"
+            [ "${{ runner.os }}" = "Windows" ] && bin="$bin.exe"
+            size=$(wc -c < "$bin")
+            printf '%s(%s): %d bytes (%.2f MB)\n' "$TARGET" "$name" "$size" "$(awk "BEGIN{print $size/1048576}")"
+            [ "$size" -le $((10*1024*1024)) ] || { echo "::error::$TARGET $name > 10MB(DR-9)"; exit 1; }
+          done
+
+      - name: 포터블 구성
+        shell: bash
+        run: |
+          set -euo pipefail
+          name="nexa-clip-$VERSION-$SLUG-portable"
+          mkdir -p "dist/$name"
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            cp "target/$TARGET/release/nexa-clip.exe" "target/$TARGET/release/nclip-imgdec.exe" "dist/$name/"
+          else
+            cp "target/$TARGET/release/nexa-clip" "target/$TARGET/release/nclip-imgdec" "dist/$name/"
+            chmod +x "dist/$name/nexa-clip" "dist/$name/nclip-imgdec"
+          fi
+          cp README.md LICENSE.md LICENSE.ko.md "dist/$name/"
+          echo "PORTABLE_NAME=$name" >> "$GITHUB_ENV"
+
+      - name: 포터블 압축(Windows=zip · mac/Linux=tar.gz)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          cd dist
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            # bash 큰따옴표 안에 PowerShell 변수(`$env:`)를 쓰지 않는다 — 바깥 셸 변수만(beep 08-11 교훈).
+            powershell -NoProfile -Command "Compress-Archive -Path '$PORTABLE_NAME' -DestinationPath '../out/$PORTABLE_NAME.zip' -Force"
+          else
+            tar -czf "../out/$PORTABLE_NAME.tar.gz" "$PORTABLE_NAME"
+          fi
+
+      - name: NSIS 설치
+        if: runner.os == 'Windows'
+        run: choco install nsis -y --no-progress
+
+      - name: Windows 설치본(.exe) + zip
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/nsis
+          cp "target/$TARGET/release/nexa-clip.exe" "target/$TARGET/release/nclip-imgdec.exe" build/nsis/
+          cp packaging/branding/nexa-clip.ico build/nsis/
+          cp README.md LICENSE.md build/nsis/
+          sed -e "s/@VERSION@/$VERSION/g" -e "s/@SLUG@/$SLUG/g" \
+              packaging/windows/installer.nsi > build/nsis/installer.nsi
+          "/c/Program Files (x86)/NSIS/makensis.exe" -V2 build/nsis/installer.nsi
+          setup="nexa-clip-$VERSION-$SLUG-setup.exe"
+          mv "build/nsis/$setup" "out/$setup"
+          powershell -NoProfile -Command "Compress-Archive -Path 'out/$setup' -DestinationPath 'out/$setup.zip' -Force"
+
+      - name: macOS 설치본(.dmg)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          app="build/Nexa Clip.app"
+          mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+          cp "target/$TARGET/release/nexa-clip" "target/$TARGET/release/nclip-imgdec" "$app/Contents/MacOS/"
+          chmod +x "$app/Contents/MacOS/nexa-clip" "$app/Contents/MacOS/nclip-imgdec"
+          sed "s/@VERSION@/$VERSION/g" packaging/macos/Info.plist > "$app/Contents/Info.plist"
+          iconset=build/AppIcon.iconset
+          mkdir -p "$iconset"
+          src=packaging/branding/nexa-clip-1024.png
+          sips -z 16 16   "$src" --out "$iconset/icon_16x16.png"      >/dev/null
+          sips -z 32 32   "$src" --out "$iconset/icon_16x16@2x.png"   >/dev/null
+          sips -z 32 32   "$src" --out "$iconset/icon_32x32.png"      >/dev/null
+          sips -z 64 64   "$src" --out "$iconset/icon_32x32@2x.png"   >/dev/null
+          sips -z 128 128 "$src" --out "$iconset/icon_128x128.png"    >/dev/null
+          sips -z 256 256 "$src" --out "$iconset/icon_128x128@2x.png" >/dev/null
+          sips -z 256 256 "$src" --out "$iconset/icon_256x256.png"    >/dev/null
+          sips -z 512 512 "$src" --out "$iconset/icon_256x256@2x.png" >/dev/null
+          sips -z 512 512 "$src" --out "$iconset/icon_512x512.png"    >/dev/null
+          cp "$src" "$iconset/icon_512x512@2x.png"
+          iconutil -c icns "$iconset" -o "$app/Contents/Resources/AppIcon.icns"
+          # 애드혹 서명 — Apple Silicon은 서명 없는 번들을 실행하지 않는다. 격리는 Cask postflight에서 뗀다.
+          codesign --force --deep --sign - "$app"
+          root=build/dmgroot
+          mkdir -p "$root"
+          cp -R "$app" "$root/"
+          ln -s /Applications "$root/Applications"
+          cp README.md LICENSE.md "$root/"
+          hdiutil create -volname "Nexa Clip $VERSION" -srcfolder "$root" -ov -format UDZO "out/nexa-clip-$VERSION-$SLUG.dmg" >/dev/null
+
+      - name: Linux 설치본(.deb)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          pkg="build/deb"
+          mkdir -p "$pkg/DEBIAN" "$pkg/usr/bin" "$pkg/usr/share/applications" \
+                   "$pkg/usr/share/icons/hicolor/256x256/apps" "$pkg/usr/share/doc/nexa-clip"
+          install -m 0755 "target/$TARGET/release/nexa-clip"    "$pkg/usr/bin/nexa-clip"
+          install -m 0755 "target/$TARGET/release/nclip-imgdec" "$pkg/usr/bin/nclip-imgdec"
+          install -m 0644 packaging/linux/nexa-clip.desktop "$pkg/usr/share/applications/nexa-clip.desktop"
+          install -m 0644 packaging/branding/nexa-clip-256.png "$pkg/usr/share/icons/hicolor/256x256/apps/nexa-clip.png"
+          install -m 0644 README.md LICENSE.md "$pkg/usr/share/doc/nexa-clip/"
+          size_kb=$(du -sk "$pkg/usr" | cut -f1)
+          sed -e "s/@VERSION@/$VERSION/g" -e "s/@SIZE@/$size_kb/g" packaging/linux/control > "$pkg/DEBIAN/control"
+          dpkg-deb --build --root-owner-group "$pkg" "out/nexa-clip-${VERSION}-${SLUG}.deb" >/dev/null
+
+      - name: 산출물 목록
+        shell: bash
+        run: ls -lh out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.slug }}
+          path: out/*
+          if-no-files-found: error
+
+  # ── 릴리스 게시 ───────────────────────────────────────────────────
+  publish:
+    needs: [meta, package]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: staged
+          pattern: dist-*
+          merge-multiple: true
+
+      # 매니페스트(winget · choco · brew)는 **여기서 만들어 릴리스에 붙여만 둔다** — 제출은 전용 워크플로.
+      # 치환 로직은 render-manifests.sh 하나뿐(갈라지면 그 지점이 곧 버그).
+      - name: 매니페스트 생성
+        shell: bash
+        env:
+          VERSION: ${{ needs.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          ./packaging/render-manifests.sh "$VERSION" staged manifests
+          (cd manifests && zip -qr "../staged/nexa-clip-$VERSION-package-manifests.zip" .)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package-manifests
+          path: manifests/**
+          if-no-files-found: error
+
+      - name: SHA256SUMS
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd staged
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: 릴리스 노트
+        shell: bash
+        env:
+          VERSION: ${{ needs.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          cat > notes.md <<EOF
+          # Nexa Clip $VERSION
+
+          3-OS에서 똑같이 생긴 화면으로 동작하는 클립보드 매니저 — 로컬 암호화 저장 · 승인한 기기와만 E2E 동기화.
+
+          ## 받을 파일 고르기
+
+          | 운영체제 | 설치본 | 포터블(압축 해제 후 바로 실행) |
+          | --- | --- | --- |
+          | Windows x64 | \`...windows-x64-setup.exe\`(+\`.zip\`) | \`...windows-x64-portable.zip\` |
+          | Windows ARM64 | \`...windows-arm64-setup.exe\`(+\`.zip\`) | \`...windows-arm64-portable.zip\` |
+          | macOS (Apple Silicon) | \`...macos-arm64.dmg\` | \`...macos-arm64-portable.tar.gz\` |
+          | macOS (Intel) | \`...macos-x64.dmg\` | \`...macos-x64-portable.tar.gz\` |
+          | Linux x86_64 | \`...linux-x64.deb\` | \`...linux-x64-portable.tar.gz\` |
+
+          ## 패키지 관리자
+
+          \`\`\`bash
+          brew install --cask kiros33/tap/nexa-clip        # macOS 설치본(.app)
+          brew install kiros33/tap/nexa-clip-portable      # macOS/Linux 포터블
+          \`\`\`
+          \`\`\`powershell
+          winget install SosomLab.NexaClip                 # Windows 설치본
+          winget install SosomLab.NexaClip.Portable        # Windows 포터블
+          choco  install nexa-clip                         # Windows 설치본
+          choco  install nexa-clip-portable                # Windows 포터블
+          \`\`\`
+
+          ⚠️ winget·Chocolatey는 **중앙 검수**를 거쳐야 위 명령이 동작한다. 직전 제출이 검수 대기 중이면 이번
+          릴리스는 자동으로 제출을 건너뛰며(큐 엉킴 방지), 함께 올린 \`...package-manifests.zip\`이 실제 제출본이다.
+
+          ## ⚠️ 서명하지 않은 배포다
+
+          코드 서명 인증서가 없어 macOS Gatekeeper와 Windows SmartScreen이 경고한다. 받은 파일이 맞는지
+          \`SHA256SUMS.txt\`로 먼저 확인하길 권한다.
+
+          - macOS: \`.dmg\`로 직접 설치했다면 격리 표식을 떼야 실행된다 — \`xattr -dr com.apple.quarantine "/Applications/Nexa Clip.app"\`
+            (brew Cask로 설치하면 자동).
+          - Windows: SmartScreen 화면에서 **추가 정보 → 실행**.
+
+          ## 사용 안내 · 변경 내역
+
+          - 사용자 안내: <https://github.com/SosomLab/nexa-clip/wiki>
+          - 변경 내역: [docs/DEVLOG.md](https://github.com/SosomLab/nexa-clip/blob/main/docs/DEVLOG.md)
+
+          라이선스: PolyForm Noncommercial 1.0.0 (비상업적 사용).
+          EOF
+          cat notes.md
+
+      - name: 게시
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.meta.outputs.tag }}
+          PRE: ${{ needs.meta.outputs.prerelease }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(--title "Nexa Clip ${TAG#v}" --notes-file notes.md --target "$GITHUB_SHA")
+          [ "$PRE" = "true" ] && args+=(--prerelease)
+          if [ "${{ github.ref_type }}" != "tag" ] && [ "${{ inputs.publish }}" != "true" ]; then
+            args+=(--draft)
+            echo "수동 실행이라 초안으로 만든다 — GitHub에서 'Publish release'를 눌러 공개한다."
+          fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" staged/* --clobber
+          else
+            gh release create "$TAG" staged/* "${args[@]}"
+          fi
+
+  # ── 패키지 관리자 제출(릴리스 공개 뒤에만 — 매니페스트가 자산 URL·해시를 가리킨다) ──
+  homebrew:
+    needs: [meta, publish]
+    if: github.ref_type == 'tag'
+    uses: ./.github/workflows/homebrew.yml
+    with:
+      tag: ${{ needs.meta.outputs.tag }}
+    secrets: inherit
+
+  windows-packages:
+    needs: [meta, publish]
+    if: github.ref_type == 'tag'
+    uses: ./.github/workflows/publish-windows-packages.yml
+    with:
+      tag: ${{ needs.meta.outputs.tag }}
+    secrets: inherit

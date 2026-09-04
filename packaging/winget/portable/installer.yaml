@@ -1,0 +1,25 @@
+PackageIdentifier: SosomLab.NexaClip.Portable
+PackageVersion: "@VERSION@"
+MinimumOSVersion: 10.0.0.0
+# zip 안에 실행 파일 하나 — winget이 풀어서 shim만 만든다(설치 흔적 없음 · DR-4 포터블).
+InstallerType: zip
+NestedInstallerType: portable
+Commands:
+  - nexa-clip
+UpgradeBehavior: install
+ReleaseDate: "@DATE@"
+Installers:
+  - Architecture: x64
+    InstallerUrl: https://github.com/SosomLab/nexa-clip/releases/download/v@VERSION@/nexa-clip-@VERSION@-windows-x64-portable.zip
+    InstallerSha256: @SHA_WIN_X64_PORTABLE@
+    NestedInstallerFiles:
+      - RelativeFilePath: nexa-clip-@VERSION@-windows-x64-portable\nexa-clip.exe
+        PortableCommandAlias: nexa-clip
+  - Architecture: arm64
+    InstallerUrl: https://github.com/SosomLab/nexa-clip/releases/download/v@VERSION@/nexa-clip-@VERSION@-windows-arm64-portable.zip
+    InstallerSha256: @SHA_WIN_ARM64_PORTABLE@
+    NestedInstallerFiles:
+      - RelativeFilePath: nexa-clip-@VERSION@-windows-arm64-portable\nexa-clip.exe
+        PortableCommandAlias: nexa-clip
+ManifestType: installer
+ManifestVersion: 1.6.0

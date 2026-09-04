@@ -1,0 +1,210 @@
+# publish-windows-packages — winget · Chocolatey 제출(Windows 채널 전용)
+#
+# 이식 원본: nexa-beep `publish-windows-packages.yml`(변수+시크릿 이중 게이트) + ★ **검수 대기 자동 판정**
+# (09-04 사용자 요청 — beep는 사람이 `docs/18 §5` 절차로 점검해 스위치를 켜고 껐다. 여기서는 워크플로가
+# 스스로 본다: **직전 제출이 검수 통과 전이면 이번 릴리스는 그 채널 제출을 건너뛴다**. 검수 중 새 제출은
+# 큐를 엉키게 하고 반려 사유가 된다).
+#
+# | 채널 | 스위치 변수 | 시크릿 | 대기 판정 |
+# | --- | --- | --- | --- |
+# | winget | `WINGET_PUBLISH=true` | `WINGET_TOKEN` | microsoft/winget-pkgs에 우리 패키지 식별자를 단 **열린 PR**이 있으면 대기 |
+# | Chocolatey | `CHOCO_PUSH=true` | `CHOCO_API_KEY` | 공개 피드에 **직전 릴리스 버전**이 아직 없으면 대기(모더레이션 중 패키지는 피드에 숨는다) |
+#
+# 수동 실행의 `force=true`는 대기 판정을 무시한다(사람이 확인했을 때만).
+name: publish-windows-packages
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+      force:
+        required: false
+        default: false
+        type: boolean
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "릴리스 태그(예: v0.1.0)"
+        required: true
+        type: string
+      force:
+        description: "검수 대기 판정을 무시하고 제출(사람이 확인했을 때만)"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  # ── 스위치 + 검수 대기 판정 ──
+  guard:
+    runs-on: ubuntu-latest
+    outputs:
+      winget_go: ${{ steps.winget.outputs.go }}
+      choco_go: ${{ steps.choco.outputs.go }}
+    env:
+      WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
+      CHOCO_API_KEY: ${{ secrets.CHOCO_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # 직전 태그를 알아야 choco 대기 판정이 된다
+
+      - name: 스위치 상태(값 노출 없음)
+        run: |
+          echo "태그                  : ${{ inputs.tag }}  (force=${{ inputs.force }})"
+          echo "vars.WINGET_PUBLISH   : '${{ vars.WINGET_PUBLISH }}'  · WINGET_TOKEN 설정됨: ${{ env.WINGET_TOKEN != '' }}"
+          echo "vars.CHOCO_PUSH       : '${{ vars.CHOCO_PUSH }}'  · CHOCO_API_KEY 설정됨: ${{ env.CHOCO_API_KEY != '' }}"
+
+      - id: winget
+        name: winget 대기 판정(열린 PR)
+        shell: bash
+        run: |
+          set -euo pipefail
+          go=false
+          if [ "${{ vars.WINGET_PUBLISH }}" = "true" ] && [ -n "${WINGET_TOKEN:-}" ]; then
+            go=true
+            if [ "${{ inputs.force }}" != "true" ]; then
+              # 우리 식별자를 단 열린 PR(어느 버전이든) = 검수 대기. 토큰 주인이 만든 PR만 본다.
+              me=$(GH_TOKEN="$WINGET_TOKEN" gh api user -q .login)
+              open=$(GH_TOKEN="$WINGET_TOKEN" gh pr list -R microsoft/winget-pkgs --state open --author "$me" \
+                       --search "SosomLab.NexaClip" --json number,title -q '.[] | "#\(.number) \(.title)"' || true)
+              if [ -n "$open" ]; then
+                echo "::warning::winget: 직전 제출이 검수 대기 중 — 이번 릴리스는 제출을 건너뛴다(큐 엉킴 방지)."
+                echo "$open"
+                go=false
+              fi
+            fi
+          fi
+          echo "go=$go" >> "$GITHUB_OUTPUT"
+          echo "winget 제출: $go"
+
+      - id: choco
+        name: Chocolatey 대기 판정(직전 버전이 공개 피드에 있는가)
+        shell: bash
+        run: |
+          set -euo pipefail
+          go=false
+          if [ "${{ vars.CHOCO_PUSH }}" = "true" ] && [ -n "${CHOCO_API_KEY:-}" ]; then
+            go=true
+            if [ "${{ inputs.force }}" != "true" ]; then
+              cur="${{ inputs.tag }}"
+              # 직전 정식 태그(사전 배포 제외) — 없으면 첫 제출이라 대기 판정 없음.
+              prev=$(git tag -l 'v*' --sort=-v:refname | grep -v -- '-' | grep -vx "$cur" | head -1 || true)
+              if [ -n "$prev" ]; then
+                pv="${prev#v}"
+                for pkg in nexa-clip nexa-clip-portable; do
+                  url="https://community.chocolatey.org/api/v2/Packages()?\$filter=Id%20eq%20'$pkg'%20and%20Version%20eq%20'$pv'"
+                  if ! curl -fsS "$url" | grep -q "<entry>"; then
+                    echo "::warning::choco: $pkg $pv 이(가) 아직 공개 피드에 없다(모더레이션 대기) — 이번 릴리스는 제출을 건너뛴다."
+                    go=false
+                  fi
+                done
+              else
+                echo "직전 정식 태그 없음 — 첫 제출."
+              fi
+            fi
+          fi
+          echo "go=$go" >> "$GITHUB_OUTPUT"
+          echo "choco 제출: $go"
+
+  # ── Chocolatey ──
+  chocolatey:
+    needs: guard
+    runs-on: windows-latest
+    env:
+      CHOCO_API_KEY: ${{ secrets.CHOCO_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: 릴리스 자산 내려받기
+        shell: bash
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          set -euo pipefail
+          mkdir -p assets
+          gh release download "${{ inputs.tag }}" --dir assets --pattern 'nexa-clip-*'
+      - name: 매니페스트 생성 + pack
+        shell: bash
+        env: { TAG: "${{ inputs.tag }}" }
+        run: |
+          set -euo pipefail
+          v="${TAG#v}"
+          ./packaging/render-manifests.sh "$v" assets out
+          mkdir -p out/choco/nupkg
+          for pkg in nexa-clip nexa-clip-portable; do
+            choco pack "out/choco/$pkg/$pkg.nuspec" --version "$v" --outputdirectory out/choco/nupkg
+          done
+          ls -l out/choco/nupkg
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chocolatey-${{ inputs.tag }}
+          path: out/choco/**
+      - name: choco push(스위치 + 대기 판정 통과 시)
+        if: needs.guard.outputs.choco_go == 'true'
+        shell: bash
+        env: { TAG: "${{ inputs.tag }}" }
+        run: |
+          set -euo pipefail
+          v="${TAG#v}"
+          for pkg in nexa-clip nexa-clip-portable; do
+            choco push "out/choco/nupkg/$pkg.$v.nupkg" --source https://push.chocolatey.org/ --api-key "$CHOCO_API_KEY"
+          done
+          echo "제출 완료 — 커뮤니티 저장소는 검수를 거쳐야 노출된다(즉시 아님)."
+      - name: 건너뛴 이유 안내
+        if: needs.guard.outputs.choco_go != 'true'
+        shell: bash
+        run: |
+          echo "::notice::choco push하지 않았다(스위치 꺼짐·키 없음·또는 직전 제출 검수 대기)."
+          echo "아티팩트 chocolatey-${{ inputs.tag }}의 nupkg를 받아 직접 push할 수 있다."
+
+  # ── winget ──
+  winget:
+    needs: guard
+    runs-on: windows-latest
+    env:
+      WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: 릴리스 자산 내려받기
+        shell: bash
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          set -euo pipefail
+          mkdir -p assets
+          gh release download "${{ inputs.tag }}" --dir assets --pattern 'nexa-clip-*'
+      - name: 매니페스트 생성 + 검증
+        shell: bash
+        env: { TAG: "${{ inputs.tag }}" }
+        run: |
+          set -euo pipefail
+          ./packaging/render-manifests.sh "${TAG#v}" assets out
+          # 매니페스트가 실제로 든 폴더를 찾는다(포터블 식별자는 한 단계 더 깊다 — beep 08-11 교훈).
+          find out/winget -name '*.installer.yaml' -exec dirname {} \; | sort -u > dirs.txt
+          [ -s dirs.txt ] || { echo "::error::winget 매니페스트를 찾지 못했다"; exit 1; }
+          while read -r d; do
+            echo "== $d"; winget validate --manifest "$d" || exit 1
+          done < dirs.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: winget-${{ inputs.tag }}
+          path: out/winget/**
+      - name: winget-pkgs PR(스위치 + 대기 판정 통과 시)
+        if: needs.guard.outputs.winget_go == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl.exe -L -o wingetcreate.exe https://aka.ms/wingetcreate/latest
+          find out/winget -name '*.installer.yaml' -exec dirname {} \; | sort -u > dirs.txt
+          while read -r d; do
+            ./wingetcreate.exe submit --token "$WINGET_TOKEN" "$d"
+          done < dirs.txt
+          echo "PR 생성 — microsoft/winget-pkgs의 자동 검증·리뷰를 거쳐야 노출된다."
+      - name: 건너뛴 이유 안내
+        if: needs.guard.outputs.winget_go != 'true'
+        shell: bash
+        run: |
+          echo "::notice::winget PR을 만들지 않았다(스위치 꺼짐·토큰 없음·또는 직전 제출 검수 대기)."
+          echo "아티팩트 winget-${{ inputs.tag }}를 microsoft/winget-pkgs에 직접 PR할 수 있다."

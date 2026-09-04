@@ -439,3 +439,24 @@ cargo run -p nexa-clip -- watch    # 계속 감시. NEXA_CLIP_DIAG=1 로 진단 
 (WAYLAND_DISPLAY는 비운다). 트레이는 D-Bus로 사람 없이 재현 가능 — `busctl --user call <이름> /MenuBar
 com.canonical.dbusmenu GetLayout iias -- 0 -1 0` · `Event isvu -- <id> clicked s "" 0`(id 3 열기 · 4 종료 · 100+ 최근).
 ⚠️ `pkill -f "nexa-clip tray"`는 그 문자열을 인자로 가진 셸 자신도 죽인다 — `pgrep -x nexa-clip`으로 확인.
+
+---
+
+## 10. 배포 — `release.yml` · brew · winget · Chocolatey (09-04)
+
+> 포장 상세(채널·타깃·매니페스트·스위치·검수 대기 판정)는 [`packaging/README.md`](../packaging/README.md)가 SSOT.
+> 이식 원본 = `nexa-beep`(08-11 정책) + ★ **검수 대기 자동 판정**(09-04 사용자 요청).
+
+```bash
+# 1) main이 green인지 확인한다 — red 상태로 태그를 밀지 않는다.
+gh run list --branch main --workflow ci --limit 1
+# 2) 버전을 올린다(워크스페이스 단일 버전) — 태그와 다르면 meta 잡이 멈춘다.
+$EDITOR Cargo.toml       # [workspace.package] version
+# 3) 태그를 밀면 끝 — 5타깃 빌드 · 릴리스 공개 · brew 탭 · winget/choco 제출이 이어진다.
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+- winget·choco는 저장소 변수 `WINGET_PUBLISH`·`CHOCO_PUSH`(= true · 09-04 설정)와 시크릿(`WINGET_TOKEN`·`CHOCO_API_KEY`·`TAP_TOKEN` · 09-04 사용자 추가)이 있어야 나간다.
+- ★ **직전 제출이 검수 대기 중이면 그 채널은 자동으로 건너뛴다**(guard 잡 — winget 열린 PR · choco 피드 부재). 릴리스·brew·다른 채널은 그대로.
+  사람이 확인한 뒤 강제하려면 `publish-windows-packages` 수동 실행 `force=true`.
+- 태그 없이 산출물만 보려면 Actions → release → *Run workflow*(초안).
