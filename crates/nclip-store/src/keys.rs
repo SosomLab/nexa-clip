@@ -41,11 +41,17 @@ fn load_or_create_secret(path: &Path) -> io::Result<[u8; 32]> {
         return Err(io::Error::other(format!("{} 손상(길이)", path.display())));
     }
     let k = random32()?;
-    std::fs::write(path, k)?;
+    // ★ 생성 시점부터 0600(09-05) — 쓰고 나서 chmod 하면 그 사이 umask 모드로 잠깐 열린다.
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create_new(true);
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt as _;
-        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+        use std::os::unix::fs::OpenOptionsExt as _;
+        opts.mode(0o600);
+    }
+    {
+        use std::io::Write as _;
+        opts.open(path)?.write_all(&k)?;
     }
     Ok(k)
 }

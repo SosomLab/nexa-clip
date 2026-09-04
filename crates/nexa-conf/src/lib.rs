@@ -103,7 +103,11 @@ pub fn serialize(known: &[(&str, &str)], unknown: &[(String, String)]) -> String
     for (k, v) in known {
         line(k, v);
     }
+    // ★ 미지 키가 나중에 아는 키가 되면(등재·런타임 set) known이 이긴다 — 같은 키 두 줄 금지(09-05).
     for (k, v) in unknown {
+        if known.iter().any(|(kk, _)| *kk == k.as_str()) {
+            continue;
+        }
         line(k, v);
     }
     out
@@ -131,7 +135,16 @@ pub fn write_atomic(path: &Path, contents: &str) -> io::Result<()> {
     let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let tmp = dir.join(format!(".{base}.{}.{seq}.tmp", std::process::id()));
     let write = (|| -> io::Result<()> {
-        let mut f = fs::File::create(&tmp)?;
+        let mut opts = fs::OpenOptions::new();
+        opts.write(true).create(true).truncate(true);
+        // ★ 소유자만(09-05) — 설정에는 비밀(페어링 패스프레이즈 등)이 실릴 수 있다. umask 기본(0644/0664)은
+        //   같은 PC의 다른 계정·백업 도구에 그대로 노출된다. rename이 temp의 모드를 그대로 나른다.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt as _;
+            opts.mode(0o600);
+        }
+        let mut f = opts.open(&tmp)?;
         f.write_all(contents.as_bytes())?;
         f.sync_all()
     })();
@@ -426,6 +439,32 @@ mod tests {
     }
 
     /// T-5: 미지 키가 왕복 후에도 남아 있다(F-1).
+    /// ★ 09-05: 미지 키로 보존된 것이 나중에 known으로 오면 한 줄만(known 값) 남는다.
+    #[test]
+    fn known_wins_over_stale_unknown() {
+        let text = serialize(
+            &[("a", "new")],
+            &[
+                ("a".to_string(), "old".to_string()),
+                ("z".to_string(), "keep".to_string()),
+            ],
+        );
+        assert_eq!(text, "_schema=1\na=new\nz=keep\n");
+    }
+
+    /// ★ 09-05: 설정 파일은 소유자만 읽는다(비밀이 실릴 수 있다).
+    #[cfg(unix)]
+    #[test]
+    fn written_file_is_owner_only() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let d = tmpdir("perm");
+        let p = d.join("settings.cfg");
+        write_atomic(&p, "_schema=1\n").unwrap();
+        let mode = fs::metadata(&p).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600, "mode {mode:o}");
+        let _ = fs::remove_dir_all(d);
+    }
+
     #[test]
     fn unknown_keys_survive_roundtrip() {
         let d = tmpdir("t5");

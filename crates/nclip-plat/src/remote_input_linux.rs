@@ -10,6 +10,12 @@
 //! (호스트는 클립보드 적재까지만 — FR-P-1).
 //!
 //! 세션은 프로세스 수명 동안 하나(연결 유지 필수 — 연결이 닫히면 세션도 닫힌다).
+//!
+//! ★ 세션 닫힘 자가 복구(09-05 사용자 실기 — Linux VM): 셸이 세션을 닫을 수 있다(상단 바 "화면 공유"
+//! 표시의 중지 · 포털 재시작 · 잠금 등). 그러면 `NotifyKeyboardKeycode`가 `AccessDenied: Invalid
+//! session`으로 **영영** 실패했다(죽은 핸들을 계속 씀). 이제 전송 실패 시 세션을 버리고 저장 토큰으로
+//! 다시 열어 **한 번 재시도**한다 — 토큰이 살아 있으면 대화창 없이 조용히 붙는다(토큰이 회수됐으면
+//! 대화창 = 정직한 재승인).
 
 use crate::hotkey_linux::{call_with_response, Results, PORTAL_DEST, PORTAL_PATH};
 use std::collections::HashMap;
@@ -32,6 +38,9 @@ struct Session {
 
 static SESSION: Mutex<Option<Session>> = Mutex::new(None);
 static TOKEN_PATH: OnceLock<PathBuf> = OnceLock::new();
+/// 세션 회차 — 포털 객체 경로는 `session_handle_token`에서 파생되므로 재개설마다 달라야 한다
+/// (같은 토큰으로 다시 만들면 죽은 옛 객체와 경로가 겹칠 수 있다).
+static GEN: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
 /// `restore_token` 보관 파일(호스트의 data 디렉터리) — 설정 전엔 토큰을 저장하지 않는다
 /// (매 실행 대화창).
@@ -62,7 +71,16 @@ fn save_token(t: &str) {
         if let Some(dir) = p.parent() {
             let _ = std::fs::create_dir_all(dir);
         }
-        let _ = std::fs::write(p, t);
+        // ★ 소유자만(09-05) — 이 토큰은 대화창 없이 키 주입 세션을 여는 열쇠다.
+        use std::io::Write as _;
+        use std::os::unix::fs::OpenOptionsExt as _;
+        let _ = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(p)
+            .and_then(|mut f| f.write_all(t.as_bytes()));
     }
 }
 
@@ -85,10 +103,15 @@ fn open_session() -> zbus::Result<Session> {
     let portal = Proxy::new(&conn, PORTAL_DEST, PORTAL_PATH, IFACE)?;
     let _v: u32 = portal.get_property("version")?;
 
+    let gen = GEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let tok_create = format!("nclip_rd_create{gen}");
+    let tok_session = format!("nclip_rd{gen}");
+    let tok_select = format!("nclip_rd_select{gen}");
+    let tok_start = format!("nclip_rd_start{gen}");
     let mut o: HashMap<&str, Value<'_>> = HashMap::new();
-    o.insert("handle_token", Value::from("nclip_rd_create"));
-    o.insert("session_handle_token", Value::from("nclip_rd"));
-    let (code, r) = call_with_response(&conn, &portal, "CreateSession", &(o,), "nclip_rd_create")?;
+    o.insert("handle_token", Value::from(tok_create.as_str()));
+    o.insert("session_handle_token", Value::from(tok_session.as_str()));
+    let (code, r) = call_with_response(&conn, &portal, "CreateSession", &(o,), &tok_create)?;
     if code != 0 {
         return Err(zbus::Error::Unsupported);
     }
@@ -99,28 +122,22 @@ fn open_session() -> zbus::Result<Session> {
         .ok_or(zbus::Error::Unsupported)?;
 
     let mut o: HashMap<&str, Value<'_>> = HashMap::new();
-    o.insert("handle_token", Value::from("nclip_rd_select"));
+    o.insert("handle_token", Value::from(tok_select.as_str()));
     o.insert("types", Value::from(DEVICE_KEYBOARD));
     o.insert("persist_mode", Value::from(PERSIST_UNTIL_REVOKED));
     let saved = load_token();
     if let Some(t) = &saved {
         o.insert("restore_token", Value::from(t.as_str()));
     }
-    let (code, _) = call_with_response(
-        &conn,
-        &portal,
-        "SelectDevices",
-        &(&path, o),
-        "nclip_rd_select",
-    )?;
+    let (code, _) = call_with_response(&conn, &portal, "SelectDevices", &(&path, o), &tok_select)?;
     if code != 0 {
         return Err(zbus::Error::Unsupported);
     }
 
     // 첫 회 = 셸 대화창(사용자 승인). 토큰이 있으면 대화창 없이 통과한다.
     let mut o: HashMap<&str, Value<'_>> = HashMap::new();
-    o.insert("handle_token", Value::from("nclip_rd_start"));
-    let (code, r) = call_with_response(&conn, &portal, "Start", &(&path, "", o), "nclip_rd_start")?;
+    o.insert("handle_token", Value::from(tok_start.as_str()));
+    let (code, r) = call_with_response(&conn, &portal, "Start", &(&path, "", o), &tok_start)?;
     if code != 0 {
         return Err(zbus::Error::Unsupported); // 거부/취소
     }
@@ -145,32 +162,62 @@ fn key(s: &Session, code: i32, pressed: bool) -> zbus::Result<()> {
     Ok(())
 }
 
-/// `Ctrl+V` 한 번 — 세션이 없으면 만든다(대화창 가능).
+/// 죽은 세션 폐기 — 다음 `ensure_session`이 새로 연다. 옛 객체에 `Close`를 시도한다(있으면 정리 · 없어도 무해).
+fn drop_session() {
+    let Ok(mut g) = SESSION.lock() else {
+        return;
+    };
+    if let Some(s) = g.take() {
+        let _ = s.conn.call_method(
+            Some(PORTAL_DEST),
+            s.path.as_str(),
+            Some("org.freedesktop.portal.Session"),
+            "Close",
+            &(),
+        );
+    }
+}
+
+/// 키 시퀀스를 세션에 보낸다 — 실패하면 세션을 버리고 **한 번** 다시 열어 재시도(★ 09-05 자가 복구).
+fn with_session_retry(seq: &dyn Fn(&Session) -> zbus::Result<()>) -> Result<(), String> {
+    let once = || -> Result<zbus::Result<()>, String> {
+        ensure_session()?;
+        let g = SESSION.lock().map_err(|_| "세션 잠금 오염".to_string())?;
+        let s = g.as_ref().ok_or_else(|| "세션 없음".to_string())?;
+        Ok(seq(s))
+    };
+    match once()? {
+        Ok(()) => Ok(()),
+        Err(first) => {
+            eprintln!("키 주입: 포털 세션 끊김({first}) — 다시 엽니다");
+            drop_session();
+            match once()? {
+                Ok(()) => Ok(()),
+                Err(e) => Err(format!("NotifyKeyboardKeycode 실패: {e}")),
+            }
+        }
+    }
+}
+
+/// `Ctrl+V` 한 번 — 세션이 없으면 만든다(대화창 가능). 세션이 죽어 있으면 다시 열어 재시도한다.
 ///
 /// # Errors
-/// 세션 실패 · 전송 실패.
+/// 세션 실패 · 전송 실패(재시도 후).
 pub fn tap_ctrl_v() -> Result<(), String> {
-    ensure_session()?;
-    let g = SESSION.lock().map_err(|_| "세션 잠금 오염".to_string())?;
-    let s = g.as_ref().ok_or_else(|| "세션 없음".to_string())?;
-    let run = || -> zbus::Result<()> {
+    with_session_retry(&|s| {
         key(s, KEY_LEFTCTRL, true)?;
         key(s, KEY_V, true)?;
         key(s, KEY_V, false)?;
         key(s, KEY_LEFTCTRL, false)
-    };
-    run().map_err(|e| format!("NotifyKeyboardKeycode 실패: {e}"))
+    })
 }
 
 /// 임의 키 한 번(누름+뗌) — 진단·실기 전용(evdev 키코드).
 ///
 /// # Errors
-/// 세션 실패 · 전송 실패.
+/// 세션 실패 · 전송 실패(재시도 후).
 pub fn tap_key(code: i32, with_ctrl: bool) -> Result<(), String> {
-    ensure_session()?;
-    let g = SESSION.lock().map_err(|_| "세션 잠금 오염".to_string())?;
-    let s = g.as_ref().ok_or_else(|| "세션 없음".to_string())?;
-    let run = || -> zbus::Result<()> {
+    with_session_retry(&move |s| {
         if with_ctrl {
             key(s, KEY_LEFTCTRL, true)?;
         }
@@ -180,8 +227,7 @@ pub fn tap_key(code: i32, with_ctrl: bool) -> Result<(), String> {
             key(s, KEY_LEFTCTRL, false)?;
         }
         Ok(())
-    };
-    run().map_err(|e| format!("NotifyKeyboardKeycode 실패: {e}"))
+    })
 }
 
 /// 세션이 살아 있는지(호스트 진단용).
@@ -247,6 +293,45 @@ mod tests {
         let _ = ed.kill();
         let _ = ed.wait();
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// ★ 09-05 재현(사람 없이 · 무해) — 세션을 **포털 쪽에서 닫아** 죽은 핸들을 만든 뒤(사용자 실기의
+    /// "화면 공유 표시가 사라짐"과 같은 상태) `tap_key`가 세션을 다시 열어 전송에 성공하는지.
+    /// 주입 키는 `LeftShift` 단독(어느 창에 가도 아무 일도 안 일어난다) — 포커스 창을 건드리지 않는다.
+    /// 09-05 실측: 첫 전송 ✓ → Close → "Invalid session" 감지 → 재개설 → 전송 ✓(대화창 없음 · 토큰 재사용).
+    /// `NCLIP_RD_TOKEN=<token path> cargo test -p nclip-plat -- --ignored portal_recovers --nocapture`
+    #[test]
+    #[ignore = "데스크톱 세션(포털 RemoteDesktop) 필요"]
+    fn portal_recovers_after_session_closed() {
+        const KEY_LEFTSHIFT: i32 = 42;
+        if let Some(t) = std::env::var_os("NCLIP_RD_TOKEN") {
+            configure_token_path(t.into());
+        }
+        tap_key(KEY_LEFTSHIFT, false).expect("첫 전송");
+        let gen_before = GEN.load(std::sync::atomic::Ordering::Relaxed);
+        // ★ 세션 사살 — 핸들은 그대로 둔 채 포털에 Close(= 셸이 세션을 닫은 것과 같은 상태).
+        {
+            let g = SESSION.lock().unwrap();
+            let s = g.as_ref().expect("세션");
+            s.conn
+                .call_method(
+                    Some(PORTAL_DEST),
+                    s.path.as_str(),
+                    Some("org.freedesktop.portal.Session"),
+                    "Close",
+                    &(),
+                )
+                .expect("Close");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        tap_key(KEY_LEFTSHIFT, false).expect("복구 후 전송");
+        let gen_after = GEN.load(std::sync::atomic::Ordering::Relaxed);
+        assert_eq!(
+            gen_after,
+            gen_before + 1,
+            "세션을 정확히 한 번 다시 열어야 한다"
+        );
+        assert!(has_session());
     }
 
     /// 토큰 파일 왕복 — 공백은 걷어내고, 비어 있으면 None.
