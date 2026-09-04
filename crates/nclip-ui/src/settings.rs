@@ -1382,7 +1382,7 @@ impl SettingsWidget {
     pub fn set_action_tone(
         &mut self,
         key: &'static str,
-        tone: ButtonTone,
+        tone: nclip_ctl::controls::ButtonTone,
         inv: &mut Invalidations,
     ) {
         for r in &mut self.rows {
