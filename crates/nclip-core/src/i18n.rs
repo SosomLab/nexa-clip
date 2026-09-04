@@ -805,7 +805,7 @@ impl Msg {
             Msg::SyncRetryNormal => ["Normal (5 s → 5 min)", "표준 (5초 → 5분)", "标准（5 秒 → 5 分钟）", "標準（5秒 → 5分）"],
             Msg::SyncRetryPatient => ["Patient (15 s → 15 min)", "느긋 (15초 → 15분)", "耐心（15 秒 → 15 分钟）", "のんびり（15秒 → 15分）"],
             Msg::SyncRetryEager => ["Eager (2 s → 1 min)", "적극 (2초 → 1분)", "积极（2 秒 → 1 分钟）", "積極（2秒 → 1分）"],
-            Msg::SyncRelayOff => ["None (same network only)", "None (같은 네트워크만)", "None（仅同一网络）", "None（同じネットワークのみ）"],
+            Msg::SyncRelayOff => ["None", "None", "None", "None"],
             Msg::StSyncLanOnly => [
                 "Relay: None — devices on the same network connect directly",
                 "릴레이 None — 같은 네트워크의 기기끼리 직접 연결됩니다",
@@ -972,10 +972,10 @@ impl Msg {
                 "パスフレーズを提案しました — 目のボタンで確認",
             ],
             Msg::SetSyncRelayDesc => [
-                "Relay address — beepd.sosomlab.com is the official SosomLab relay (default)",
-                "릴레이 주소 — beepd.sosomlab.com은 SosomLab 공식 릴레이(기본값)",
-                "中继地址 — beepd.sosomlab.com 为 SosomLab 官方中继（默认）",
-                "リレーアドレス — beepd.sosomlab.com は SosomLab 公式リレー（既定）",
+                "Relay address — beepd.sosomlab.com is the official SosomLab relay (default). None = same network only (no server; port, Test and Disconnect are not used).",
+                "릴레이 주소 — beepd.sosomlab.com은 SosomLab 공식 릴레이(기본값). None = 같은 네트워크만(서버 없음 · 포트·Test·Disconnect 사용 안 함).",
+                "中继地址 — beepd.sosomlab.com 为 SosomLab 官方中继（默认）。None = 仅同一网络（无服务器；端口、Test、Disconnect 不使用）。",
+                "リレーアドレス — beepd.sosomlab.com は SosomLab 公式リレー（既定）。None = 同じネットワークのみ（サーバーなし・ポート・Test・Disconnect は使いません）。",
             ],
             Msg::HintStack => [
                 "Enter pastes {} in order · Ctrl+Click/Ctrl+Space toggles · Esc",
