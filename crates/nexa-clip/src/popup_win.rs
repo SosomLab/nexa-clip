@@ -132,6 +132,9 @@ pub(crate) struct Popup {
     opened_at: std::time::Instant,
     /// 마지막 커서 위치(winit은 클릭 이벤트에 좌표를 싣지 않는다).
     cursor: (i32, i32),
+    /// ★ 행 hover 페이드(09-04 사용자 — 메인과 동일): 의도 코얼레싱(70ms · 휠 안정 120ms) + 상태 레이어 6%.
+    row_fade: nclip_ctl::tokens::HoverFade,
+    row_intent: nclip_ctl::tokens::HoverIntent<usize>,
 }
 
 /// 열림 직후 문자 입력 유예 — 단축키(Ctrl+Shift+V)를 누른 손이 떨어지기 전의
@@ -253,6 +256,8 @@ impl Popup {
             was_focused: false,
             opened_at: std::time::Instant::now(),
             cursor: (0, 0),
+            row_fade: nclip_ctl::tokens::HoverFade::default(),
+            row_intent: nclip_ctl::tokens::HoverIntent::default(),
         }
     }
 
@@ -438,11 +443,18 @@ impl Popup {
         consumed
     }
 
-    /// 스크롤바 페이드 틱(셸 500ms).
-    pub(crate) fn tick_ui(&mut self, now_ms: u64) {
-        if self.bars.tick(now_ms) {
+    /// 스크롤바 페이드 틱 + ★ 행 hover 의도 수행·페이드(09-04). 반환 = 아직 움직이는 중(셸이 16ms 박동).
+    pub(crate) fn tick_ui(&mut self, now_ms: u64) -> bool {
+        if let Some(r) = self.row_intent.take_due(now_ms) {
+            if self.row_fade.current() != Some(r) {
+                self.row_fade.set(Some(r));
+                self.redraw();
+            }
+        }
+        if self.bars.tick(now_ms) | self.row_fade.tick(now_ms) {
             self.redraw();
         }
+        self.row_fade.is_animating() || self.row_intent.is_waiting(now_ms)
     }
 
     /// 캐럿 깜빡임 위상(셸 타이머) — 바뀌면 다시 그린다.
@@ -588,6 +600,9 @@ impl Popup {
 
     /// 이력 → 필터 통과 행 재구성(검색어 변경·이력 변경 시).
     pub(crate) fn refresh(&mut self, hist: &History) {
+        // ★ 세대 가드(28 §hover) — 행 인덱스가 바뀌니 낡은 hover 의도·페이드는 버린다.
+        self.row_intent.clear();
+        self.row_fade.set(None);
         let q = self.search.display_text().to_lowercase();
         self.rows.clear();
         let mut normal = Vec::new();
@@ -741,10 +756,28 @@ impl Popup {
                     return PopupAction::None;
                 }
                 let (x, y) = self.cursor;
+                // ★ 행 hover = 의도만 등록(09-04 · 28 §hover) — 벗어나면 즉시 끔.
+                match self.row_at(x, y) {
+                    Some(r) => self.row_intent.set(r, crate::main_win::now_ms()),
+                    None => {
+                        self.row_intent.clear();
+                        if self.row_fade.current().is_some() {
+                            self.row_fade.set(None);
+                            self.redraw();
+                        }
+                    }
+                }
                 if self.feed_search(&CtlEvent::MouseMove { x, y }) {
                     self.sel = 0;
                     self.scroll = 0;
                     self.refresh(hist);
+                }
+            }
+            WindowEvent::CursorLeft { .. } => {
+                self.row_intent.clear();
+                if self.row_fade.current().is_some() {
+                    self.row_fade.set(None);
+                    self.redraw();
                 }
             }
             // ★ 클릭 = 선택 + 붙여넣기(Maccy 관례 — 08-28 사용자 실기 "클릭 선택 안 됨").
@@ -834,6 +867,12 @@ impl Popup {
             // ★ 휠 = 픽셀 스크롤(09-02 실기 — 행 단위·정수 절단이 패드에서 뚝뚝 끊겼다).
             //   선택은 그대로 두고 화면만 움직인다.
             WindowEvent::MouseWheel { delta, .. } => {
+                // ★ 스크롤 안정 대기(28 §hover) — 멈춘 뒤 커서 아래 행만.
+                let now = crate::main_win::now_ms();
+                self.row_intent.settle(now);
+                if let Some(r) = self.row_at(self.cursor.0, self.cursor.1) {
+                    self.row_intent.set(r, now);
+                }
                 let dy = match delta {
                     winit::event::MouseScrollDelta::LineDelta(_, y) => {
                         -y * (self.row_h() * 3) as f32
@@ -1044,6 +1083,7 @@ impl Popup {
                 &self.row_offs,
                 &self.marked,
                 self.thumbs.as_ref(),
+                &self.row_fade,
             );
             let total = *self.row_offs.last().unwrap_or(&0);
             let vp = nclip_ctl::geom::Rect::new(0, px(38.0), iw, (ih - px(24.0) - px(38.0)).max(1));
@@ -1092,6 +1132,7 @@ fn draw(
     offs: &[i32],
     marked: &[u64],
     thumbs: Option<&crate::thumbs::Thumbs>,
+    row_fade: &nclip_ctl::tokens::HoverFade,
 ) {
     let px = |v: f32| (v * s).round() as i32;
     let full = Rect::new(0, 0, w, h);
@@ -1144,6 +1185,11 @@ fn draw(
             dc.fill_rect(clip, th.sel_bg);
         } else if vi % 2 == 1 {
             dc.fill_rect(clip, th.panel_bg_alt);
+        }
+        // ★ hover 상태 레이어(09-04 사용자 — 메인과 동일): 선택 행 제외 · 본문색 6% × 페이드.
+        let g = row_fade.value(vi);
+        if vi != sel && g > 0.0 {
+            dc.fill_rect_alpha(clip, th.text, 0.06 * g);
         }
         // 핀 구획 경계 — 첫 비고정 행 위 한 줄(메인과 동일 · 부분 행이면 생략).
         if !pin_divider_done && !row.pinned && vi > 0 {
@@ -1220,6 +1266,28 @@ fn draw(
                 }
                 let dst = Rect::new(cx0, y + px(6.0), dw, dh);
                 dc.image_scaled(dst, img, content_clip);
+            } else if let Some((tw, tht)) = row.thumb_dims {
+                // ★ 디코드 대기 자리표시(09-04 · 30 §4) — 메인과 같은 규약.
+                #[allow(clippy::cast_possible_wrap)]
+                let (ow, oh) = row
+                    .img_dims
+                    .map_or((tw.max(1) as i32, tht.max(1) as i32), |(a, b)| {
+                        (a as i32, b as i32)
+                    });
+                let max_h = px(200.0);
+                let (ow, oh) = ((ow * 16 / 25).max(1), (oh * 16 / 25).max(1));
+                let content_w = (w - pad * 2 - px(30.0)).max(40);
+                let mut dw = ow.min(content_w);
+                let mut dh = (oh * dw / ow).max(1);
+                if dh > max_h {
+                    dw = (dw * max_h / dh).max(1);
+                    dh = max_h;
+                }
+                dc.fill_round_rect(
+                    crate::main_win::clip_to(Rect::new(cx0, y + px(6.0), dw, dh), content_clip),
+                    px(4.0),
+                    th.panel_bg_alt,
+                );
             } else if let Some(rich) = &row.rich {
                 // ★ T-18d 1단 — 메인과 동일(색·굵기 · 탭 스톱 열맞춤).
                 let tab_w = dc.text_width("    ").max(8);

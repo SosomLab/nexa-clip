@@ -89,6 +89,8 @@ pub trait HistoryStore {
     fn degraded(&self) -> bool;
     /// ★ blob 하나 복호(09-03 지연 로드) — 접근 시 본문 채움. 없거나 손상이면 `None`.
     fn read_blob_by_id(&self, id: &[u8; 32]) -> Option<Vec<u8>>;
+    /// ★ 지금 압축(09-04 · 30 §5) — 살아 있는 항목(최신이 앞)만 새 세그먼트로. 섬네일 이관 직후 인덱스를 줄인다.
+    fn compact_now(&mut self, _live: &[StoredItem]) {}
 }
 
 /// 저장 없이 도는 자리(열기 실패·테스트) — 전부 no-op.
@@ -620,6 +622,10 @@ impl HistoryStore for FileStore {
 
     fn read_blob_by_id(&self, id: &[u8; 32]) -> Option<Vec<u8>> {
         self.read_blob(id)
+    }
+
+    fn compact_now(&mut self, live: &[StoredItem]) {
+        self.compact(live);
     }
 }
 

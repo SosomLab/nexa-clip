@@ -132,7 +132,8 @@ struct Row {
     /// 원본 화소 치수(라벨 "W×H" 파싱 · 09-02 가변 행 — 섬네일은 축소본이라 절대 크기를 모른다).
     img_dims: Option<(u32, u32)>,
     /// ★ 리치 런(색·굵기 — T-18d 1단 · 09-03): HTML 표현이 서식을 품을 때만 Some.
-    rich: Option<Vec<Vec<nclip_core::richtext::Run>>>,
+    ///   09-04(30 §4): 파싱 결과는 `rich_cache`(id + 내용 열쇠)에 두고 여기선 공유 — refresh마다 재파싱하지 않는다.
+    rich: Option<std::rc::Rc<Vec<Vec<nclip_core::richtext::Run>>>>,
     /// 첫 평문 표현(편집 시드 · Rich 보기 둘째 줄) — 없으면 None.
     plain: Option<String>,
 }
@@ -184,6 +185,8 @@ pub(crate) struct MainWin {
     font_mono: Option<Font>,
     /// ★ 섬네일 공유 캐시(09-04 · 30 §4).
     thumbs: Option<crate::thumbs::Thumbs>,
+    /// ★ 리치 런 파싱 캐시(09-04 · 30 §4) — id → (내용 열쇠, 런). 내용이 바뀌면(열쇠 다름) 다시 파싱.
+    rich_cache: std::collections::HashMap<u64, (u64, RichRuns)>,
     theme: Theme,
     scale: f32,
     /// ★ 검색 입력(09-01 — 사용자 요청 "캐럿·복사/붙여넣기·드래그 선택") — 이식 `TextBox`
@@ -297,6 +300,7 @@ impl MainWin {
             font,
             font_mono: None,
             thumbs: None,
+            rich_cache: std::collections::HashMap::new(),
             theme: Theme::dark(),
             scale: 1.0,
             search: {
@@ -403,6 +407,30 @@ impl MainWin {
     /// ★ 고정폭 글꼴 주입(09-04) — 셸이 `ui.font_mono`로 만든 것.
     pub(crate) fn set_mono_font(&mut self, font: Option<Font>) {
         self.font_mono = font;
+    }
+
+    /// 리치 런 — 캐시 적중이면 공유, 아니면 파싱(400줄 상한 — 행은 5줄 · 미리보기가 전문).
+    fn rich_of(
+        &mut self,
+        id: u64,
+        key: u64,
+        reps: &[nclip_core::RawRep],
+    ) -> Option<std::rc::Rc<Vec<Vec<nclip_core::richtext::Run>>>> {
+        if let Some((k, runs)) = self.rich_cache.get(&id) {
+            if *k == key {
+                return Some(runs.clone());
+            }
+        }
+        let parsed = nclip_core::richtext::html_runs_of(reps, 400).map(std::rc::Rc::new);
+        match &parsed {
+            Some(r) => {
+                self.rich_cache.insert(id, (key, r.clone()));
+            }
+            None => {
+                self.rich_cache.remove(&id);
+            }
+        }
+        parsed
     }
 
     /// ★ 섬네일 캐시 주입(09-04 · 30 §4).
@@ -540,6 +568,7 @@ impl MainWin {
         self.preview_img = None;
         self.preview_tb = None;
         self.preview_rich_id = None;
+        self.rich_cache = std::collections::HashMap::new();
     }
 
     /// ★ 미리보기 중인 항목(09-04 GC 제외 대상) — 패널이 열려 있을 때의 선택 행.
@@ -582,6 +611,7 @@ impl MainWin {
         self.total = hist.len();
         let mut pinned = Vec::new();
         let mut normal = Vec::new();
+        let mut live: std::collections::HashSet<u64> = std::collections::HashSet::new();
         let mut i = 0usize;
         while let Some(item) = hist.get(i) {
             i += 1;
@@ -589,6 +619,9 @@ impl MainWin {
                 continue;
             }
             let plain = plain_of(&item.reps).or_else(|| svg_text(&item.reps));
+            let key = crate::dedup::content_key_of(item, plain.as_deref());
+            let rich = self.rich_of(item.id, key, &item.reps);
+            live.insert(item.id);
             let row = Row {
                 id: item.id,
                 pinned: item.pinned,
@@ -599,14 +632,13 @@ impl MainWin {
                     .source_app
                     .as_deref()
                     .is_some_and(|s| s.starts_with("⇄ ")),
-                key: crate::dedup::content_key_of(item, plain.as_deref()),
+                key,
                 origins: item.source_app.iter().cloned().collect(),
                 copies: item.copies,
                 thumb_dims: item.thumb_dims(),
                 img_dims: display_dims(&item.reps).or_else(|| parse_dims(&item.label)),
                 plain,
-                // 행은 앞 5줄만 그리지만 ★ 미리보기 패널이 전문을 쓴다(09-03 ② — 400줄 상한).
-                rich: nclip_core::richtext::html_runs_of(&item.reps, 400),
+                rich,
             };
             if row.pinned {
                 pinned.push(row);
@@ -614,6 +646,8 @@ impl MainWin {
                 normal.push(row);
             }
         }
+        // 사라진 항목의 파싱 캐시는 놓아준다.
+        self.rich_cache.retain(|id, _| live.contains(id));
         self.rows = pinned;
         self.rows.extend(normal);
         if self.dedup_view {
@@ -1922,6 +1956,20 @@ impl MainWin {
                     let (dw, dh) = self.rich_fit(ow, oh, self.content_w_of(list.w));
                     let dst = Rect::new(cx0, y + px(6.0), dw, dh);
                     dc.image_scaled(dst, img, content_clip);
+                } else if let Some((tw, tht)) = row.thumb_dims {
+                    // ★ 디코드 대기 자리표시(09-04 · 30 §4) — 같은 크기의 흐린 상자(도착하면 이미지 · 행 높이 불변).
+                    #[allow(clippy::cast_possible_wrap)]
+                    let (ow, oh) = row
+                        .img_dims
+                        .map_or((tw.max(1) as i32, tht.max(1) as i32), |(a, b)| {
+                            (a as i32, b as i32)
+                        });
+                    let (dw, dh) = self.rich_fit(ow, oh, self.content_w_of(list.w));
+                    dc.fill_round_rect(
+                        clip_to(Rect::new(cx0, y + px(6.0), dw, dh), content_clip),
+                        px(4.0),
+                        th.panel_bg_alt,
+                    );
                 } else if let Some(rich) = &row.rich {
                     // ★ T-18d 1단(09-03) — 원본 편집기의 색·굵기 그대로 + ★ 탭 스톱
                     //   열맞춤(공백 4칸 격자 — CopyQ 비교 실기의 "열이 안 맞는다" 해소).
@@ -3075,8 +3123,11 @@ pub(crate) fn clip_to(r: Rect, c: Rect) -> Rect {
     Rect::new(x0, y0, (x1 - x0).max(0), (y1 - y0).max(0))
 }
 
+/// 공유 리치 런(파싱 캐시 단위).
+pub(crate) type RichRuns = std::rc::Rc<Vec<Vec<nclip_core::richtext::Run>>>;
+
 /// 벽시계 ms — hover 의도의 시계(셸 박동과 같은 원천).
-fn now_ms() -> u64 {
+pub(crate) fn now_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)

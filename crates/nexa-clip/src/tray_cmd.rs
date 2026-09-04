@@ -1258,8 +1258,14 @@ impl ApplicationHandler<ShellEvent> for Shell {
             ShellEvent::ThumbFailed(id) => self.thumbs.borrow_mut().fail(id),
             ShellEvent::ThumbEncoded { id, w, h, png } => self.on_thumb_encoded(id, w, h, png),
             ShellEvent::ThumbMigrated => {
+                // ★ 인덱스를 바로 줄인다(30 §5) — 구본 RGBA 레코드가 죽은 이벤트로 남아 있다.
+                let live: Vec<StoredItem> = (0..self.history.len())
+                    .filter_map(|i| self.history.get(i))
+                    .map(to_stored)
+                    .collect();
+                self.store.compact_now(&live);
                 println!(
-                    "섬네일 마이그레이션 완료: {}개 → PNG blob",
+                    "섬네일 마이그레이션 완료: {}개 → PNG blob · 인덱스 압축",
                     self.thumb_migrated
                 );
             }
@@ -1340,8 +1346,7 @@ impl ApplicationHandler<ShellEvent> for Shell {
             self.main.set_caret_phase(phase);
             self.popup.set_caret_phase(phase);
             // ★ 스크롤바 자동 숨김 페이드(09-02) — 같은 박동에 얹는다. ★ 툴바 hover 페이드 중이면 16ms(09-04).
-            let animating = self.main.tick_ui(now_ms);
-            self.popup.tick_ui(now_ms);
+            let animating = self.main.tick_ui(now_ms) | self.popup.tick_ui(now_ms);
             let rem = if animating { 16 } else { 500 - (now_ms % 500) };
             el.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(
                 std::time::Instant::now() + std::time::Duration::from_millis(rem.max(16)),
