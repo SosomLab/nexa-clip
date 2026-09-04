@@ -214,6 +214,8 @@ pub(crate) struct MainWin {
     follow_new: Option<(u64, Instant)>,
     /// 툴바 hover — 머티리얼 상태 레이어 + 툴팁(09-01 사용자 요청).
     hovered: Option<Tool>,
+    /// ★ 툴바 hover 페이드(09-04 사용자 — "설정 창처럼 서서히 진해지게"): 공용 `HoverFade`(켜지는 것·꺼지는 것 둘).
+    tool_fade: nclip_ctl::tokens::HoverFade,
     /// ★ 보기 모드(Ctrl+1/2/3 · `ui.view_mode` 영속).
     view: ViewMode,
     /// ★ 우클릭 컨텍스트 메뉴(VT-5).
@@ -297,6 +299,7 @@ impl MainWin {
             follow_new: None,
             watch_off: false,
             hovered: None,
+            tool_fade: nclip_ctl::tokens::HoverFade::default(),
             view: ViewMode::Compact,
             menu: ContextMenu::new(),
             editor: None,
@@ -909,10 +912,12 @@ impl MainWin {
     }
 
     /// 스크롤바 자동 숨김 페이드 틱(셸 500ms 심장 박동).
-    pub(crate) fn tick_ui(&mut self, now_ms: u64) {
-        if self.bars.tick(now_ms) | self.preview_bars.tick(now_ms) {
+    /// 반환 = 아직 움직이는 중(셸이 16ms 박동으로 올린다 — 툴바 hover 페이드).
+    pub(crate) fn tick_ui(&mut self, now_ms: u64) -> bool {
+        if self.bars.tick(now_ms) | self.preview_bars.tick(now_ms) | self.tool_fade.tick(now_ms) {
             self.redraw();
         }
+        self.tool_fade.is_animating()
     }
 
     /// ★ 미리보기 내용을 현재 선택과 동기(09-02 K4) — id 비교만이라 매 사건 호출해도 값싸다.
@@ -1137,6 +1142,7 @@ impl MainWin {
                 let hovered = self.tool_at(self.cursor.0, self.cursor.1, h);
                 if hovered != self.hovered {
                     self.hovered = hovered;
+                    self.tool_fade.set(hovered.map(|t| t as usize));
                     self.redraw();
                 }
                 // ★ 상태줄 점 hover(09-04) — 색의 뜻을 툴팁으로.
@@ -1151,6 +1157,7 @@ impl MainWin {
             }
             WindowEvent::CursorLeft { .. } => {
                 if self.hovered.take().is_some() {
+                    self.tool_fade.set(None);
                     self.redraw();
                 }
             }
@@ -2168,9 +2175,10 @@ impl MainWin {
     /// hover = 원형 상태 레이어 · 아이콘은 2px 선). `enabled=false`면 흐리게(VT-3).
     fn draw_tool(&self, dc: &mut RasterCtx<'_, '_, '_>, r: Rect, tool: Tool, enabled: bool) {
         let th = self.theme;
-        // ★ 상태 레이어(Material 3) — hover한 활성 버튼에만 은은한 원.
-        if enabled && self.hovered == Some(tool) {
-            dc.fill_round_rect_alpha(r, r.w / 2, th.text, 0.10);
+        // ★ 상태 레이어(Material 3) — hover한 활성 버튼에 은은한 원, ★ 페이드로 서서히(09-04 — 설정 창과 같은 `Fade::hover`).
+        let g = self.tool_fade.value(tool as usize);
+        if enabled && g > 0.0 {
+            dc.fill_round_rect_alpha(r, r.w / 2, th.text, 0.10 * g);
         }
         let ink = if enabled { th.text } else { th.text_dim };
         let px = |v: f32| (v * self.scale).round() as i32;

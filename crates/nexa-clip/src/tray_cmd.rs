@@ -1080,12 +1080,12 @@ impl ApplicationHandler<ShellEvent> for Shell {
             let phase = (now_ms / 500) % 2 == 0;
             self.main.set_caret_phase(phase);
             self.popup.set_caret_phase(phase);
-            // ★ 스크롤바 자동 숨김 페이드(09-02) — 같은 박동에 얹는다.
-            self.main.tick_ui(now_ms);
+            // ★ 스크롤바 자동 숨김 페이드(09-02) — 같은 박동에 얹는다. ★ 툴바 hover 페이드 중이면 16ms(09-04).
+            let animating = self.main.tick_ui(now_ms);
             self.popup.tick_ui(now_ms);
-            let rem = 500 - (now_ms % 500);
+            let rem = if animating { 16 } else { 500 - (now_ms % 500) };
             el.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(
-                std::time::Instant::now() + std::time::Duration::from_millis(rem.max(30)),
+                std::time::Instant::now() + std::time::Duration::from_millis(rem.max(16)),
             ));
         }
     }
