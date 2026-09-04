@@ -1691,6 +1691,14 @@ impl MainWin {
                             return MainAction::QueryChanged;
                         }
                     }
+                    // ★ Space(09-04 사용자 "검색어에 space 입력이 안 됨") — winit은 공백을 `Character(" ")`가 아니라
+                    //   `Named(Space)`로 준다. 팝업은 `event.text`를 써서 됐고 메인만 빠져 있었다.
+                    Key::Named(NamedKey::Space) if !self.primary => {
+                        let mut inv = Invalidations::default();
+                        self.search
+                            .on_event(&CtlEvent::Char { c: ' ', now_ms: 0 }, &mut inv);
+                        return MainAction::QueryChanged;
+                    }
                     _ => {}
                 }
             }
