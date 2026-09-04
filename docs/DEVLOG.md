@@ -6,6 +6,10 @@
 
 - 근인 = 입력 순서(릴레이 none 뒤에 핸들·암호) — 핸들·암호 변경은 재기동 계기가 아니었다(Test·재시작만) · 재시작으로 mac 접속 ✓ · ★ **자동 재기동**(none·켜짐·둘 다 있음 → 800ms 디바운스 · `lan_auto_respawn_ready` 테스트) · 부수: 비콘 = 기본 경로 /24만 → 호스트→게스트 한 방향 불능(T-26 인터페이스 열거) · 설정 저장 = 이미 quiet 1s/최대 10s 스케줄러(변경 없음) → [journal 2차](journal/2026-09-05.md)
 
+## 2026-09-05 (mac 2차) — ★ 기기 이름 재소개(저장 박자 · 전 세션 · 미승인 포함)
+
+- 세션 채널 `PeerCmd{Item,Hello}` · `announce_name()`(승인 무관 · 릴레이/LAN) · 세션 루프 Hello 재전송 · 수신 `upsert_online` PeerId 갱신 + "이름 갱신" 로그 · 설정 1s 디바운스(저장 quiet와 동일) → [journal 2차](journal/2026-09-05.md)
+
 ## 2026-09-05 (mac 1차) — ★ 수신 이미지 "[이미지]"만 = 팔레트 PNG 디코드 거부 → EXPAND 정규화
 
 - `dump_item` 예제로 저장 바이트 확인(8-bit colormap) · `nclip-imgdec` `Indexed => None` 근인 · `Transformations::EXPAND|STRIP_16` + 회귀 테스트 · `decode_probe` 예제(3-OS 워커 경로) 실제 바이트 384×33 ✓ · 함정: `--example`과 함께 빌드하면 bin 미갱신 · 회신: ★ **섬네일 자가 치유**(참조 없는 이미지 항목 본문에서 생성·영속) · 수신 표시 사라짐 = 로컬 재캡처+중복 제외 로컬 우선(결함 아님) → [journal](journal/2026-09-05.md)
