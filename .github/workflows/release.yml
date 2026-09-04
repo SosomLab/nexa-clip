@@ -116,7 +116,7 @@ jobs:
           set -euo pipefail
           sudo apt-get update -qq && sudo apt-get install -y -qq dpkg-dev binutils
           pip3 install --quiet ziglang==0.13.0.post1 cargo-zigbuild==0.19.7
-          cargo zigbuild --version
+          cargo-zigbuild --version && python3 -m ziglang version
 
       - name: 릴리스 빌드
         # nclip-imgdec = 이미지 격리 디코드 워커(형제 실행 파일) — 없으면 PNG 썸네일·전파 이미지 변환이 빠진다.
