@@ -827,7 +827,7 @@ impl Shell {
             S::Off => SyncMode::Off,
             S::LanOnly => SyncMode::Local,
             S::Connected => SyncMode::Relay,
-            S::Connecting | S::Failed(_) | S::Stopped => SyncMode::RelayDown,
+            S::Connecting | S::Failed(_) | S::Stopped | S::Unconfigured => SyncMode::RelayDown,
         };
         let next = match mode {
             SyncMode::Off => None,

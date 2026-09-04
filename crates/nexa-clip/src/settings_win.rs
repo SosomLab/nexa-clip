@@ -279,6 +279,19 @@ impl App {
                 a
             }
         };
+        // ★ 핸들·암호가 비면 시험도 접속도 없다(09-04 사용자) — 노트로 이유만.
+        let identity_ok = !self.conf.state.get("sync.handle").trim().is_empty()
+            && !self.conf.state.get("sync.passphrase").trim().is_empty();
+        if !identity_ok {
+            self.widget.set_row_note_toned(
+                "sync.test",
+                nclip_core::tr(lang, nclip_core::Msg::StSyncNeedIdentity),
+                nclip_ui::NoteTone::Warn,
+                &mut inv,
+            );
+            self.redraw();
+            return;
+        }
         // ★ 릴레이 None(09-04) — 서버 시험 없이 LAN 전용으로 켜고 러너(LAN)를 띄운다.
         if addr == "none" {
             if self.conf.state.get("sync.enabled") != "on" {
@@ -345,6 +358,9 @@ impl App {
         //   매 폴마다 계산(값싸다 · set_disabled는 바뀔 때만 무효화).
         let enabled = self.conf.state.get("sync.enabled") == "on";
         let relay_none = self.conf.state.get("sync.relay").trim() == "none";
+        // ★ 핸들·암호 둘 다 있어야 접속이 가능하다(09-04 사용자) — 비면 Test·Disconnect 잠금.
+        let identity_ok = !self.conf.state.get("sync.handle").trim().is_empty()
+            && !self.conf.state.get("sync.passphrase").trim().is_empty();
         let locked: &[&'static str] = if !enabled {
             &[
                 "sync.device_name",
@@ -357,6 +373,8 @@ impl App {
                 "sync.disconnect",
                 "sync.devices",
             ]
+        } else if !identity_ok {
+            &["sync.test", "sync.disconnect"]
         } else if relay_none {
             // ★ 릴레이 None(09-04 사용자) — 서버가 없으니 포트·Test·Disconnect는 의미가 없다.
             &["sync.port", "sync.test", "sync.disconnect"]
@@ -406,6 +424,10 @@ impl App {
             S::Stopped => (
                 nclip_core::tr(lang, nclip_core::Msg::StSyncDisconnected).to_string(),
                 nclip_ui::NoteTone::Info,
+            ),
+            S::Unconfigured => (
+                nclip_core::tr(lang, nclip_core::Msg::StSyncNeedIdentity).to_string(),
+                nclip_ui::NoteTone::Warn,
             ),
         };
         self.widget

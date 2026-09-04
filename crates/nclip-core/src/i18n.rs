@@ -415,6 +415,8 @@ pub enum Msg {
     SyncDisconnectVerb,
     /// 상태: 해제됨.
     StSyncDisconnected,
+    /// ★ 상태: 핸들·암호 미설정(09-04) — 접속 불가.
+    StSyncNeedIdentity,
     /// 상태: 연결 안 됨.
     StSyncNotConnected,
     /// 동기화: 릴레이 주소 설명.
@@ -1019,6 +1021,12 @@ impl Msg {
                 "現在のリレーセッションを切断（次回起動時に再接続）",
             ],
             Msg::SyncDisconnectVerb => ["Disconnect", "해제", "断开", "切断"],
+            Msg::StSyncNeedIdentity => [
+                "Handle and pairing passphrase are both required — nothing connects until both are set",
+                "핸들과 페어링 암호가 모두 있어야 합니다 — 둘 다 채우기 전엔 접속하지 않습니다",
+                "需要同时填写 Handle 和配对口令——否则不会连接",
+                "ハンドルとペアリング パスフレーズの両方が必要です — 揃うまで接続しません",
+            ],
             Msg::StSyncDisconnected => [
                 "Disconnected — reconnect with Test or on next start",
                 "해제됨 — Test 또는 다음 시작 때 다시 연결합니다",
@@ -1207,7 +1215,7 @@ mod tests {
     use super::*;
 
     /// 카탈로그 전수 — 새 `Msg`를 더하면 여기도 더한다(빈칸 검사가 그걸 강제한다).
-    const ALL_MSG: [Msg; 222] = [
+    const ALL_MSG: [Msg; 223] = [
         Msg::AppName,
         Msg::SearchPlaceholder,
         Msg::EmptyHistory,
@@ -1391,6 +1399,7 @@ mod tests {
         Msg::SyncDisconnectDesc,
         Msg::SyncDisconnectVerb,
         Msg::StSyncDisconnected,
+        Msg::StSyncNeedIdentity,
         Msg::StSyncNotConnected,
         Msg::SetSyncRelayDesc,
         Msg::EditorHint,

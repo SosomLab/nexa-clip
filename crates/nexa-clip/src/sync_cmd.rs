@@ -92,6 +92,8 @@ pub(crate) enum SyncStatus {
     Connected,
     Failed(String),
     Stopped,
+    /// ★ 핸들·페어링 암호 중 하나라도 비어 있다(09-04 사용자) — 릴레이·LAN 어느 쪽도 접속하지 않는다.
+    Unconfigured,
 }
 static STATUS: std::sync::Mutex<SyncStatus> = std::sync::Mutex::new(SyncStatus::Off);
 
@@ -483,10 +485,12 @@ pub(crate) fn spawn_if_enabled(
     let pass = conf.state.get("sync.passphrase").trim().to_string();
     set_device_name(conf.state.get("sync.device_name"));
     set_policy(conf.state.get("sync.retry"));
-    // ★ 핸들/암호 없이도 접속은 한다(09-03 — 연결 상태 유지 계약: Test 성공 시 자동 켬).
-    //   페어링 랑데부만 생략되고, 기기 RID 등록·상태 표시는 그대로다.
+    // ★ 핸들·페어링 암호가 하나라도 비면 **접속하지 않는다**(09-04 사용자 — 09-03의 "접속만 유지"를 뒤집음):
+    //   RID·LAN 태그가 둘에서 나오므로 빈 값으로는 어떤 기기와도 만날 수 없고, 서버에 빈 신원으로 붙어 있을 이유가 없다.
     if handle.is_empty() || pass.is_empty() {
-        println!("동기화: 핸들·페어링 암호 미설정 — 접속만 유지(기기 간 만남은 설정 후)");
+        set_status(SyncStatus::Unconfigured);
+        println!("동기화: 핸들·페어링 암호가 비어 있어 접속하지 않습니다 — 설정 → 동기화에서 채우고 Test");
+        return;
     }
     let relay_raw = {
         let r = conf.state.get("sync.relay").trim().to_string();
