@@ -236,6 +236,8 @@ pub(crate) struct MainWin {
     preview_icon: std::cell::RefCell<Option<(u32, nclip_ctl::theme::IconImage)>>,
     /// 중복 제외 아이콘 틴트 캐시(색 키 · 09-04 사용자 지정 Material `compress`).
     dedup_icon: std::cell::RefCell<Option<(u32, nclip_ctl::theme::IconImage)>>,
+    /// ★ 감시 끄기 아이콘 캐시(09-04 사용자 지정 `stop_circle`) — 색별 틴트 1장.
+    watch_icon: std::cell::RefCell<Option<(u32, nclip_ctl::theme::IconImage)>>,
     /// ★ 미리보기 패널 열림(09-02 K4 · `ui.preview_open` 영속 — 기본 접힘).
     preview_open: bool,
     /// ★ 중복 제외 보기(09-04 사용자) — 같은 내용은 **로컬 1건**, 로컬이 없으면 **가장 최근 수신 1건**만.
@@ -304,6 +306,7 @@ impl MainWin {
             sync_icon: std::cell::RefCell::new(None),
             preview_icon: std::cell::RefCell::new(None),
             dedup_icon: std::cell::RefCell::new(None),
+            watch_icon: std::cell::RefCell::new(None),
             preview_open: false,
             preview_tb: None,
             preview_scroll: 0,
@@ -2323,24 +2326,25 @@ impl MainWin {
                 }
             }
             Tool::WatchOff => {
-                // ★ Material `visibility_off` 근사(09-04 사용자 — 감시 끄기) — 눈 윤곽(타원 두 겹) + 동공,
-                //   켜짐(감시 꺼짐) = accent + 사선.
-                let on = self.watch_off;
-                let c = if on { th.accent } else { ink };
-                dc.fill_ellipse(
-                    Rect::new(cx - px(10.0), cy - px(6.0), px(20.0), px(12.0)),
-                    c,
-                );
-                dc.fill_ellipse(
-                    Rect::new(cx - px(8.0), cy - px(4.0), px(16.0), px(8.0)),
-                    th.chrome_bg,
-                );
-                dc.fill_ellipse(Rect::new(cx - px(3.0), cy - px(3.0), px(6.0), px(6.0)), c);
-                if on {
-                    let line = [(cx - px(9.0), cy - px(9.0)), (cx + px(9.0), cy + px(9.0))];
-                    // 바탕색 굵은 선을 먼저 그어 눈과 사선을 떼어 놓는다(Material 관례).
-                    dc.polyline(&line, th.chrome_bg, w2 + 2.0 * self.scale);
-                    dc.polyline(&line, c, w2);
+                // ★ Material `stop_circle`(09-04 사용자 지정 SVG를 구운 알파) — 켜짐(감시 꺼짐) = accent.
+                let c = if self.watch_off { th.accent } else { ink };
+                let mut cache = self.watch_icon.borrow_mut();
+                let stale = !matches!(cache.as_ref(), Some((k, _)) if *k == c.0);
+                if stale {
+                    let (r0, g0, b0) = ((c.0 >> 16) as u8, (c.0 >> 8) as u8, c.0 as u8);
+                    let mut rgba = Vec::with_capacity(WATCH_ALPHA.len() * 4);
+                    for &a in WATCH_ALPHA {
+                        rgba.extend_from_slice(&[r0, g0, b0, a]);
+                    }
+                    *cache = Some((
+                        c.0,
+                        nclip_ctl::theme::IconImage::from_rgba(PREVIEW_SIDE, PREVIEW_SIDE, rgba),
+                    ));
+                }
+                if let Some((_, img)) = cache.as_ref() {
+                    let half = px(10.0);
+                    let dst = Rect::new(cx - half, cy - half, half * 2, half * 2);
+                    dc.image_scaled(dst, img, r);
                 }
             }
             Tool::Settings => {
@@ -2738,6 +2742,8 @@ fn svg_attr(xml: &str, name: &str) -> Option<u32> {
 const PREVIEW_ALPHA: &[u8] = include_bytes!("../assets/icon-preview-96.alpha");
 /// ★ 중복 제외 툴바 아이콘(09-04 사용자 지정 — Material `compress` 96² 알파).
 const DEDUP_ALPHA: &[u8] = include_bytes!("../assets/icon-dedup-96.alpha");
+/// ★ 감시 끄기 툴바 아이콘(09-04 사용자 지정 — Material `stop_circle` 96² 알파).
+const WATCH_ALPHA: &[u8] = include_bytes!("../assets/icon-watch-96.alpha");
 /// 미리보기 자산 변(px).
 const PREVIEW_SIDE: u32 = 96;
 
