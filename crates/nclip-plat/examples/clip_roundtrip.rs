@@ -195,6 +195,10 @@ fn main() {
                     verdict
                 );
             }
+            None if ra.data.is_empty() => {
+                // 핸들 포맷(지연 제공·nil 데이터)은 재게시할 바이트가 없다 — 유실이 아니다.
+                println!("{:<44} (핸들 · 재게시 불가)", ra.format);
+            }
             None => {
                 lost += 1;
                 println!("{:<44} {:>8}B → (사라짐)", ra.format, ra.data.len());

@@ -139,7 +139,8 @@ struct BlockAttrs {
 pub fn html_runs_of(reps: &[crate::RawRep], max_lines: usize) -> Option<Vec<Vec<Run>>> {
     let Some(r) = reps
         .iter()
-        .find(|r| matches!(r.format.as_str(), "CF_HTML" | "HTML Format" | "text/html"))
+        // ★ 판별은 capture와 한 벌(09-04 mac 실기 — `public.html`이 빠져 PPT 서식이 평문으로).
+        .find(|r| crate::capture::is_html_format(&r.format))
     else {
         // ★ HTML이 없으면 평문의 ANSI SGR(원시 로그 · 09-04) — ESC가 없으면 None.
         let best = reps
@@ -962,6 +963,34 @@ fn attr_value<'a>(low: &str, orig: &'a str, name: &str) -> Option<&'a str> {
 
 /// `#rrggbb` · `#rgb` · `rgb(r, g, b)` — 그 외(이름 색 등)는 1단 밖.
 fn parse_color(v: &str) -> Option<[u8; 3]> {
+    // ★ 색 이름(09-04 mac PPT 실기 — 표준색은 `color:red`처럼 이름으로 온다) — CSS 기본 16 + 흔한 것.
+    let named: Option<[u8; 3]> = match v.to_ascii_lowercase().as_str() {
+        "black" => Some([0, 0, 0]),
+        "white" => Some([255, 255, 255]),
+        "red" => Some([255, 0, 0]),
+        "lime" => Some([0, 255, 0]),
+        "green" => Some([0, 128, 0]),
+        "blue" => Some([0, 0, 255]),
+        "navy" => Some([0, 0, 128]),
+        "yellow" => Some([255, 255, 0]),
+        "orange" => Some([255, 165, 0]),
+        "purple" => Some([128, 0, 128]),
+        "fuchsia" | "magenta" => Some([255, 0, 255]),
+        "aqua" | "cyan" => Some([0, 255, 255]),
+        "teal" => Some([0, 128, 128]),
+        "olive" => Some([128, 128, 0]),
+        "maroon" => Some([128, 0, 0]),
+        "gray" | "grey" => Some([128, 128, 128]),
+        "silver" => Some([192, 192, 192]),
+        "darkgray" | "darkgrey" => Some([169, 169, 169]),
+        "lightgray" | "lightgrey" => Some([211, 211, 211]),
+        "brown" => Some([165, 42, 42]),
+        "pink" => Some([255, 192, 203]),
+        _ => None,
+    };
+    if named.is_some() {
+        return named;
+    }
     if let Some(hex) = v.strip_prefix('#') {
         return match hex.len() {
             6 => {
@@ -1301,5 +1330,37 @@ mod tests {
         let runs = html_runs_of(&[rep("CF_HTML", html)], 6).expect("리치 런");
         assert_eq!(runs[0].len(), 1);
         assert_eq!(runs[0][0].text, "t");
+    }
+}
+
+#[cfg(test)]
+mod ppt_mac_tests {
+    use super::*;
+
+    /// ★ PPT(mac) 글상자 텍스트 — `public.html` · 작은따옴표 style · 태그 안 줄바꿈 ·
+    /// 색 이름(`color:red`) · mso-* 잡음(09-04 실기 — 전부 평문으로 보이던 것).
+    #[test]
+    fn ppt_mac_public_html_keeps_colors() {
+        let html = "<html><body><!--StartFragment-->\
+<span style='font-size:44.0pt;font-family:\"맑은 고딕\";\nmso-ascii-font-family:\"Aptos Display\";color:black;mso-color-index:1'>가나다\n</span>\
+<span style='font-size:44.0pt;\ncolor:red;mso-font-kerning:12.0pt'>123</span>\
+<span\nstyle='font-size:44.0pt;color:#215F9A;mso-color-index:3'>ABC</span>\
+<!--EndFragment--></body></html>";
+        let reps = [crate::RawRep {
+            format: "public.html".into(),
+            data: html.as_bytes().to_vec(),
+        }];
+        let runs = html_runs_of(&reps, 5).expect("public.html은 리치로 잡혀야 한다");
+        let flat: Vec<&Run> = runs.iter().flatten().collect();
+        assert!(
+            flat.iter()
+                .any(|r| r.text.contains("123") && r.color == Some([255, 0, 0])),
+            "색 이름 red가 살아야 한다: {flat:?}"
+        );
+        assert!(
+            flat.iter()
+                .any(|r| r.text.contains("ABC") && r.color == Some([0x21, 0x5F, 0x9A])),
+            "hex 색이 살아야 한다: {flat:?}"
+        );
     }
 }

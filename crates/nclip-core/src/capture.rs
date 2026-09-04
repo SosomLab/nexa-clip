@@ -2114,6 +2114,15 @@ fn header_num(text: &str, key: &str) -> Option<usize> {
 }
 
 /// 요소·속성 차단 목록 정제 — 파서 없이 태그 경계 스캔(대소문자 무시).
+/// ★ 헤더 없는 HTML(mac `public.html` · Linux `text/html`) 정제(09-04) — CF_HTML과 같은
+/// 차단 목록. 바뀐 게 없으면 None(손대지 않는다). 보안 경계는 여전히 `sanitize_html` 한 지점.
+#[must_use]
+pub fn sanitize_plain_html(data: &[u8]) -> Option<Vec<u8>> {
+    let html = core::str::from_utf8(data).ok()?;
+    let cleaned = sanitize_html(html);
+    (cleaned != html).then(|| cleaned.into_bytes())
+}
+
 fn sanitize_html(html: &str) -> String {
     // ① 내용째 지우는 요소.
     let mut s = strip_element(html, "script");
