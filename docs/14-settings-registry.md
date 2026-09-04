@@ -238,20 +238,23 @@ General 안내문 그대로:
 | `find.case` | Checkbox | off | 대소문자 구분 | M |
 | `find.hangul_compose` | Checkbox | on | ★ **한글 조합 중 검색**(FR-F-2) | N |
 
-### 3-9. 동기화 (Sync) — M2
+### 3-9. 동기화 (Sync) — M2 · ★ 09-03~04 실구현 반영
 
-| key | 종류 | 기본값 | 출처 |
-|---|---|---|:--:|
-| `sync.enabled` | Switch | ★ **off** | N |
-| `sync.handle` | TextBox | — | 핸들([09](09-identity-and-pairing.md)) |
-| `sync.passphrase` | TextBox(비밀) | — | 페어링 패스프레이즈 |
-| `sync.devices` | 목록 | — | ★ **기기 관리**(추가·폐기·이력) |
-| `sync.overwrite_mode` | Combo | (D-20) | 받은 항목 처리(기록만/자동 덮어쓰기/유휴 시) |
-| `sync.remote_media` | Combo | 메타 우선 | 원격 이미지 정책 |
-| `sync.relay` | TextBox | — | 릴레이 서버 주소(선택) |
-| `sync.pause` | Switch | off | ★ 전파 일시 정지(회의·화면 공유) |
-| `sync.relay_received` | Checkbox | ★ **off** | ★ **받은 항목을 내 기기들에 재전파**(DR-29 F-2) |
-| (신뢰 목록 각 행) | 토글 | off | ★ **이 사람은 자동 승인**(DR-29 T-9 — 사람 단위) |
+| key | 종류 | 기본값 | 설명 |
+|---|---|---|---|
+| `sync.enabled` | Switch | ★ **off** | 끄면 동기화 자체 끔(릴레이·LAN·세션) · 꺼져 있으면 아래 전부 잠금 |
+| `sync.device_name` | Text | — | 기기 표시 이름(비면 호스트명 정제 → `clip-{지문4}` 폴백 · 프로필 실행은 `-{프로필}` 접미) |
+| `sync.handle` | Text | — | 핸들([09 §6](09-identity-and-pairing.md)) · 입력 시 패스프레이즈 자동 추천 |
+| `sync.passphrase` | Text(비밀) | — | 페어링 패스프레이즈 · 눈(보기) · 생성(2단 확인 · 생성 시 표시) · 서버로 안 감 |
+| `sync.relay` | RadioInput | `beepd.sosomlab.com` | 공식 릴레이 · 직접 입력 · **`none`** = 같은 네트워크만(포트·Test·Disconnect 잠금 · Test 없이 즉시 적용) |
+| `sync.port` | RadioInput | `47300` | 릴레이 TCP 제어 포트 |
+| `sync.retry` | Radio | `normal` | 재시도 정책 — 실패 n회째 = base×2^(n−1)(상한 · ±20% 지터 · 성공 시 초기화) · normal 5s→5분 · patient 15s→15분 · eager 2s→1분 |
+| `sync.test` | Action | — | 릴레이 접속 시험 → 성공 = `sync.enabled` 자동 켬 + 러너 (재)기동 · 연결 중엔 잠금 · 실행 시 자동 Test 노트 |
+| `sync.disconnect` | Action | — | 릴레이 세션 해제(연결 중에만 활성 · Connected 자리에 Disconnected) |
+| `sync.devices` | ★ DeviceList | — | 만난 기기 행별 **[승인/해제][삭제]** + 온라인 행 6자리 대조 코드 · `연결됨 (LAN/relay)` · 승인 전엔 전파 없음 |
+| `ui.dedup_view` | (숨김 · 메인 툴바 토글) | **on** | 중복 제외 보기(같은 내용 한 행 · 로컬 우선 · 출처 메타) — 팝업도 동일 |
+
+**설계만 있고 미구현**(D-20·DR-29): `sync.overwrite_mode` · `sync.remote_media` · `sync.pause` · `sync.relay_received` · 신뢰 목록 자동 승인 토글 → T-27 잔여·T-24.
 
 ### 3-10. 고급 (Advanced)
 
