@@ -1817,12 +1817,18 @@ impl SettingsWidget {
                     }
                 }
                 RowCtl::Face(family) => {
-                    // ★ 글자마다 폰트를 찾으면 낭비다 — **Enter로 확정할 때만** 보고한다
-                    //   (사용자 지적 08-09: 입력해도 적용되지 않는다).
+                    // ★ 글꼴 행은 글자마다 폰트를 찾으면 낭비라 **Enter 확정**만 보고한다(08-09).
+                    //   ★ 자유 문자열 행(`Text` — 핸들·암호·서버·포트·기기 이름)은 **글자마다** 보고한다
+                    //   (09-04 사용자 실기 "비우고 Enter를 눌러야 효과" — 수정 즉시 잠금·해제가 돌아야 한다).
+                    let immediate = matches!(e.kind, SettingKind::Text { .. });
                     if let Some(v) = family.take_committed() {
                         got.push((e.key, v));
+                        let _ = family.take_changed();
+                    } else if let Some(v) = family.take_changed() {
+                        if immediate {
+                            got.push((e.key, v));
+                        }
                     }
-                    let _ = family.take_changed(); // 중간 변경은 버린다
                 }
                 RowCtl::Color(c) => {
                     if let Some(v) = c.take_changed() {
