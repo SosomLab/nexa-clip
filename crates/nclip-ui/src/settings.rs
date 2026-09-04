@@ -73,6 +73,13 @@ const HIDDEN_KEYS: &[&str] = &[
     "ui.preview_open",
     "ui.dedup_view",
     "ui.always_on_top",
+    // ★ 09-05 설정 창 위치·크기·모니터(09-03 settings_win이 쓰기 시작) — 등재 누락으로 ① 재시작 때
+    //   복원이 안 되고(빈 값 → 기본 위치) ② 파일에 **같은 키가 두 번**(미지 키 보존분 + 런타임 known분) 남았다.
+    "ui.set_x",
+    "ui.set_y",
+    "ui.set_w",
+    "ui.set_h",
+    "ui.set_mon",
 ];
 
 /// 직접 입력이 **텍스트**인 RadioInput 키(08-22) — 기본은 숫자 전용(포트·ms·MiB).

@@ -103,7 +103,11 @@ pub fn serialize(known: &[(&str, &str)], unknown: &[(String, String)]) -> String
     for (k, v) in known {
         line(k, v);
     }
+    // ★ 미지 키가 나중에 아는 키가 되면(등재·런타임 set) known이 이긴다 — 같은 키 두 줄 금지(09-05).
     for (k, v) in unknown {
+        if known.iter().any(|(kk, _)| *kk == k.as_str()) {
+            continue;
+        }
         line(k, v);
     }
     out
@@ -426,6 +430,19 @@ mod tests {
     }
 
     /// T-5: 미지 키가 왕복 후에도 남아 있다(F-1).
+    /// ★ 09-05: 미지 키로 보존된 것이 나중에 known으로 오면 한 줄만(known 값) 남는다.
+    #[test]
+    fn known_wins_over_stale_unknown() {
+        let text = serialize(
+            &[("a", "new")],
+            &[
+                ("a".to_string(), "old".to_string()),
+                ("z".to_string(), "keep".to_string()),
+            ],
+        );
+        assert_eq!(text, "_schema=1\na=new\nz=keep\n");
+    }
+
     #[test]
     fn unknown_keys_survive_roundtrip() {
         let d = tmpdir("t5");
