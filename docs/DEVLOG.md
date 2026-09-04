@@ -2,6 +2,10 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-09-04 (mac 6차) — ★ 붙여넣기 불능 근인 = TCC 요구사항 고착 · 권한 대화상자 · 붙여넣기 자동 실기 3/3(사용자 ✅)
+
+- 앱 자기 판정(`open --args status`)으로 `needs permission` 확정 · 같은 바이너리 터미널 권한 3/3 = 주입 경로 정상 · ★ **TCC 항목은 최초 서명 요구사항을 고착**(토글 ON 무효) → `tccutil reset`→재시작→토글 · PKCS12 3DES(OpenSSL 3 호환) · `prompt_trust`(OS 대화상자) · ★ `mac-paste-e2e.sh`(설정 단축키 반영) · `mac-grant-accessibility.sh` → 설치본 `paste inject: ok` · E2E 3/3 → [journal 6차](journal/2026-09-04.md)
+
 ## 2026-09-04 (mac 5차) — ★ 설치본 실기 체계 · main 빌드 복구 · 단축키 부팅 순서(3-OS) · 즉시 재등록 · ⌘V 통일 · 팝업 기하 · ★ PPT HTML · ★ PPT 자동 실기 12/12
 
 - ★ `dev-install-mac.sh`·`mac-dev-cert.sh`(TCC = 서명 식별 → 안정 신원) · main 빌드 복구(`super::super`) · ★ **부팅 순서 결함**(spawn이 apply_hotkeys보다 앞 — 3-OS 공통 수정) · ★ 즉시 재등록(사용자 ✅) · 평문 주입 ⌘V 통일 · 팝업 논리 px + `cursor_pos` · ★ **PPT `public.html` 누락**(richtext 판별 두 벌) + 색 이름 + mac HTML 정제 배선 · ★ `mac-ppt-e2e.sh` 12/12(서식 텍스트·글상자 2개 — 복사→우리 재게시→PPT 붙여넣기 색·도형 보존) → [journal 5차](journal/2026-09-04.md)

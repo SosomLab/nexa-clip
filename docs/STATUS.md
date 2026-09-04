@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-09-04 (6차 · macOS) — ★ 붙여넣기 불능 근인 확정 · 자동 실기 3/3 · 사용자 ✅ "붙여넣기 정상"
+
+근인 = **TCC 항목의 요구사항 고착**(최초 애드홉 cdhash — 토글 ON이어도 재서명 앱과 불일치 · 서명은 유효). 판정 도구 =
+번들 신원 `open --args status` 자기 판정 + 같은 바이너리 터미널 권한 3/3 대조. 처방 박제 = `mac-grant-accessibility.sh`
+(리셋→재시작→토글→검증) · 기동 시 `AXIsProcessTrustedWithOptions` 대화상자 · PKCS12 OpenSSL 3 호환 · ★ `mac-paste-e2e.sh`
+(설정의 실제 단축키 · 팝업 Enter/⇧Enter/전역 평문 → TextEdit 검증). 결과: 설치본 `paste inject: ok` · **3/3**.
+mac 실기 사슬 마감: 트레이·단축키·붙여넣기·PPT 서식·전파 전부 설치본에서 동작.
+
+---
+
 ## 2026-09-04 (5차 · macOS) — ★ 설치본 실기 체계 · 단축키 부팅 순서(3-OS) · 즉시 재등록 · ★ PPT HTML · ★ PPT 자동 실기 12/12
 
 Windows 5~17차 수신 뒤 brew 설치본에서 연속 실기 — 제보 9건 전부 근인·수정: ★ `dev-install-mac.sh`(빌드→교체→재서명→재시작) +
