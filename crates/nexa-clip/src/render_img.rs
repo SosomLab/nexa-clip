@@ -5,7 +5,7 @@
 //! 이 경로는 사용자가 "이미지로 복사"를 고를 때만 탄다.
 
 use nclip_core::richtext::Run;
-use nclip_gfx::{Color, Font, Surface, TextStyle};
+use nclip_gfx::{Color, Font, IconImage, Surface, TextStyle};
 
 /// 렌더 글자 크기(px) — PPT 슬라이드 대비 적당한 밀도.
 const SIZE: f32 = 18.0;
@@ -27,19 +27,44 @@ pub(crate) fn plain_runs(text: &str) -> Vec<Vec<Run>> {
         .collect()
 }
 
-/// 런들을 흰 바탕 RGBA로 렌더 — ★ 탭 스톱 열맞춤(공백 4칸 격자) + ★ 2단 들여쓰기(em)·배율(줄 높이 = 줄의 최대 배율).
-pub(crate) fn render_runs(font: &Font, lines: &[Vec<Run>]) -> Option<(u32, u32, Vec<u8>)> {
+/// 런들을 흰 바탕 RGBA로 렌더 — ★ 탭 스톱 열맞춤(공백 4칸 격자) + ★ 2단 들여쓰기(em)·배율(줄 높이 = 줄의 최대 배율)
+/// + ★ 인라인 이미지(`imgs` = (줄, 런) → 디코드본 · 원본 크기 · 폭 1200 상한).
+pub(crate) fn render_runs(
+    font: &Font,
+    lines: &[Vec<Run>],
+    imgs: &[((usize, usize), IconImage)],
+) -> Option<(u32, u32, Vec<u8>)> {
     if lines.is_empty() {
         return None;
     }
     let base_h = (font.line_height(SIZE) * 1.15).ceil();
     let tab_w = font.measure("    ", SIZE).max(8.0);
     let em = font.measure("한", SIZE).max(8.0);
-    let line_scale = |line: &[Run]| line.iter().map(|r| r.scale).fold(1.0f32, f32::max);
-    let advance = |x: f32, line: &[Run]| -> f32 {
-        let mut x = x;
-        for run in line {
+    let img_at = |li: usize, ri: usize| imgs.iter().find(|(k, _)| *k == (li, ri)).map(|(_, im)| im);
+    #[allow(clippy::cast_precision_loss)]
+    let fit = |im: &IconImage| -> (f32, f32) {
+        let (iw, ih) = (im.w.max(1) as f32, im.h.max(1) as f32);
+        let dw = iw.min(1200.0);
+        (dw, (ih * dw / iw).max(1.0))
+    };
+    let line_h_of = |li: usize, line: &[Run]| -> f32 {
+        let sc = line.iter().map(|r| r.scale).fold(1.0f32, f32::max);
+        let mut h = (base_h * sc).ceil();
+        for (ri, _) in line.iter().enumerate() {
+            if let Some(im) = img_at(li, ri) {
+                h = h.max(fit(im).1 + 6.0);
+            }
+        }
+        h
+    };
+    let advance = |li: usize, line: &[Run]| -> f32 {
+        let mut x = 0.0f32;
+        for (ri, run) in line.iter().enumerate() {
             x += em * run.indent;
+            if let Some(im) = img_at(li, ri) {
+                x += fit(im).0;
+                continue;
+            }
             for (ti, seg) in run.text.split('\t').enumerate() {
                 if ti > 0 {
                     x = ((x / tab_w).floor() + 1.0) * tab_w;
@@ -49,8 +74,16 @@ pub(crate) fn render_runs(font: &Font, lines: &[Vec<Run>]) -> Option<(u32, u32, 
         }
         x
     };
-    let max_w = lines.iter().map(|l| advance(0.0, l)).fold(0.0f32, f32::max);
-    let total_h: f32 = lines.iter().map(|l| (base_h * line_scale(l)).ceil()).sum();
+    let max_w = lines
+        .iter()
+        .enumerate()
+        .map(|(li, l)| advance(li, l))
+        .fold(0.0f32, f32::max);
+    let total_h: f32 = lines
+        .iter()
+        .enumerate()
+        .map(|(li, l)| line_h_of(li, l))
+        .sum();
     #[allow(clippy::cast_possible_truncation)]
     let w = (max_w.ceil() as i32 + PAD * 2).clamp(40, SIDE_MAX);
     #[allow(clippy::cast_possible_truncation)]
@@ -65,14 +98,28 @@ pub(crate) fn render_runs(font: &Font, lines: &[Vec<Run>]) -> Option<(u32, u32, 
     let clip = (0, 0, w, h);
     #[allow(clippy::cast_precision_loss)]
     let mut top = PAD as f32;
-    for line in lines {
-        let sc = line_scale(line);
-        let line_h = (base_h * sc).ceil();
+    for (li, line) in lines.iter().enumerate() {
+        let sc = line.iter().map(|r| r.scale).fold(1.0f32, f32::max);
+        let line_h = line_h_of(li, line);
         let y = top + font.ascent(SIZE * sc);
         #[allow(clippy::cast_precision_loss)]
         let mut x = PAD as f32;
-        for run in line {
+        for (ri, run) in line.iter().enumerate() {
             x += em * run.indent;
+            if let Some(im) = img_at(li, ri) {
+                let (dw, dh) = fit(im);
+                #[allow(clippy::cast_possible_truncation)]
+                surf.blend_image_scaled(
+                    x.round() as i32,
+                    (top + 3.0).round() as i32,
+                    dw.round() as i32,
+                    dh.round() as i32,
+                    im,
+                    clip,
+                );
+                x += dw;
+                continue;
+            }
             let size = SIZE * run.scale;
             let col = run.color.map_or(Color::from_rgb(20, 20, 20), |c| {
                 Color::from_rgb(c[0], c[1], c[2])

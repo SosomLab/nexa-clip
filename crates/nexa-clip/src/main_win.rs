@@ -239,6 +239,9 @@ pub(crate) struct MainWin {
     preview_content: std::cell::Cell<(i32, i32)>,
     /// 리치 미리보기 대상 id — 선택이 바뀌면 스크롤을 되돌린다.
     preview_rich_id: Option<u64>,
+    /// ★ 리치 미리보기의 인라인 이미지(09-04 — Outlook 표 = `data:` PNG): (줄, 런) → 디코드본.
+    ///   미리보기 항목이 바뀔 때 한 번 격리 워커로 디코드(8장 · 변 1600 상한).
+    preview_rich_imgs: Vec<((usize, usize), nclip_ctl::theme::IconImage)>,
     /// 미리보기 이미지 원본 — (항목 id, 셸이 지연 디코드해 넘긴 RGBA ·
     /// `None` = 디코드 실패 → 텍스트 폴백 · 09-02 실기 P).
     preview_img: Option<(u64, Option<nclip_ctl::theme::IconImage>)>,
@@ -294,6 +297,7 @@ impl MainWin {
             preview_bars: ScrollBars::new(),
             preview_content: std::cell::Cell::new((0, 0)),
             preview_rich_id: None,
+            preview_rich_imgs: Vec::new(),
             preview_img: None,
         }
     }
@@ -913,12 +917,13 @@ impl MainWin {
             self.preview_img = None;
         }
         // ★ 리치 항목(09-03 ②) — 런을 직접 그린다: TextBox 없이 줄 스크롤만.
-        if row.rich.is_some() {
+        if let Some(rich) = &row.rich {
             self.preview_tb = None;
             if self.preview_rich_id != Some(row.id) {
                 self.preview_rich_id = Some(row.id);
                 self.preview_scroll = 0;
                 self.preview_hs = 0;
+                self.preview_rich_imgs = decode_inline_images(rich);
             }
             return;
         }
@@ -1911,23 +1916,59 @@ impl MainWin {
                 let line_h = px(22.0);
                 let tab_w = dc.text_width("    ").max(8);
                 let em = dc.text_width("한").max(8);
-                // ★ 픽셀 스크롤(횡/종) — 부분 줄까지 · 콘텐츠 크기는 캐시로(사건 처리 몫).
-                let start = (self.preview_scroll / line_h).max(0) as usize;
-                let off = self.preview_scroll.rem_euclid(line_h);
-                let visible = ((inner.h + off + line_h - 1) / line_h).max(1) as usize;
-                let mut max_w = 0i32;
-                for (k, line) in rich.iter().enumerate() {
-                    let mut xoff = 0i32;
-                    let in_view = k >= start && k < start + visible;
+                // ★ 인라인 이미지(09-04) = 가변 줄 높이 — 줄 오프셋(누적합)으로 픽셀 스크롤. 이미지는 패널 폭에
+                //   맞춰 비율 축소(확대 없음).
+                let imgs = &self.preview_rich_imgs;
+                let img_at = |li: usize, ri: usize| {
+                    imgs.iter().find(|(k, _)| *k == (li, ri)).map(|(_, im)| im)
+                };
+                let fit = |im: &nclip_ctl::theme::IconImage, avail: i32| -> (i32, i32) {
                     #[allow(clippy::cast_possible_wrap)]
-                    let ly = inner.y - off + ((k as i32) - start as i32) * line_h;
-                    for run in line {
+                    let (iw, ih) = (im.w.max(1) as i32, im.h.max(1) as i32);
+                    let dw = iw.min(avail.max(40));
+                    (dw, (ih * dw / iw).max(1))
+                };
+                let img_gap = px(6.0);
+                let mut offs: Vec<i32> = Vec::with_capacity(rich.len() + 1);
+                offs.push(0);
+                for (li, line) in rich.iter().enumerate() {
+                    let mut lh = line_h;
+                    for (ri, run) in line.iter().enumerate() {
+                        if let Some(im) = img_at(li, ri) {
+                            let ind = nclip_core::richtext::em_px(em, run.indent);
+                            lh = lh.max(fit(im, inner.w - ind).1 + img_gap);
+                        }
+                    }
+                    offs.push(offs.last().copied().unwrap_or(0) + lh);
+                }
+                let content_h = offs.last().copied().unwrap_or(0);
+                let mut max_w = 0i32;
+                for (li, line) in rich.iter().enumerate() {
+                    let mut xoff = 0i32;
+                    let top = offs[li] - self.preview_scroll;
+                    let in_view = offs[li + 1] - self.preview_scroll > 0 && top < inner.h;
+                    let ly = inner.y + top;
+                    for (ri, run) in line.iter().enumerate() {
                         dc.select_font_sized(
                             FontSlot::Base,
                             run.bold,
                             nclip_core::richtext::size_delta(em, run.scale),
                         );
                         xoff += nclip_core::richtext::em_px(em, run.indent);
+                        if let Some(im) = img_at(li, ri) {
+                            let (dw, dh) = fit(im, inner.w - xoff);
+                            if in_view {
+                                let dst = Rect::new(
+                                    inner.x - self.preview_hs + xoff,
+                                    ly + img_gap / 2,
+                                    dw,
+                                    dh,
+                                );
+                                dc.image_scaled(dst, im, inner);
+                            }
+                            xoff += dw;
+                            continue;
+                        }
                         let col = run.color.map_or(th.text, |c| {
                             nclip_ctl::theme::Color::from_rgb(c[0], c[1], c[2])
                         });
@@ -1947,8 +1988,6 @@ impl MainWin {
                 }
                 dc.select_font(FontSlot::Base, false);
                 // 스크롤 여유(콘텐츠 − 뷰포트) 캐시 + ★ 오버레이 스크롤바(횡/종).
-                #[allow(clippy::cast_possible_wrap)]
-                let content_h = (rich.len() as i32) * line_h;
                 self.preview_content
                     .set(((max_w - inner.w).max(0), (content_h - inner.h).max(0)));
                 self.preview_bars.paint(
@@ -2572,6 +2611,28 @@ pub(crate) fn to_ctl_event(event: &WindowEvent, cursor: (i32, i32)) -> Option<Ct
 /// 툴팁 라벨 — 한글(현재 창 문안과 동일 언어 · i18n 스윙은 T-23).
 /// 평문 표현을 순위대로 고른다(스냅숏 `plain_text`와 같은 계약 · 09-02 실기 P —
 /// "첫 디코드 성공"이 CF_HTML 헤더·벤더 바이트를 물어 목록/미리보기에 깨진 글이 떴다).
+/// ★ 인라인 이미지 디코드(09-04 — Outlook은 표를 `data:` PNG로 넣는다): 리치 런의 원본 바이트를 격리 워커로
+/// 풀어 (줄, 런) → 그림. 8장 · 변 1600 상한 — 미리보기로 바뀔 때·"이미지로 복사" 때 한 번씩.
+pub(crate) fn decode_inline_images(
+    rich: &[Vec<nclip_core::richtext::Run>],
+) -> Vec<((usize, usize), nclip_ctl::theme::IconImage)> {
+    let mut out = Vec::new();
+    for (li, line) in rich.iter().enumerate() {
+        for (ri, run) in line.iter().enumerate() {
+            let Some(bytes) = &run.image else {
+                continue;
+            };
+            if out.len() >= 8 {
+                return out;
+            }
+            if let Some((w, h, rgba)) = nclip_plat::imgdec::decode_isolated(bytes, 1600) {
+                out.push(((li, ri), nclip_ctl::theme::IconImage::from_rgba(w, h, rgba)));
+            }
+        }
+    }
+    out
+}
+
 pub(crate) fn plain_of(reps: &[nclip_core::RawRep]) -> Option<String> {
     let mut best: Option<(u8, &nclip_core::RawRep)> = None;
     for r in reps {

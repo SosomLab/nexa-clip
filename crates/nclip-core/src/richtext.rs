@@ -15,7 +15,8 @@
 //! - **목록**: `<ul>/<ol>` 깊이별 불릿(• ◦ ▪ · `1.`) 합성 + `<li>` 들여쓰기.
 //! - **들여쓰기**: 블록의 `margin-left`·`padding-left`·`text-indent`(pt·px·cm·in·em)를 em으로 — 줄의 첫 런에 실린다.
 //! - **글자 배율**: `font-size` 상대값(본문 10pt 기준 ±15% 안은 1.0 · 0.8~1.3으로 묶음).
-//! - `<img>`: `[image]` 자리표시(Outlook은 표를 `data:` PNG로 넣는다 — 인라인 이미지는 3단).
+//! - `<img>`: `data:image/…;base64` 원본 바이트를 [`Run::image`]로(Outlook은 표를 이렇게 넣는다 — 09-04 사용자
+//!   "붙여넣기는 이미지가 나오니 미리보기도"). 텍스트는 `[image]`(행·폴백). 디코드는 앱(격리 워커) 몫.
 //! - 표 구조·배경색은 아직 밖.
 
 /// 스타일 런 — 같은 스타일이 이어지는 텍스트 조각.
@@ -34,6 +35,9 @@ pub struct Run {
     pub indent: f32,
     /// ★ 2단: 글자 배율(1.0 = 본문) — 0.8~1.3. 줄 간격은 고정이라 이 범위를 넘기지 않는다.
     pub scale: f32,
+    /// ★ 인라인 이미지 원본 바이트(PNG/JPEG — `data:` URI에서 풀어 둔 것). 그리는 쪽이 디코드해 그리고,
+    /// 못 그리면 `text`(`[image]`)를 쓴다. `Arc` = 행·미리보기가 런을 복제해도 바이트는 한 벌.
+    pub image: Option<std::sync::Arc<Vec<u8>>>,
 }
 
 impl Default for Run {
@@ -45,6 +49,7 @@ impl Default for Run {
             italic: false,
             indent: 0.0,
             scale: 1.0,
+            image: None,
         }
     }
 }
@@ -168,6 +173,7 @@ fn parse(frag: &str, max_lines: usize) -> (Vec<Vec<Run>>, bool) {
                     italic: cur.italic,
                     indent,
                     scale,
+                    image: None,
                 });
             }
         };
@@ -207,11 +213,18 @@ fn parse(frag: &str, max_lines: usize) -> (Vec<Vec<Run>>, bool) {
                     lines.push(Vec::new());
                     last_ws = true;
                 }
-                // ★ 2단: 이미지 = 자리표시(Outlook은 표를 data: PNG로 넣는다 — 빠졌음을 알린다).
+                // ★ 이미지 — `data:` URI면 원본 바이트를 런에 싣는다(09-04 · Outlook 표). 아니면 `[image]` 자리표시.
                 (false, "img") => {
                     flush!();
+                    let low = tag.to_ascii_lowercase();
+                    let image = attr_value(&low, tag, "src")
+                        .and_then(data_image_bytes)
+                        .map(std::sync::Arc::new);
                     text.push_str("[image]");
                     flush!();
+                    if let Some(run) = lines.last_mut().and_then(|l| l.last_mut()) {
+                        run.image = image;
+                    }
                     marks += 1;
                     last_ws = true;
                 }
@@ -339,6 +352,47 @@ fn parse(frag: &str, max_lines: usize) -> (Vec<Vec<Run>>, bool) {
     }
     lines.truncate(max_lines);
     (lines, marks > 0)
+}
+
+/// `data:image/…;base64,…` → 원본 바이트. 이미지 MIME + base64만 · 8MiB 상한(클립보드는 남의 데이터).
+fn data_image_bytes(src: &str) -> Option<Vec<u8>> {
+    let rest = src.trim().strip_prefix("data:")?;
+    let (meta, payload) = rest.split_once(',')?;
+    let mut parts = meta.split(';');
+    if !parts.next()?.trim().starts_with("image/") || !parts.any(|p| p.trim() == "base64") {
+        return None;
+    }
+    if payload.len() > 11 << 20 {
+        return None;
+    }
+    let bytes = base64_decode(payload)?;
+    (!bytes.is_empty()).then_some(bytes)
+}
+
+/// 표준 base64(+ URL-safe 두 글자) 해제 — 공백·개행 무시 · 패딩 관대. 외부 crate 없이(DR-8).
+fn base64_decode(s: &str) -> Option<Vec<u8>> {
+    let mut out = Vec::with_capacity(s.len() * 3 / 4);
+    let (mut acc, mut bits) = (0u32, 0u32);
+    for b in s.bytes() {
+        let v = match b {
+            b'A'..=b'Z' => u32::from(b - b'A'),
+            b'a'..=b'z' => u32::from(b - b'a') + 26,
+            b'0'..=b'9' => u32::from(b - b'0') + 52,
+            b'+' | b'-' => 62,
+            b'/' | b'_' => 63,
+            b'=' => break,
+            b' ' | b'\n' | b'\r' | b'\t' => continue,
+            _ => return None,
+        };
+        acc = (acc << 6) | v;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((acc >> bits) as u8);
+            acc &= (1 << bits) - 1;
+        }
+    }
+    Some(out)
 }
 
 /// 활성 블록의 들여쓰기 합(em) — 0~12로 묶는다(행 폭 방어).
@@ -805,11 +859,39 @@ mod tests {
         assert!(joined[2].starts_with("• 장소"), "{joined:?}");
         assert!((runs[3][0].indent - 5.8).abs() < 0.01, "{:?}", runs[3][0]);
         assert_eq!(joined[4], "[image]");
+        assert_eq!(
+            runs[4][0].image.as_deref().map(Vec::as_slice),
+            Some(&[0u8, 0, 0][..]),
+            "data: 바이트가 런에 실린다"
+        );
         // 두 번째 줄부터의 런은 들여쓰기를 다시 싣지 않는다.
         assert!(runs[0]
             .iter()
             .skip(1)
             .all(|r| r.indent.abs() < f32::EPSILON));
+    }
+
+    /// base64·data: URI — PNG 시그니처 왕복 · 비이미지/비base64는 None · 잡문자는 None.
+    #[test]
+    fn data_uri_and_base64() {
+        assert_eq!(
+            base64_decode("iVBORw0KGgo=").as_deref(),
+            Some(&[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A][..])
+        );
+        assert_eq!(
+            base64_decode("aGVs\nbG8").as_deref(),
+            Some(&b"hello"[..]),
+            "패딩 없음·개행"
+        );
+        assert!(base64_decode("a*b").is_none());
+        assert!(data_image_bytes("data:image/png;base64,iVBORw0KGgo=").is_some());
+        assert!(data_image_bytes("data:text/plain;base64,aGk=").is_none());
+        assert!(data_image_bytes("data:image/png,raw").is_none());
+        assert!(data_image_bytes("https://x/y.png").is_none());
+        let html = "<img src=\"https://x/y.png\">";
+        let runs = html_runs_of(&[rep("text/html", html)], 3).expect("자리표시는 구조");
+        assert_eq!(runs[0][0].text, "[image]");
+        assert!(runs[0][0].image.is_none());
     }
 
     /// 심볼 치환·번호 목록·배율·PUA.

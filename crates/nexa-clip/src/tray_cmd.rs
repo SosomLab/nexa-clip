@@ -803,7 +803,8 @@ impl Shell {
                 .unwrap_or_else(|| item.label.clone());
             crate::render_img::plain_runs(&text)
         });
-        let Some((w, h, rgba)) = crate::render_img::render_runs(&self.font, &lines) else {
+        let imgs = crate::main_win::decode_inline_images(&lines);
+        let Some((w, h, rgba)) = crate::render_img::render_runs(&self.font, &lines, &imgs) else {
             eprintln!("이미지 렌더 실패 — 내용이 비었거나 너무 큽니다");
             return;
         };
