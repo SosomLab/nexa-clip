@@ -478,6 +478,11 @@ exa-clip.exe -ArgumentList tray
 # ── 디버그 빌드 재시작(개발 반복) — Linux는 scripts/dev-restart.sh · Windows는 아래 두 줄
 taskkill //F //IM nexa-clip.exe; cargo build -p nexa-clip && ./target/debug/nexa-clip.exe tray
 
+# ── mac 설치본 실기(09-04 · dev-install-win.ps1의 mac 판) — brew cask 설치본(/Applications/Nexa Clip.app)을 갈아 끼운다
+scripts/mac-dev-cert.sh                  # 1회: 자체 서명 신원(TCC는 서명으로 앱 식별 — 애드혹은 교체마다 손쉬운 사용 권한 리셋)
+scripts/dev-install-mac.sh [--debug]     # 빌드 → 종료 → 번들 교체 → 재서명 → 재시작(신원 있으면 그것으로)
+scripts/mac-ppt-e2e.sh                   # PowerPoint 자동 실기 12항(서식 텍스트 · 글상자 2개 — 복사→재게시→붙여넣기 검증)
+
 # ── 배포 파이프라인 드라이런(태그 없이 · 초안 릴리스만) — 5타깃 빌드·게이트·매니페스트까지 그대로 돈다
 gh workflow run release --ref main -R SosomLab/nexa-clip
 gh run list -R SosomLab/nexa-clip --workflow release -L 1          # run id
