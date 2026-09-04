@@ -166,6 +166,8 @@ pub struct FileStore {
     seg_no: u32,
     /// 재생으로 센 이벤트 수(압축 판단).
     events: usize,
+    /// 재생 때 읽은 인덱스 바이트(압축 판단 — 09-04: 죽은 레코드가 크면(구본 RGBA 섬네일) 개수 조건 전에 줄인다).
+    index_bytes: u64,
     /// blob 참조 수 — 0이 되면 실파일을 지운다.
     blob_refs: HashMap<[u8; 32], u32>,
     /// 항목 → 참조 blob 목록(제거 때 감산용).
@@ -220,6 +222,7 @@ impl FileStore {
                 master,
                 seg_no,
                 events: 0,
+                index_bytes: 0,
                 blob_refs: HashMap::new(),
                 item_blobs: HashMap::new(),
                 degraded: false,
@@ -467,6 +470,7 @@ impl FileStore {
             let Ok(bytes) = std::fs::read(&seg) else {
                 continue;
             };
+            self.index_bytes += bytes.len() as u64;
             let mut off = 0usize;
             while off + 4 <= bytes.len() {
                 let len =
@@ -608,10 +612,13 @@ fn last_seg_no(index_dir: &Path) -> Option<u32> {
 
 impl HistoryStore for FileStore {
     fn load(&mut self) -> Vec<StoredItem> {
+        self.index_bytes = 0;
         let (items, events) = self.replay();
         self.events = events;
-        // 죽은 이벤트가 살아 있는 항목의 몇 배면 열 때 한 번 압축한다.
-        if events > items.len() * COMPACT_RATIO + 64 {
+        // 죽은 이벤트가 살아 있는 항목의 몇 배면 열 때 한 번 압축한다. ★ 09-04: 인덱스가 8MB를 넘고 죽은 이벤트가
+        //   하나라도 있으면 개수와 무관하게 압축 — 구본 RGBA 섬네일 레코드(장당 1MB)가 개수 조건을 못 채운 채 남는다.
+        let big_dead = self.index_bytes > 8 << 20 && events > items.len();
+        if events > items.len() * COMPACT_RATIO + 64 || big_dead {
             self.compact(&items);
         }
         items
