@@ -198,6 +198,9 @@ pub(crate) struct MainWin {
     follow: Option<(u64, u64, Instant)>,
     /// refresh가 선택을 옮겼다 — 다음 paint에서 스크롤을 새 자리로.
     follow_scroll: bool,
+    /// ★ 새 항목 따라가기(09-04 사용자 — "Copy as Image는 1번에 새 항목이 생기니 거기로"): (arm 시점 최대 id, 시각).
+    ///   그보다 큰 id의 첫 비고정 행이 나타나면 선택·미리보기·스크롤을 그리로(5초 시효).
+    follow_new: Option<(u64, Instant)>,
     /// 툴바 hover — 머티리얼 상태 레이어 + 툴팁(09-01 사용자 요청).
     hovered: Option<Tool>,
     /// ★ 보기 모드(Ctrl+1/2/3 · `ui.view_mode` 영속).
@@ -276,6 +279,7 @@ impl MainWin {
             last_click: None,
             follow: None,
             follow_scroll: false,
+            follow_new: None,
             hovered: None,
             view: ViewMode::Compact,
             menu: ContextMenu::new(),
@@ -539,7 +543,23 @@ impl MainWin {
                 }
             }
         }
+        if let Some((max_id, t)) = self.follow_new {
+            if t.elapsed().as_secs() >= 5 {
+                self.follow_new = None;
+            } else if let Some(ix) = self.rows.iter().position(|r| !r.pinned && r.id > max_id) {
+                self.sel = ix;
+                self.follow_scroll = true;
+                self.follow_new = None;
+                self.follow = None;
+            }
+        }
         // 스크롤은 paint에서 최대값으로만 죄인다 — 휠 위치를 존중(09-02).
+    }
+
+    /// 새 항목이 생길 동작(이미지로 복사) 직후 — 다음 갱신에서 새 항목을 선택한다.
+    fn arm_follow_new(&mut self) {
+        let max_id = self.rows.iter().map(|r| r.id).max().unwrap_or(0);
+        self.follow_new = Some((max_id, Instant::now()));
     }
 
     /// 활성화(더블클릭·Enter) 직후 — 승격으로 자리가 바뀌어도 이 항목을 계속 선택한다.
@@ -1287,6 +1307,7 @@ impl MainWin {
                         self.last_click = Some((now, vi));
                         self.sel = vi;
                         self.follow = None;
+                        self.follow_new = None;
                         self.redraw();
                         if dbl {
                             if let Some(id) = self.selected_id() {
@@ -2380,23 +2401,23 @@ impl MainWin {
             return MainAction::None;
         };
         match id {
-            "copy" => MainAction::Copy {
-                id: item_id,
-                as_: PasteAs::Original,
-            },
-            "plain" => MainAction::Copy {
-                id: item_id,
-                as_: PasteAs::Plain,
-            },
-            "object" => MainAction::Copy {
-                id: item_id,
-                as_: PasteAs::Object,
-            },
-            "path" => MainAction::Copy {
-                id: item_id,
-                as_: PasteAs::PathOnly,
-            },
-            "image" => MainAction::CopyImage(item_id),
+            // 복사 4종 = 승격 → 활성 대상 따라가기 · 이미지로 복사 = 새 항목 따라가기(09-04).
+            "copy" | "plain" | "object" | "path" => {
+                self.arm_follow();
+                MainAction::Copy {
+                    id: item_id,
+                    as_: match id {
+                        "plain" => PasteAs::Plain,
+                        "object" => PasteAs::Object,
+                        "path" => PasteAs::PathOnly,
+                        _ => PasteAs::Original,
+                    },
+                }
+            }
+            "image" => {
+                self.arm_follow_new();
+                MainAction::CopyImage(item_id)
+            }
             "pin" => MainAction::TogglePin(item_id),
             "delete" => MainAction::Delete(item_id),
             "edit" => {
