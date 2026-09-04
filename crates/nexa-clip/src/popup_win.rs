@@ -567,6 +567,8 @@ impl Popup {
         self.surface = None;
         self.ctx = None;
         self.window = None;
+        // ★ 뷰 캐시 비움(09-04 · 30 §2 V) — 다음 open이 다시 만든다.
+        self.rows = Vec::new();
     }
 
     /// 이력 → 필터 통과 행 재구성(검색어 변경·이력 변경 시).

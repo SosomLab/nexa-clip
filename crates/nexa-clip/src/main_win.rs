@@ -503,11 +503,26 @@ impl MainWin {
         Some((pos.x, pos.y, size.width, size.height))
     }
 
-    /// 창만 걷는다(상주 유지) — 다음 open이 다시 만든다.
+    /// 창만 걷는다(상주 유지) — 다음 open이 다시 만든다. ★ 뷰 캐시(행 · 섬네일 복제 · 리치 런 · 미리보기 디코드)도
+    /// 비운다(09-04 · 30 §2 V) — 다음 open의 refresh가 다시 만든다.
     pub(crate) fn close(&mut self) {
         self.surface = None;
         self.ctx = None;
         self.window = None;
+        self.rows = Vec::new();
+        self.row_offs = Vec::new();
+        self.preview_rich_imgs = Vec::new();
+        self.preview_img = None;
+        self.preview_tb = None;
+        self.preview_rich_id = None;
+    }
+
+    /// ★ 미리보기 중인 항목(09-04 GC 제외 대상) — 패널이 열려 있을 때의 선택 행.
+    pub(crate) fn preview_id(&self) -> Option<u64> {
+        if !self.preview_open {
+            return None;
+        }
+        self.rows.get(self.sel).map(|r| r.id)
     }
 
     /// 이력 → 행 스냅숏. ★ **핀 먼저(각 구획 최신순)** — 관리 화면의 정렬 계약.

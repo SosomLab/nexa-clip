@@ -65,8 +65,9 @@ pub struct StoredItem {
 pub trait HistoryStore {
     /// 전체 재생 — 최신이 앞. 손상 레코드는 세고 버린다(fail-closed).
     fn load(&mut self) -> Vec<StoredItem>;
-    /// 새 항목(또는 같은 id의 교체 — coalesce 완본).
-    fn add(&mut self, item: &StoredItem);
+    /// 새 항목(또는 같은 id의 교체 — coalesce 완본). ★ 반환 = 이 기록이 가리키는 blob 참조(표현 인덱스 · id · 길이)
+    /// — 셸이 항목에 붙여 두면 나중에 본문을 내리고 다시 읽을 수 있다(09-04 · 30 §3).
+    fn add(&mut self, item: &StoredItem) -> Vec<(u32, [u8; 32], u64)>;
     /// 승격 — 맨 앞으로 + `copies` +1.
     fn touch(&mut self, id: u64);
     /// 제거(상한 축출 포함).
@@ -87,7 +88,9 @@ impl HistoryStore for NullStore {
     fn load(&mut self) -> Vec<StoredItem> {
         Vec::new()
     }
-    fn add(&mut self, _: &StoredItem) {}
+    fn add(&mut self, _: &StoredItem) -> Vec<(u32, [u8; 32], u64)> {
+        Vec::new()
+    }
     fn touch(&mut self, _: u64) {}
     fn remove(&mut self, _: u64) {}
     fn wipe(&mut self) {}
@@ -253,8 +256,9 @@ impl FileStore {
         sealed::open(DOMAIN_BLOB, &self.master, &bytes)
     }
 
-    /// Add 레코드 본문 인코딩 — blob 참조 수·항목→blob 표를 갱신한다.
-    fn encode_add(&mut self, item: &StoredItem) -> Vec<u8> {
+    /// Add 레코드 본문 인코딩 — blob 참조 수·항목→blob 표를 갱신한다. 반환 = (레코드, blob 참조 목록).
+    #[allow(clippy::type_complexity)]
+    fn encode_add(&mut self, item: &StoredItem) -> (Vec<u8>, Vec<(u32, [u8; 32], u64)>) {
         let mut w = codec::W::new();
         w.u8(EV_ADD2);
         w.u64(item.created_ms);
@@ -275,6 +279,7 @@ impl FileStore {
         }
         w.u32(u32::try_from(item.reps.len()).unwrap_or(0));
         let mut ids = Vec::new();
+        let mut refs = Vec::new();
         for (ri, r) in item.reps.iter().enumerate() {
             w.str(&r.format);
             // ★ 미적재 참조(지연 로드) — blob은 이미 실재: 참조만 다시 쓴다(09-03).
@@ -283,6 +288,7 @@ impl FileStore {
                 w.0.extend_from_slice(&bid);
                 w.u64(len);
                 ids.push(bid);
+                refs.push((ri as u32, bid, len));
                 continue;
             }
             if r.data.len() >= BLOB_MIN {
@@ -291,6 +297,7 @@ impl FileStore {
                     w.0.extend_from_slice(&id);
                     w.u64(r.data.len() as u64);
                     ids.push(id);
+                    refs.push((ri as u32, id, r.data.len() as u64));
                     continue;
                 }
                 // blob 실패 — 인라인 폴백(레코드가 커지지만 데이터는 산다).
@@ -302,7 +309,7 @@ impl FileStore {
             *self.blob_refs.entry(*id).or_insert(0) += 1;
         }
         self.item_blobs.insert(item.id, ids);
-        w.0
+        (w.0, refs)
     }
 
     /// `with_time` = EV_ADD2(생성 시각 포함) · EV_ADD 구본은 0으로 복원(기간 면제).
@@ -457,7 +464,7 @@ impl FileStore {
         self.events = 0;
         // 최신이 앞인 목록을 **오래된 것부터** Add — 재생하면 같은 순서가 된다.
         for it in items.iter().rev() {
-            let plain = self.encode_add(it);
+            let (plain, _) = self.encode_add(it);
             self.append_record(&plain);
             // 참조 수는 재생 때 이미 셌다 — encode_add의 재가산을 상쇄한다.
             for id in self.item_blobs.get(&it.id).cloned().unwrap_or_default() {
@@ -527,9 +534,10 @@ impl HistoryStore for FileStore {
         items
     }
 
-    fn add(&mut self, item: &StoredItem) {
-        let plain = self.encode_add(item);
+    fn add(&mut self, item: &StoredItem) -> Vec<(u32, [u8; 32], u64)> {
+        let (plain, refs) = self.encode_add(item);
         self.append_record(&plain);
+        refs
     }
 
     fn touch(&mut self, id: u64) {

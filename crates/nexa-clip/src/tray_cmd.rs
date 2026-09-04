@@ -33,7 +33,7 @@ use nclip_plat::paste::PlatformPaste;
 use nclip_plat::tray::{spawn, TrayContent, TrayEvent, TrayHandle};
 use nclip_plat::watch::PlatformWatch;
 use nclip_store::{FileStore, HistoryStore, NullStore, StoredItem};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
@@ -294,6 +294,8 @@ struct Shell {
     /// ★ 창 레벨(최상위)이 지금 창 백엔드에서 실제로 먹는가 — Wayland 네이티브 창이면
     ///   false(프로토콜에 "항상 위" 요청이 없다). 토글 때 정직 안내에 쓴다(09-02).
     atop_effective: bool,
+    /// ★ 마지막 메모리 GC 시각(09-04 · 30 §3).
+    last_gc: Instant,
     /// ★ 감시 끄기(09-04 사용자 — 툴바 토글): 켜지면 로컬 캡처 사건을 버린다. 세션 한정(재시작 = 켜짐).
     watch_off: bool,
 }
@@ -315,19 +317,25 @@ impl Shell {
         let Some(item) = self.history.get_by_id_mut(id) else {
             return false;
         };
-        if item.blob_refs.is_empty() {
+        if item.is_loaded() {
             return true;
         }
-        let refs = std::mem::take(&mut item.blob_refs);
+        // ★ 참조는 남긴다(09-04 · 30 §3) — 쓰고 나면 다시 내리고, 필요하면 또 읽는다.
+        let refs: Vec<(u32, [u8; 32], u64)> = item
+            .blob_refs
+            .iter()
+            .filter(|(ri, _, len)| {
+                item.reps
+                    .get(*ri as usize)
+                    .is_none_or(|r| r.data.len() as u64 != *len)
+            })
+            .copied()
+            .collect();
         let mut fetched = Vec::with_capacity(refs.len());
         for (ri, bid, len) in &refs {
             match self.store.read_blob_by_id(bid) {
                 Some(plain) if plain.len() as u64 == *len => fetched.push((*ri, plain)),
                 _ => {
-                    // 복구 불능 — 참조를 되돌려 미적재 상태 유지(재시도 가능).
-                    if let Some(item) = self.history.get_by_id_mut(id) {
-                        item.blob_refs = refs;
-                    }
                     eprintln!("항목 {id}: blob 복호 실패 — 본문을 채울 수 없음");
                     return false;
                 }
@@ -343,6 +351,48 @@ impl Shell {
         true
     }
 
+    /// ★ 쓰고 나면 즉시 내리기(09-04 · DR-42 ②) — 고정 항목은 상주(①). 텍스트류는 남고 이미지 blob만 비운다.
+    fn release_body(&mut self, id: u64) {
+        if let Some(it) = self.history.get_by_id_mut(id) {
+            if !it.pinned {
+                it.unload_cold();
+            }
+        }
+    }
+
+    /// ★ 저장소 기록 + blob 참조 회수(09-04 · 30 §3) — 캡처된 항목도 참조를 들고 있어야 나중에 내릴 수 있다.
+    fn store_add(&mut self, id: u64) {
+        let Some(stored) = self.history.get_by_id(id).map(to_stored) else {
+            return;
+        };
+        let refs = self.store.add(&stored);
+        if let Some(it) = self.history.get_by_id_mut(id) {
+            if it.blob_refs.is_empty() && !refs.is_empty() {
+                it.blob_refs = refs;
+            }
+        }
+    }
+
+    /// ★ 메모리 GC(09-04 · 30 §3 · DR-42): 30초마다, 또는 상주가 활동 상한(96MB)을 넘으면 즉시 —
+    ///   고정·미리보기 중 항목을 뺀 냉 본문을 내린다. 드롭뿐이라 UI를 막지 않는다.
+    fn gc_memory(&mut self, force: bool) {
+        const ACTIVE_CAP: u64 = 96 << 20;
+        let resident = self.history.resident_bytes();
+        if !force && resident <= ACTIVE_CAP && self.last_gc.elapsed() < Duration::from_secs(30) {
+            return;
+        }
+        self.last_gc = Instant::now();
+        let keep = self.main.preview_id();
+        let freed = self.history.unload_cold_except(keep);
+        if freed > 0 {
+            println!(
+                "메모리 GC: 본문 {}MB 내림 → 상주 {}MB",
+                freed >> 20,
+                self.history.resident_bytes() >> 20
+            );
+        }
+    }
+
     /// ★ K4 미리보기 펌프 — 메인창이 원본 이미지를 원하면 지연 디코드해 넘긴다.
     fn pump_preview(&mut self) {
         if let Some(pid) = self.main.take_preview_request() {
@@ -356,6 +406,8 @@ impl Shell {
                 // 디코드 실패(이미지 표현 없는 Object 포함) — 텍스트 폴백으로 전환.
                 None => self.main.set_preview_failed(pid),
             }
+            // 디코드본은 미리보기가 따로 든다 — 원본 바이트는 내린다(DR-42 ②).
+            self.release_body(pid);
         }
     }
 
@@ -404,7 +456,8 @@ impl Shell {
             .replace_content(id, nclip_core::ClipKind::Text, label, reps)
         {
             if let Some(it) = self.history.get_by_id(id) {
-                self.store.add(&to_stored(it));
+                let __sid = it.id;
+                self.store_add(__sid);
             }
             self.main.on_history_changed(&self.history);
             self.refresh_tray();
@@ -465,6 +518,7 @@ impl Shell {
             }
             Err(e) => eprintln!("복사 실패: {e}"),
         }
+        self.release_body(id);
     }
 
     /// 항목을 클립보드로 되돌린다(트레이 메뉴 — 주입 없음).
@@ -606,7 +660,8 @@ impl Shell {
         match pushed {
             Pushed::New | Pushed::Replaced => {
                 if let Some(front) = self.history.get(0) {
-                    self.store.add(&to_stored(front));
+                    let __sid = front.id;
+                    self.store_add(__sid);
                 }
             }
             Pushed::Promoted => {
@@ -615,7 +670,8 @@ impl Shell {
                     //   09-02 실기: TOUCH만 남기면 재시작 후 텍스트로 퇴행). 섬네일이
                     //   있으면 ADD로 온전히 재기록 — 블롭은 내용 주소라 비용 미미.
                     if front.thumb.is_some() {
-                        self.store.add(&to_stored(front));
+                        let __sid = front.id;
+                        self.store_add(__sid);
                     } else {
                         self.store.touch(front.id);
                     }
@@ -831,6 +887,7 @@ impl Shell {
             Ok(n) => println!("이미지로 복사: {w}×{h} — 표현 {n}개 게시"),
             Err(e) => eprintln!("이미지로 복사 실패: {e}"),
         }
+        self.release_body(id);
     }
 
     /// 팝업을 닫으며 마지막 크기를 저장한다(09-02 — 다음 열기가 이어받는다).
@@ -955,7 +1012,8 @@ impl ApplicationHandler<ShellEvent> for Shell {
                     if self.history.set_pinned(id, now) {
                         // ★ 핀 영속 = 같은 id Add 재기록(재생 시 교체 — docs/28 §4).
                         if let Some(it) = self.history.get_by_id(id) {
-                            self.store.add(&to_stored(it));
+                            let __sid = it.id;
+                            self.store_add(__sid);
                         }
                         self.main.on_history_changed(&self.history);
                     }
@@ -1069,6 +1127,8 @@ impl ApplicationHandler<ShellEvent> for Shell {
         if self.app.take_sync_respawn() {
             crate::sync_cmd::spawn_if_enabled(&self.app.conf, self.proxy.clone());
         }
+        // ★ 메모리 GC(09-04 · DR-42) — 30초 주기 · 상한 초과 즉시.
+        self.gc_memory(false);
         // ★ 기록 모두 삭제(09-04 사용자 — 설정 고급 · 2단계 확인 통과) — 고정 제외 전부 · 저장소까지.
         if self.app.take_clear_history() {
             let gone = self.history.remove_unpinned();
@@ -1358,6 +1418,7 @@ pub(crate) fn run() {
         sync_skip: None,
         proxy: el.create_proxy(),
         atop_effective,
+        last_gc: Instant::now(),
         watch_off: false,
     };
     shell.main.set_mono_font(mono_font.clone());

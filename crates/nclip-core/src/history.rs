@@ -101,10 +101,45 @@ impl HistoryItem {
     }
 
     /// 본문까지 적재됐는가 — 미적재면 붙여넣기/디코드 전에 셸이 채워야 한다.
+    /// ★ 09-04(30 §3): 참조는 적재 뒤에도 남는다(다시 내릴 수 있게) — "적재됨" = 참조가 가리키는 표현이 다 차 있다.
     #[must_use]
     pub fn is_loaded(&self) -> bool {
-        self.blob_refs.is_empty()
+        self.blob_refs.iter().all(|(ri, _, len)| {
+            self.reps
+                .get(*ri as usize)
+                .is_some_and(|r| r.data.len() as u64 == *len)
+        })
     }
+
+    /// ★ 냉 본문 내리기(09-04 · 30 §3 · DR-42): blob 참조가 있는 **비텍스트** 표현의 바이트를 비운다 —
+    /// 텍스트·HTML·RTF는 목록·미리보기 렌더가 쓰므로 남긴다(작다). 돌려주는 값 = 해제한 바이트.
+    /// 참조가 없는(인라인 · 16KB 미만) 표현은 내릴 수 없다(다시 읽을 곳이 없다).
+    pub fn unload_cold(&mut self) -> u64 {
+        let mut freed = 0u64;
+        for (ri, _, _) in &self.blob_refs {
+            if let Some(r) = self.reps.get_mut(*ri as usize) {
+                if r.data.is_empty() || is_text_like(&r.format) {
+                    continue;
+                }
+                freed += r.data.len() as u64;
+                r.data = Vec::new();
+            }
+        }
+        freed
+    }
+
+    /// 지금 RAM에 있는 바이트(표현 + 섬네일) — 30 §3 예산 회계.
+    #[must_use]
+    pub fn resident_bytes(&self) -> u64 {
+        reps_bytes(&self.reps) + self.thumb.as_ref().map_or(0, |(_, _, b)| b.len() as u64)
+    }
+}
+
+/// 목록·미리보기 렌더가 직접 읽는 표현(작다) — 내리지 않는다.
+fn is_text_like(fmt: &str) -> bool {
+    crate::capture::is_html_format(fmt)
+        || crate::capture::is_rtf_format(fmt)
+        || crate::capture::plain_rank(fmt).is_some()
 }
 
 /// [`History::push`]의 결과 — 호출자가 화면 갱신 여부를 판단한다.
@@ -255,6 +290,21 @@ impl History {
     /// 상한 축출로 빠진 항목 id를 가져간다(한 번 주면 비운다).
     pub fn drain_evicted(&mut self) -> Vec<u64> {
         std::mem::take(&mut self.evicted)
+    }
+
+    /// ★ RAM 상주 바이트 합(09-04 · 30 §3) — O(n) 길이 합산(수백 항목 · μs).
+    #[must_use]
+    pub fn resident_bytes(&self) -> u64 {
+        self.items.iter().map(HistoryItem::resident_bytes).sum()
+    }
+
+    /// ★ 메모리 GC(09-04 · DR-42): 고정 제외 · `keep`(미리보기 중) 제외 전 항목의 냉 본문을 내린다. 반환 = 해제 바이트.
+    pub fn unload_cold_except(&mut self, keep: Option<u64>) -> u64 {
+        self.items
+            .iter_mut()
+            .filter(|it| !it.pinned && Some(it.id) != keep)
+            .map(HistoryItem::unload_cold)
+            .sum()
     }
 
     /// id로 찾기(S2 메인창 — 필터된 뷰가 인덱스 대신 id로 말한다).
