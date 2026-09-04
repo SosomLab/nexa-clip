@@ -679,7 +679,18 @@ impl Shell {
             seq: 0,
         };
         self.on_captured(Box::new(snap), Some(from));
-        match nclip_plat::clipboard::set_reps(&reps) {
+        // ★ 클립보드 열기 경합(09-04 실기 — 다른 앱/인스턴스가 쥔 순간) — 짧게 몇 번 다시 시도.
+        let mut last = Err(String::new());
+        for attempt in 0..5 {
+            last = nclip_plat::clipboard::set_reps(&reps);
+            if last.is_ok() {
+                break;
+            }
+            if attempt < 4 {
+                std::thread::sleep(std::time::Duration::from_millis(25));
+            }
+        }
+        match last {
             Ok(n) => {
                 println!("동기화: 클립보드 게시 — 표현 {n}개(이 PC에서 바로 붙여넣기 가능)");
                 self.history.expect_echo(0);
@@ -881,6 +892,15 @@ impl ApplicationHandler<ShellEvent> for Shell {
                     );
                     self.main.apply_preview(on);
                 }
+                // ★ 중복 제외 보기(09-04) — 영속 + 행 재구성.
+                MainAction::DedupView(on) => {
+                    self.app.conf.set(
+                        "ui.dedup_view",
+                        if on { "on" } else { "off" }.to_string(),
+                        Instant::now(),
+                    );
+                    self.main.on_history_changed(&self.history);
+                }
                 MainAction::CopyImage(id) => self.copy_as_image(id),
                 MainAction::Delete(id) => {
                     if self.history.remove(id) {
@@ -939,6 +959,7 @@ impl ApplicationHandler<ShellEvent> for Shell {
                 let view = self.app.conf.state.get("ui.view_mode").to_string();
                 let atop = self.app.conf.state.get("ui.always_on_top") == "on";
                 let pv = self.app.conf.state.get("ui.preview_open") == "on";
+                let dd = self.app.conf.state.get("ui.dedup_view") == "on";
                 self.main.open(
                     el,
                     &self.history,
@@ -948,6 +969,7 @@ impl ApplicationHandler<ShellEvent> for Shell {
                         view_code: &view,
                         always_top: atop,
                         preview_open: pv,
+                        dedup_view: dd,
                     },
                 );
             }

@@ -53,6 +53,8 @@ pub(crate) struct OpenOpts<'a> {
     pub always_top: bool,
     /// `ui.preview_open`(09-02 K4).
     pub preview_open: bool,
+    /// ★ `ui.dedup_view`(09-04) — 중복 제외 보기.
+    pub dedup_view: bool,
 }
 
 pub(crate) enum MainAction {
@@ -77,6 +79,8 @@ pub(crate) enum MainAction {
     ToggleAlwaysTop,
     /// ★ 미리보기 패널 토글(09-02 K4) — 셸이 `ui.preview_open` 영속.
     TogglePreview,
+    /// ★ 중복 제외 보기 토글(09-04) — 셸이 `ui.dedup_view` 영속 + refresh.
+    DedupView(bool),
     /// ★ 이미지로 복사(09-03 — 렌더 비트맵을 PNG+DIB로 게시 · "PPT에 이미지처럼").
     CopyImage(u64),
     /// ★ 보기 모드 변경(Ctrl+1/2/3) — 셸이 `ui.view_mode`에 영속한다.
@@ -100,6 +104,10 @@ struct Row {
     kind: ClipKind,
     label: String,
     source: String,
+    /// ★ 다른 기기에서 받은 항목(출처 `⇄ 기기명` · 09-04) — 목록 점 표시·출처 표기.
+    remote: bool,
+    /// 내용 열쇠(중복 제외 보기 묶음).
+    key: u64,
     copies: u32,
     thumb: Option<nclip_ctl::theme::IconImage>,
     /// 원본 화소 치수(라벨 "W×H" 파싱 · 09-02 가변 행 — 섬네일은 축소본이라 절대 크기를 모른다).
@@ -185,6 +193,10 @@ pub(crate) struct MainWin {
     preview_icon: std::cell::RefCell<Option<(u32, nclip_ctl::theme::IconImage)>>,
     /// ★ 미리보기 패널 열림(09-02 K4 · `ui.preview_open` 영속 — 기본 접힘).
     preview_open: bool,
+    /// ★ 중복 제외 보기(09-04 사용자) — 같은 내용은 **로컬 1건**, 로컬이 없으면 **가장 최근 수신 1건**만.
+    dedup_view: bool,
+    /// 중복 제외 스위치(검색줄 오른쪽).
+    dedup_sw: Switch,
     /// 미리보기 텍스트 — (항목 id, 읽기용 멀티라인 · wrap · 휠 스크롤만 라우팅).
     preview_tb: Option<(u64, TextBox)>,
     /// ★ 리치 미리보기 세로 스크롤(px · 09-03 — 스크롤바와 짝).
@@ -241,6 +253,8 @@ impl MainWin {
             preview_open: false,
             preview_tb: None,
             preview_scroll: 0,
+            dedup_view: false,
+            dedup_sw: Switch::new("", false).with_label_side(LabelSide::None),
             preview_hs: 0,
             preview_bars: ScrollBars::new(),
             preview_content: std::cell::Cell::new((0, 0)),
@@ -325,6 +339,8 @@ impl MainWin {
         self.theme = theme;
         self.always_top = opts.always_top;
         self.preview_open = opts.preview_open;
+        self.dedup_view = opts.dedup_view;
+        self.dedup_sw.set_on(opts.dedup_view);
         self.view = ViewMode::from_code(opts.view_code).unwrap_or_default();
         if let Some(w) = &self.window {
             w.set_visible(true);
@@ -396,6 +412,31 @@ impl MainWin {
     }
 
     /// 이력 → 행 스냅숏. ★ **핀 먼저(각 구획 최신순)** — 관리 화면의 정렬 계약.
+    /// ★ 중복 제외(09-04 사용자) — 내용 열쇠가 같은 행들 중 **로컬 1건**(가장 최근), 로컬이 없으면
+    ///   **가장 최근 수신 1건**만 남긴다(입력 순서 = 최신순 유지).
+    fn dedup_rows(rows: Vec<Row>) -> Vec<Row> {
+        use std::collections::HashMap;
+        let mut pick: HashMap<u64, u64> = HashMap::new(); // key → 남길 id
+        let mut has_local: HashMap<u64, bool> = HashMap::new();
+        for r in &rows {
+            let local = !r.remote;
+            match pick.get(&r.key) {
+                None => {
+                    pick.insert(r.key, r.id);
+                    has_local.insert(r.key, local);
+                }
+                Some(_) if local && !has_local.get(&r.key).copied().unwrap_or(false) => {
+                    pick.insert(r.key, r.id); // 먼저 온 게 수신이고 이건 로컬 — 로컬이 이긴다
+                    has_local.insert(r.key, true);
+                }
+                Some(_) => {}
+            }
+        }
+        rows.into_iter()
+            .filter(|r| pick.get(&r.key) == Some(&r.id))
+            .collect()
+    }
+
     pub(crate) fn refresh(&mut self, hist: &History) {
         let q = self.search.display_text().to_lowercase();
         self.total = hist.len();
@@ -413,6 +454,11 @@ impl MainWin {
                 kind: item.kind,
                 label: item.label.clone(),
                 source: item.source_app.clone().unwrap_or_default(),
+                remote: item
+                    .source_app
+                    .as_deref()
+                    .is_some_and(|s| s.starts_with("⇄ ")),
+                key: History::content_key(item),
                 copies: item.copies,
                 thumb: item.thumb.as_ref().map(|(w, h, rgba)| {
                     nclip_ctl::theme::IconImage::from_rgba(*w, *h, rgba.clone())
@@ -430,6 +476,9 @@ impl MainWin {
         }
         self.rows = pinned;
         self.rows.extend(normal);
+        if self.dedup_view {
+            self.rows = Self::dedup_rows(std::mem::take(&mut self.rows));
+        }
         if self.sel >= self.rows.len() {
             self.sel = self.rows.len().saturating_sub(1);
         }
@@ -812,7 +861,12 @@ impl MainWin {
         }
         self.preview_rich_id = None;
         if self.preview_tb.as_ref().map(|(id, _)| *id) != Some(row.id) {
-            let text = row.plain.clone().unwrap_or_else(|| row.label.clone());
+            let mut text = row.plain.clone().unwrap_or_else(|| row.label.clone());
+            // ★ 수신 항목은 첫 줄에 출처 기기(09-04 사용자 — "어디서 받은 건지").
+            if row.remote {
+                let origin = tr(current_lang(), Msg::MenuOrigin).replacen("{}", &row.source, 1);
+                text = format!("{origin}\n{text}");
+            }
             let mut tb = TextBox::new("").with_multiline().with_text(&text);
             tb.set_wrap(true);
             tb.set_scale(self.scale);
@@ -1042,6 +1096,32 @@ impl MainWin {
                     return MainAction::None;
                 }
                 let (sx, sy) = self.cursor;
+                // ★ 중복 제외 스위치(09-04) — 검색줄 오른쪽. 토글 = 셸이 영속 + refresh.
+                if *button == winit::event::MouseButton::Left
+                    && self
+                        .dedup_sw
+                        .bounds()
+                        .contains(nclip_ctl::geom::Point { x: sx, y: sy })
+                {
+                    let mut inv = Invalidations::default();
+                    let ev = if *state == ElementState::Pressed {
+                        CtlEvent::MouseDown {
+                            x: sx,
+                            y: sy,
+                            shift: false,
+                            primary: false,
+                        }
+                    } else {
+                        CtlEvent::MouseUp { x: sx, y: sy }
+                    };
+                    self.dedup_sw.on_event(&ev, &mut inv);
+                    self.redraw();
+                    if let Some(on) = self.dedup_sw.take_toggled() {
+                        self.dedup_view = on;
+                        return MainAction::DedupView(on);
+                    }
+                    return MainAction::None;
+                }
                 // ★ 검색 우클릭 = 편집 메뉴(09-02) · 메뉴 열림 동안은 전부 검색 몫.
                 if *state == ElementState::Pressed
                     && *button == winit::event::MouseButton::Right
@@ -1322,12 +1402,20 @@ impl MainWin {
             let mut inv = Invalidations::default();
             self.search.set_scale(self.scale);
             let tbw = self.toolbar_w();
+            // ★ 중복 제외 스위치(09-04) — 검색줄 오른쪽 끝(라벨은 페인트가 왼쪽에 그린다).
+            let sww = (self.scale * 40.0).round() as i32;
+            let label_w = (self.scale * 64.0).round() as i32;
+            let sy = (self.scale * 7.0).round() as i32;
+            let sh = (self.scale * 24.0).round() as i32;
+            self.dedup_sw.set_scale(self.scale);
+            self.dedup_sw
+                .set_bounds(Rect::new(w - pad - sww, sy + 2, sww, sh - 4), &mut inv);
             self.search.set_bounds(
                 Rect::new(
                     tbw + pad,
-                    (self.scale * 7.0).round() as i32,
-                    (w - tbw - pad * 2).max(40),
-                    (self.scale * 24.0).round() as i32,
+                    sy,
+                    (w - tbw - pad * 3 - sww - label_w).max(40),
+                    sh,
                 ),
                 &mut inv,
             );
@@ -1403,6 +1491,25 @@ impl MainWin {
         // ── ① 검색 1줄 — 툴바 오른쪽(정식 TextBox · 09-01) ──
         dc.fill_rect(Rect::new(tb_w, 0, w - tb_w, header_h), th.chrome_bg);
         self.search.paint(dc, &th);
+        {
+            // ★ 중복 제외 스위치 + 라벨(09-04).
+            let r = self.dedup_sw.bounds();
+            dc.select_font(FontSlot::Status, false);
+            let label = tr(current_lang(), Msg::DedupLabel);
+            let tw = dc.text_width(label);
+            dc.text(
+                r.x - tw - px(8.0),
+                r.y + px(3.0),
+                full,
+                label,
+                if self.dedup_view {
+                    th.text
+                } else {
+                    th.text_dim
+                },
+            );
+            self.dedup_sw.paint(dc, &th);
+        }
         dc.fill_rect(Rect::new(tb_w, header_h - 1, w - tb_w, 1), th.border);
         let has_sel = !self.rows.is_empty();
         for (k, t) in TOOLS_TOP.iter().enumerate() {
@@ -1523,6 +1630,13 @@ impl MainWin {
                         );
                     }
                 }
+                // ★ 수신 표식(09-04) — 상태줄 연결 점과 같은 녹색 점(핀 점 아래).
+                if row.remote {
+                    let dot_y = y + px(32.0);
+                    if dot_y >= clip.y && dot_y + px(6.0) <= clip.y + clip.h {
+                        dc.fill_round_rect(Rect::new(tx, dot_y, px(6.0), px(6.0)), px(3.0), th.ok);
+                    }
+                }
                 let mut right = list.x + list.w - pad;
                 if row.copies > 1 {
                     let tag = format!("×{}", row.copies);
@@ -1626,6 +1740,14 @@ impl MainWin {
                 let dot_y = text_y + px(4.0);
                 if dot_y >= clip.y && dot_y + px(6.0) <= clip.y + clip.h {
                     dc.fill_round_rect(Rect::new(lx, dot_y, px(6.0), px(6.0)), px(3.0), th.accent);
+                }
+                lx += px(12.0);
+            }
+            // ★ 수신 표식(09-04 사용자) — 다른 기기에서 받은 항목 = 녹색 점(상태줄 연결 점과 같은 색).
+            if row.remote {
+                let dot_y = text_y + px(4.0);
+                if dot_y >= clip.y && dot_y + px(6.0) <= clip.y + clip.h {
+                    dc.fill_round_rect(Rect::new(lx, dot_y, px(6.0), px(6.0)), px(3.0), th.ok);
                 }
                 lx += px(12.0);
             }
@@ -2040,6 +2162,17 @@ impl MainWin {
             CtxItem::item("copy", tr(lang, Msg::MenuCopy)),
             CtxItem::item("plain", tr(lang, Msg::MenuCopyPlain)),
         ];
+        // ★ 수신 항목 — 출처 기기를 맨 위에(정보 항목 · 클릭 없음 · 09-04).
+        if row.remote {
+            items.insert(
+                0,
+                CtxItem::maybe(
+                    "origin",
+                    tr(lang, Msg::MenuOrigin).replacen("{}", &row.source, 1),
+                    false,
+                ),
+            );
+        }
         if row.kind == ClipKind::Files {
             items.push(CtxItem::item("object", tr(lang, Msg::MenuCopyObject)));
             items.push(CtxItem::item("path", tr(lang, Msg::MenuCopyPath)));

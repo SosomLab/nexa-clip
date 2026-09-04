@@ -140,10 +140,31 @@ pub struct History {
 
 /// 정렬된 (이름, 바이트) 위의 FNV-1a 64 — 암호학적일 필요가 없다(후보 거르기 전용,
 /// 확정은 바이트 비교).
+/// ★ OS가 **합성**하는 표현(09-04) — Windows는 `CF_UNICODETEXT` 하나를 게시해도 `CF_TEXT`·`CF_OEMTEXT`·
+/// `CF_LOCALE`를 함께 읽어 준다(DIB → `CF_DIBV5`·`CF_BITMAP`도). 동일성·부분집합·지문에서 빼야
+/// "원격에서 받아 게시한 것"과 "감시가 다시 읽은 것"이 같은 내용으로 판정된다.
+fn is_synthesized_format(fmt: &str) -> bool {
+    matches!(
+        fmt,
+        "CF_TEXT" | "CF_OEMTEXT" | "CF_LOCALE" | "CF_DIBV5" | "CF_BITMAP" | "CF_METAFILEPICT"
+    )
+}
+
+/// 동일성 판정에서 빼는 표현(휘발 + 합성).
+fn ignored_format(fmt: &str) -> bool {
+    is_volatile_format(fmt) || is_synthesized_format(fmt)
+}
+
+/// ★ 원격 수신 출처(09-04) — `⇄ `로 시작하는 출처 = 다른 기기가 보낸 항목. 같은 내용이라도
+/// **보낸 기기별로 별도 항목**(사용자 "송신 Peer별로 표시"). 로컬(None·앱명)끼리는 종전대로 한 항목.
+fn remote_origin(src: Option<&str>) -> Option<&str> {
+    src.filter(|s| s.starts_with("⇄ "))
+}
+
 fn fingerprint(reps: &[RawRep]) -> u64 {
     let mut sorted: Vec<(&str, &[u8])> = reps
         .iter()
-        .filter(|r| !is_volatile_format(&r.format))
+        .filter(|r| !ignored_format(&r.format))
         .map(|r| (r.format.as_str(), r.data.as_slice()))
         .collect();
     sorted.sort();
@@ -165,10 +186,7 @@ fn fingerprint(reps: &[RawRep]) -> u64 {
 
 /// `sub`의 표현 전부가 `sup`에 같은 이름·같은 바이트로 있는가(에코 판정 — 게시한 것만 돌아온다).
 fn is_subset(sub: &[RawRep], sup: &[RawRep]) -> bool {
-    let core: Vec<&RawRep> = sub
-        .iter()
-        .filter(|r| !is_volatile_format(&r.format))
-        .collect();
+    let core: Vec<&RawRep> = sub.iter().filter(|r| !ignored_format(&r.format)).collect();
     !core.is_empty()
         && core
             .iter()
@@ -180,7 +198,7 @@ fn same_content(a: &[RawRep], b: &[RawRep]) -> bool {
     let sorted = |s: &[RawRep]| -> Vec<(String, Vec<u8>)> {
         let mut v: Vec<_> = s
             .iter()
-            .filter(|r| !is_volatile_format(&r.format))
+            .filter(|r| !ignored_format(&r.format))
             .map(|r| (r.format.clone(), r.data.clone()))
             .collect();
         v.sort();
@@ -399,11 +417,12 @@ impl History {
         }
         // ② 같은 내용이 어딘가 있는가 — 승격(지문으로 거르고 바이트로 확정).
         let fp = fingerprint(&snap.reps);
-        if let Some(i) = self
-            .items
-            .iter()
-            .position(|it| it.fingerprint == fp && same_content(&it.reps, &snap.reps))
-        {
+        if let Some(i) = self.items.iter().position(|it| {
+            it.fingerprint == fp
+                && same_content(&it.reps, &snap.reps)
+                && remote_origin(it.source_app.as_deref())
+                    == remote_origin(snap.source_app.as_deref())
+        }) {
             let mut it = self.items.remove(i).unwrap_or_else(|| unreachable!());
             it.copies += 1;
             // 승격은 기존 썸네일 유지 — 새로 왔으면(설정을 켠 뒤 재복사 등) 채운다.
@@ -454,6 +473,12 @@ impl History {
         self.items.iter().take(n).map(|i| i.label.clone()).collect()
     }
 
+    /// 내용 지문(휘발·합성 표현 제외) — ★ 중복 제외 보기(09-04)의 묶음 열쇠.
+    #[must_use]
+    pub fn content_key(item: &HistoryItem) -> u64 {
+        item.fingerprint
+    }
+
     /// 인덱스 접근(0 = 최신) — 재적재용.
     #[must_use]
     pub fn get(&self, i: usize) -> Option<&HistoryItem> {
@@ -464,6 +489,46 @@ impl History {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// ★ 09-04: 같은 내용이라도 보낸 기기별 별도 항목 · 같은 기기 재수신은 승격 · 합성 표현은 무시.
+    #[test]
+    fn remote_items_separate_per_sender() {
+        let mut h = History::new(10);
+        let local = snap("Code", &[("CF_UNICODETEXT", b"same"), ("CF_TEXT", b"same")]);
+        let from_a = snap("⇄ mac", &[("CF_UNICODETEXT", b"same")]);
+        let from_b = snap("⇄ linux", &[("CF_UNICODETEXT", b"same")]);
+        assert_eq!(
+            h.push(&local, ClipKind::Text, "s".into(), None),
+            Pushed::New
+        );
+        assert_eq!(
+            h.push(&from_a, ClipKind::Text, "s".into(), None),
+            Pushed::New
+        );
+        assert_eq!(
+            h.push(&from_b, ClipKind::Text, "s".into(), None),
+            Pushed::New
+        );
+        assert_eq!(h.len(), 3, "로컬 1 + 기기별 1");
+        assert_eq!(
+            h.push(&from_a, ClipKind::Text, "s".into(), None),
+            Pushed::Promoted
+        );
+        assert_eq!(h.len(), 3);
+        assert_eq!(h.get(0).map(|i| i.copies), Some(2), "같은 기기 재수신 = ×2");
+        // 합성 표현이 있어도 내용 열쇠는 같다 — 중복 제외 보기의 근거.
+        let k: Vec<u64> = (0..3)
+            .filter_map(|i| h.get(i))
+            .map(History::content_key)
+            .collect();
+        assert!(k.iter().all(|&x| x == k[0]));
+        // 로컬 재복사(합성 포함)는 로컬 항목 승격 — 원격 항목을 건드리지 않는다.
+        assert_eq!(
+            h.push(&local, ClipKind::Text, "s".into(), None),
+            Pushed::Promoted
+        );
+        assert!(h.get(0).and_then(|i| i.source_app.as_deref()) == Some("Code"));
+    }
 
     fn snap(app: &str, reps: &[(&str, &[u8])]) -> ClipSnapshot {
         ClipSnapshot {
