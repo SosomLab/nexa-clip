@@ -819,6 +819,83 @@ mod imp {
             assert_eq!(got, vec![ctrl, v], "Ctrl 다음 V 순서로 눌려야 한다");
         }
 
+        /// ★ 창 올리기 실기(09-05 · 사람 없이 · 실제 컴포지터 필요) — 관리 창 A·B를 띄우고 B를
+        /// 활성화한 뒤 `raise_x11_window(A)`가 A를 `_NET_ACTIVE_WINDOW`로 만드는지 본다(페이저 소스=2가
+        /// Mutter 포커스 탈취 방지를 통과함을 증명 = "설정 창이 뒤에 뜸" 수정의 근거).
+        /// `DISPLAY=:0 cargo test -p nclip-plat -- --ignored raise_brings_window_to_front --nocapture`
+        #[test]
+        #[ignore = "실제 컴포지터(Mutter 등) 세션 필요"]
+        fn raise_brings_window_to_front() {
+            use x11rb::protocol::xproto::{AtomEnum, CreateWindowAux, PropMode, WindowClass};
+            use x11rb::wrapper::ConnectionExt as _;
+            let (conn, screen) = connect().expect("X 연결");
+            let root = conn.setup().roots[screen].root;
+            let net_active = conn
+                .intern_atom(false, b"_NET_ACTIVE_WINDOW")
+                .unwrap()
+                .reply()
+                .unwrap()
+                .atom;
+            let make = |name: &str| {
+                let w = conn.generate_id().unwrap();
+                conn.create_window(
+                    0,
+                    w,
+                    root,
+                    0,
+                    0,
+                    200,
+                    150,
+                    0,
+                    WindowClass::INPUT_OUTPUT,
+                    0,
+                    &CreateWindowAux::new().event_mask(EventMask::STRUCTURE_NOTIFY),
+                )
+                .unwrap()
+                .check()
+                .unwrap();
+                let _ = name;
+                // WM_HINTS(flags=InputHint · input=true) — 없으면 Mutter가 _NET_ACTIVE_WINDOW로
+                // 포커스를 안 준다(입력 안 받는 창으로 본다). 32bit 9워드.
+                let wm_hints = conn
+                    .intern_atom(false, b"WM_HINTS")
+                    .unwrap()
+                    .reply()
+                    .unwrap()
+                    .atom;
+                let hints: [u32; 9] = [1, 1, 1, 0, 0, 0, 0, 0, 0];
+                conn.change_property32(PropMode::REPLACE, w, wm_hints, wm_hints, &hints)
+                    .unwrap();
+                conn.map_window(w).unwrap();
+                conn.flush().unwrap();
+                w
+            };
+            let a = make("nclip-raise-A");
+            let b = make("nclip-raise-B");
+            std::thread::sleep(std::time::Duration::from_millis(700));
+            // B를 활성화(A가 뒤로) — 우리 수정과 같은 페이저 소스.
+            assert!(crate::paste::raise_x11_window(b), "B 올리기 전송");
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            let active_of = || -> Option<u32> {
+                let r = conn
+                    .get_property(false, root, net_active, AtomEnum::WINDOW, 0, 1)
+                    .ok()?
+                    .reply()
+                    .ok()?;
+                r.value32().and_then(|mut it| it.next())
+            };
+            let before = active_of();
+            // 이제 A를 올린다 — A가 활성이 되어야 한다.
+            assert!(crate::paste::raise_x11_window(a), "A 올리기 전송");
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            let after = active_of();
+            let _ = conn.destroy_window(a);
+            let _ = conn.destroy_window(b);
+            let _ = conn.flush();
+            eprintln!("active: before(B)={before:?} after(A)={after:?} · A={a} B={b}");
+            assert_eq!(after, Some(a), "raise 뒤 A가 _NET_ACTIVE_WINDOW여야 한다");
+        }
+
         /// keycode 표 해석 — 행 폭 `per`, 첫 일치 행의 keycode = min + 행 번호.
         #[test]
         fn keycode_lookup_reads_rows() {
@@ -895,6 +972,44 @@ pub fn warm_up(token_path: Option<std::path::PathBuf>) -> Result<(), String> {
 /// 스파이크 전용 — 팝업이 포커스를 뺏는 순간을 흉내 낸다.
 ///
 /// 실물에서는 창이 뜨면서 자연히 일어나는 일이라, 창 없이 그 왕복을 검증하려고 둔다.
+/// ★ Linux/X11 — 창을 **페이저 소스(source=2)로** 앞에 올린다(09-05 사용자 실기 "설정 창이 뒤에
+/// 뜨고 준비됨 알림만"). winit `focus_window()`는 `_NET_ACTIVE_WINDOW`를 소스=1(앱)로 보내
+/// Mutter 포커스 탈취 방지에 막힌다 — 창이 뒤에 깔리고 셸이 "앱이 준비되었습니다" 알림을 띄운다.
+/// 페이저(=2)는 사용자 도구로 취급돼 항상 존중된다(붙여넣기 포커스 복원과 같은 EWMH 경로).
+/// Wayland 네이티브 창엔 X 창 id가 없어 호출측이 거른다(토큰 경로가 맡는다).
+#[cfg(target_os = "linux")]
+#[must_use]
+pub fn raise_x11_window(xid: u32) -> bool {
+    use x11rb::connection::Connection as _;
+    use x11rb::protocol::xproto::{ClientMessageEvent, ConnectionExt as _, EventMask};
+    let Ok((conn, screen)) = x11rb::rust_connection::RustConnection::connect(None) else {
+        return false;
+    };
+    let Some(root) = conn.setup().roots.get(screen).map(|s| s.root) else {
+        return false;
+    };
+    let Some(atom) = conn
+        .intern_atom(false, b"_NET_ACTIVE_WINDOW")
+        .ok()
+        .and_then(|c| c.reply().ok())
+        .map(|r| r.atom)
+    else {
+        return false;
+    };
+    // data[0]=2(페이저 소스) · data[1]=타임스탬프(0=CURRENT_TIME) — restore와 동일.
+    let ev = ClientMessageEvent::new(32, xid, atom, [2u32, 0, 0, 0, 0]);
+    let ok = conn
+        .send_event(
+            false,
+            root,
+            EventMask::SUBSTRUCTURE_REDIRECT | EventMask::SUBSTRUCTURE_NOTIFY,
+            ev,
+        )
+        .is_ok();
+    let _ = conn.flush();
+    ok
+}
+
 #[must_use]
 /// ★ 창을 진짜 포그라운드로(09-01 사용자 실기 "트레이 클릭 시 창이 뒤로 숨음") —
 /// Windows는 포그라운드 권한 규칙 때문에 `focus_window()`만으로는 작업표시줄만

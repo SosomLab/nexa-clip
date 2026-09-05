@@ -2,6 +2,10 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-09-05 (Linux VM 5차) — ★ 창이 뒤에 뜨고 "준비됨" 알림 = winit focus_window 소스=1 Mutter 차단 → 페이저 소스로 직접 올림
+
+- 근인 = `_NET_ACTIVE_WINDOW` 소스=1(앱)이 포커스 탈취 방지에 막힘(붙여넣기 복원은 소스=2라 통했음) · `raise_x11_window`(페이저) → `bring_to_front` 공통 길목(메인창·설정 창 신규/재표시 · T-41 ① 동반) · ignored 테스트로 Mutter 존중 실증 → [journal 5차](journal/2026-09-05.md)
+
 ## 2026-09-05 (Linux VM 4차) — ★ Linux 전체 점검 — 붙여넣기 불능 = 포털 RemoteDesktop 세션 고착 → 자가 복구 · 설정 파일 중복/664 · T-15d 완화 · T-18g 근인
 
 - 회신: Wayland 입력 주입 = 포털 RemoteDesktop이 유일 공식 통로(세션 없음 = 적재까지만 · 우회로 uinput/컴포지터 전용은 대가 큼) · ★ **D-80 세션 수명**(상시 vs 순간) 등재
