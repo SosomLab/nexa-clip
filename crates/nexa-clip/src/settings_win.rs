@@ -558,8 +558,11 @@ impl App {
             #[cfg(target_os = "linux")]
             {
                 w.set_minimized(false);
+                // ★ Wayland = 셸 토큰으로 활성화 · X11 = 페이저 소스 올리기(09-05). 둘 다 못 하면
+                //   그때만 주의 요청(= "준비됨" 알림) — X11에서 이 알림이 뜨던 것을 없앤다.
                 let activated = nclip_plat::tray::take_activation_token()
-                    .is_some_and(|tok| wayland_activate(w, &tok));
+                    .is_some_and(|tok| wayland_activate(w, &tok))
+                    || linux_raise_x11(w);
                 if !activated {
                     w.request_user_attention(Some(winit::window::UserAttentionType::Critical));
                 }
@@ -1583,7 +1586,28 @@ pub(crate) fn bring_to_front(win: &winit::window::Window) {
         nclip_plat::dock::activate_front();
         win.focus_window();
     }
+    // ★ Linux/X11(09-05) — winit `focus_window()`가 소스=1(앱)이라 Mutter에 막혀 창이 뒤에 깔리고
+    //   "준비됨" 알림만 뜬다. 페이저 소스로 우리가 직접 올린다(메인창·설정 창 · 신규/재표시 공통 길목).
+    //   Wayland 네이티브 창은 X 창 id가 없어 no-op(설정 창의 토큰 경로가 맡는다).
+    #[cfg(target_os = "linux")]
+    let _ = linux_raise_x11(win);
     let _ = win;
+}
+
+/// ★ Linux/X11 창 올리기(09-05) — winit 창 핸들에서 X 창 id를 뽑아 페이저 소스로 활성화한다.
+///   Wayland 네이티브 핸들·핸들 부재 = false(호출측이 토큰/주의요청으로 폴백).
+#[cfg(target_os = "linux")]
+pub(crate) fn linux_raise_x11(win: &Window) -> bool {
+    use winit::raw_window_handle::{HasWindowHandle as _, RawWindowHandle};
+    let Ok(h) = win.window_handle() else {
+        return false;
+    };
+    let xid = match h.as_raw() {
+        RawWindowHandle::Xlib(x) => x.window as u32,
+        RawWindowHandle::Xcb(x) => x.window.get(),
+        _ => return false, // Wayland 네이티브 — 토큰 경로가 맡는다
+    };
+    nclip_plat::paste::raise_x11_window(xid)
 }
 
 pub(crate) fn win_name(attrs: winit::window::WindowAttributes) -> winit::window::WindowAttributes {

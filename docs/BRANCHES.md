@@ -4,6 +4,7 @@
 
 | 브랜치 | 생성 | 병합 | 커밋 수 | 요약 |
 |---|---|---|---:|---|
+| `fix/linux-window-raise` | 2026-09-05 | 2026-09-05 | 1 | ★ **창이 뒤에 뜨고 "준비됨" 알림**(사용자 실기) = winit `focus_window()`가 `_NET_ACTIVE_WINDOW` **소스=1(앱)**로 보내 Mutter 포커스 탈취 방지에 막힘(붙여넣기 복원은 **소스=2 페이저**라 통했음). `raise_x11_window`(페이저) → `bring_to_front` **공통 길목**(메인창·설정 창 신규/재표시 · T-41 ① X11 동반 해소) · X11 알림 제거 · ignored 테스트로 Mutter 존중 실증(before=B after=A) · 3타깃 clippy ✓ · 501 테스트 |
 | `fix/linux-audit-09-05` | 2026-09-05 | 2026-09-05 | 5 | ★ **Linux 전체 점검(코드 감사 3축 + 자동 실기)** — ★ **포털 RemoteDesktop 세션 자가 복구**(사용자 실기 "붙여넣기 안 됨" = 셸이 세션 닫음 → 죽은 핸들 영구 · 재현 테스트) · `ui.set_*` 등재 누락(설정 창 위치 복원 불능 + 파일 키 중복) + nexa-conf dedup · **0600**(settings.cfg 패스프레이즈 평문 664 · 포털 토큰 · device.key) · T-15d 합성/repeat 차단 · T-18g 근인 · T-14i 자동분 · 잔여 → T-41. 3타깃 clippy ✓ · 500 테스트 |
 | `feat/linux-clipboard-native` | 2026-09-02 | 2026-09-03 | 11 | ★ **T-14 본편 — Linux 클립보드 내재화**(`selection_x11.rs` — x11rb+XFIXES 감시 · INCR 양방향 · 다중 표현 게시 · 소유자 창 에코 차단 · 도구 파이프 = 폴백) — **xclip 없는 PC E2E ✓** · [18·21] 기능별 패키지 SSOT · VTE Ctrl+V 판정(T-15c) · `dev-restart.sh` · ★ **자동 시작 `tray` 인자 누락(3-OS) 수정** · ★ **텍스트 타깃 UTF-8 순위**(Firefox `\uXXXX`·VTE `\E2\9E\9C`) · T-12e4 등재. 롤백 태그 `rollback/pre-linux-clipboard-native` |
 | `feat/store-persistence` | 2026-08-31 | 2026-08-31 | 4 | ★ **T-16 1단 — 암호화 영속**(DR-37·38 실구현) — `nclip-store`(sealed 봉투 이식 · 키 래핑 한 겹 · append-only 이벤트 로그+압축 · 내용 주소 blob 중복 제거) · 이력 id/★핀 기초/복원 · 셸 배선(복원·이벤트·clear_on_quit wipe). 스모크 "저장소: 2개 복원" ✓ · 368 테스트. 의존 +3(RustCrypto · beep 동일 판) |
