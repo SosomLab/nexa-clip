@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-09-05 (15차 · mac) — ★ 위키에 화면 캡처 20장 반영 · `assets/screenshots/` 보관 → **다음 = 앱 홈페이지**
+
+설치본을 `--profile docs`(한국어 UI · 샘플 8건 · 개인 데이터 0)로 띄워 팝업 2 · 메인창 7(상세/리치/평문/미리보기/우클릭/검색 방식/검색) · 트레이 메뉴 · 설정 10 카테고리를 자동 캡처(System Events + `screencapture -R` + `cliclick`).
+위키 커밋 `e4288c0`: Home 히어로 · 시작하기 · 동기화 설정에 배치 + ★ **[설정 항목](https://github.com/SosomLab/nexa-clip/wiki/설정-항목)** 페이지 신설 · 이미지 = 위키 저장소 `images/`(raw URL 200).
+저장소 `assets/screenshots/`(2.1MB + README)에 사본 — **홈페이지 소재**. 설치본 재가동 ✓ · 자동 시작 에이전트는 프로필 무관 ✓.
+**⏳ 홈페이지 착수 전 결정**: 사용 언어(한/영 — 현재 캡처는 한국어 UI · 영문판은 `app.lang=en` 프로필로 같은 절차) · 호스팅(GitHub Pages `docs/` vs 별도 저장소) · 3-OS 동일 화면을 보여줄 Windows/Linux 캡처 추가 여부. → [journal 15차](journal/2026-09-05.md)
+
+---
+
 ## 2026-09-05 (14차 · mac) — ★ 위키 최신화(v0.1.2 기준) · 릴레이 서버 "별도 실행 · nexa-beep 배포" 명기
 
 위키 8페이지를 코드와 대조해 낡은 사실 7건 정정(단축키 기본 **Shift+Alt+C** · winget/choco **미제출** · 단축키 카테고리 · 검색 방식 · OS별 권한 · 데이터 위치 · 09-05 Linux 결함 안내) + **[릴레이 서버](https://github.com/SosomLab/nexa-clip/wiki/릴레이-서버) 페이지 신설**.

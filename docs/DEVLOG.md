@@ -2,6 +2,10 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-09-05 (15차 · mac) — ★ 설명서 화면 캡처 20장 → 위키(설정 항목 페이지 신설) + `assets/screenshots/`
+
+- `--profile docs`(ko · 샘플 8건)로 설치본 촬영 → System Events 좌표 + `screencapture -R` + `cliclick` 자동화 · 타이틀바/타 앱 영역 크롭 · 위키 Home/시작하기/동기화 설정에 배치 + **설정 항목** 페이지(10 카테고리) · 저장소 `assets/screenshots/`(홈페이지 소재) · 설치본 복구 ✓ → [journal 15차](journal/2026-09-05.md)
+
 ## 2026-09-05 (14차 · mac) — ★ 위키 최신화(v0.1.2 · 9페이지) · beepd "별도 실행 · nexa-beep 배포" 매뉴얼+위키 명기
 
 - 코드 대조로 낡은 사실 7건 정정(단축키 기본값 Shift+Alt+C · winget/choco 미제출 · 단축키 카테고리 · 검색 방식 · 권한 · 데이터 위치 · Linux 결함 안내) · **릴레이 서버 페이지 신설** + [18 §10-2](18-build-and-test.md) + CLAUDE.md §1 경고 · ⚠️ 진단 로그 토글(`adv.log`) 소비처 없음 확인(후속) → [journal 14차](journal/2026-09-05.md)
