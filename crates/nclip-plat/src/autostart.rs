@@ -306,13 +306,50 @@ fn xml_escape(s: &str) -> String {
 
 // ── Linux — XDG autostart .desktop(무권한 · 데스크톱 환경 공통) ──────────────
 
+/// ★ 패키지 설치본 판정(09-05 사용자 실기) — 시스템 데이터 폴더에 우리 런처가 있고
+/// 그 프리픽스의 `bin/nexa-clip`이 실재하면 **패키지가 이 앱을 소유**한다.
+///
+/// 왜 필요한가: 앱은 시작마다 사용자 런처(`~/.local/share/applications`)와 자동 실행을
+/// **자기 실행 경로**로 덮어쓴다. 사용자 폴더가 `/usr/share`보다 우선하므로 **개발 빌드를 한 번만
+/// 돌려도 앱 아이콘이 개발 빌드를 띄우고**(자동 실행도 같이 넘어간다), 그 인스턴스는 포털에
+/// 다른 앱 이름으로 붙어 **전역 단축키까지 오염**된다. 패키지가 있으면 그 자리를 건드리지 않는다.
+///
+/// 반환 = (시스템 런처 경로, 패키지 실행 파일 경로).
+#[cfg(all(unix, not(target_os = "macos")))]
+fn packaged_install() -> Option<(std::path::PathBuf, std::path::PathBuf)> {
+    let dirs = std::env::var("XDG_DATA_DIRS").unwrap_or_default();
+    let dirs = if dirs.trim().is_empty() {
+        "/usr/local/share:/usr/share".to_string()
+    } else {
+        dirs
+    };
+    for d in dirs.split(':').filter(|d| !d.is_empty()) {
+        let share = std::path::Path::new(d);
+        let desktop = share.join("applications/nexa-clip.desktop");
+        if !desktop.is_file() {
+            continue;
+        }
+        // `<prefix>/share` → `<prefix>/bin`
+        let Some(bin) = share.parent().map(|p| p.join("bin/nexa-clip")) else {
+            continue;
+        };
+        if bin.is_file() {
+            return Some((desktop, bin));
+        }
+    }
+    None
+}
+
 #[cfg(all(unix, not(target_os = "macos")))]
 fn register(exe: &Path) -> io::Result<()> {
     let f = linux_desktop_path()?;
     if let Some(dir) = f.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    std::fs::write(&f, desktop_content(&exe.display().to_string()))
+    // ★ 패키지가 설치돼 있으면 **패키지 실행 파일**을 가리킨다(09-05) — 개발 빌드를 한 번 돌렸다고
+    //   로그인 자동 실행이 개발 빌드로 넘어가면 안 된다. 패키지가 없으면 종전대로 현재 실행 파일.
+    let target = packaged_install().map_or_else(|| exe.to_path_buf(), |(_, bin)| bin);
+    std::fs::write(&f, desktop_content(&target.display().to_string()))
 }
 
 #[cfg(all(unix, not(target_os = "macos")))]
@@ -407,9 +444,19 @@ pub fn install_launcher(icon_png: &[u8]) -> io::Result<()> {
             std::fs::write(&icon, icon_png)?;
         }
         let apps = data.join("applications");
+        let f = apps.join("nexa-clip.desktop");
+        // ★ 패키지 설치본이 있으면 **런처는 패키지 것이 정본**이다(09-05) — 사용자 폴더에 우리가
+        //   남긴 사본은 그것을 가려 "아이콘이 개발 빌드를 띄우는" 사고를 만든다. 지우고 손 뗀다.
+        if packaged_install().is_some() {
+            match std::fs::remove_file(&f) {
+                Ok(()) => println!("런처: 패키지 항목을 쓰도록 사용자 사본을 정리했습니다"),
+                Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+                Err(e) => return Err(e),
+            }
+            return Ok(());
+        }
         std::fs::create_dir_all(&apps)?;
         let content = launcher_content(&exe.display().to_string());
-        let f = apps.join("nexa-clip.desktop");
         if std::fs::read_to_string(&f).ok().as_deref() != Some(content.as_str()) {
             std::fs::write(&f, content)?;
         }
