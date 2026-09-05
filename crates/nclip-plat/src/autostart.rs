@@ -445,20 +445,22 @@ pub fn install_launcher(icon_png: &[u8]) -> io::Result<()> {
         }
         let apps = data.join("applications");
         let f = apps.join("nexa-clip.desktop");
-        // ★ 패키지 설치본이 있으면 **런처는 패키지 것이 정본**이다(09-05) — 사용자 폴더에 우리가
-        //   남긴 사본은 그것을 가려 "아이콘이 개발 빌드를 띄우는" 사고를 만든다. 지우고 손 뗀다.
-        if packaged_install().is_some() {
-            match std::fs::remove_file(&f) {
-                Ok(()) => println!("런처: 패키지 항목을 쓰도록 사용자 사본을 정리했습니다"),
-                Err(e) if e.kind() == io::ErrorKind::NotFound => {}
-                Err(e) => return Err(e),
-            }
-            return Ok(());
-        }
+        // ★ 패키지 설치본이 있으면 사용자 사본을 **설치본을 가리키게 유지**한다(09-05 사용자 실기).
+        //   ⚠️ 지우는 것으로는 부족했다 — GNOME 셸은 앱 목록을 캐시해서, 파일을 지운 뒤에도
+        //   **삭제된 그 경로를 든 채** 실행한다(실측: `GIO_LAUNCHED_DESKTOP_FILE`이 없는 파일을 가리키고
+        //   개발 빌드가 떴다). 캐시를 이기려면 **그 자리에 올바른 내용이 있어야** 한다.
+        //   내용이 바뀌면 셸의 감시자가 깨어나 목록도 갱신된다.
+        let exec_target = packaged_install().map_or(exe.clone(), |(_, bin)| bin);
         std::fs::create_dir_all(&apps)?;
-        let content = launcher_content(&exe.display().to_string());
+        let content = launcher_content(&exec_target.display().to_string());
         if std::fs::read_to_string(&f).ok().as_deref() != Some(content.as_str()) {
             std::fs::write(&f, content)?;
+            if exec_target != exe {
+                println!(
+                    "런처: 설치본을 가리키도록 맞췄습니다 — {}",
+                    exec_target.display()
+                );
+            }
         }
         Ok(())
     }
