@@ -44,6 +44,7 @@
 | 🚧 | `nclip-plat` — 전역 단축키 · **직전 포커스 창 복원 + 키 주입** · 트레이 · 자동시작 — **Win ✅ · Linux ✅(08-30 · SNI/포털/XTest · ★ 단축키 사용자 실기 ✓ 09-05 · Wayland 네이티브 앱 실기 ⏳) · ★ mac 트레이 ✅(09-04 · NSStatusItem + Dock 정책) · mac 단축키 ☐** |
 | ✅ | ★ **창을 앞으로(Linux/X11 · 09-05)** — winit `focus_window()`가 `_NET_ACTIVE_WINDOW`를 소스=1(앱)로 보내 Mutter 포커스 탈취 방지에 막히던 것("준비됨" 알림 + 창이 뒤에) → **페이저 소스(=2)로 직접 올림**. 메인창·설정 창 · 신규/재표시 **공통 길목**(`bring_to_front`) · Mutter 존중 실증 테스트 |
 | ✅ | ★ **설치본 자리에서 실기(3-OS 갖춤 · 09-05)** — Linux `scripts/dev-install-linux.sh`(win `dev-install-win.ps1` · mac `dev-install-mac.sh`의 Linux 판): 배포 `.deb` 설치본(`/usr/bin`)에 릴리스 빌드를 원자 교체 → **설치 `.desktop` 경로 지정 실행**(직접 실행·systemd-run은 포털이 앱을 식별 못 해 전역 단축키 등록 실패) · 데이터 `~/.config/nexa-clip` |
+| ✅ | ★ **배포 3회 — v0.1.0·v0.1.1(09-04) · v0.1.2(09-05)**: 태그 push → 5타깃 패키지(linux deb/tar · mac x64/arm64 dmg+portable · win x64/arm64 setup+portable) + SHA256SUMS → GitHub Release 공개 → brew 탭 자동 갱신. **winget/choco는 변수(`WINGET_PUBLISH`·`CHOCO_PUSH`=false)로 제출 제외** — 매니페스트만 자산에 동봉 · 검수 대기 자동 판정(guard) 갖춤 |
 | ✅ | ★ **Linux 전역 단축키 실사용 성립(09-05 · 사용자 실기 ✓)** — 근인 둘을 걷어냈다: ① 포털은 **cgroup 유닛에서 앱 이름을 읽는다** → 에디터 터미널에서 띄우면 `code`로 등록돼 정상 실행분이 충돌 실패(스코프 이름의 하이픈은 `\x2d` 이스케이프 필수) ② 앱이 시작마다 사용자 런처를 **자기 경로로 덮어써** 개발 빌드가 아이콘·자동 실행·단축키를 가로챘다 → **패키지가 설치돼 있으면 사용자 런처를 설치본을 가리키게 유지**(지우면 gnome-shell이 삭제된 경로를 캐시해 실패). ⚠️ 런처 경로 변경은 **셸 재시작까지가 절차**(인메모리 캐시). 리부팅 후 실측 = 아이콘·자동 실행·단축키 모두 설치본 |
 | 📐 | `nclip-store` — 암호화 세그먼트 + 내용 주소 blob |
 | 📐 | ★ **beep UI 이식** — `gfx`·`ctl` 무수정 복사 · **설정 화면 프레임워크**(registry만 교체) · 트레이 · 중립 모듈 |

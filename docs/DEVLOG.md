@@ -2,6 +2,10 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-09-05 (13차 · mac) — ★ v0.1.2 릴리스 — brew만 · winget/choco 제외(변수 false · guard 판정 false)
+
+- 0.1.1 → 0.1.2(65 커밋 · 코드 36 — Linux 결함 5 · 0600 · 전역 단축키 설정 · 기기 이름 재소개 등) · 태그 `v0.1.2` → release run 33969299691 **11잡 success** · 공개 자산 14 · brew 탭 `4b112cf` · winget/chocolatey 잡은 매니페스트 생성만(제출 스텝 skipped) → [journal 13차](journal/2026-09-05.md)
+
 ## 2026-09-05 (12차 · mac) — 저장소 동기화(19 커밋 ff) · mac 설치본 갱신 · 진행 점검
 
 - Linux VM 세션분 19 커밋을 mac에 ff(충돌 0) · mac에 실제 적용되는 변경은 4건(`nexa-conf` 0600·미지 키 dedup · 설정 창 위치 키 · 팝업 유예) · `dev-install-mac.sh`로 설치본 교체(27.9s · Nexa Clip Dev 서명 ✓ · PID 36997) · 설치본 기기 목록에서 `lin`=승인됨 → **두 PC 실기는 S4부터** · 남은 일 = 결정 2(32 전달문 · D-80) · Linux 실기 5 · 코드 순서 S4~S7 → T-26 → T-41 → T-24 → [journal 12차](journal/2026-09-05.md)

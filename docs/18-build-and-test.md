@@ -510,8 +510,8 @@ gh run list -R SosomLab/nexa-clip --workflow homebrew -L 1         # 릴리스 �
 
   ```bash
   # ① 최초 1회 — 배포본 설치(릴리스 자산이 곧 사용자가 받는 것)
-  curl -sLO https://github.com/SosomLab/nexa-clip/releases/download/v0.1.1/nexa-clip-0.1.1-linux-x64.deb
-  sudo dpkg -i nexa-clip-0.1.1-linux-x64.deb
+  curl -sLO https://github.com/SosomLab/nexa-clip/releases/download/v0.1.2/nexa-clip-0.1.2-linux-x64.deb
+  sudo dpkg -i nexa-clip-0.1.2-linux-x64.deb
   #    (로컬 소스로 만들어 설치하려면)  scripts/dev-install-linux.sh --deb
 
   # ② 이후 반복 — 고치고 이 한 줄(빌드 → 종료 → /usr/bin 교체 → 설치 런처로 재시작)

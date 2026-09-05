@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-09-05 (13차 · mac) — ★ **v0.1.2 배포됨** — GitHub Release + brew 탭 · winget/choco 제외
+
+**요청**: winget·choco에 나가지 않게 새 버전 릴리스. 저장소 변수 `WINGET_PUBLISH`·`CHOCO_PUSH`가 이미 `false`(09-04)라 바꿀 것 없이 태그만 밀었다.
+**결과**: `chore(release)` `7c8833a` · 태그 `v0.1.2` · release run **33969299691 11잡 전부 success**(5타깃 패키지 · publish · brew tap · windows-packages guard →
+`winget 제출: false` · `choco 제출: false`) · 공개 자산 **14** · brew 탭 `4b112cf nexa-clip 0.1.2`. 범위 = v0.1.1 이후 65 커밋(코드 36 · Linux 결함 5 · 0600 · 전역 단축키 설정 · 기기 이름 재소개).
+**다음**: Linux VM·Windows 설치본을 v0.1.2로 올리고(`dpkg -i` · setup) 남은 실기(T-15d·T-18g·설정 창)를 **배포본에서** 한다 → [journal 13차](journal/2026-09-05.md)
+
+---
+
 ## 2026-09-05 (12차 · mac) — 저장소 동기화 · mac 설치본 갱신 · 진행 점검
 
 **한 일**: Linux VM 세션분 **19 커밋을 mac에 ff**(충돌 0 · 23파일 +1169/-51) · `scripts/dev-install-mac.sh`로 설치본 교체(릴리스 27.9s · Nexa Clip Dev 재서명 · 검증 ✓ · PID 36997).
