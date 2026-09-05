@@ -105,6 +105,9 @@ fn base_data_dir() -> PathBuf {
 /// 개발 빌드 ↔ 설치본을 오갈 때마다 **권한 대화창이 다시 뜬다** — 권한은 "이 사용자가 이 앱에
 /// 허용한 것"이지 데이터 사본에 딸린 것이 아니다. 그래서 사용자 설정 폴더에 고정한다.
 /// 사용자 설정 폴더를 못 얻으면 데이터 폴더로 폴백(그때는 종전 동작).
+/// ★ Linux 전용 — 토큰을 쓰는 것은 Wayland 포털 경로뿐이다. 다른 OS에서 부르면 쓰지도 않을
+/// 설정 폴더(`%APPDATA%`·`Application Support`)를 만들어 **포터블 설치의 자족성을 깬다**.
+#[cfg(target_os = "linux")]
 pub(crate) fn shared_state_dir() -> PathBuf {
     match nexa_conf::user_config_dir("nexa-clip") {
         Some(dir) if std::fs::create_dir_all(&dir).is_ok() => dir,
@@ -114,6 +117,7 @@ pub(crate) fn shared_state_dir() -> PathBuf {
 
 /// 포털 RemoteDesktop 승인 토큰 경로 — 고정 자리. 옛 자리(데이터 폴더)에만 있으면 **한 번 옮겨 온다**
 /// (이미 받아 둔 승인을 잃지 않는다).
+#[cfg(target_os = "linux")]
 pub(crate) fn portal_token_path() -> PathBuf {
     const NAME: &str = "portal-remotedesktop.token";
     let stable = shared_state_dir().join(NAME);

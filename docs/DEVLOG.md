@@ -2,6 +2,10 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-09-05 (Linux VM 8차) — ★ 다른 OS 파급 점검 — Windows도 같은 단축키 잔향 결함(수정 그대로 적용) · 토큰 경로 부작용 차단 · beep 전달 2건
+
+- T-15d는 Windows `WM_SETFOCUS` 합성 키가 같은 구조라 3-OS 공통 코드가 그대로 듣는다(mac은 합성 없음) · `portal_token_path()`를 Linux로 좁힘(Win·mac에 쓸모없는 설정 폴더 생성 차단) · 공용 `nexa-conf` 결함 2건(0600 · 미지 키 중복) → 22 원장 I-7·I-8 → [journal 8차](journal/2026-09-05.md)
+
 ## 2026-09-05 (Linux VM 7차) — ★ 포털 승인이 매번 뜨던 것 = 토큰이 데이터 폴더 안 → 사용자 설정 폴더로 고정 · pkexec 설치
 
 - `conf::portal_token_path()`(고정 자리 + 옛 자리 1회 이관) · 실증: 설치본 0.57s·개발 빌드 0.55s **무대화창** · `.deb` 설치는 `pkexec`(sudo는 터미널 요구) · 스크립트 승격 순서 sudo→pkexec + 절대 경로 → [journal 7차](journal/2026-09-05.md)

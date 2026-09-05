@@ -1873,10 +1873,15 @@ pub(crate) fn run() {
     {
         // ★ 09-05: 데이터 폴더가 아니라 **고정 자리**(사용자 설정 폴더) — 개발 빌드 ↔ 설치본을
         //   오갈 때 승인이 되풀이되던 것을 없앤다(권한은 사용자·앱 단위지 데이터 사본 단위가 아니다).
-        let token = crate::conf::portal_token_path();
+        //   ★ Linux 전용 인자다 — Windows·mac은 `warm_up`이 이 값을 쓰지 않으므로 **경로를 만들지도 않는다**
+        //   (포터블 설치가 쓰지도 않을 `%APPDATA%`·`Application Support`를 만들어선 안 된다).
+        #[cfg(target_os = "linux")]
+        let token = Some(crate::conf::portal_token_path());
+        #[cfg(not(target_os = "linux"))]
+        let token: Option<std::path::PathBuf> = None;
         let _ = std::thread::Builder::new()
             .name("nclip-paste-warmup".into())
-            .spawn(move || match nclip_plat::paste::warm_up(Some(token)) {
+            .spawn(move || match nclip_plat::paste::warm_up(token) {
                 Ok(()) => println!("키 주입 권한: ok"),
                 Err(e) => eprintln!(
                     "⚠️ 키 주입 권한 없음 — {e}. 선택하면 클립보드 적재까지만(Ctrl+V는 직접)"
