@@ -536,3 +536,18 @@ gh run list -R SosomLab/nexa-clip --workflow homebrew -L 1         # 릴리스 �
   `--version`을 파이프로 받으면 stdout 패닉(os error 232)이 난다 — 스크립트는 버전을 `Cargo.toml`에서 읽는다.
 - 릴리스 워크플로는 **태그 = `Cargo.toml` 버전**이어야 meta 잡을 통과한다. 드라이런은 `0.0.0-dev.<sha>`로 이름 붙는다.
 - 로컬 릴리스 빌드는 CI와 프로필이 같지만 Linux의 zig 링커(glibc 2.17)·심볼 게이트는 CI에서만 돈다.
+
+### 10-2. 릴레이 서버 `nexa-beepd` — **clip에 포함되지 않는다 · 별도 실행 · `nexa-beep`에서 배포** (09-05 사용자 요청)
+
+> 사용자용 안내는 위키 [릴레이 서버](https://github.com/SosomLab/nexa-clip/wiki/릴레이-서버) 페이지가 SSOT. 여기는 개발·운영 관점의 요점만.
+
+| 항목 | 내용 |
+|---|---|
+| 무엇 | 원격 동기화의 중계 서버. **봉투만 중계**(Noise E2E · DR-4) — 내용·기기 명부를 갖지 않는다 |
+| 어디서 배포 | **`nexa-beep` 저장소** `crates/nexa-beepd`(워크스페이스 멤버 · beep DR-9 개정) → 클라 `v*`와 **분리된 `beepd-v*` 태그** · `release-server.yml` → <https://github.com/SosomLab/nexa-beep/releases> (최신 `beepd-v0.2.5` · 08-22) · `brew install kiros33/tap/nexa-beepd` |
+| clip과의 관계 | clip은 서버 코드를 갖지 않고 `nclip-sync/*`에 **`nbeep-relay` 와이어 사본**을 둔다([22 원장 I-5](22-upstream-beep-liaison.md) · 사본 채택 09-03). 와이어를 바꾸면 **양쪽 동기 필수** — 도메인 문자열·prologue·타이브레이크는 [22](22-upstream-beep-liaison.md)·[32 전달문](32-beep-handover.md) |
+| 실행 | `nexa-beepd --port 47300 --key <경로>/beepd.key --verbose` — TCP+UDP 같은 번호 · 첫 실행이 키 생성 + **서버 신원(핀) 64hex 출력**(클라가 TOFU로 고정 · `server.pin`) · 상주 RSS ≈ 1MB · 저장 없음(재시작 안전) |
+| 공식 서버 | `beepd.sosomlab.com:47300` · 핀 `5c5ee932…`(전문은 beep [41 §8-1](../../nexa-beep/docs/41-beepd-ops-guide.md)) — clip 설정 기본값. 무료 티어 VM 1대 · 가용성 미보장 |
+| 운영 절차 | 3-OS 상주(systemd · launchd · 작업 스케줄러) · 이중 방화벽(클라우드 SG + OS) · 키 백업(잃으면 전 사용자 핀 불일치) · 저메모리 VM 체크리스트 = **beep [41 beepd 운영 가이드](../../nexa-beep/docs/41-beepd-ops-guide.md)** 가 SSOT(clip에서 복제하지 않는다) |
+| 서버 없이 | 릴레이 **None** = LAN 직결만(T-26) — 같은 네트워크 안에서는 서버 불요 |
+| 두 PC 실기 | [21 §6](21-manual-test.md) S1(릴레이) · S2(None) — 릴레이 실기 전에 **서버가 떠 있는지**(`Test` 노트의 주소·핀 8자)부터 본다 |

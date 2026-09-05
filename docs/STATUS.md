@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-09-05 (14차 · mac) — ★ 위키 최신화(v0.1.2 기준) · 릴레이 서버 "별도 실행 · nexa-beep 배포" 명기
+
+위키 8페이지를 코드와 대조해 낡은 사실 7건 정정(단축키 기본 **Shift+Alt+C** · winget/choco **미제출** · 단축키 카테고리 · 검색 방식 · OS별 권한 · 데이터 위치 · 09-05 Linux 결함 안내) + **[릴레이 서버](https://github.com/SosomLab/nexa-clip/wiki/릴레이-서버) 페이지 신설**.
+매뉴얼 쪽은 [18 §10-2](18-build-and-test.md)·CLAUDE.md §1에 **clip에 서버 없음 · `nexa-beep` `beepd-v*` 별도 배포 · 따로 띄워야 함 · 공식 `beepd.sosomlab.com:47300`** 을 박제.
+⚠️ **발견**: 설정 → 고급 → 진단 로그 토글(`adv.log`)이 **레지스트리에만 있고 소비처가 없다**(`dev-install-mac.sh` 안내와 어긋남) → 후속 T 등재 대상. → [journal 14차](journal/2026-09-05.md)
+
+---
+
 ## 2026-09-05 (13차 · mac) — ★ **v0.1.2 배포됨** — GitHub Release + brew 탭 · winget/choco 제외
 
 **요청**: winget·choco에 나가지 않게 새 버전 릴리스. 저장소 변수 `WINGET_PUBLISH`·`CHOCO_PUSH`가 이미 `false`(09-04)라 바꿀 것 없이 태그만 밀었다.

@@ -2,6 +2,10 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-09-05 (14차 · mac) — ★ 위키 최신화(v0.1.2 · 9페이지) · beepd "별도 실행 · nexa-beep 배포" 매뉴얼+위키 명기
+
+- 코드 대조로 낡은 사실 7건 정정(단축키 기본값 Shift+Alt+C · winget/choco 미제출 · 단축키 카테고리 · 검색 방식 · 권한 · 데이터 위치 · Linux 결함 안내) · **릴레이 서버 페이지 신설** + [18 §10-2](18-build-and-test.md) + CLAUDE.md §1 경고 · ⚠️ 진단 로그 토글(`adv.log`) 소비처 없음 확인(후속) → [journal 14차](journal/2026-09-05.md)
+
 ## 2026-09-05 (13차 · mac) — ★ v0.1.2 릴리스 — brew만 · winget/choco 제외(변수 false · guard 판정 false)
 
 - 0.1.1 → 0.1.2(65 커밋 · 코드 36 — Linux 결함 5 · 0600 · 전역 단축키 설정 · 기기 이름 재소개 등) · 태그 `v0.1.2` → release run 33969299691 **11잡 success** · 공개 자산 14 · brew 탭 `4b112cf` · winget/chocolatey 잡은 매니페스트 생성만(제출 스텝 skipped) → [journal 13차](journal/2026-09-05.md)

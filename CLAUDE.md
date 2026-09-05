@@ -19,6 +19,8 @@
 | **`nexa-beep`** | `../nexa-beep` | ★ **기본 틀** — 크레이트 경계 · `plat` 포트 · CPU 래스터라이저(`nbeep-gfx`) · 컨트롤(`nbeep-ctl`) · 클립보드 어댑터(`nbeep-plat/clipboard.rs`) · 트레이 · **릴레이(`nbeep-relay`·`nexa-beepd`)** · 암호화 키 계층(ADR-0005) · 다중 기기 신원(ADR-0007) |
 | **`nexa-dir2`** | `../nexa-dir2` | ★ **컨트롤** — `ctl` 17종 · `nexa-gui`(`draw`·`event`·`geom`·`theme`·`edit`·`typeahead`) · **`grid`/`columns`**(정렬·리사이즈) · 가상화 목록 |
 
+> ⚠️ **릴레이 서버(`nexa-beepd`)는 clip에 들어 있지 않다** — `nexa-beep` 저장소 `crates/nexa-beepd`에서 **`beepd-v*` 별도 태그**로 배포되는 **별도 실행 파일**이고, 사용자가 **따로 띄워야** 원격 동기화가 된다(공식 `beepd.sosomlab.com:47300` · LAN만 쓰면 None으로 서버 불요). clip은 `nclip-sync/*`에 와이어 사본만 둔다 → [18 §10-2](docs/18-build-and-test.md) · 위키 [릴레이 서버](https://github.com/SosomLab/nexa-clip/wiki/릴레이-서버).
+
 ## 2. 확정 결정 (요약 — 전문은 [docs/10](docs/10-decision-record.md))
 
 | # | 결정 |
