@@ -42,13 +42,35 @@ done
 
 VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
 
-# ── sudo 도우미 — 대상이 쓰기 가능하면 안 쓴다(루트 없는 프리픽스 설치 지원).
+# ── 권한 승격 도우미 — 대상이 쓰기 가능하면 안 쓴다(루트 없는 프리픽스 설치 지원).
+#    ★ 터미널이 없는 자리(에디터 통합 셸·자동화)에서는 `sudo`가 "A terminal is required"로 죽는다 —
+#    polkit 에이전트가 떠 있으면 `pkexec`(GUI 암호창)로 넘긴다. 둘 다 안 되면 그때 안내하고 멈춘다.
+#    ⚠️ pkexec는 호출자의 작업 디렉터리를 물려주지 않는다 → 넘기는 경로는 **절대 경로**여야 한다.
+ELEVATE=""
+pick_elevator() {
+    [ -n "$ELEVATE" ] && return 0
+    if sudo -n true 2>/dev/null; then
+        ELEVATE=sudo
+    elif [ -t 0 ] && command -v sudo >/dev/null; then
+        ELEVATE=sudo                       # 대화형 터미널 — 암호를 물어볼 수 있다
+    elif command -v pkexec >/dev/null && [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
+        ELEVATE=pkexec                     # 데스크톱 세션 — polkit GUI 암호창
+    elif command -v sudo >/dev/null; then
+        ELEVATE=sudo
+    else
+        echo "권한 승격 수단이 없습니다(sudo·pkexec 부재) — NEXA_INSTALL_DIR로 쓰기 가능한 자리를 지정하세요" >&2
+        exit 1
+    fi
+    [ "$ELEVATE" = pkexec ] && echo "권한: pkexec — 화면의 인증 창에 암호를 입력하세요"
+}
+
 run_as_owner() {
     local dir="$1"; shift
     if [ -w "$dir" ]; then
         "$@"
     else
-        sudo "$@"
+        pick_elevator
+        "$ELEVATE" "$@"
     fi
 }
 
@@ -122,7 +144,7 @@ pkill -x nclip-imgdec 2>/dev/null || true
 
 # ── 교체 — 실행 중이던 파일을 덮어쓰면 ETXTBSY가 날 수 있어 install(1)로 갈아 끼운다(원자적 rename).
 for f in nexa-clip nclip-imgdec; do
-    src="target/$PROFILE/$f"
+    src="$ROOT/target/$PROFILE/$f"     # ★ 절대 경로 — pkexec는 호출자의 cwd를 물려주지 않는다
     [ -f "$src" ] || { echo "빌드 산출물이 없습니다: $src" >&2; exit 1; }
     run_as_owner "$DST" install -m 0755 "$src" "$DST/$f"
     printf '복사: %-14s %10d B → %s\n' "$f" "$(stat -c%s "$src")" "$DST/$f"
@@ -133,9 +155,9 @@ if [ "$ASSETS" = 1 ]; then
     share="$(dirname "$DST")/share"   # /usr/bin → /usr/share
     if [ -d "$share/applications" ]; then
         run_as_owner "$share/applications" install -m 0644 \
-            packaging/linux/nexa-clip.desktop "$share/applications/nexa-clip.desktop"
+            "$ROOT/packaging/linux/nexa-clip.desktop" "$share/applications/nexa-clip.desktop"
         icon="$share/icons/hicolor/256x256/apps"
-        run_as_owner "$icon" install -m 0644 packaging/branding/nexa-clip-256.png "$icon/nexa-clip.png"
+        run_as_owner "$icon" install -m 0644 "$ROOT/packaging/branding/nexa-clip-256.png" "$icon/nexa-clip.png"
         run_as_owner "$share/applications" update-desktop-database "$share/applications" 2>/dev/null || true
         echo "복사: .desktop · 아이콘 → $share"
     else

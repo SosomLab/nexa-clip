@@ -2,6 +2,10 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-09-05 (Linux VM 7차) — ★ 포털 승인이 매번 뜨던 것 = 토큰이 데이터 폴더 안 → 사용자 설정 폴더로 고정 · pkexec 설치
+
+- `conf::portal_token_path()`(고정 자리 + 옛 자리 1회 이관) · 실증: 설치본 0.57s·개발 빌드 0.55s **무대화창** · `.deb` 설치는 `pkexec`(sudo는 터미널 요구) · 스크립트 승격 순서 sudo→pkexec + 절대 경로 → [journal 7차](journal/2026-09-05.md)
+
 ## 2026-09-05 (Linux VM 6차) — ★ 설치본 자리에서 실기: `scripts/dev-install-linux.sh`(win·mac의 Linux 판)
 
 - 배포 v0.1.1 `.deb`를 기준선으로 · 이후엔 릴리스 빌드를 `/usr/bin`에 원자 교체 후 **설치 `.desktop` 경로 지정 실행**(직접 실행·systemd-run·gtk-launch는 단축키 등록 실패/개발 빌드 오기동) · 데이터는 `~/.config/nexa-clip` · 로그 `target/installed-nexa-clip.log` · 가짜 프리픽스로 전 과정 실측 → [journal 6차](journal/2026-09-05.md)

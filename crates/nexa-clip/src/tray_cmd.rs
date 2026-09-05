@@ -1871,7 +1871,9 @@ pub(crate) fn run() {
     // ★ Wayland 키 주입 권한(포털 RemoteDesktop) — 시작 때 한 번 받아 둔다(토큰 영구).
     //   대화창 응답까지 막히므로 별도 스레드 — 트레이 기동을 기다리게 하지 않는다.
     {
-        let token = crate::conf::data_dir().join("portal-remotedesktop.token");
+        // ★ 09-05: 데이터 폴더가 아니라 **고정 자리**(사용자 설정 폴더) — 개발 빌드 ↔ 설치본을
+        //   오갈 때 승인이 되풀이되던 것을 없앤다(권한은 사용자·앱 단위지 데이터 사본 단위가 아니다).
+        let token = crate::conf::portal_token_path();
         let _ = std::thread::Builder::new()
             .name("nclip-paste-warmup".into())
             .spawn(move || match nclip_plat::paste::warm_up(Some(token)) {
