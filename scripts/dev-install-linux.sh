@@ -172,6 +172,11 @@ fi
 #    ⚠️ `gtk-launch nexa-clip`은 **ID로 찾으므로** 앱이 제 손으로 쓴 사용자 런처
 #    (~/.local/share/applications/nexa-clip.desktop — 마지막에 띄운 실행 파일을 가리킨다)가
 #    /usr/share 것을 가려 **개발 빌드가 대신 뜰 수 있다**. 그래서 설치된 경로를 **명시**한다.
+#    ★★ 그런데 `gio launch`는 **호출한 셸의 앱 스코프를 물려준다**(09-05 실측) — 에디터 통합 터미널에서
+#    부르면 cgroup이 `app-code-….scope`라 포털이 우리를 **VS Code(`code`)로 오인**하고, GNOME 전역 단축키
+#    저장소(`/org/gnome/settings-daemon/global-shortcuts/`)에 **`code` 이름으로 우리 단축키가 등록된다**.
+#    그 뒤 정상 경로(앱 아이콘)로 뜬 인스턴스는 같은 조합을 다시 바인드하지 못해 **"등록 일부 실패"**가 나고,
+#    키를 눌러도 죽은 `code` 세션으로 가 아무 일도 안 일어난다. → **앱 이름의 스코프를 직접 만들어** 띄운다.
 #    로그: 설치본은 콘솔이 없다 — 자식이 물려받는 stdout을 파일로 돌려 **진단을 살린다**
 #    (GNOME 자동 시작으로 뜬 인스턴스는 journald로 가지만, 여기서 띄운 것은 이 파일로 온다).
 echo "── 재시작 ──"
@@ -179,12 +184,20 @@ DESKTOP="$(dirname "$DST")/share/applications/nexa-clip.desktop"
 LOG="$ROOT/target/installed-nexa-clip.log"
 mkdir -p "$(dirname "$LOG")"
 : > "$LOG"
-if command -v gio >/dev/null && [ -f "$DESKTOP" ]; then
+# ★ 앱 이름의 스코프(`app-nexa-clip-<n>.scope`)에서 띄운다 — 포털은 cgroup 유닛 이름에서 앱을 읽는다.
+#   이러면 어느 셸에서 돌리든 앱 이름이 `nexa-clip`으로 고정돼 단축키가 제 이름으로 등록된다(09-05 실측).
+if command -v systemd-run >/dev/null; then
+    # ★ 유닛 이름의 앱 이름 부분은 **systemd 이스케이프**여야 한다 — 하이픈은 `\x2d`(09-05 실측).
+    #   `app-nexa-clip-<n>.scope`(생 하이픈)는 포털이 앱 이름을 못 읽어
+    #   `org.freedesktop.portal.Error.NotAllowed: An app id is required`로 등록이 실패한다.
+    #   GNOME 자신도 `app-gnome-nexa\x2dclip-<pid>.scope` 꼴로 띄운다.
+    systemd-run --user --scope --quiet --unit="app-nexa\\x2dclip-$$.scope" \
+        "$DST/nexa-clip" >"$LOG" 2>&1 &
+elif command -v gio >/dev/null && [ -f "$DESKTOP" ]; then
+    echo "⚠️ systemd-run 없음 — gio launch로 띄웁니다(이 셸의 앱 이름으로 단축키가 등록될 수 있습니다)"
     gio launch "$DESKTOP" >"$LOG" 2>&1 || true
-elif command -v gtk-launch >/dev/null && [ -f "$DESKTOP" ]; then
-    gtk-launch nexa-clip >"$LOG" 2>&1 || true
 else
-    echo "⚠️ 설치된 런처(.desktop)를 못 찾아 바이너리를 직접 띄웁니다 — 전역 단축키는 등록되지 않습니다"
+    echo "⚠️ 런처 수단이 없어 바이너리를 직접 띄웁니다 — 전역 단축키는 등록되지 않습니다"
     setsid "$DST/nexa-clip" >"$LOG" 2>&1 < /dev/null &
 fi
 

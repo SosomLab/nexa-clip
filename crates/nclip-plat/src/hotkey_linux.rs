@@ -52,10 +52,15 @@ pub fn spawn(
         .name("nclip-hotkey".into())
         .spawn(move || match run(&binds, &on_event) {
             Ok(()) => {}
-            Err(_) => on_event(HotkeyEvent::Bound {
-                ok: false,
-                trigger: String::new(),
-            }),
+            Err(e) => {
+                // ★ 사유를 버리지 않는다(09-05) — 종전엔 `Err(_)`라 셸이 "포털이 없거나 거부됨"
+                //   같은 **추측 목록**만 찍어 진단이 불가능했다. 포털 오류를 그대로 남긴다.
+                eprintln!("전역 단축키: 포털 등록 실패 — {e}");
+                on_event(HotkeyEvent::Bound {
+                    ok: false,
+                    trigger: String::new(),
+                });
+            }
         });
 }
 
