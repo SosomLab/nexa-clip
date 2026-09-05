@@ -2,6 +2,10 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-09-05 (Linux VM 6차) — ★ 설치본 자리에서 실기: `scripts/dev-install-linux.sh`(win·mac의 Linux 판)
+
+- 배포 v0.1.1 `.deb`를 기준선으로 · 이후엔 릴리스 빌드를 `/usr/bin`에 원자 교체 후 **설치 `.desktop` 경로 지정 실행**(직접 실행·systemd-run·gtk-launch는 단축키 등록 실패/개발 빌드 오기동) · 데이터는 `~/.config/nexa-clip` · 로그 `target/installed-nexa-clip.log` · 가짜 프리픽스로 전 과정 실측 → [journal 6차](journal/2026-09-05.md)
+
 ## 2026-09-05 (Linux VM 5차) — ★ 창이 뒤에 뜨고 "준비됨" 알림 = winit focus_window 소스=1 Mutter 차단 → 페이저 소스로 직접 올림
 
 - 근인 = `_NET_ACTIVE_WINDOW` 소스=1(앱)이 포커스 탈취 방지에 막힘(붙여넣기 복원은 소스=2라 통했음) · `raise_x11_window`(페이저) → `bring_to_front` 공통 길목(메인창·설정 창 신규/재표시 · T-41 ① 동반) · ignored 테스트로 Mutter 존중 실증 → [journal 5차](journal/2026-09-05.md)

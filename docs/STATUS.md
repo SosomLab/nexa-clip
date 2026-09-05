@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-09-05 (6차 · Linux VM) — ★ 설치본 자리에서 실기(`dev-install-linux.sh`) — 재설치 없이 갱신
+
+배포된 v0.1.1 `.deb`를 기준선으로 삼아 **실제 설치 위치(`/usr/bin`)** 에서 실기하고, 이후 소스 수정은 릴리스 빌드 → 그 자리에 원자 교체 →
+설치 `.desktop`을 **경로로 지정해** 재시작(직접 실행·`systemd-run`·`gtk-launch`는 전역 단축키 등록 실패 또는 개발 빌드 오기동 — 09-05 실측).
+데이터는 `~/.config/nexa-clip`(개발 인스턴스와 별개) · 로그 `target/installed-nexa-clip.log`. 가짜 프리픽스로 전 과정 실측(교체 md5 일치 ·
+단축키 등록 ✓). ⏳ **사용자 1회**: `sudo dpkg -i out/nexa-clip-0.1.1-linux-x64.deb`(대화형 인증 필요) — 그 뒤로는 스크립트 한 줄.
+
+---
+
 ## 2026-09-05 (5차 · Linux VM) — ★ 창이 뒤에 뜨고 "준비됨" 알림 → 페이저 소스로 직접 올림(메인창·설정 창 공통)
 
 사용자 제보 "설정 창이 뒤에 뜨고 확인 창(알림)이 먼저" = winit `focus_window()`가 `_NET_ACTIVE_WINDOW`를 소스=1(앱)로 보내 Mutter

@@ -479,6 +479,10 @@ exa-clip.exe -ArgumentList tray
 # ── 디버그 빌드 재시작(개발 반복) — Linux는 scripts/dev-restart.sh · Windows는 아래 두 줄
 taskkill //F //IM nexa-clip.exe; cargo build -p nexa-clip && ./target/debug/nexa-clip.exe tray
 
+# ── Linux 설치본 실기(09-05 · win·mac 스크립트의 Linux 판) — .deb 설치본(/usr/bin)을 갈아 끼운다
+scripts/dev-install-linux.sh --deb       # 1회: 로컬 소스로 .deb 생성 + sudo dpkg -i (배포본을 받아 설치해도 된다)
+scripts/dev-install-linux.sh [--debug]   # 빌드 → 종료 → /usr/bin 교체 → 설치 런처(.desktop)로 재시작
+
 # ── mac 설치본 실기(09-04 · dev-install-win.ps1의 mac 판) — brew cask 설치본(/Applications/Nexa Clip.app)을 갈아 끼운다
 scripts/mac-dev-cert.sh                  # 1회: 자체 서명 신원(TCC는 서명으로 앱 식별 — 애드혹은 교체마다 손쉬운 사용 권한 리셋)
 scripts/dev-install-mac.sh [--debug]     # 빌드 → 종료 → 번들 교체 → 재서명 → 재시작(신원 있으면 그것으로)
@@ -501,6 +505,25 @@ git tag -a v0.1.0 -m "Nexa Clip 0.1.0" && git push origin v0.1.0
 gh run list -R SosomLab/nexa-clip --workflow homebrew -L 1         # 릴리스 뒤 brew 탭 갱신 잡
 ```
 
+- ★ **설치본 자리에서 실기**(Linux · 09-05 사용자 요청 — win·mac 스크립트의 Linux 판). 배포된 `.deb`를 한 번 설치해
+  **실제 설치 위치(`/usr/bin`)를 기준으로** 실기하고, 이후 소스를 고치면 **릴리스 빌드 → 그 자리에 복사 → 재시작**만 한다(재설치 없음):
+
+  ```bash
+  # ① 최초 1회 — 배포본 설치(릴리스 자산이 곧 사용자가 받는 것)
+  curl -sLO https://github.com/SosomLab/nexa-clip/releases/download/v0.1.1/nexa-clip-0.1.1-linux-x64.deb
+  sudo dpkg -i nexa-clip-0.1.1-linux-x64.deb
+  #    (로컬 소스로 만들어 설치하려면)  scripts/dev-install-linux.sh --deb
+
+  # ② 이후 반복 — 고치고 이 한 줄(빌드 → 종료 → /usr/bin 교체 → 설치 런처로 재시작)
+  scripts/dev-install-linux.sh              # 릴리스 프로필(기본)
+  scripts/dev-install-linux.sh --debug      # 디버그 프로필(진단)
+  scripts/dev-install-linux.sh --assets     # .desktop·아이콘까지 갱신
+  ```
+
+  - 설치 위치는 `command -v nexa-clip`으로 **찾는다**(비표준 위치는 `NEXA_INSTALL_DIR=`로 지정). `/usr` 아래면 복사에 sudo가 붙는다.
+  - 데이터는 `/usr`가 **업그레이드 교체 자리**라 exe 옆이 아니라 `~/.config/nexa-clip`을 쓴다 — 개발 인스턴스(`target/debug/data`)와 **이력·설정·신원이 다르다**(mac·win과 같은 성질).
+  - ★ 재시작은 **설치된 `.desktop`을 경로로 지정해** 띄운다(`gio launch /usr/share/applications/nexa-clip.desktop`). 바이너리를 직접 실행하거나 `systemd-run`으로 띄우면 포털이 앱을 식별하지 못해 **전역 단축키 등록이 실패**한다(09-05 실측). `gtk-launch nexa-clip`은 ID로 찾아 앱이 제 손으로 쓴 사용자 런처(`~/.local/share/applications`)가 `/usr/share` 것을 가릴 수 있어 쓰지 않는다.
+  - 설치본은 콘솔이 없다 — 스크립트가 stdout을 `target/installed-nexa-clip.log`로 모은다(`tail -f`).
 - ★ **설치본 자리에서 실기**(Windows · 09-04 사용자 요청) — setup으로 설치한 폴더(`%LOCALAPPDATA%\Programs\NexaClip`)에
   빌드한 실행 파일 2개를 덮어쓰고 기존 프로세스(개발 인스턴스 포함 — 단일 인스턴스 가드)를 끝낸 뒤 설치본을 다시 띄운다:
 
