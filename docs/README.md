@@ -47,6 +47,7 @@
 | 24 | [참조 설정 화면 연구](24-reference-settings-study.md) | **CopyQ 10장 + Maccy + Paste** 심층 비교 → 우리 설정 화면 방향 |
 | 23 | [알파 렌더링](23-alpha-rendering.md) | **반투명** — 앱 안 알파 합성(구현) vs 창 자체 투명(플랫폼 작업·미구현) |
 | 22 | 🔴 [beep 전달 원장](22-upstream-beep-liaison.md) | **서버·와이어 변경 연락 창구** — 모든 변경에서 점검하는 체크리스트 + 미전달 항목 |
+| 32 | 🔴 [beep 전달문](32-beep-handover.md) | ★ **beep에 그대로 건네는 문서**(09-05) — 공용 `nexa-conf` 결함 2건(설정 파일 0600 · 미지 키 중복) + 공유 규약 3건(도메인/prologue · glare · relay 결합) + 서버 변경 대기 3건. 항목마다 *무엇 · 왜 · beep 어디 · 정할 것* |
 | 18 | ★ [빌드 · 테스트](18-build-and-test.md) | **절차 SSOT** — 매번 돌리는 네 줄 · 테스트가 지키는 것 · 교차 검사 · CI · 흔한 실패 |
 | 27 | ★ [케이스별 캡처·표시](27-capture-cases.md) | **PPT 도형 · 색 텍스트 · 이미지 · 파일** 네 케이스가 각각 어떻게 기록되고 보이는가 |
 | 21 | ★ [실기 점검표](21-manual-test.md) | **Windows·macOS·Linux 각각** 무엇이 검증됐는지 · 점검 절차 · 증상 기록 |

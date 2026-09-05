@@ -2,6 +2,10 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-09-05 (9차) — ★ beep 전달 내용을 별도 문서로 — [32 전달문](32-beep-handover.md)
+
+- 원장은 추적, 전달문은 **건네는 한 장**: A 공용 `nexa-conf` 2건(패치·테스트 포함) · B 공유 규약 3건 · C 서버 변경 대기 3건 · D 회신 요청 · beep v0.2.13 `5537f5c` 대조 → [journal 9차](journal/2026-09-05.md)
+
 ## 2026-09-05 (Linux VM 8차) — ★ 다른 OS 파급 점검 — Windows도 같은 단축키 잔향 결함(수정 그대로 적용) · 토큰 경로 부작용 차단 · beep 전달 2건
 
 - T-15d는 Windows `WM_SETFOCUS` 합성 키가 같은 구조라 3-OS 공통 코드가 그대로 듣는다(mac은 합성 없음) · `portal_token_path()`를 Linux로 좁힘(Win·mac에 쓸모없는 설정 폴더 생성 차단) · 공용 `nexa-conf` 결함 2건(0600 · 미지 키 중복) → 22 원장 I-7·I-8 → [journal 8차](journal/2026-09-05.md)
