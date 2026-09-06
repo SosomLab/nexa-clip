@@ -2,6 +2,10 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-09-05 (mac 마감) — 하루 총정리: v0.1.2 배포 · 위키 10페이지+캡처 20 · beepd 별도 실행 명기 · T-43 홈페이지/T-44 캡처 확장 등재
+
+- 커밋 5(전부 green) · MILESTONES "사용자 설명서" 행 · README에 캡처 위치 · 다음 = T-43 홈페이지(결정 3건 대기) → 두 PC 실기 → T-26 → [STATUS](STATUS.md)
+
 ## 2026-09-05 (15차 · mac) — ★ 설명서 화면 캡처 20장 → 위키(설정 항목 페이지 신설) + `assets/screenshots/`
 
 - `--profile docs`(ko · 샘플 8건)로 설치본 촬영 → System Events 좌표 + `screencapture -R` + `cliclick` 자동화 · 타이틀바/타 앱 영역 크롭 · 위키 Home/시작하기/동기화 설정에 배치 + **설정 항목** 페이지(10 카테고리) · 저장소 `assets/screenshots/`(홈페이지 소재) · 설치본 복구 ✓ → [journal 15차](journal/2026-09-05.md)

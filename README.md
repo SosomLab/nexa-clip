@@ -22,6 +22,7 @@
 
 - 실행하면 트레이에 상주한다. 좌클릭 = 메인창(항목 관리) · 우클릭 = 최근 메뉴 · `Ctrl+Shift+V` = 퀵 팝업.
 - 사용자 안내는 **[위키](https://github.com/SosomLab/nexa-clip/wiki)**, 설계·진행 기록은 [`docs/`](docs/)에 있다.
+- 화면 캡처(위키·홈페이지 소재)는 [`assets/screenshots/`](assets/screenshots/)에 있다.
 
 ## 라이선스
 
