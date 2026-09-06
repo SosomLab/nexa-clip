@@ -10,6 +10,7 @@
 ★ **와이어 판정**: `nbeep-relay`에 **선택적 PSK 경로만 추가**(`connect_via_rids_first`·`accept_any`) — `C2s`/`S2c`·kind·상수·도메인 `nbeep-rid-v1`·prologue **무변경** · beepd-v0.2.5 그대로 → **`nclip-sync` 사본 동기 불요 · 서버 재배포 불요**.
 ★ **전달문 32 = 처리 완료**(beep `docs/44 §7` · 09-05): A-1/A-2 `nexa-conf` 이식 `92c92ab`(beep 자체 7경로 확대) · B-1 도메인 = 이미 반영 `78a4035` · B-3 사본 고지 수용(`[clip-sync]` 표식 절차 · 44 §7-4) · B-2 glare = **beep X-11 사용자 결정 대기** → [22 §3](22-upstream-beep-liaison.md) I-1·I-5·I-7·I-8 **[반영]** · I-4 **[전달]** · §5 "사용자 확인 필요" 해소(09-05 ⏳ 결정 ② 닫힘).
 **⏳ 사용자 결정**: ① T-43 홈페이지 3건(언어 · 호스팅 · Win/Linux 캡처 병치) ② D-80 포털 세션 수명 ③ **T-45** beep ADR-0015 연동 — beep 회신 3건(패스프레이즈 평문 저장 · `nbeep-user-*` 도메인 등재 · XXpsk3 채택 · 원장 I-10) 받은 뒤 clip이 흡수할지. **권장 = 만남(RID 파생)만 공유 유지 · 신뢰 계층은 DR-39(기기별 승인) 그대로**(XXpsk3 = 승인 0회용이라 [09 §6-3](09-identity-and-pairing.md)과 충돌).
+**2차(mac)**: 재점검 — clip·beep·dir2 전부 원격 일치(변동 0). ⚠️ **beep User 검증 결함 관측**(같은 `super`/`abcd-abcd-abcd`인데 mac ID `62e252eb` ≠ win ID `89ddf617` · Verify 뒤 서버 연결 테스트 "Not verified"로 초기화 · 릴레이 연결 중에도 같은 사용자로 수렴 안 함) → **beep 몫 · 사용자 결정 = 이 세션에서 다루지 않음**. clip에는 T-45 판단 근거로만 기록(beep 수렴 실증 전 흡수 보류).
 **★ 다음 작업 추천**(변동 없음): ① T-43 홈페이지 → ② 두 PC 실기 S4~S7 → ③ T-26 → ④ T-42 → ⑤ T-41. → [journal](journal/2026-09-06.md)
 
 ---

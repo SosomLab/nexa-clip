@@ -2,6 +2,10 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-09-06 (2차 · mac) — 재점검 변동 0 · beep User 검증 결함(mac ID ≠ win ID · Verify 뒤 서버 테스트 초기화) = beep 몫으로 분리
+
+- clip·beep·dir2 전부 원격 일치 · 결함은 ADR-0015 S1~S2(형제 발견·UserKey 동기) 영역이라 clip 변경 없음 · T-45 판단 근거로만 기록 → [journal](journal/2026-09-06.md)
+
 ## 2026-09-06 (1차 · mac) — 저장소 최신화(clip 변동 0 · dir2 ff 80 · beep ADR-0015 병합 분석) · ★ beep 전달문 32 처리 결과를 원장 22에 반영(I-1·5·7·8 반영 · I-4 전달)
 
 - beep `nbeep-relay` 09-06 변경 = 선택적 XXpsk3 경로(와이어·서버 무변경 → `nclip-sync` 동기 불요) · beep 회신 예정 3건(패스프레이즈 저장·`nbeep-user-*` 도메인·XXpsk3)을 I-10 대기 · T-45(beep ADR-0015 연동 판단 — DR-39 승인 유지와 방향 다름) · T-46(dir2 오버레이 스크롤바 검토) 등재 · 3-OS ✓ → [journal](journal/2026-09-06.md)
