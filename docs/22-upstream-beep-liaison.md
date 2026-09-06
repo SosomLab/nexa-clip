@@ -37,14 +37,16 @@
 
 | # | 항목 | 구분 | 상태 | 내용 |
 |:--:|---|:--:|:--:|---|
-| **I-1** | **앱 격리 — 랑데부 도메인 분리 + Noise prologue** | 🟡 공유 | **[작성]** · ★ **clip 구현 반영**(09-03 — `nclip-sync`: 도메인 `nclip-rid-v1` · 종단 prologue `nexa-clip/1` · 서버 세션엔 미적용) | clip은 RID를 `"nclip-rid-v1"`, prologue를 `"nexa-clip/1"`로 쓴다. beep은 `"nbeep-rid-v1"` 유지. ★ **beep이 나중에 도메인 문자열을 바꾸면 격리가 깨지거나 충돌**하므로 *"이 문자열은 앱 식별자다 — 임의로 바꾸지 않는다"* 를 beep 쪽에도 남겨야 한다 → [07 §3-4](07-device-rendezvous.md#3-4--애플리케이션-격리--beep과-clip은-서로를-못-본다-사용자-확정-2026-08-26) · [DR-23](10-decision-record.md) |
+| **I-1** | **앱 격리 — 랑데부 도메인 분리 + Noise prologue** | 🟡 공유 | **[반영]**(09-05 · beep `78a4035` 08-26 `rid_for` 주석 7줄 + beep `docs/44 §1` · 회신 44 §7-3 · prologue는 beep 미사용 — 채택은 X-11과 묶어 major) · ★ **clip 구현 반영**(09-03 — `nclip-sync`: 도메인 `nclip-rid-v1` · 종단 prologue `nexa-clip/1` · 서버 세션엔 미적용) | clip은 RID를 `"nclip-rid-v1"`, prologue를 `"nexa-clip/1"`로 쓴다. beep은 `"nbeep-rid-v1"` 유지. ★ **beep이 나중에 도메인 문자열을 바꾸면 격리가 깨지거나 충돌**하므로 *"이 문자열은 앱 식별자다 — 임의로 바꾸지 않는다"* 를 beep 쪽에도 남겨야 한다 → [07 §3-4](07-device-rendezvous.md#3-4--애플리케이션-격리--beep과-clip은-서로를-못-본다-사용자-확정-2026-08-26) · [DR-23](10-decision-record.md) |
 | **I-2** | **공유 URID(한 RID에 기기 N대 등록)** | 🔴 반영 | **[보류]** | `nexa-beepd`의 `rids: HashMap<Rid, ConnId>`가 **1:1**이라 뒤 등록이 앞을 덮는다. 채택하려면 `HashMap<Rid, Vec<ConnId>>` + `Open` 팬아웃이 필요. ★ **지금은 기기별 RID로 회피**했으므로 서버 변경 없음 → [07 §3-1](07-device-rendezvous.md#3-1--결정적-제약--서버의-rid-맵은-1-rid--1-연결이다) · D-14 |
 | **I-3** | **오프라인 큐(컨텐츠 서버 모드 ②)** | 🔴 반영 | **[보류]** | 릴레이는 *"버퍼가 아니라 파이프"* 라 **양쪽 동시 접속일 때만** 흐른다. 꺼진 기기가 나중에 받으려면 ADR-0013 모드 ②가 필요하고 **beep에서도 미구현**이다. clip이 먼저 필요해지면 **beep의 D-29 확정이 선행**돼야 한다 → [05 §2-2](05-multi-device-sharing.md#2-2-현재-상태--nexa-beep에서도-미구현) · D-11/D-16 |
-| **I-4** | **glare 타이브레이크(양쪽 동시 `Open`)** | 🟡 공유 | **[작성]** | 실코드 확인 범위에서 **beep 릴레이에 규칙이 없다**. clip은 *"`PeerId` 바이트 사전순으로 작은 쪽이 initiator"* 로 정한다(추가 왕복 0). **beep도 같은 문제를 갖고 있으므로** 같은 규칙을 쓰는 편이 낫다 → [07 §4-3](07-device-rendezvous.md#4-3--동시-상호-open-glare--타이브레이크가-필요하다) · D-15 |
-| **I-5** | **`nbeep-relay` 크레이트 결합 방식** | 🟡 공유 | **[작성]** · ★ **clip 내부 결정(09-03): 사본 채택** — CI 단독 빌드 때문에 path 의존 불가. `nclip-sync/*` 머리말에 "와이어 규약 공유 · beep과 동기 필수" 명기. beep 쪽에도 동일 고지 필요 | UI 계층은 포크로 흡수했지만([DR-17](10-decision-record.md)), **relay는 와이어라 포크하면 갈라지는 순간 통신이 깨진다.** UI와 다른 판단이 필요하다 — path 의존 / 공유 크레이트 승격([DR-18](10-decision-record.md)) 중 택일 → D-8(relay 부분 미정) |
+| **I-4** | **glare 타이브레이크(양쪽 동시 `Open`)** | 🟡 공유 | **[전달]**(09-05 · **beep X-11 사용자 결정 대기** · beep 44 §7-2: 앱 계층 가드 `conversations.contains_key`는 "둘 다 죽고 다시" 비결정 — clip 규칙이면 `peer < me` 한 줄로 결정적 수렴) | 실코드 확인 범위에서 **beep 릴레이에 규칙이 없다**. clip은 *"`PeerId` 바이트 사전순으로 작은 쪽이 initiator"* 로 정한다(추가 왕복 0). **beep도 같은 문제를 갖고 있으므로** 같은 규칙을 쓰는 편이 낫다 → [07 §4-3](07-device-rendezvous.md#4-3--동시-상호-open-glare--타이브레이크가-필요하다) · D-15 |
+| **I-5** | **`nbeep-relay` 크레이트 결합 방식** | 🟡 공유 | **[반영]**(09-05 · beep `92c92ab` nbeep-relay 머리말 고지 + 44 §7-4 절차 = 와이어 변경 커밋에 `[clip-sync]` 표식 · §7-5 공유 코드 변경 이력) · ★ **clip 내부 결정(09-03): 사본 채택** — CI 단독 빌드 때문에 path 의존 불가. `nclip-sync/*` 머리말에 "와이어 규약 공유 · beep과 동기 필수" 명기. beep 쪽 고지 완료(09-05) | UI 계층은 포크로 흡수했지만([DR-17](10-decision-record.md)), **relay는 와이어라 포크하면 갈라지는 순간 통신이 깨진다.** UI와 다른 판단이 필요하다 — path 의존 / 공유 크레이트 승격([DR-18](10-decision-record.md)) 중 택일 → D-8(relay 부분 미정) |
 | **I-6** | **앱/버전 태그를 와이어에 싣기** | 🔴 반영 | **[보류]** | 서버가 앱별 통계·상한을 갖게 하려면 `C2s::Register`에 태그가 필요하다. ★ **지금은 불필요** — 격리는 I-1(도메인 분리)로 충분하고, 태그를 실으면 **서버가 앱 신원을 알게 되어** 봉투 원리가 한 겹 얇아진다 |
-| **I-7** | ★ **공용 크레이트 `nexa-conf` — 설정 파일 권한(0600)** | 🟡 공유 | **[작성]** · clip 반영(09-05) · 전달문 [32 A-1](32-beep-handover.md) | `write_atomic`이 `fs::File::create`로 temp를 만들어 **umask 기본(0644/0664)** 그대로 rename된다 — 설정에 비밀이 실리면 같은 PC의 다른 계정·백업 도구에 노출. clip은 페어링 패스프레이즈가 평문으로 들어 실측 **664**였고 temp를 `mode(0o600)`으로 열도록 고쳤다(rename이 모드를 나른다 · Windows는 프로필 ACL이 같은 역할). ★ **beep 사본에도 같은 코드가 그대로**이고(`crates/nexa-conf/src/lib.rs`), 실측상 `settings.cfg`·`profile.sec`·`server.pin`·`trust.seg`·`keys.seg`가 **664**다 — beep이 그 파일들에 비밀을 담는지 판단해 이식 여부를 정하면 된다 |
-| **I-8** | ★ **공용 크레이트 `nexa-conf` — 미지 키가 known이 되면 한 줄만** | 🟡 공유 | **[작성]** · clip 반영(09-05) · 전달문 [32 A-2](32-beep-handover.md) | `serialize`가 미지 키를 **무조건 뒤에 재방출**한다. 어떤 키가 나중에 등재되면(구버전이 미지 키로 보존 → 신버전이 known으로 씀) **같은 키가 파일에 두 줄** 남는다(clip 실측 5키 중복 · 마지막 줄이 이기는 파서라 값 자체는 무해하지만 파일이 계속 자란다). clip은 `known`에 있는 키의 unknown 줄을 건너뛰게 고쳤다. ★ **beep 사본도 동일** — 키를 새로 등재할 때 같은 증상이 난다 |
+| **I-7** | ★ **공용 크레이트 `nexa-conf` — 설정 파일 권한(0600)** | 🟡 공유 | **[반영]**(beep `92c92ab` 09-05 · `nexa-conf` 0600 + beep 자체 `trust.seg`·`keys.seg` 등 7경로 확대) · clip 반영(09-05) · 전달문 [32 A-1](32-beep-handover.md) | `write_atomic`이 `fs::File::create`로 temp를 만들어 **umask 기본(0644/0664)** 그대로 rename된다 — 설정에 비밀이 실리면 같은 PC의 다른 계정·백업 도구에 노출. clip은 페어링 패스프레이즈가 평문으로 들어 실측 **664**였고 temp를 `mode(0o600)`으로 열도록 고쳤다(rename이 모드를 나른다 · Windows는 프로필 ACL이 같은 역할). ★ **beep 사본에도 같은 코드가 그대로**이고(`crates/nexa-conf/src/lib.rs`), 실측상 `settings.cfg`·`profile.sec`·`server.pin`·`trust.seg`·`keys.seg`가 **664**다 — beep이 그 파일들에 비밀을 담는지 판단해 이식 여부를 정하면 된다 |
+| **I-8** | ★ **공용 크레이트 `nexa-conf` — 미지 키가 known이 되면 한 줄만** | 🟡 공유 | **[반영]**(beep `92c92ab` 09-05 · `serialize` known 우선 + 회귀 테스트) · clip 반영(09-05) · 전달문 [32 A-2](32-beep-handover.md) | `serialize`가 미지 키를 **무조건 뒤에 재방출**한다. 어떤 키가 나중에 등재되면(구버전이 미지 키로 보존 → 신버전이 known으로 씀) **같은 키가 파일에 두 줄** 남는다(clip 실측 5키 중복 · 마지막 줄이 이기는 파서라 값 자체는 무해하지만 파일이 계속 자란다). clip은 `known`에 있는 키의 unknown 줄을 건너뛰게 고쳤다. ★ **beep 사본도 동일** — 키를 새로 등재할 때 같은 증상이 난다 |
+| **I-9** | ★ **beep → clip · `nbeep-relay` 선택적 PSK 경로(XXpsk3)** | 🟡 공유 | **[보류]**(09-06 · 와이어 무변경 → 사본 동기 **불요**) | beep ADR-0015(`feat/userid-handle` 병합 `1cfb9ff` 09-06)가 `connect_via_rids_first` · `hs_initiate(psk: Option)` · `accept_any → via_psk` 를 추가했다. **`C2s`/`S2c`·kind·상수·핸드셰이크 순서·`"nbeep-rid-v1"`·prologue 전부 그대로**(PSK는 Noise 패턴 내부 · 서버 통과) · beepd-v0.2.5 그대로 → `nclip-sync`가 맞출 것 없음. 흡수는 "승인 0회" 용도라 DR-39([09 §6-3](09-identity-and-pairing.md) 기기별 승인 유지)와 방향이 다르다 → T-45 사용자 결정 |
+| **I-10** | **beep → clip 회신 대기 — ADR-0015 3건** | 🟡 공유 | **[전달]**(beep → clip 방향 · 09-06 beep journal "회신 예정" · 44 §7에 아직 미기재) | beep이 clip에 회신하겠다고 적은 것: ① `sync.passphrase` **평문 저장**(clip `settings.cfg` — beep은 KDF·래핑으로 감쌈) ② **도메인 등재** — beep `nbeep-user-*` 계열을 [07 §3-4](07-device-rendezvous.md) 앱 식별자 표에 나란히 ③ **XXpsk3 채택** 권유. 회신이 오면 이 행을 갱신하고 T-45에서 판단 |
 
 ---
 
@@ -66,14 +68,17 @@
 
 ---
 
-## 5. 지금 상태 — beep에 전달할 것
+## 5. 지금 상태 — ✅ 전달 완료(09-05) · 남은 것
 
-| 우선 | 항목 | 왜 지금 |
-|:--:|---|---|
-| **0** | ★ **[32 전달문](32-beep-handover.md)** | **이 한 장을 건네면 된다**(아래 항목이 A·B·C로 묶여 있다) |
-| **1** | **I-1**(도메인 분리 규약) | ★ 가장 시급 — beep이 모르는 채로 문자열을 바꾸면 **조용히 깨진다** |
-| 2 | **I-4**(glare 타이브레이크) | beep도 같은 결함을 갖고 있다 — 알려 주는 것이 이득 |
-| 3 | **I-5**(relay 결합 방식) | clip이 M2에 들어가기 전에 정해야 한다 |
+> ★ **[32 전달문](32-beep-handover.md)은 09-05에 beep에 건네졌고 beep `docs/44 §7`(09-05)이 항목별로 처리했다**(09-06 확인). 회신표 = beep 44 §7-3 · 공유 코드 변경 이력 = 44 §7-5 · 와이어 변경 고지 절차 = 44 §7-4(`[clip-sync]` 표식).
 
-> 🔴 **사용자 확인 필요**: 위 3건을 `nexa-beep` 저장소 문서에 반영할까요?
-> (다른 프로젝트라 승인 없이는 건드리지 않습니다.)
+| 항목 | 결과 | 남은 것 |
+|---|---|---|
+| **I-1** 도메인 분리 | ✅ [반영] `78a4035` | — |
+| **I-5** relay 사본 고지 | ✅ [반영] `92c92ab` | 와이어 변경 시 beep이 `[clip-sync]`로 알림 → 이 원장에 행 추가 · `nclip-sync` 사본 맞춤 |
+| **I-7 · I-8** `nexa-conf` | ✅ [반영] `92c92ab` | — |
+| **I-4** glare | ⏸ [전달] | **beep X-11 사용자 결정** — 채택 시 clip 규칙(PeerId 사전순 · D-15)과 같은지 확인 → [반영] |
+| **I-9** relay PSK 경로 | [보류] | 동기 불요. 흡수 여부 = T-45 |
+| **I-10** beep 회신 3건 | [전달](beep→clip) | 회신 도착 시 갱신 → T-45 |
+
+> 🟢 **clip 쪽 사용자 확인 대기는 없다**(09-06). 다음 사용자 결정은 T-45(beep 회신 후).

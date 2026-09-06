@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-09-06 (1차 · mac) — 저장소 최신화 · ★ beep이 전달문 32를 09-05에 이미 처리했음을 확인 → 원장 22 회신 반영 · 릴레이 와이어 호환 유지
+
+**clip**: 원격 변동 0(`0bcaccf` = origin · v0.1.2 · CI 5/5 green · 트리 clean). **참조 저장소**: `nexa-dir2` 80커밋 ff(clip 관련 = `nexa-gui/widgets/rows.rs` 오버레이 스크롤바 1건 → T-46) · `nexa-beep` 09-06 **ADR-0015 UserId 사용자 관리(Handle+Passphrase · Noise XXpsk3) 28커밋 병합** `1cfb9ff`.
+★ **와이어 판정**: `nbeep-relay`에 **선택적 PSK 경로만 추가**(`connect_via_rids_first`·`accept_any`) — `C2s`/`S2c`·kind·상수·도메인 `nbeep-rid-v1`·prologue **무변경** · beepd-v0.2.5 그대로 → **`nclip-sync` 사본 동기 불요 · 서버 재배포 불요**.
+★ **전달문 32 = 처리 완료**(beep `docs/44 §7` · 09-05): A-1/A-2 `nexa-conf` 이식 `92c92ab`(beep 자체 7경로 확대) · B-1 도메인 = 이미 반영 `78a4035` · B-3 사본 고지 수용(`[clip-sync]` 표식 절차 · 44 §7-4) · B-2 glare = **beep X-11 사용자 결정 대기** → [22 §3](22-upstream-beep-liaison.md) I-1·I-5·I-7·I-8 **[반영]** · I-4 **[전달]** · §5 "사용자 확인 필요" 해소(09-05 ⏳ 결정 ② 닫힘).
+**⏳ 사용자 결정**: ① T-43 홈페이지 3건(언어 · 호스팅 · Win/Linux 캡처 병치) ② D-80 포털 세션 수명 ③ **T-45** beep ADR-0015 연동 — beep 회신 3건(패스프레이즈 평문 저장 · `nbeep-user-*` 도메인 등재 · XXpsk3 채택 · 원장 I-10) 받은 뒤 clip이 흡수할지. **권장 = 만남(RID 파생)만 공유 유지 · 신뢰 계층은 DR-39(기기별 승인) 그대로**(XXpsk3 = 승인 0회용이라 [09 §6-3](09-identity-and-pairing.md)과 충돌).
+**★ 다음 작업 추천**(변동 없음): ① T-43 홈페이지 → ② 두 PC 실기 S4~S7 → ③ T-26 → ④ T-42 → ⑤ T-41. → [journal](journal/2026-09-06.md)
+
+---
+
 ## 2026-09-05 (mac 마감) — ★ 하루 총정리: v0.1.2 배포 · 위키 전면 최신화(+캡처) · beepd 별도 실행 명기 → 다음 = 홈페이지
 
 **오늘 mac 세션(12~15차 · 커밋 5 · 전부 green)**: ① Linux 세션분 19 커밋 ff + 설치본 갱신 ② **v0.1.2 릴리스**(brew만 · winget/choco guard false · 자산 14) ③ 위키 8→**10페이지**(단축키 기본값 등 낡은 사실 7건 정정 · 릴레이 서버 · 설정 항목) + **캡처 20장** ④ 매뉴얼에 **beepd = clip 미포함 · nexa-beep `beepd-v*` 별도 배포 · 따로 실행**(18 §10-2 · CLAUDE.md) ⑤ 결함 발견 T-42(진단 로그 토글 소비처 없음).
