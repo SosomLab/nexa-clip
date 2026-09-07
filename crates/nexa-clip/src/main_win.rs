@@ -1597,6 +1597,40 @@ impl MainWin {
                 if event.state != ElementState::Pressed {
                     return MainAction::None;
                 }
+                // ★ 숫자 키(09-07 사용자 확정 · 물리 키 자리로) — 두 의미를 수식 키로 가른다:
+                //   ① `Ctrl+1~9`(mac `⌘`) = **보이는 순서 N번째 선택**(FR-P-8 · Maccy·CopyQ·Ditto 관례) → Enter와
+                //      같은 길(원본 복사 + 따라가기). ② `Alt+1/2/3`(mac `⌥`) = **보기 3모드**(docs/04 V-2 —
+                //      종전 Ctrl+1/2/3에서 옮김: Ctrl+숫자는 항목 선택 관례라 충돌). `Ctrl+Alt` 동시 = AltGr → 둘 다 아님.
+                if let Some(n) = crate::popup_win::digit_of(&event.physical_key) {
+                    if self.primary && !self.alt {
+                        if let Some(row) = self.rows.get(n - 1) {
+                            let id = row.id;
+                            self.sel = n - 1;
+                            self.follow = None;
+                            self.ensure_visible(h);
+                            self.arm_follow();
+                            self.redraw();
+                            return MainAction::Copy {
+                                id,
+                                as_: PasteAs::Original,
+                            };
+                        }
+                        return MainAction::None;
+                    }
+                    if self.alt && !self.primary && n <= 3 {
+                        let (v, code) = match n {
+                            1 => (ViewMode::Rich, "rich"),
+                            2 => (ViewMode::Compact, "compact"),
+                            _ => (ViewMode::Plain, "plain"),
+                        };
+                        if self.view != v {
+                            self.view = v;
+                            self.redraw();
+                            return MainAction::SetViewMode(code);
+                        }
+                        return MainAction::None;
+                    }
+                }
                 match event.logical_key.as_ref() {
                     Key::Named(NamedKey::Escape) => return MainAction::Close,
                     Key::Named(NamedKey::ArrowUp) => {
@@ -1693,24 +1727,14 @@ impl MainWin {
                             return MainAction::QueryChanged;
                         }
                     }
-                    // ★ 보기 3모드(Ctrl+1/2/3 — docs/04 §2-2 보기 메뉴 계약).
-                    Key::Character(d @ ("1" | "2" | "3")) if self.primary => {
-                        let (v, code) = match d {
-                            "1" => (ViewMode::Rich, "rich"),
-                            "2" => (ViewMode::Compact, "compact"),
-                            _ => (ViewMode::Plain, "plain"),
-                        };
-                        if self.view != v {
-                            self.view = v;
-                            self.redraw();
-                            return MainAction::SetViewMode(code);
-                        }
-                    }
                     Key::Character("p" | "P") if self.primary => {
                         if let Some(id) = self.selected_id() {
                             return MainAction::TogglePin(id);
                         }
                     }
+                    // ★ 설정 바로가기(09-07 사용자 · docs/04 §2-1 키맵) — Win/Linux `Ctrl+,` · mac `⌘,`.
+                    //   툴바 ⚙와 같은 길(`Tool::Settings`) · 창 안 단축키(전역 아님).
+                    Key::Character(",") if self.primary => return MainAction::OpenSettings,
                     Key::Character(t) if !self.primary => {
                         let mut changed = false;
                         let mut inv = Invalidations::default();
@@ -2018,6 +2042,16 @@ impl MainWin {
                     }
                 }
                 let mut right = list.x + list.w - pad;
+                // ★ 번호 단축키 배지(09-07) — 1~9번째 행 우측 끝(팝업과 같은 화법).
+                if vi < 9 {
+                    dc.select_font(FontSlot::Status, false);
+                    let tag = crate::popup_win::number_badge(vi + 1);
+                    let tw = dc.text_width(&tag);
+                    right -= tw;
+                    dc.text(right, y + px(6.0), clip, &tag, th.text_dim);
+                    dc.select_font(FontSlot::Base, false);
+                    right -= px(8.0);
+                }
                 if row.copies > 1 {
                     let tag = format!("×{}", row.copies);
                     let tw = dc.text_width(&tag);
@@ -2174,6 +2208,16 @@ impl MainWin {
             }
             // 우측 메타(출처 · ×n) 먼저 재서 라벨 clip을 줄인다.
             let mut right = list.x + list.w - pad;
+            // ★ 번호 단축키 배지(09-07) — 1~9번째 행 우측 끝.
+            if vi < 9 {
+                dc.select_font(FontSlot::Status, false);
+                let tag = crate::popup_win::number_badge(vi + 1);
+                let tw = dc.text_width(&tag);
+                right -= tw;
+                dc.text(right, text_y, clip, &tag, th.text_dim);
+                dc.select_font(FontSlot::Base, false);
+                right -= px(8.0);
+            }
             if row.copies > 1 {
                 let tag = format!("×{}", row.copies);
                 let tw = dc.text_width(&tag);
@@ -2377,6 +2421,24 @@ impl MainWin {
         };
         dc.select_font(FontSlot::Status, false);
         dc.text(pad, sy + px(4.0), full, &status, th.text_dim);
+        // ★ 보기 모드 + 전환 단축키(09-07 사용자 "적용된 단축키가 보이게") — 상태줄 우측(동기화 점 왼쪽).
+        {
+            let name = tr(
+                lang,
+                match self.view {
+                    ViewMode::Rich => Msg::ViewRich,
+                    ViewMode::Compact => Msg::ViewCompact,
+                    ViewMode::Plain => Msg::ViewPlain,
+                },
+            );
+            let s = tr(lang, Msg::StatusView).replacen("{}", name, 1).replacen(
+                "{}",
+                crate::popup_win::VIEW_KEY_LABEL,
+                1,
+            );
+            let tw = dc.text_width(&s);
+            dc.text(w - pad - px(18.0) - tw, sy + px(4.0), full, &s, th.text_dim);
+        }
         dc.select_font(FontSlot::Base, false);
         // ★ 동기화 인디케이터(09-03 · 09-04 사용자 3색) — 상태줄 우측 점:
         //   녹 = 릴레이 연결 · 파랑 = None(같은 네트워크만) · 진회색 = 동기화 미사용 · 흐림 = 릴레이 미연결.
@@ -2409,7 +2471,7 @@ impl MainWin {
             let g = self.tool_fade.value(t as usize).clamp(0.0, 1.0);
             let r = self.tool_rect_of(t, h);
             let label = self.tool_label(t);
-            let tw = dc.text_width(label);
+            let tw = dc.text_width(&label);
             let (tip_h, pad_x) = (px(26.0), px(10.0));
             let tip = Rect::new(
                 r.x + r.w + px(6.0),
@@ -2417,7 +2479,7 @@ impl MainWin {
                 tw + pad_x * 2,
                 tip_h,
             );
-            draw_tooltip(dc, &th, tip, px(5.0), pad_x, px(5.0), full, label, g);
+            draw_tooltip(dc, &th, tip, px(5.0), pad_x, px(5.0), full, &label, g);
         }
         // ★ 상태줄 점 툴팁(09-04 사용자) — 점 위쪽·오른쪽 끝 정렬(창 밖으로 안 나가게).
         if self.sync_dot_hover {
@@ -3146,9 +3208,17 @@ pub(crate) fn parse_dims(label: &str) -> Option<(u32, u32)> {
 use nclip_core::capture::svg_text;
 impl MainWin {
     /// 툴바 툴팁 — ★ 감시 토글은 상태 의존(현재 상태 + 누르면 바뀌는 상태 · 09-04).
-    fn tool_label(&self, t: Tool) -> &'static str {
+    fn tool_label(&self, t: Tool) -> String {
         let lang = current_lang();
-        match t {
+        // ★ ⚙는 단축키를 함께(09-07 — `Ctrl+,` · mac `⌘,`).
+        if t == Tool::Settings {
+            return tr(lang, Msg::TipSettings).replacen(
+                "{}",
+                crate::popup_win::SETTINGS_KEY_LABEL,
+                1,
+            );
+        }
+        let s = match t {
             Tool::Pin => tr(lang, Msg::TipPin),
             Tool::Delete => tr(lang, Msg::TipDelete),
             Tool::Copy => tr(lang, Msg::TipCopy),
@@ -3166,7 +3236,8 @@ impl MainWin {
                 },
             ),
             Tool::Settings => tr(lang, Msg::TraySettings),
-        }
+        };
+        s.to_string()
     }
 }
 

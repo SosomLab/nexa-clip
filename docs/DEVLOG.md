@@ -2,6 +2,14 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-09-07 (2차 · win) — ★ 창 안 키맵 정비: 항목 선택 `Ctrl/⌘+1~9`(팝업·메인) · 보기 `Alt/⌥+1/2/3` · 배지/상태줄/툴팁 표시 · T-47
+
+- 유사 제품 조사(Maccy `⌘n` · CopyQ/Ditto `Ctrl+n`)로 "주 수식 키+숫자 = N번째" 확정 · 보기는 Ctrl→Alt로 이동(충돌 해소) · 물리 키 자리 매칭 · 원본 고정 · i18n 2건 · docs/04 갱신 · 실기 점검표 [21 §12](21-manual-test.md) K1~K11 · 3-OS clippy ✓ · ⏳ 실기 → [journal](journal/2026-09-07.md)
+
+## 2026-09-07 (1차 · win) — 저장소 최신화(29 커밋 ff · v0.1.2 · Windows clippy ✓) · ★ 설정 바로가기 `Ctrl+,`/`⌘,` 창 안 단축키(메인창·팝업)
+
+- docs/04 키맵에 명세만 있던 `설정 = Ctrl+, / ⌘,` 구현 — 전역 아님(다른 앱 Ctrl+, 가로채기 방지) · 팝업에 ⌘ 추적 추가 · `PopupAction::OpenSettings` → 팝업 닫고 설정 창 · 3-OS clippy ✓ · ⏳ 실기 → [journal](journal/2026-09-07.md)
+
 ## 2026-09-06 (2차 · mac) — 재점검 변동 0 · beep User 검증 결함(mac ID ≠ win ID · Verify 뒤 서버 테스트 초기화) = beep 몫으로 분리
 
 - clip·beep·dir2 전부 원격 일치 · 결함은 ADR-0015 S1~S2(형제 발견·UserKey 동기) 영역이라 clip 변경 없음 · T-45 판단 근거로만 기록 → [journal](journal/2026-09-06.md)
