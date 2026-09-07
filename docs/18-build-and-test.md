@@ -161,6 +161,8 @@ status          : Local only
 ★ **"안 됨"과 "켜면 됨"을 구분해 찍는다** — macOS에서 `needs permission`이 뜨면
 기능이 없는 게 아니라 **손쉬운 사용 권한만 켜면 된다**([`PasteCapability`](../crates/nclip-core/src/paste.rs)).
 
+★ **업그레이드 뒤 "토글 ON인데 needs permission"**(09-07 사용자 실기) = TCC 옛 항목이 새 바이너리와 불일치(애드혹 서명 = `cdhash` 요구사항). 앱이 시작 때(`paste::warm_up`) · Cask가 설치 때(postflight) `tccutil reset Accessibility io.github.sosomlab.nexa-clip`을 자동으로 돌리고 대화상자를 띄운다 → **[켜기]만**(− 삭제 불필요). 근본 = 안정 서명 신원([TODO T-48](TODO.md)) · 배경 = [packaging/README](../packaging/README.md).
+
 ### 5-2. ⚠️ 스파이크 결과를 오독하지 않기
 
 `spike-paste`에서 **`[3] 포커스 탈취: 실패`** 가 뜨면:
