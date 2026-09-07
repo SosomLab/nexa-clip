@@ -683,3 +683,13 @@ Keynote/Pages/Numbers · Word/Excel/PPT(mac) · Safari/Chrome(주소창·본문�
 | K9 | 메인창 상태줄 우측 | "일반 · Alt+1/2/3"(현재 보기 + 전환 키) — 동기화 점 왼쪽 | ☐ | ☐ | ☐ |
 | K10 | `Ctrl+Alt+3`(AltGr 자판이면 AltGr+3) | **아무 일도 없다**(번호 선택도 보기 전환도 아님 — AltGr 오동작 방지) | ☐ | ☐ | ☐ |
 | K11 | 한글 입력 상태에서 `Ctrl+1` | 동일하게 1번째 선택(**물리 키 자리**로 잡는다) | ☐ | ☐ | ☐ |
+
+## 13. ★ macOS 손쉬운 사용 권한 — 업그레이드 뒤 (09-07 · T-48)
+
+> 배포본은 애드혹 서명이라 바이너리가 바뀌면 TCC 옛 항목이 무효가 된다(토글 ON인데 `needs permission`). 앱 시작(`paste::warm_up`)과 Cask postflight가 `tccutil reset`으로 옛 항목을 지운 뒤 대화상자를 띄운다 — 기대는 **"켜기" 한 번**이다.
+
+| # | 절차 | 기대 | mac |
+| --- | --- | --- | :--: |
+| AX1 | 권한이 켜진 상태에서 `brew upgrade --cask nexa-clip`(새 릴리스) → 앱 실행 | 권한 대화상자 → [시스템 설정 열기] → Nexa Clip **켜기만으로**(− 삭제 없이) 붙여넣기 동작 · `nexa-clip status` = `paste inject: ok` | ☐ |
+| AX2 | `.dmg`로 앱을 직접 교체(brew 아님) → 앱 실행 | 앱 자체 리셋 경로 — AX1과 같은 결과 · 터미널 로그에 `낡은 권한 항목 정리함(io.github.sosomlab.nexa-clip)` | ☐ |
+| AX3 | 권한이 이미 켜져 정상인 상태에서 앱 재시작 | 리셋·대화상자 **없음**(허용 상태는 건드리지 않는다) | ☐ |

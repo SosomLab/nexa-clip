@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-09-07 (3차 · mac) — 저장소 최신화 · ★ brew 업그레이드 뒤 손쉬운 사용 권한 "유령 항목" 자동 정리 · T-48 배포 서명 신원 결정 등재
+
+**clip**: win 키맵 2커밋 ff(`35b568a`) · mac 호스트 3-OS ✓ · ⏳ mac 실기 K1~K11. **beep**: 5커밋 ff(v0.2.15 · 메인 창 한눈 식별 · **`nbeep-relay`/`beepd` 변경 0** → 사본·서버 불요 · clip 회신 I-10 아직 없음 · T-45 그대로). **dir2**: 변동 0.
+★ **사용자 실기(brew 0.1.2)**: upgrade 뒤 손쉬운 사용 토글 ON인데 붙여넣기 불가 · 껐다 켜고 재시작해도 그대로 · **−로 지우고 다시 켜니 정상** = TCC 옛 항목(애드혹 서명 → 요구사항 `cdhash`)이 새 바이너리와 불일치. 처방은 항목 삭제뿐이라 **앱이 시작 때(`paste::warm_up`) · Cask가 설치 때(postflight) `tccutil reset Accessibility io.github.sosomlab.nexa-clip`을 자동으로** → 첫 실행 대화상자에서 [켜기]만(− 불필요). **다음 릴리스부터 brew upgrade에 자동 반영**(브랜치 `fix/mac-ax-upgrade-reset` · 3-OS ✓).
+**근본**(T-48 🔴 결정): 안정 서명 신원 — ⓐ Developer ID+공증(연 99$ · 권한 유지 + xattr 우회 제거) ⓑ 자체 서명 인증서 CI 서명(무료 · 다른 PC 1회 실측 필요 · 신원 교체 첫 설치 1회 켜기).
+**⏳ 실기**: 다음 릴리스 `brew upgrade` 뒤 [21 §13 AX1~AX2](21-manual-test.md) · mac 키맵 K1~K11. → [journal](journal/2026-09-07.md)
+
+---
+
 ## 2026-09-07 (2차 · win) — ★ 창 안 키맵 정비(T-47) — 항목 선택 `Ctrl/⌘+1~9` · 보기 `Alt/⌥+1/2/3` · 적용 단축키를 화면에 표시
 
 유사 제품 조사(**Maccy** `⌘1~9` · **CopyQ**·**Ditto** `Ctrl+1~0` · Alfred/Raycast `⌘숫자`) → **주 수식 키+숫자 = 보이는 N번째**가 표준(사용자 기준선 둘이 정확히 이 조합) → 사용자 확정.

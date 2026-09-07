@@ -36,7 +36,17 @@ cask "nexa-clip" do
 
   # 서명·공증이 없어 macOS가 실행을 막는다 — 설치 시점에 격리 표식을 뗀다.
   # (이 저장소에서 받은 것이 맞는지는 릴리스의 SHA256SUMS.txt로 확인할 수 있다.)
+  #
+  # ★ 낡은 손쉬운 사용 권한 항목도 함께 정리한다(09-07 사용자 실기 — brew upgrade 뒤 토글이 ON인데
+  #   붙여넣기 불가 · 껐다 켜도 그대로 · 항목을 −로 지우고 다시 켜야 통함): TCC는 앱을 서명 요구사항으로
+  #   기억하는데 애드혹 서명은 바이너리마다 요구사항(cdhash)이 달라 이전 항목이 새 앱과 맞지 않는다.
+  #   업그레이드 시점에 항목을 지워 두면 첫 실행의 권한 대화상자가 새 항목을 만든다 → 사용자는 [켜기]만.
+  #   sudo 불요 · 첫 설치(항목 없음)는 무해 · 실패해도 설치는 계속(must_succeed: false).
+  #   앱도 시작 때 같은 정리를 한다(nclip-plat paste::warm_up — .dmg 직접 설치 대비).
   postflight do
+    system_command "/usr/bin/tccutil",
+                   args: ["reset", "Accessibility", "io.github.sosomlab.nexa-clip"],
+                   sudo: false, must_succeed: false
     system_command "/usr/bin/xattr",
                    args: ["-dr", "com.apple.quarantine", "#{appdir}/Nexa Clip.app"],
                    sudo: false
@@ -45,6 +55,10 @@ cask "nexa-clip" do
   caveats <<~EOS
     이 앱은 코드 서명·공증이 되어 있지 않습니다(v1 · 인증서 미보유).
     설치 과정에서 macOS 격리 표식(com.apple.quarantine)을 제거해 바로 실행되도록 했습니다.
+
+    붙여넣기(손쉬운 사용) 권한은 서명이 바뀌는 업그레이드마다 다시 켜야 합니다.
+    설치 시 낡은 권한 항목을 정리해 두므로, 첫 실행의 권한 대화상자에서
+    [시스템 설정 열기] → 손쉬운 사용 → Nexa Clip을 켜면 됩니다(항목 삭제 불필요).
 
     받은 파일이 맞는지 확인하려면 릴리스의 SHA256SUMS.txt와 대조하세요:
       https://github.com/SosomLab/nexa-clip/releases
