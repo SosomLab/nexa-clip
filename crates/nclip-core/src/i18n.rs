@@ -356,6 +356,10 @@ pub enum Msg {
     TipCopy,
     TipCopyPlain,
     TipAlwaysTop,
+    /// ★ ⚙ 툴팁(09-07) — `{}` = OS별 단축키(`Ctrl+,` · `⌘,`).
+    TipSettings,
+    /// ★ 상태줄 보기 모드 표시(09-07) — 첫 `{}` = 보기 이름 · 둘째 `{}` = 전환 단축키(`Alt+1/2/3` · `⌥1/2/3`).
+    StatusView,
     /// 미리보기 패널 토글 툴팁(09-02 K4).
     TipPreview,
     /// ★ 감시 토글 툴팁(09-04) — 감시 중: 누르면 중지.
@@ -931,6 +935,8 @@ impl Msg {
                 "プレーンでコピー (Shift+Enter)",
             ],
             Msg::TipAlwaysTop => ["Always on top", "최상위 고정", "总在最前", "常に手前"],
+            Msg::TipSettings => ["Settings ({})", "설정 ({})", "设置 ({})", "設定 ({})"],
+            Msg::StatusView => ["{} · {}", "{} · {}", "{} · {}", "{} · {}"],
             Msg::TipPreview => ["Preview", "미리보기", "预览", "プレビュー"],
             Msg::TipCaptureStop => [
                 "Capturing — click to stop",
@@ -1263,7 +1269,7 @@ mod tests {
     use super::*;
 
     /// 카탈로그 전수 — 새 `Msg`를 더하면 여기도 더한다(빈칸 검사가 그걸 강제한다).
-    const ALL_MSG: [Msg; 234] = [
+    const ALL_MSG: [Msg; 236] = [
         Msg::AppName,
         Msg::SearchPlaceholder,
         Msg::EmptyHistory,
@@ -1412,6 +1418,8 @@ mod tests {
         Msg::TipCopy,
         Msg::TipCopyPlain,
         Msg::TipAlwaysTop,
+        Msg::TipSettings,
+        Msg::StatusView,
         Msg::TipPreview,
         Msg::TipCaptureStop,
         Msg::TipCaptureResume,

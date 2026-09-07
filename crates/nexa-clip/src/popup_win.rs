@@ -37,6 +37,50 @@ use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::{Key, NamedKey};
 use winit::window::{Window, WindowId, WindowLevel};
 
+/// ★ 단축키 표기(09-07 사용자 확정 · docs/04 §2-1 키맵) — 보이는 것은 한 벌, 손에 익는 것은 그 OS(DR-2).
+///   번호 선택 = Win/Linux `Ctrl+n` · mac `⌘n`(Maccy·CopyQ·Ditto 관례) · 보기 전환 = `Alt+1/2/3` · mac `⌥1/2/3` ·
+///   설정 = `Ctrl+,` · mac `⌘,`.
+pub(crate) fn number_badge(n: usize) -> String {
+    if cfg!(target_os = "macos") {
+        format!("⌘{n}")
+    } else {
+        format!("Ctrl+{n}")
+    }
+}
+/// 설정 바로가기 표기.
+pub(crate) const SETTINGS_KEY_LABEL: &str = if cfg!(target_os = "macos") {
+    "⌘,"
+} else {
+    "Ctrl+,"
+};
+/// 보기 전환 표기.
+pub(crate) const VIEW_KEY_LABEL: &str = if cfg!(target_os = "macos") {
+    "⌥1/2/3"
+} else {
+    "Alt+1/2/3"
+};
+
+/// ★ 물리 숫자 키 1~9(09-07) — 논리 키가 아니라 **자리**로 잡는다: AZERTY처럼 숫자에 Shift가 필요한 배열,
+///   mac `⌥1`이 `¡` 같은 기호로 오는 경우, 한글 자판 전부에서 같은 자리가 같은 번호다.
+pub(crate) fn digit_of(pk: &winit::keyboard::PhysicalKey) -> Option<usize> {
+    use winit::keyboard::{KeyCode as K, PhysicalKey};
+    let PhysicalKey::Code(code) = pk else {
+        return None;
+    };
+    Some(match code {
+        K::Digit1 => 1,
+        K::Digit2 => 2,
+        K::Digit3 => 3,
+        K::Digit4 => 4,
+        K::Digit5 => 5,
+        K::Digit6 => 6,
+        K::Digit7 => 7,
+        K::Digit8 => 8,
+        K::Digit9 => 9,
+        _ => return None,
+    })
+}
+
 /// 팝업 논리 크기 — 목록 ~9행.
 const POPUP_W: f64 = 380.0;
 const POPUP_H: f64 = 400.0;
@@ -50,6 +94,8 @@ pub(crate) enum PopupAction {
     Close,
     /// ★ 검색 방식 선택(09-04 드롭다운) — 셸이 `find.mode`에 쓴다.
     SearchMode(&'static str),
+    /// ★ 설정 창 열기(09-07 사용자 — `Ctrl+,` · mac `⌘,` · docs/04 §2-1 키맵) — 셸이 팝업을 닫고 설정 창을 띄운다.
+    OpenSettings,
     /// ★ 붙여넣기 스택(09-03 ③ — Ditto 화법): 표시 순서대로 **순차** 붙여넣기.
     PickStack(Vec<u64>),
     /// ★ 항목 선택 — `index`는 **이력 인덱스**(필터를 통과해 되돌린 값).
@@ -130,6 +176,8 @@ pub(crate) struct Popup {
     shift: bool,
     ctrl: bool,
     alt: bool,
+    /// ⌘(mac)/Win — ★ 설정 바로가기(09-07)에만 쓴다: 붙여넣기 모드는 여전히 ⇧/Ctrl/Alt(09-01 확정).
+    meta: bool,
     /// ★ 한 번이라도 포커스를 받았는가 — **생성 직후의 `Focused(false)`로 닫히지 않게**.
     ///   (잠금 화면·창 관리자에 따라 초기 이벤트 순서가 다르다 — 08-28 실기.)
     was_focused: bool,
@@ -292,6 +340,7 @@ impl Popup {
             shift: false,
             ctrl: false,
             alt: false,
+            meta: false,
             was_focused: false,
             opened_at: std::time::Instant::now(),
             fresh_press: false,
@@ -542,6 +591,16 @@ impl Popup {
             self.redraw();
         }
         self.search.display_text() != before
+    }
+
+    /// ★ 설정 바로가기의 주 수식 키(09-07) — mac은 ⌘, 그 외는 Ctrl(메인창 `primary`와 같은 규칙 · DR-2
+    ///   "동작 관례는 각 OS 네이티브"). 팝업의 붙여넣기 모드(⇧/Ctrl/Alt)와는 별개다.
+    fn settings_primary(&self) -> bool {
+        if cfg!(target_os = "macos") {
+            self.meta
+        } else {
+            self.ctrl
+        }
     }
 
     /// 눌린 수식 키 → 붙여넣기 모드(09-01 확정: ⇧ 평문 · Ctrl 개체 · Alt 경로 · 기본 원본).
@@ -801,6 +860,7 @@ impl Popup {
                 self.shift = m.state().shift_key();
                 self.ctrl = m.state().control_key();
                 self.alt = m.state().alt_key();
+                self.meta = m.state().super_key();
             }
             // ★ 한글 조합 중 검색(T-17/T-18 · FR-F-2) — Preedit가 올 때마다 실시간 필터,
             //   Commit은 버퍼에 확정. (winit `set_ime_allowed(true)` — open에서 켜 둔다.)
@@ -1000,6 +1060,20 @@ impl Popup {
                     return PopupAction::None;
                 }
                 self.fresh_press = true;
+                // ★ 번호 선택(09-07 사용자 확정 · FR-P-8) — Win/Linux `Ctrl+1~9` · mac `⌘1~9`: **보이는 순서**
+                //   N번째(필터 적용 후 · 핀 구획 포함)를 **원본 그대로** 붙여넣는다. Ctrl을 누른 채 치므로
+                //   "Ctrl = 개체" 수식 규칙은 적용하지 않는다(Maccy `⌘n`과 같은 화법). `!alt` = AltGr 배제.
+                if let Some(n) = digit_of(&event.physical_key) {
+                    if self.settings_primary() && !self.alt {
+                        if let Some(row) = self.rows.get(n - 1) {
+                            return PopupAction::Pick {
+                                index: row.hist_index,
+                                as_: PasteAs::Original,
+                            };
+                        }
+                        return PopupAction::None;
+                    }
+                }
                 match event.logical_key.as_ref() {
                     Key::Named(NamedKey::Escape) => return PopupAction::Close,
                     Key::Named(NamedKey::ArrowUp) => {
@@ -1062,6 +1136,11 @@ impl Popup {
                             primary: self.ctrl,
                         });
                         self.redraw();
+                    }
+                    // ★ 설정 바로가기(09-07 사용자 · docs/04 §2-1 키맵) — Win/Linux `Ctrl+,` · mac `⌘,`.
+                    //   전역이 아니라 **창 안** 단축키다(전역으로 잡으면 다른 앱의 Ctrl+, 설정 열기를 가로챈다).
+                    Key::Character(",") if self.settings_primary() => {
+                        return PopupAction::OpenSettings;
                     }
                     // ★ 클립보드 단축(09-02 — 메인과 동일). Ctrl+V는 유예와 무관.
                     Key::Character("a" | "A") if self.ctrl => {
@@ -1347,6 +1426,17 @@ fn draw(
         }
         // 우측 ×n — 모든 모드 공통.
         let mut right = w - pad;
+        // ★ 번호 단축키 배지(09-07) — 1~9번째 행 우측 끝(Maccy 화법 · 배지 = 누르면 이 행). 스택 순번이
+        //   같은 자리를 쓰는 행은 스택 표시가 우선.
+        if vi < 9 && !marked.contains(&row.id) {
+            dc.select_font(FontSlot::Status, false);
+            let tag = number_badge(vi + 1);
+            let tw = dc.text_width(&tag);
+            right -= tw;
+            dc.text(right, y + px(6.0), clip, &tag, th.text_dim);
+            dc.select_font(FontSlot::Base, false);
+            right -= px(8.0);
+        }
         if row.copies > 1 {
             let tag = format!("×{}", row.copies);
             let tw = dc.text_width(&tag);

@@ -1506,6 +1506,11 @@ impl ApplicationHandler<ShellEvent> for Shell {
                 PopupAction::None => {}
                 PopupAction::Close => self.close_popup(),
                 PopupAction::SearchMode(v) => self.set_find_mode(v),
+                // ★ Ctrl+,/⌘,(09-07) — 팝업은 닫고(포커스 복원 · 붙여넣기 없음) 설정 창을 띄운다.
+                PopupAction::OpenSettings => {
+                    self.close_popup();
+                    self.open_settings(el);
+                }
                 PopupAction::Pick { index, as_ } => self.pick(index, as_),
                 PopupAction::PickStack(ids) => {
                     self.close_popup();
