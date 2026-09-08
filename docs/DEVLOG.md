@@ -2,7 +2,7 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
-## 2026-09-08 (3차 · win) — ★ v0.1.3 릴리스(brew 자동 · ★ winget 첫 제출 · choco 보류) · 문서·위키 최신화 · 원격 병합(T-48 번호 충돌 → T-49)
+## 2026-09-08 (3차 · win) — ★ v0.1.3 릴리스 ✅(run 34186690679 11잡 green · 자산 14 · brew 0.1.3 · ★ winget PR #431182/#431183 · choco 보류) · 문서·위키 최신화 · 원격 병합(T-48 번호 충돌 → T-49)
 
 - winget/choco 점검: clip PR 0 · 피드 0(미제출) · 토큰 실적 = NexaDir 1시간 내 MERGED · beep 새 패키지 PR 09-01부터 OPEN · beep choco 08-21 push 18일째 미노출 → **winget on · choco off**(T-50) · 위키 4페이지(Home·설치·시작하기 스택/키맵·설정 항목 전역/창 안) → [journal](journal/2026-09-08.md)
 
