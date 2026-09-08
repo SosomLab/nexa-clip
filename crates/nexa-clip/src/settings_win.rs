@@ -94,8 +94,10 @@ pub(crate) struct App {
 /// 캡처 오버레이 상태.
 struct HotkeyCapture {
     key: &'static str,
+    /// ★ 전역(OS 등록 · 수식 키 필수)인가 — 창 안(09-08)은 맨 키 허용 · 글자·숫자만 수식 키 필수.
+    global: bool,
     combo: Option<nclip_core::hotkey::Hotkey>,
-    /// 수정 키 없는 조합을 눌렀다 — 안내 문구.
+    /// 규칙에 어긋난 조합을 눌렀다 — 안내 문구(전역/창 안 규칙이 다르다).
     need_mod: bool,
     remove: nclip_ctl::controls::Button,
     ok: nclip_ctl::controls::Button,
@@ -229,6 +231,7 @@ impl App {
         };
         self.capture = Some(HotkeyCapture {
             key,
+            global: nclip_core::hotkey::is_global_key(key),
             combo: None,
             need_mod: false,
             remove: mk(nclip_core::Msg::HotkeyRemove, ButtonTone::Danger),
@@ -306,14 +309,22 @@ impl App {
             }
             _ => {}
         }
-        let Some(tok) = keycode_token(&event.physical_key) else {
+        let Some(tok) = crate::keys::keycode_token(&event.physical_key) else {
             return; // 수정 키 단독·미지원 키
         };
         let Some(c) = self.capture.as_mut() else {
             return;
         };
+        // ★ 규칙(09-08): 전역 = 수식 키 필수(F키 단독 가능) · 창 안 = 글자·숫자·`,`만 수식 키 필수.
+        let allowed = |h: &nclip_core::hotkey::Hotkey| {
+            if c.global {
+                h.is_global_safe()
+            } else {
+                h.is_window_safe()
+            }
+        };
         match nclip_core::hotkey::Hotkey::from_parts(ctrl, shift, alt, meta, tok) {
-            Some(h) if h.is_global_safe() => {
+            Some(h) if allowed(&h) => {
                 c.combo = Some(h);
                 c.need_mod = false;
             }
@@ -396,7 +407,14 @@ fn paint_capture(
         );
         dc.select_font(FontSlot::Status, false);
         let prompt = if c.need_mod {
-            nclip_core::tr(lang, nclip_core::Msg::HotkeyNeedMod)
+            nclip_core::tr(
+                lang,
+                if c.global {
+                    nclip_core::Msg::HotkeyNeedMod
+                } else {
+                    nclip_core::Msg::HotkeyNeedModWin
+                },
+            )
         } else {
             nclip_core::tr(lang, nclip_core::Msg::HotkeyPrompt)
         };
@@ -1713,77 +1731,6 @@ fn monitor_key(m: &winit::monitor::MonitorHandle) -> String {
         Some(n) if !n.is_empty() => format!("{n}@{}x{}", s.width, s.height),
         _ => format!("{}:{}@{}x{}", p.x, p.y, s.width, s.height),
     }
-}
-
-/// winit 물리 키 → 단축키 토큰(09-04 캡처) — 글자·숫자·F키·편집/이동 키만. 수정 키 단독·그 밖은 `None`.
-fn keycode_token(pk: &winit::keyboard::PhysicalKey) -> Option<&'static str> {
-    use winit::keyboard::{KeyCode as K, PhysicalKey};
-    let PhysicalKey::Code(code) = pk else {
-        return None;
-    };
-    Some(match code {
-        K::KeyA => "A",
-        K::KeyB => "B",
-        K::KeyC => "C",
-        K::KeyD => "D",
-        K::KeyE => "E",
-        K::KeyF => "F",
-        K::KeyG => "G",
-        K::KeyH => "H",
-        K::KeyI => "I",
-        K::KeyJ => "J",
-        K::KeyK => "K",
-        K::KeyL => "L",
-        K::KeyM => "M",
-        K::KeyN => "N",
-        K::KeyO => "O",
-        K::KeyP => "P",
-        K::KeyQ => "Q",
-        K::KeyR => "R",
-        K::KeyS => "S",
-        K::KeyT => "T",
-        K::KeyU => "U",
-        K::KeyV => "V",
-        K::KeyW => "W",
-        K::KeyX => "X",
-        K::KeyY => "Y",
-        K::KeyZ => "Z",
-        K::Digit0 => "0",
-        K::Digit1 => "1",
-        K::Digit2 => "2",
-        K::Digit3 => "3",
-        K::Digit4 => "4",
-        K::Digit5 => "5",
-        K::Digit6 => "6",
-        K::Digit7 => "7",
-        K::Digit8 => "8",
-        K::Digit9 => "9",
-        K::F1 => "F1",
-        K::F2 => "F2",
-        K::F3 => "F3",
-        K::F4 => "F4",
-        K::F5 => "F5",
-        K::F6 => "F6",
-        K::F7 => "F7",
-        K::F8 => "F8",
-        K::F9 => "F9",
-        K::F10 => "F10",
-        K::F11 => "F11",
-        K::F12 => "F12",
-        K::Space => "Space",
-        K::Tab => "Tab",
-        K::Insert => "Insert",
-        K::Delete => "Delete",
-        K::Home => "Home",
-        K::End => "End",
-        K::PageUp => "PageUp",
-        K::PageDown => "PageDown",
-        K::ArrowUp => "Up",
-        K::ArrowDown => "Down",
-        K::ArrowLeft => "Left",
-        K::ArrowRight => "Right",
-        _ => return None,
-    })
 }
 
 /// 물리 키 비교(09-04) — 한글/다른 자판에서도 Ctrl+C/V/X/A가 같은 자리로 잡힌다.

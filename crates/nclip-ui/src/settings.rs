@@ -413,6 +413,8 @@ pub enum SettingKind {
     Hotkey {
         /// 기본 조합.
         default: &'static str,
+        /// ★ 전역(OS 등록 · 수식 키 필수)인가 — 창 안 단축키는 `false`(09-08 · 맨 키 허용).
+        global: bool,
     },
     /// ★ 자유 문자열 한 줄(09-03 동기화 기반 — 핸들·패스프레이즈·서버 주소).
     /// [`FontFace`](SettingKind::FontFace)의 TextBox 행(`RowCtl::Face`)을 재사용한다 —
@@ -504,7 +506,7 @@ impl Entry {
             ],
             // 행위 항목은 값이 없다 — 영속·검증 대상에서 자연히 빠진다.
             SettingKind::Action { .. } => vec![],
-            SettingKind::Hotkey { default } => vec![(self.key, default.to_string())],
+            SettingKind::Hotkey { default, .. } => vec![(self.key, default.to_string())],
         }
     }
 }

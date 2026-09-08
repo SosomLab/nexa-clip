@@ -188,6 +188,17 @@ pub trait PasteInjector: core::fmt::Debug {
     /// # Errors
     /// 권한 부재·대상 소실·OS 실패 시 [`PasteError`]. 호출자는 **클립보드 적재로 강등**한다.
     fn restore_and_paste(&mut self, as_: PasteAs) -> Result<(), PasteError>;
+
+    /// ★ 줄바꿈 한 번(09-08 사용자 — 순차 붙여넣기 "항목 사이에 `\n`"): 지금 포그라운드(직전
+    /// [`restore_and_paste`](Self::restore_and_paste)가 복원한 대상)에 **Enter 키**를 넣는다.
+    ///
+    /// 클립보드에 `"\n"`을 올려 Ctrl+V 하지 않는 이유 — 그 게시가 이력에 **공백 항목**으로 잡힌다.
+    /// 키 한 번은 이력에 아무 흔적도 남기지 않고, 서식 있는 항목(HTML/RTF) 뒤에도 같은 뜻(줄 바꿈·
+    /// 새 문단·다음 셀)으로 통한다.
+    ///
+    /// # Errors
+    /// [`restore_and_paste`](Self::restore_and_paste)와 같은 사유.
+    fn send_newline(&mut self) -> Result<(), PasteError>;
 }
 
 #[cfg(test)]
