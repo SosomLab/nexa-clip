@@ -18,6 +18,7 @@ mod dedup;
 mod demo;
 mod devices;
 mod icon;
+mod keys;
 mod lan;
 mod main_win;
 mod mode_drop;

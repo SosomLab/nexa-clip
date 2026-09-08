@@ -241,21 +241,29 @@
 
 **키맵** — *보이는 것은 한 벌, 손에 익는 것은 그 OS*.
 
-| 동작 | Windows / Linux | macOS |
-|---|---|---|
-| 팝업 호출 | `Ctrl+Shift+V` | `⇧⌘C` |
-| 이동 · 선택 | `↑` `↓` · `Enter` | 동일 |
-| ★ **즉시 선택** | `Ctrl+1`~`9` | `⌘1`~`⌘9` |
-| ★ **보기 일반/간략/한 줄**(메인창) | `Alt+1·2·3` | `⌥1·2·3` |
-| 평문으로 붙여넣기 | `Shift+Enter` | `⇧Return` |
-| ★ **수식 키 즉석 변형**(D-38) | `Alt`=복사만 · `Ctrl`=복사+붙여넣기 · `Ctrl+Shift`=평문+붙여넣기 | `⌥` · `⌘` · `⇧⌘` |
-| 미리보기 토글 | `Ctrl+Space` | `^Space` |
-| 고정 토글 | `Ctrl+P` | `⌥P` |
-| 삭제 | `Delete` | `⌥⌫` |
-| 전체 비우기 | `Ctrl+Alt+Delete`(재지정) | `⌥⌘⌫` |
-| 메인창으로 | `Ctrl+Enter` | `⌘Return` |
-| 설정 | `Ctrl+,` | `⌘,` |
-| 닫기 | `Esc` | `Esc` |
+> ★ **창 안 키는 전부 설정 가능**(09-08 사용자 확정 — 설정 → 단축키 → *창 안* · 값 키 `key.*` · [14 §3-2](14-settings-registry.md)).
+> 아래는 **기본값**이다. 고정 키(설정 불가): `Esc` 닫기 · `↑↓` 이동 · `Ctrl+A/C/X/V` 검색창 편집 · `Ctrl+클릭` 스택 담기 · 편집 시트 `Ctrl+Enter` 저장/`Alt+Z` 줄 바꿈.
+
+| 동작 | 설정 키 | Windows / Linux | macOS |
+|---|---|---|---|
+| 팝업 호출(**전역**) | `key.open` | `Shift+Alt+C` | `⇧⌥C` |
+| 클립보드를 평문으로 붙여넣기(**전역**) | `key.paste_plain` | `Shift+Alt+X` | `⇧⌥X` |
+| 이동 | — | `↑` `↓` | 동일 |
+| 선택 항목 붙여넣기(팝업) / 복사(메인창) | `key.pick` | `Enter` | `Return` |
+| 평문으로 | `key.pick_plain` | `Shift+Enter` | `⇧Return` |
+| ★ **즉시 선택**(보이는 N번째 · 원본) | `key.pick_n` | `Ctrl+1`~`9` | `⌘1`~`⌘9` |
+| ★ **수식 키 즉석 변형**(D-38 · 팝업 단일 항목) | — | `Ctrl+Enter`=개체 · `Alt+Enter`=경로만 | `⌃Return` · `⌥Return` |
+| ★ **스택 담기/빼기**(팝업) | `key.stack_toggle` | `Ctrl+Space` (또는 `Ctrl+클릭`) | `⌃Space` |
+| ★ **순차 붙여넣기**(스택 · 원본) | `key.stack_paste` | `Enter` | `Return` |
+| ★ 순차 + **항목 사이 줄바꿈**(09-08) | `key.stack_paste_nl` | `Alt+Enter` | `⌥Return` |
+| ★ 순차 **평문** | `key.stack_paste_plain` | `Shift+Enter` | `⇧Return` |
+| ★ 순차 평문 + 줄바꿈 | `key.stack_paste_plain_nl` | `Shift+Alt+Enter` | `⇧⌥Return` |
+| 고정 토글(메인창) | `key.pin` | `Ctrl+P` | `⌘P` |
+| 삭제(메인창) | `key.delete` | `Delete` | `Delete` |
+| ★ **보기 일반/간략/한 줄**(메인창) | `key.view_rich/compact/plain` | `Alt+1·2·3` | `⌥1·2·3` |
+| 설정 | `key.settings` | `Ctrl+,` | `⌘,` |
+| 닫기 | — | `Esc` | `Esc` |
+| 미리보기 토글 · 전체 비우기 · 메인창으로 | — | ☐ 미구현(툴바·메뉴로) | |
 
 > ⚠️ **팝업은 포커스를 훔치되 반드시 돌려준다.** 닫는 순간 **직전 활성 창을 복원**하지 못하면 FR-P-2(자동 붙여넣기)가 통째로 무너진다 — 3-OS 각각의 "직전 포커스 창" 획득이 `plat` 포트의 핵심 과제([02 K-1](02-roadmap.md#7-리스크--일정을-실제로-흔들-것)).
 

@@ -73,7 +73,7 @@ const MAX_ITEMS_PRESETS: &[&str] = &["200", "500", "1000", "5000", "10000"];
 /// 다른 하나는 `1000`이면 읽는 사람이 두 번 생각해야 한다.
 const TRAY_N_PRESETS: &[&str] = &["5", "8", "10", "15", "20"];
 
-/// 항목 하나 — 반복을 줄인다(`sub`는 아직 안 쓴다).
+/// 항목 하나 — 반복을 줄인다(하위 그룹은 [`es`]).
 const fn e(cat: Msg, label: Msg, desc: Msg, kind: SettingKind, key: &'static str) -> Entry {
     Entry {
         cat,
@@ -83,6 +83,50 @@ const fn e(cat: Msg, label: Msg, desc: Msg, kind: SettingKind, key: &'static str
         kind,
         key,
     }
+}
+
+/// 하위 그룹이 있는 항목(09-08 — 단축키 전역/창 안).
+const fn es(
+    cat: Msg,
+    sub: Msg,
+    label: Msg,
+    desc: Msg,
+    kind: SettingKind,
+    key: &'static str,
+) -> Entry {
+    Entry {
+        cat,
+        label,
+        desc,
+        sub: Some(sub),
+        kind,
+        key,
+    }
+}
+
+/// ★ 창 안 단축키 행(09-08) — 기본값은 OS별(`Win` = ⌘). 값의 원천은
+/// [`nclip_core::hotkey::WINDOW_ACTIONS`]와 같아야 한다(테스트가 대조한다).
+const fn wk(
+    label: Msg,
+    key: &'static str,
+    default_win: &'static str,
+    default_mac: &'static str,
+) -> Entry {
+    es(
+        Msg::CatShortcuts,
+        Msg::SubKeysWindow,
+        label,
+        Msg::SetKeyWindowDesc,
+        SettingKind::Hotkey {
+            default: if cfg!(target_os = "macos") {
+                default_mac
+            } else {
+                default_win
+            },
+            global: false,
+        },
+        key,
+    )
 }
 
 /// ★ 레지스트리 — 렌더·검색·기본값이 전부 여기서 나온다.
@@ -321,31 +365,80 @@ pub(crate) const REGISTRY: &[Entry] = &[
         "ui.image_preview",
     ),
     // ── 단축키(09-04 사용자) — 동작별 전역 조합 · 캡처 오버레이로 변경/제거
-    e(
+    es(
         Msg::CatShortcuts,
+        Msg::SubKeysGlobal,
         Msg::SetHotkeyOpen,
         Msg::SetHotkeyDesc,
         SettingKind::Hotkey {
             default: "Shift+Alt+C",
+            global: true,
         },
         "key.open",
     ),
-    e(
+    es(
         Msg::CatShortcuts,
+        Msg::SubKeysGlobal,
         Msg::SetHotkeyOpenAlt,
         Msg::SetHotkeyDesc,
-        SettingKind::Hotkey { default: "" }, // ★ 보조 = 기본 없음(09-04 사용자)
+        SettingKind::Hotkey {
+            default: "", // ★ 보조 = 기본 없음(09-04 사용자)
+            global: true,
+        },
         "key.open_alt",
     ),
-    e(
+    es(
         Msg::CatShortcuts,
+        Msg::SubKeysGlobal,
         Msg::SetHotkeyPastePlain,
         Msg::SetHotkeyDesc,
         SettingKind::Hotkey {
             default: "Shift+Alt+X",
+            global: true,
         },
         "key.paste_plain",
     ),
+    // ── ★ 창 안 단축키(09-08 사용자 — "각 단축키는 설정 가능하게 · 내장 단축키도 전부 항목에") —
+    //    OS에 등록하지 않고 팝업·메인창이 직접 비교(`nexa-clip::keys::Keymap`). 순서 = 화면 순서.
+    wk(Msg::SetKeyPick, "key.pick", "Enter", "Enter"),
+    wk(
+        Msg::SetKeyPickPlain,
+        "key.pick_plain",
+        "Shift+Enter",
+        "Shift+Enter",
+    ),
+    wk(Msg::SetKeyPickN, "key.pick_n", "Ctrl+1", "Win+1"),
+    wk(
+        Msg::SetKeyStackToggle,
+        "key.stack_toggle",
+        "Ctrl+Space",
+        "Ctrl+Space",
+    ),
+    wk(Msg::SetKeyStackPaste, "key.stack_paste", "Enter", "Enter"),
+    wk(
+        Msg::SetKeyStackPasteNl,
+        "key.stack_paste_nl",
+        "Alt+Enter",
+        "Alt+Enter",
+    ),
+    wk(
+        Msg::SetKeyStackPastePlain,
+        "key.stack_paste_plain",
+        "Shift+Enter",
+        "Shift+Enter",
+    ),
+    wk(
+        Msg::SetKeyStackPastePlainNl,
+        "key.stack_paste_plain_nl",
+        "Shift+Alt+Enter",
+        "Shift+Alt+Enter",
+    ),
+    wk(Msg::SetKeyPin, "key.pin", "Ctrl+P", "Win+P"),
+    wk(Msg::SetKeyDelete, "key.delete", "Delete", "Delete"),
+    wk(Msg::SetKeySettings, "key.settings", "Ctrl+,", "Win+,"),
+    wk(Msg::SetKeyViewRich, "key.view_rich", "Alt+1", "Alt+1"),
+    wk(Msg::SetKeyViewCompact, "key.view_compact", "Alt+2", "Alt+2"),
+    wk(Msg::SetKeyViewPlain, "key.view_plain", "Alt+3", "Alt+3"),
     // ── 검색 ────────────────────────────────────────────────
     e(
         Msg::CatSearch,
@@ -485,6 +578,33 @@ pub(crate) const REGISTRY: &[Entry] = &[
 mod tests {
     use super::*;
     use crate::settings::registry;
+
+    /// ★ 단축키 행(09-08) — 기본값·전역 여부가 `nclip_core::hotkey`(판정·등록의 원천)와 같아야 한다.
+    ///   어긋나면 설정 화면의 기본값과 실제 동작이 달라진다.
+    #[test]
+    fn hotkey_rows_match_core() {
+        use nclip_core::hotkey::{default_for, is_global_key, ACTIONS, WINDOW_ACTIONS};
+        let mut n = 0;
+        for e in REGISTRY {
+            let SettingKind::Hotkey { default, global } = e.kind else {
+                continue;
+            };
+            n += 1;
+            assert_eq!(default, default_for(e.key), "{} 기본값", e.key);
+            assert_eq!(global, is_global_key(e.key), "{} 전역 여부", e.key);
+            assert_eq!(
+                e.sub,
+                Some(if global {
+                    Msg::SubKeysGlobal
+                } else {
+                    Msg::SubKeysWindow
+                }),
+                "{} 하위 그룹",
+                e.key
+            );
+        }
+        assert_eq!(n, ACTIONS.len() + WINDOW_ACTIONS.len(), "행 수 = 동작 수");
+    }
 
     /// ★ 값 키가 겹치면 **한 설정이 다른 설정을 덮어쓴다** — 조용히 깨지므로 여기서 막는다.
     #[test]

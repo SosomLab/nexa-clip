@@ -53,6 +53,13 @@ impl PasteInjector for PlatformPaste {
         imp::restore(target)?;
         imp::send_paste(as_)
     }
+
+    fn send_newline(&mut self) -> Result<(), PasteError> {
+        if self.target.is_none() {
+            return Err(PasteError::TargetGone);
+        }
+        imp::send_newline()
+    }
 }
 
 // ───────────────────────────── Windows ─────────────────────────────
@@ -68,6 +75,7 @@ mod imp {
     const VK_LWIN: u16 = 0x5B;
     const VK_RWIN: u16 = 0x5C;
     const VK_V: u16 = 0x56;
+    const VK_RETURN: u16 = 0x0D;
     const KEYEVENTF_KEYUP: u32 = 0x0002;
     const INPUT_KEYBOARD: u32 = 1;
 
@@ -163,6 +171,16 @@ mod imp {
         //   그 조합은 **우리 자신의 전역 단축키**(RegisterHotKey)라 대상 앱 대신 우리가
         //   가로채 팝업이 도로 열린다. Linux(포털 RemoteDesktop)도 같은 이유로 Ctrl+V만 쏜다.
         let _ = as_; // 방식 차이는 재적재된 클립보드 내용이 이미 담고 있다(4모드 배선은 T-15b).
+        send_chord(true, VK_V)
+    }
+
+    /// ★ 줄바꿈(09-08) — Enter 한 번(수식 키 없이 · 쥐고 있는 물리 수식 키는 잠시 뗀다).
+    pub(super) fn send_newline() -> Result<(), PasteError> {
+        send_chord(false, VK_RETURN)
+    }
+
+    /// 키 한 번 — `with_ctrl`이면 Ctrl을 감싼다. 사용자가 쥔 물리 수식 키를 앞뒤로 뗐다 되누른다.
+    fn send_chord(with_ctrl: bool, vk_main: u16) -> Result<(), PasteError> {
         let mut seq: Vec<Input> = Vec::with_capacity(12);
         let key = |vk: u16, up: bool| Input {
             kind: INPUT_KEYBOARD,
@@ -179,17 +197,26 @@ mod imp {
         //   단축키 직후엔 Ctrl+Shift가 눌린 채다) — 안 떼면 주입한 Ctrl+V와 합쳐져
         //   Ctrl+Shift+V = 우리 전역 단축키가 되거나(팝업 재열림), Win+V(OS 클립보드 기록)가
         //   된다. 끝나면 되눌러 물리 상태와 재동기화한다(다음 실제 keyup이 짝을 찾게).
-        let held: Vec<u16> = [VK_SHIFT, VK_MENU, VK_LWIN, VK_RWIN]
+        //   ★ 줄바꿈(Enter)은 Ctrl 없이 쏘므로 쥐고 있는 Ctrl도 뗀다(Ctrl+Enter = 앱마다 다른 뜻).
+        let mut watch = vec![VK_SHIFT, VK_MENU, VK_LWIN, VK_RWIN];
+        if !with_ctrl {
+            watch.push(VK_CONTROL);
+        }
+        let held: Vec<u16> = watch
             .into_iter()
             .filter(|&vk| (unsafe { GetAsyncKeyState(i32::from(vk)) } as u16) & 0x8000 != 0)
             .collect();
         for &vk in &held {
             seq.push(key(vk, true));
         }
-        seq.push(key(VK_CONTROL, false));
-        seq.push(key(VK_V, false));
-        seq.push(key(VK_V, true));
-        seq.push(key(VK_CONTROL, true));
+        if with_ctrl {
+            seq.push(key(VK_CONTROL, false));
+        }
+        seq.push(key(vk_main, false));
+        seq.push(key(vk_main, true));
+        if with_ctrl {
+            seq.push(key(VK_CONTROL, true));
+        }
         for &vk in &held {
             seq.push(key(vk, false));
         }
@@ -296,6 +323,7 @@ mod imp {
     pub(super) type Target = i32;
 
     const KVK_ANSI_V: u16 = 0x09;
+    const KVK_RETURN: u16 = 0x24;
     const FLAG_COMMAND: u64 = 1 << 20;
     const HID_EVENT_TAP: u32 = 0;
 
@@ -494,14 +522,29 @@ mod imp {
         //   방식 차이는 클립보드 내용이 담는다(T-15b · 4모드 = 내용 선별). 플래그를 명시로
         //   박으므로 사용자가 아직 쥔 물리 ⇧/⌥(⇧Enter · ⇧⌥X 직후)는 합성 이벤트에 섞이지 않는다.
         let _ = as_;
+        tap(KVK_ANSI_V, FLAG_COMMAND)
+    }
+
+    /// ★ 줄바꿈(09-08) — Return 한 번(수식 플래그 0 = 사용자가 쥔 ⇧/⌥와 섞이지 않는다).
+    pub(super) fn send_newline() -> Result<(), PasteError> {
+        if !unsafe { AXIsProcessTrusted() } {
+            return Err(PasteError::PermissionDenied {
+                hint: "시스템 설정 → 개인정보 보호 및 보안 → 손쉬운 사용",
+            });
+        }
+        tap(KVK_RETURN, 0)
+    }
+
+    /// 키 한 번(누름+뗌) — 플래그를 명시로 박는다.
+    fn tap(keycode: u16, flags: u64) -> Result<(), PasteError> {
         unsafe {
             let src = CGEventSourceCreate(1); // kCGEventSourceStateHIDSystemState
             for down in [true, false] {
-                let ev = CGEventCreateKeyboardEvent(src, KVK_ANSI_V, down);
+                let ev = CGEventCreateKeyboardEvent(src, keycode, down);
                 if ev.is_null() {
                     return Err(PasteError::Os("CGEvent 생성 실패".into()));
                 }
-                CGEventSetFlags(ev, FLAG_COMMAND);
+                CGEventSetFlags(ev, flags);
                 CGEventPost(HID_EVENT_TAP, ev);
                 CFRelease(ev);
             }
@@ -556,7 +599,10 @@ mod imp {
     }
 
     const KEYSYM_V: u32 = 0x76;
+    const KEYSYM_RETURN: u32 = 0xff0d;
     const KEYSYM_CONTROL_L: u32 = 0xffe3;
+    /// evdev `KEY_ENTER`(포털 RemoteDesktop 키코드).
+    const EVDEV_KEY_ENTER: i32 = 28;
     const KEY_PRESS: u8 = xproto::KEY_PRESS_EVENT;
     const KEY_RELEASE: u8 = xproto::KEY_RELEASE_EVENT;
     /// Wayland 컴포지터의 포커스 반환·X11 WM의 활성화가 정착할 시간.
@@ -691,6 +737,20 @@ mod imp {
         if is_wayland() && crate::remote_input_linux::available() {
             return crate::remote_input_linux::tap_ctrl_v().map_err(PasteError::Os);
         }
+        xtest_tap(KEYSYM_V, true)
+    }
+
+    /// ★ 줄바꿈(09-08) — Return 한 번(Ctrl 없이). 포털 세션이면 evdev 코드로, 아니면 XTest.
+    pub(super) fn send_newline() -> Result<(), PasteError> {
+        if is_wayland() && crate::remote_input_linux::available() {
+            return crate::remote_input_linux::tap_key(EVDEV_KEY_ENTER, false)
+                .map_err(PasteError::Os);
+        }
+        xtest_tap(KEYSYM_RETURN, false)
+    }
+
+    /// XTest 키 한 번 — `with_ctrl`이면 Control_L을 감싼다.
+    fn xtest_tap(sym: u32, with_ctrl: bool) -> Result<(), PasteError> {
         if !has_display() {
             return Err(PasteError::Unsupported(if is_wayland() {
                 PasteUnsupported::WaylandNoInjection
@@ -717,16 +777,20 @@ mod imp {
                 .ok_or_else(|| PasteError::Os(format!("keysym 0x{sym:x}의 keycode 없음")))
         };
         let ctrl = kc(KEYSYM_CONTROL_L)?;
-        let v = kc(KEYSYM_V)?;
+        let main = kc(sym)?;
         let fake = |ty: u8, code: u8| {
             conn.xtest_fake_input(ty, code, x11rb::CURRENT_TIME, root, 0, 0, 0)
                 .map_err(|e| PasteError::Os(format!("XTest 실패: {e}")))
                 .map(|_| ())
         };
-        fake(KEY_PRESS, ctrl)?;
-        fake(KEY_PRESS, v)?;
-        fake(KEY_RELEASE, v)?;
-        fake(KEY_RELEASE, ctrl)?;
+        if with_ctrl {
+            fake(KEY_PRESS, ctrl)?;
+        }
+        fake(KEY_PRESS, main)?;
+        fake(KEY_RELEASE, main)?;
+        if with_ctrl {
+            fake(KEY_RELEASE, ctrl)?;
+        }
         conn.flush()
             .map_err(|e| PasteError::Os(format!("X flush 실패: {e}")))?;
         // 서버가 처리했는지 왕복 한 번(에러 이벤트는 여기서 드러난다).
@@ -935,6 +999,10 @@ mod imp {
     }
 
     pub(super) fn send_paste(_: PasteAs) -> Result<(), PasteError> {
+        Err(PasteError::Unsupported(PasteUnsupported::NotImplemented))
+    }
+
+    pub(super) fn send_newline() -> Result<(), PasteError> {
         Err(PasteError::Unsupported(PasteUnsupported::NotImplemented))
     }
 

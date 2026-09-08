@@ -37,53 +37,16 @@ use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::{Key, NamedKey};
 use winit::window::{Window, WindowId, WindowLevel};
 
-/// ★ 단축키 표기(09-07 사용자 확정 · docs/04 §2-1 키맵) — 보이는 것은 한 벌, 손에 익는 것은 그 OS(DR-2).
-///   번호 선택 = Win/Linux `Ctrl+n` · mac `⌘n`(Maccy·CopyQ·Ditto 관례) · 보기 전환 = `Alt+1/2/3` · mac `⌥1/2/3` ·
-///   설정 = `Ctrl+,` · mac `⌘,`.
-pub(crate) fn number_badge(n: usize) -> String {
-    if cfg!(target_os = "macos") {
-        format!("⌘{n}")
-    } else {
-        format!("Ctrl+{n}")
-    }
-}
-/// 설정 바로가기 표기.
-pub(crate) const SETTINGS_KEY_LABEL: &str = if cfg!(target_os = "macos") {
-    "⌘,"
-} else {
-    "Ctrl+,"
-};
-/// 보기 전환 표기.
-pub(crate) const VIEW_KEY_LABEL: &str = if cfg!(target_os = "macos") {
-    "⌥1/2/3"
-} else {
-    "Alt+1/2/3"
-};
-
-/// ★ 물리 숫자 키 1~9(09-07) — 논리 키가 아니라 **자리**로 잡는다: AZERTY처럼 숫자에 Shift가 필요한 배열,
-///   mac `⌥1`이 `¡` 같은 기호로 오는 경우, 한글 자판 전부에서 같은 자리가 같은 번호다.
-pub(crate) fn digit_of(pk: &winit::keyboard::PhysicalKey) -> Option<usize> {
-    use winit::keyboard::{KeyCode as K, PhysicalKey};
-    let PhysicalKey::Code(code) = pk else {
-        return None;
-    };
-    Some(match code {
-        K::Digit1 => 1,
-        K::Digit2 => 2,
-        K::Digit3 => 3,
-        K::Digit4 => 4,
-        K::Digit5 => 5,
-        K::Digit6 => 6,
-        K::Digit7 => 7,
-        K::Digit8 => 8,
-        K::Digit9 => 9,
-        _ => return None,
-    })
-}
-
+/// ★ 단축키(09-07 사용자 확정 · 09-08 설정 승격) — 표기·판정 모두 [`crate::keys::Keymap`](설정 `key.*`)에서
+///   나온다. 보이는 것은 한 벌, 손에 익는 것은 그 OS(DR-2) — 기본값이 OS별(`Ctrl+n` · mac `⌘n`).
+///   물리 키 **자리**로 잡는다(09-07): AZERTY처럼 숫자에 Shift가 필요한 배열, mac `⌥1`이 `¡`로 오는 경우,
+///   한글 자판 전부에서 같은 자리가 같은 키다.
 /// 팝업 논리 크기 — 목록 ~9행.
 const POPUP_W: f64 = 380.0;
 const POPUP_H: f64 = 400.0;
+/// 푸터 높이(논리 px) — 힌트 1줄 · ★ 스택이 쌓이면 2줄(09-08 · 변형 4종 + 담기 키를 전부 보인다).
+const FOOTER_H: f32 = 24.0;
+const FOOTER_STACK_H: f32 = 40.0;
 
 /// 팝업에서 셸로 되돌리는 행동.
 #[derive(Debug, PartialEq, Eq)]
@@ -96,8 +59,16 @@ pub(crate) enum PopupAction {
     SearchMode(&'static str),
     /// ★ 설정 창 열기(09-07 사용자 — `Ctrl+,` · mac `⌘,` · docs/04 §2-1 키맵) — 셸이 팝업을 닫고 설정 창을 띄운다.
     OpenSettings,
-    /// ★ 붙여넣기 스택(09-03 ③ — Ditto 화법): 표시 순서대로 **순차** 붙여넣기.
-    PickStack(Vec<u64>),
+    /// ★ 붙여넣기 스택(09-03 ③ — Ditto 화법): 담은 순서대로 **순차** 붙여넣기.
+    ///   09-08 사용자: 원본/평문 × 항목 사이 줄바꿈(`Alt+Enter` · `Shift+Alt+Enter`).
+    PickStack {
+        /// 담은 순서의 항목 id.
+        ids: Vec<u64>,
+        /// 원본 또는 평문.
+        as_: PasteAs,
+        /// 항목 사이에 Enter 한 번.
+        newline: bool,
+    },
     /// ★ 항목 선택 — `index`는 **이력 인덱스**(필터를 통과해 되돌린 값).
     Pick {
         /// 이력 인덱스(0 = 최신).
@@ -176,8 +147,10 @@ pub(crate) struct Popup {
     shift: bool,
     ctrl: bool,
     alt: bool,
-    /// ⌘(mac)/Win — ★ 설정 바로가기(09-07)에만 쓴다: 붙여넣기 모드는 여전히 ⇧/Ctrl/Alt(09-01 확정).
+    /// ⌘(mac)/Win — 창 안 키맵 판정용(09-07·09-08): 붙여넣기 수식 변형은 여전히 ⇧/Ctrl/Alt(09-01 확정).
     meta: bool,
+    /// ★ 창 안 키맵(09-08 · 설정 `key.*`) — 셸이 바뀔 때마다 넘긴다.
+    keymap: crate::keys::Keymap,
     /// ★ 한 번이라도 포커스를 받았는가 — **생성 직후의 `Focused(false)`로 닫히지 않게**.
     ///   (잠금 화면·창 관리자에 따라 초기 이벤트 순서가 다르다 — 08-28 실기.)
     was_focused: bool,
@@ -341,6 +314,7 @@ impl Popup {
             ctrl: false,
             alt: false,
             meta: false,
+            keymap: crate::keys::Keymap::default(),
             was_focused: false,
             opened_at: std::time::Instant::now(),
             fresh_press: false,
@@ -357,7 +331,7 @@ impl Popup {
         let Some(win) = &self.window else { return None };
         let size = win.inner_size();
         let px = |v: f32| (v * self.scale).round() as i32;
-        let (header_h, footer_h) = (px(38.0), px(24.0));
+        let (header_h, footer_h) = (px(38.0), self.footer_h());
         let list_bot = size.height as i32 - footer_h;
         if x < 0 || x >= size.width as i32 || y < header_h || y >= list_bot {
             return None;
@@ -403,7 +377,7 @@ impl Popup {
             return;
         }
         let px = |v: f32| (v * self.scale).round() as i32;
-        let list_h = ((win.inner_size().height as i32 - px(24.0)) - px(38.0)).max(1);
+        let list_h = ((win.inner_size().height as i32 - self.footer_h()) - px(38.0)).max(1);
         let (top, bot) = (self.row_offs[self.sel], self.row_offs[self.sel + 1]);
         if top < self.scroll {
             self.scroll = top;
@@ -503,7 +477,7 @@ impl Popup {
             0,
             px(38.0),
             sz.width as i32,
-            (sz.height as i32 - px(24.0) - px(38.0)).max(1),
+            (sz.height as i32 - self.footer_h() - px(38.0)).max(1),
         ))
     }
 
@@ -593,14 +567,20 @@ impl Popup {
         self.search.display_text() != before
     }
 
-    /// ★ 설정 바로가기의 주 수식 키(09-07) — mac은 ⌘, 그 외는 Ctrl(메인창 `primary`와 같은 규칙 · DR-2
-    ///   "동작 관례는 각 OS 네이티브"). 팝업의 붙여넣기 모드(⇧/Ctrl/Alt)와는 별개다.
-    fn settings_primary(&self) -> bool {
-        if cfg!(target_os = "macos") {
-            self.meta
+    /// 푸터 높이(물리 px) — 스택이 쌓이면 2줄(09-08).
+    fn footer_h(&self) -> i32 {
+        let v = if self.marked.is_empty() {
+            FOOTER_H
         } else {
-            self.ctrl
-        }
+            FOOTER_STACK_H
+        };
+        (v * self.scale).round() as i32
+    }
+
+    /// ★ 창 안 키맵 교체(09-08) — 설정이 바뀌면 셸이 준다(표시·판정이 같이 바뀐다).
+    pub(crate) fn set_keymap(&mut self, km: crate::keys::Keymap) {
+        self.keymap = km;
+        self.redraw();
     }
 
     /// 눌린 수식 키 → 붙여넣기 모드(09-01 확정: ⇧ 평문 · Ctrl 개체 · Alt 경로 · 기본 원본).
@@ -1060,11 +1040,21 @@ impl Popup {
                     return PopupAction::None;
                 }
                 self.fresh_press = true;
-                // ★ 번호 선택(09-07 사용자 확정 · FR-P-8) — Win/Linux `Ctrl+1~9` · mac `⌘1~9`: **보이는 순서**
-                //   N번째(필터 적용 후 · 핀 구획 포함)를 **원본 그대로** 붙여넣는다. Ctrl을 누른 채 치므로
-                //   "Ctrl = 개체" 수식 규칙은 적용하지 않는다(Maccy `⌘n`과 같은 화법). `!alt` = AltGr 배제.
-                if let Some(n) = digit_of(&event.physical_key) {
-                    if self.settings_primary() && !self.alt {
+                // ★ 창 안 키맵(09-08 사용자 — 설정 `key.*` · 물리 키 자리 · 수식 키 넷 정확 일치). 검색창 편집
+                //   (Ctrl+A/C/X/V · 캐럿 이동)과 글자 입력은 아래 논리 키 분기가 맡는다.
+                if let Some(c) = crate::keys::Chord::of(
+                    &event.physical_key,
+                    self.ctrl,
+                    self.shift,
+                    self.alt,
+                    self.meta,
+                ) {
+                    if self.keymap.is("key.settings", c) {
+                        return PopupAction::OpenSettings;
+                    }
+                    // ★ 번호 선택(09-07 사용자 확정 · FR-P-8) — **보이는 순서** N번째(필터 후 · 핀 구획 포함)를
+                    //   **원본 그대로**. 수식 키를 쥔 채 치므로 "Ctrl = 개체" 변형은 적용하지 않는다(Maccy `⌘n`).
+                    if let Some(n) = self.keymap.pick_n(c) {
                         if let Some(row) = self.rows.get(n - 1) {
                             return PopupAction::Pick {
                                 index: row.hist_index,
@@ -1072,6 +1062,43 @@ impl Popup {
                             };
                         }
                         return PopupAction::None;
+                    }
+                    if self.keymap.is("key.stack_toggle", c) {
+                        self.toggle_mark(self.sel);
+                        return PopupAction::None;
+                    }
+                    if self.marked.is_empty() {
+                        let plain = self.keymap.is("key.pick_plain", c);
+                        if plain || self.keymap.is("key.pick", c) {
+                            if let Some(row) = self.rows.get(self.sel) {
+                                return PopupAction::Pick {
+                                    index: row.hist_index,
+                                    as_: if plain {
+                                        PasteAs::Plain
+                                    } else {
+                                        PasteAs::Original
+                                    },
+                                };
+                            }
+                            return PopupAction::Close;
+                        }
+                    } else {
+                        // ★ 스택이 쌓여 있으면 순차 붙여넣기 4변형(09-03 ③ · 09-08 사용자: 원본/평문 × 줄바꿈).
+                        const STACK: [(&str, PasteAs, bool); 4] = [
+                            ("key.stack_paste", PasteAs::Original, false),
+                            ("key.stack_paste_nl", PasteAs::Original, true),
+                            ("key.stack_paste_plain", PasteAs::Plain, false),
+                            ("key.stack_paste_plain_nl", PasteAs::Plain, true),
+                        ];
+                        if let Some((_, as_, newline)) =
+                            STACK.iter().copied().find(|(k, _, _)| self.keymap.is(k, c))
+                        {
+                            return PopupAction::PickStack {
+                                ids: std::mem::take(&mut self.marked),
+                                as_,
+                                newline,
+                            };
+                        }
                     }
                 }
                 match event.logical_key.as_ref() {
@@ -1088,11 +1115,11 @@ impl Popup {
                         self.ensure_visible();
                         self.redraw();
                     }
-                    Key::Named(NamedKey::Enter) => {
-                        // ★ 스택이 쌓여 있으면 Enter = 순차 붙여넣기(09-03 ③).
-                        if !self.marked.is_empty() {
-                            return PopupAction::PickStack(std::mem::take(&mut self.marked));
-                        }
+                    // ★ 키맵에 없는 Ctrl/Alt+Enter = D-38 수식 키 변형(Ctrl=개체 · Alt=경로 · 09-01 확정) —
+                    //   단일 항목일 때만. 스택 중 미지정 조합은 무시(09-08).
+                    Key::Named(NamedKey::Enter)
+                        if self.marked.is_empty() && (self.ctrl || self.alt) =>
+                    {
                         if let Some(row) = self.rows.get(self.sel) {
                             return PopupAction::Pick {
                                 index: row.hist_index,
@@ -1100,11 +1127,6 @@ impl Popup {
                             };
                         }
                         return PopupAction::Close;
-                    }
-                    // ★ Ctrl+Space = 현재 행 스택 토글(Space 단독은 검색어 몫 · 09-03 ③).
-                    Key::Named(NamedKey::Space) if self.ctrl => {
-                        self.toggle_mark(self.sel);
-                        return PopupAction::None;
                     }
                     Key::Named(NamedKey::Backspace) => {
                         if self.feed_search(&CtlEvent::Char {
@@ -1136,11 +1158,6 @@ impl Popup {
                             primary: self.ctrl,
                         });
                         self.redraw();
-                    }
-                    // ★ 설정 바로가기(09-07 사용자 · docs/04 §2-1 키맵) — Win/Linux `Ctrl+,` · mac `⌘,`.
-                    //   전역이 아니라 **창 안** 단축키다(전역으로 잡으면 다른 앱의 Ctrl+, 설정 열기를 가로챈다).
-                    Key::Character(",") if self.settings_primary() => {
-                        return PopupAction::OpenSettings;
                     }
                     // ★ 클립보드 단축(09-02 — 메인과 동일). Ctrl+V는 유예와 무관.
                     Key::Character("a" | "A") if self.ctrl => {
@@ -1235,7 +1252,8 @@ impl Popup {
         let (iw, ih) = (size.width as i32, size.height as i32);
         let sc = self.scale;
         let px = move |v: f32| (v * sc).round() as i32;
-        let list_h = ((ih - px(24.0)) - px(38.0)).max(1);
+        let footer_h = self.footer_h();
+        let list_h = ((ih - footer_h) - px(38.0)).max(1);
         self.rebuild_offsets(iw);
         let Some(surface) = self.surface.as_mut() else {
             return;
@@ -1274,11 +1292,12 @@ impl Popup {
                 self.view,
                 &self.row_offs,
                 &self.marked,
+                &self.keymap,
                 self.thumbs.as_ref(),
                 &self.row_fade,
             );
             let total = *self.row_offs.last().unwrap_or(&0);
-            let vp = nclip_ctl::geom::Rect::new(0, px(38.0), iw, (ih - px(24.0) - px(38.0)).max(1));
+            let vp = nclip_ctl::geom::Rect::new(0, px(38.0), iw, (ih - footer_h - px(38.0)).max(1));
             self.bars.paint(
                 &mut dc,
                 &self.theme,
@@ -1324,6 +1343,7 @@ fn draw(
     view: ViewMode,
     offs: &[i32],
     marked: &[u64],
+    km: &crate::keys::Keymap,
     thumbs: Option<&crate::thumbs::Thumbs>,
     row_fade: &nclip_ctl::tokens::HoverFade,
 ) {
@@ -1332,7 +1352,11 @@ fn draw(
     dc.select_font(FontSlot::Base, false);
 
     let header_h = px(38.0);
-    let footer_h = px(24.0);
+    let footer_h = px(if marked.is_empty() {
+        FOOTER_H
+    } else {
+        FOOTER_STACK_H
+    });
     let pad = px(10.0);
     let row_h = match view {
         ViewMode::Rich => px(76.0),
@@ -1427,10 +1451,10 @@ fn draw(
         // 우측 ×n — 모든 모드 공통.
         let mut right = w - pad;
         // ★ 번호 단축키 배지(09-07) — 1~9번째 행 우측 끝(Maccy 화법 · 배지 = 누르면 이 행). 스택 순번이
-        //   같은 자리를 쓰는 행은 스택 표시가 우선.
-        if vi < 9 && !marked.contains(&row.id) {
+        //   같은 자리를 쓰는 행은 스택 표시가 우선 · 설정에서 지웠으면(빈 표기) 안 그린다(09-08).
+        let tag = km.number_badge(vi + 1);
+        if vi < 9 && !tag.is_empty() && !marked.contains(&row.id) {
             dc.select_font(FontSlot::Status, false);
-            let tag = number_badge(vi + 1);
             let tw = dc.text_width(&tag);
             right -= tw;
             dc.text(right, y + px(6.0), clip, &tag, th.text_dim);
@@ -1595,21 +1619,36 @@ fn draw(
     let fy = h - footer_h;
     dc.fill_rect(Rect::new(0, fy, w, footer_h), th.chrome_bg);
     dc.fill_rect(Rect::new(0, fy, w, 1), th.border);
-    // ★ 힌트: 스택이 쌓이면 스택 힌트(09-03 ③) · 아니면 항목 종류(DR-35).
+    // ★ 힌트: 스택이 쌓이면 스택 힌트 2줄(09-03 ③ · 09-08 변형 4종) · 아니면 항목 종류(DR-35).
+    //   키 표기는 전부 설정값(`key.*`) — 바꾼 값이 곧 힌트다.
     let lang = current_lang();
-    let stack_hint: String;
-    let hint: &str = if marked.is_empty() {
-        match rows.get(sel).map(|r| r.kind) {
-            Some(ClipKind::Files) => tr(lang, Msg::HintFiles),
-            Some(ClipKind::RichText) => tr(lang, Msg::HintRich),
-            Some(ClipKind::Image | ClipKind::Object) => tr(lang, Msg::HintImage),
-            _ => tr(lang, Msg::HintDefault),
-        }
+    use crate::keys::with_key;
+    if marked.is_empty() {
+        let pick = km.label("key.pick");
+        let hint = match rows.get(sel).map(|r| r.kind) {
+            Some(ClipKind::Files) => with_key(tr(lang, Msg::HintFiles), &pick),
+            Some(ClipKind::RichText) => with_key(
+                &with_key(tr(lang, Msg::HintRich), &pick),
+                &km.label("key.pick_plain"),
+            ),
+            Some(ClipKind::Image | ClipKind::Object) => with_key(tr(lang, Msg::HintImage), &pick),
+            _ => with_key(tr(lang, Msg::HintDefault), &pick),
+        };
+        dc.text(pad, fy + px(5.0), full, &hint, th.text_dim);
     } else {
-        stack_hint = tr(lang, Msg::HintStack).replacen("{}", &marked.len().to_string(), 1);
-        &stack_hint
-    };
-    dc.text(pad, fy + px(5.0), full, hint, th.text_dim);
+        let l1 = tr(lang, Msg::HintStack)
+            .replacen("{}", &marked.len().to_string(), 1)
+            .replacen("{}", &km.label("key.stack_paste"), 1)
+            .replacen("{}", &km.label("key.stack_paste_nl"), 1);
+        let l2 = tr(lang, Msg::HintStack2)
+            .replacen("{}", &km.label("key.stack_paste_plain"), 1)
+            .replacen("{}", &km.label("key.stack_paste_plain_nl"), 1)
+            .replacen("{}", &km.label("key.stack_toggle"), 1);
+        dc.select_font(FontSlot::Status, false);
+        dc.text(pad, fy + px(4.0), full, &l1, th.text_dim);
+        dc.text(pad, fy + px(21.0), full, &l2, th.text_dim);
+        dc.select_font(FontSlot::Base, false);
+    }
 
     // 검색 우클릭 편집 메뉴 — 맨 위 레이어(z = 그리는 순서).
     search.paint_popup(dc, &th);

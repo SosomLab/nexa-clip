@@ -220,6 +220,11 @@ pub(crate) struct MainWin {
     shift: bool,
     primary: bool,
     alt: bool,
+    /// ★ 창 안 키맵 판정용 물리 수식 키(09-08) — `primary`는 OS별 주 수식 키(⌘/Ctrl)로 편집 키에 남긴다.
+    ctrl: bool,
+    meta: bool,
+    /// ★ 창 안 키맵(09-08 · 설정 `key.*`) — 셸이 바뀔 때마다 넘긴다.
+    keymap: crate::keys::Keymap,
     /// 더블클릭 판정 — (시각, 행).
     last_click: Option<(Instant, usize)>,
     /// ★ 활성 대상 따라가기(09-04 사용자 — "선택이 아니라 **활성 대상**을 바꾸는 것"): 더블클릭/Enter로
@@ -332,6 +337,9 @@ impl MainWin {
             shift: false,
             primary: false,
             alt: false,
+            ctrl: false,
+            meta: false,
+            keymap: crate::keys::Keymap::default(),
             last_click: None,
             follow: None,
             follow_scroll: false,
@@ -417,6 +425,12 @@ impl MainWin {
 
     /// ★ 최상위 고정 적용(09-02) — 토글 즉시 창 레벨 반영.
     /// ★ 고정폭 글꼴 주입(09-04) — 셸이 `ui.font_mono`로 만든 것.
+    /// ★ 창 안 키맵 교체(09-08) — 설정이 바뀌면 셸이 준다(배지·상태줄·툴팁·판정이 같이 바뀐다).
+    pub(crate) fn set_keymap(&mut self, km: crate::keys::Keymap) {
+        self.keymap = km;
+        self.redraw();
+    }
+
     pub(crate) fn set_mono_font(&mut self, font: Option<Font>) {
         self.font_mono = font;
     }
@@ -1333,10 +1347,12 @@ impl MainWin {
             WindowEvent::ModifiersChanged(m) => {
                 self.shift = m.state().shift_key();
                 self.alt = m.state().alt_key();
+                self.ctrl = m.state().control_key();
+                self.meta = m.state().super_key();
                 self.primary = if cfg!(target_os = "macos") {
-                    m.state().super_key()
+                    self.meta
                 } else {
-                    m.state().control_key()
+                    self.ctrl
                 };
             }
             WindowEvent::CursorMoved { position, .. } => {
@@ -1597,12 +1613,21 @@ impl MainWin {
                 if event.state != ElementState::Pressed {
                     return MainAction::None;
                 }
-                // ★ 숫자 키(09-07 사용자 확정 · 물리 키 자리로) — 두 의미를 수식 키로 가른다:
-                //   ① `Ctrl+1~9`(mac `⌘`) = **보이는 순서 N번째 선택**(FR-P-8 · Maccy·CopyQ·Ditto 관례) → Enter와
-                //      같은 길(원본 복사 + 따라가기). ② `Alt+1/2/3`(mac `⌥`) = **보기 3모드**(docs/04 V-2 —
-                //      종전 Ctrl+1/2/3에서 옮김: Ctrl+숫자는 항목 선택 관례라 충돌). `Ctrl+Alt` 동시 = AltGr → 둘 다 아님.
-                if let Some(n) = crate::popup_win::digit_of(&event.physical_key) {
-                    if self.primary && !self.alt {
+                // ★ 창 안 키맵(09-07 사용자 확정 · 09-08 설정 승격 — `key.*` · 물리 키 자리 · 수식 키 정확 일치):
+                //   ① `key.pick_n`(기본 `Ctrl+1~9` · mac `⌘`) = **보이는 순서 N번째 선택**(FR-P-8 · Maccy·CopyQ·Ditto
+                //      관례) → Enter와 같은 길(원본 복사 + 따라가기). ② `key.view_*`(기본 `Alt+1/2/3`) = 보기 3모드.
+                //   ③ 고정·삭제·설정·복사(원본/평문). `Ctrl+Alt` 동시 = AltGr → 정확 일치라 자연히 배제.
+                if let Some(c) = crate::keys::Chord::of(
+                    &event.physical_key,
+                    self.ctrl,
+                    self.shift,
+                    self.alt,
+                    self.meta,
+                ) {
+                    if self.keymap.is("key.settings", c) {
+                        return MainAction::OpenSettings;
+                    }
+                    if let Some(n) = self.keymap.pick_n(c) {
                         if let Some(row) = self.rows.get(n - 1) {
                             let id = row.id;
                             self.sel = n - 1;
@@ -1617,16 +1642,45 @@ impl MainWin {
                         }
                         return MainAction::None;
                     }
-                    if self.alt && !self.primary && n <= 3 {
-                        let (v, code) = match n {
-                            1 => (ViewMode::Rich, "rich"),
-                            2 => (ViewMode::Compact, "compact"),
-                            _ => (ViewMode::Plain, "plain"),
-                        };
+                    const VIEWS: [(&str, ViewMode, &str); 3] = [
+                        ("key.view_rich", ViewMode::Rich, "rich"),
+                        ("key.view_compact", ViewMode::Compact, "compact"),
+                        ("key.view_plain", ViewMode::Plain, "plain"),
+                    ];
+                    if let Some((_, v, code)) =
+                        VIEWS.iter().copied().find(|(k, _, _)| self.keymap.is(k, c))
+                    {
                         if self.view != v {
                             self.view = v;
                             self.redraw();
                             return MainAction::SetViewMode(code);
+                        }
+                        return MainAction::None;
+                    }
+                    if self.keymap.is("key.pin", c) {
+                        if let Some(id) = self.selected_id() {
+                            return MainAction::TogglePin(id);
+                        }
+                        return MainAction::None;
+                    }
+                    if self.keymap.is("key.delete", c) {
+                        if let Some(id) = self.selected_id() {
+                            return MainAction::Delete(id);
+                        }
+                        return MainAction::None;
+                    }
+                    let plain = self.keymap.is("key.pick_plain", c);
+                    if plain || self.keymap.is("key.pick", c) {
+                        if let Some(id) = self.selected_id() {
+                            self.arm_follow();
+                            return MainAction::Copy {
+                                id,
+                                as_: if plain {
+                                    PasteAs::Plain
+                                } else {
+                                    PasteAs::Original
+                                },
+                            };
                         }
                         return MainAction::None;
                     }
@@ -1647,24 +1701,7 @@ impl MainWin {
                         self.ensure_visible(h);
                         self.redraw();
                     }
-                    Key::Named(NamedKey::Enter) => {
-                        if let Some(id) = self.selected_id() {
-                            self.arm_follow();
-                            return MainAction::Copy {
-                                id,
-                                as_: if self.shift {
-                                    PasteAs::Plain
-                                } else {
-                                    PasteAs::Original
-                                },
-                            };
-                        }
-                    }
-                    Key::Named(NamedKey::Delete) => {
-                        if let Some(id) = self.selected_id() {
-                            return MainAction::Delete(id);
-                        }
-                    }
+                    // (Enter·Delete·Ctrl+P·Ctrl+, 는 위 키맵이 맡는다 — 09-08 설정 승격)
                     Key::Named(NamedKey::Backspace) => {
                         let mut inv = Invalidations::default();
                         self.search.on_event(
@@ -1727,14 +1764,6 @@ impl MainWin {
                             return MainAction::QueryChanged;
                         }
                     }
-                    Key::Character("p" | "P") if self.primary => {
-                        if let Some(id) = self.selected_id() {
-                            return MainAction::TogglePin(id);
-                        }
-                    }
-                    // ★ 설정 바로가기(09-07 사용자 · docs/04 §2-1 키맵) — Win/Linux `Ctrl+,` · mac `⌘,`.
-                    //   툴바 ⚙와 같은 길(`Tool::Settings`) · 창 안 단축키(전역 아님).
-                    Key::Character(",") if self.primary => return MainAction::OpenSettings,
                     Key::Character(t) if !self.primary => {
                         let mut changed = false;
                         let mut inv = Invalidations::default();
@@ -2042,10 +2071,10 @@ impl MainWin {
                     }
                 }
                 let mut right = list.x + list.w - pad;
-                // ★ 번호 단축키 배지(09-07) — 1~9번째 행 우측 끝(팝업과 같은 화법).
-                if vi < 9 {
+                // ★ 번호 단축키 배지(09-07) — 1~9번째 행 우측 끝(팝업과 같은 화법) · 설정값(09-08).
+                let tag = self.keymap.number_badge(vi + 1);
+                if vi < 9 && !tag.is_empty() {
                     dc.select_font(FontSlot::Status, false);
-                    let tag = crate::popup_win::number_badge(vi + 1);
                     let tw = dc.text_width(&tag);
                     right -= tw;
                     dc.text(right, y + px(6.0), clip, &tag, th.text_dim);
@@ -2208,10 +2237,10 @@ impl MainWin {
             }
             // 우측 메타(출처 · ×n) 먼저 재서 라벨 clip을 줄인다.
             let mut right = list.x + list.w - pad;
-            // ★ 번호 단축키 배지(09-07) — 1~9번째 행 우측 끝.
-            if vi < 9 {
+            // ★ 번호 단축키 배지(09-07) — 1~9번째 행 우측 끝 · 설정값(09-08).
+            let tag = self.keymap.number_badge(vi + 1);
+            if vi < 9 && !tag.is_empty() {
                 dc.select_font(FontSlot::Status, false);
-                let tag = crate::popup_win::number_badge(vi + 1);
                 let tw = dc.text_width(&tag);
                 right -= tw;
                 dc.text(right, text_y, clip, &tag, th.text_dim);
@@ -2431,11 +2460,14 @@ impl MainWin {
                     ViewMode::Plain => Msg::ViewPlain,
                 },
             );
-            let s = tr(lang, Msg::StatusView).replacen("{}", name, 1).replacen(
-                "{}",
-                crate::popup_win::VIEW_KEY_LABEL,
-                1,
-            );
+            // ★ 전환 키 표기는 설정값(09-08) — 셋 다 지웠으면 이름만.
+            let view_key = self.keymap.view_label();
+            let s = tr(lang, Msg::StatusView).replacen("{}", name, 1);
+            let s = if view_key.is_empty() {
+                s.replace(" · {}", "")
+            } else {
+                s.replacen("{}", &view_key, 1)
+            };
             let tw = dc.text_width(&s);
             dc.text(w - pad - px(18.0) - tw, sy + px(4.0), full, &s, th.text_dim);
         }
@@ -3210,19 +3242,22 @@ impl MainWin {
     /// 툴바 툴팁 — ★ 감시 토글은 상태 의존(현재 상태 + 누르면 바뀌는 상태 · 09-04).
     fn tool_label(&self, t: Tool) -> String {
         let lang = current_lang();
-        // ★ ⚙는 단축키를 함께(09-07 — `Ctrl+,` · mac `⌘,`).
-        if t == Tool::Settings {
-            return tr(lang, Msg::TipSettings).replacen(
-                "{}",
-                crate::popup_win::SETTINGS_KEY_LABEL,
-                1,
-            );
+        // ★ 단축키를 함께(09-07 ⚙ · 09-08 전부 설정값 — 지운 키는 괄호째 뺀다).
+        use crate::keys::with_key;
+        let keyed = match t {
+            Tool::Settings => Some((Msg::TipSettings, "key.settings")),
+            Tool::Pin => Some((Msg::TipPin, "key.pin")),
+            Tool::Delete => Some((Msg::TipDelete, "key.delete")),
+            Tool::Copy => Some((Msg::TipCopy, "key.pick")),
+            Tool::CopyPlain => Some((Msg::TipCopyPlain, "key.pick_plain")),
+            _ => None,
+        };
+        if let Some((m, key)) = keyed {
+            return with_key(tr(lang, m), &self.keymap.label(key));
         }
         let s = match t {
-            Tool::Pin => tr(lang, Msg::TipPin),
-            Tool::Delete => tr(lang, Msg::TipDelete),
-            Tool::Copy => tr(lang, Msg::TipCopy),
-            Tool::CopyPlain => tr(lang, Msg::TipCopyPlain),
+            // 위에서 이미 돌려줬다 — match 완전성 몫.
+            Tool::Pin | Tool::Delete | Tool::Copy | Tool::CopyPlain => "",
             Tool::CopyImage => tr(lang, Msg::MenuCopyImage),
             Tool::Preview => tr(lang, Msg::TipPreview),
             Tool::Dedup => tr(lang, Msg::DedupLabel),

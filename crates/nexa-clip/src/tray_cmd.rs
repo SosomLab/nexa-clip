@@ -150,8 +150,15 @@ type PendingText = (u64, String, Vec<(String, [u8; 32], u64)>);
 pub(crate) enum ShellEvent {
     /// 트레이 좌클릭·메뉴 "열기" — 설정 창을 연다(있으면 앞으로).
     Open,
-    /// ★ 붙여넣기 스택(09-03 ③) — 팝업이 닫힌 다음 바퀴에 순차 주입.
-    PasteStack(Vec<u64>),
+    /// ★ 붙여넣기 스택(09-03 ③ · 09-08 원본/평문 × 줄바꿈) — 팝업이 닫힌 다음 바퀴에 순차 주입.
+    PasteStack {
+        /// 담은 순서의 항목 id.
+        ids: Vec<u64>,
+        /// 원본 또는 평문.
+        as_: PasteAs,
+        /// 항목 사이에 Enter 한 번.
+        newline: bool,
+    },
     /// ★ 동기화 릴레이 연결 상태(09-03) — 트레이 점·메인 인디케이터 갱신.
     SyncState(bool),
     /// ★ 러너 상태만 바뀜(접속 중·실패·중단) — 루프를 깨워 설정 창 폴링을 돌린다(09-03).
@@ -379,6 +386,8 @@ struct Shell {
     search_idx: crate::search_index::SearchIndex,
     /// ★ 마지막으로 플랫폼에 넘긴 단축키 설정 서명(09-04) — 바뀔 때만 재등록.
     hotkey_sig: String,
+    /// ★ 창 안 키맵 변경 감지(09-08) — 바뀌면 팝업·메인창에 새 표를 준다.
+    keymap_sig: String,
     /// ★ 감시 끄기(09-04 사용자 — 툴바 토글): 켜지면 로컬 캡처 사건을 버린다. 세션 한정(재시작 = 켜짐).
     watch_off: bool,
 }
@@ -491,6 +500,18 @@ impl Shell {
         }
         self.hotkey_sig = sig;
         nclip_plat::tray::set_hotkeys(list, label);
+    }
+
+    /// ★ 창 안 키맵 동기(09-08) — 설정 `key.*`(창 안)가 바뀌면 팝업·메인창에 새 표를 준다. 바뀐 게 없으면 no-op.
+    fn apply_keymap(&mut self) {
+        let sig = crate::keys::Keymap::sig(&self.app.conf);
+        if sig == self.keymap_sig {
+            return;
+        }
+        self.keymap_sig = sig;
+        let km = crate::keys::Keymap::from_conf(&self.app.conf);
+        self.main.set_keymap(km.clone());
+        self.popup.set_keymap(km);
     }
 
     /// ★ 평문 붙여넣기 단축키(09-04 · CopyQ "클립보드를 일반 문자로 붙여넣기"): 맨 앞 항목의 평문을 게시 → 지금 포그라운드에
@@ -1272,14 +1293,17 @@ impl Shell {
 
     /// ★ 순차 붙여넣기(09-03 ③ — Ditto 화법): 스택 순서대로 게시→주입을 반복한다.
     ///
+    /// 09-08 사용자: `as_` = 원본/평문(평문 표현이 없는 항목 — 이미지·개체 — 은 원본으로 · 건너뛰지 않는다) ·
+    /// `newline` = 항목 **사이**에 Enter 한 번([`PasteInjector::send_newline`] — 마지막 뒤엔 없다).
     /// 게시/주입 사이 짧은 간격은 대상 앱이 각 붙여넣기를 처리할 시간(실측 보수치).
     /// 각 게시는 같은 내용 재복사와 같아 이력에선 **승격**으로 흡수된다(항목 증식 없음).
-    fn paste_stack(&mut self, ids: &[u64]) {
+    fn paste_stack(&mut self, ids: &[u64], as_: PasteAs, newline: bool) {
         if !self.paste_auto {
             eprintln!("순차 붙여넣기는 자동 붙여넣기(paste.auto)가 켜져 있어야 합니다");
             return;
         }
         let n = ids.len();
+        let mut done = 0usize;
         for (k, id) in ids.iter().enumerate() {
             let _ = self.ensure_loaded(*id); // 본문 지연 로드(09-03).
             let Some(item) = (0..self.history.len())
@@ -1288,20 +1312,38 @@ impl Shell {
             else {
                 continue;
             };
-            let reps = item.reps.clone();
+            let mut reps = Self::reps_for_mode(item, as_);
+            if reps.is_empty() {
+                reps = item.reps.clone(); // 평문이 없는 항목은 원본으로.
+            }
             if let Err(e) = nclip_plat::clipboard::set_reps(&reps) {
                 eprintln!("스택 게시 실패({id}): {e}");
                 continue;
             }
             std::thread::sleep(std::time::Duration::from_millis(60));
-            if let Err(e) = self.paste.restore_and_paste(PasteAs::Original) {
+            if let Err(e) = self.paste.restore_and_paste(as_) {
                 eprintln!("스택 주입 실패({id}): {e:?}");
+                continue;
             }
+            done += 1;
             if k + 1 < n {
+                if newline {
+                    std::thread::sleep(std::time::Duration::from_millis(60));
+                    if let Err(e) = self.paste.send_newline() {
+                        eprintln!("스택 줄바꿈 실패({id}): {e:?}");
+                    }
+                }
                 std::thread::sleep(std::time::Duration::from_millis(160));
             }
         }
-        println!("순차 붙여넣기: {n}개");
+        println!(
+            "순차 붙여넣기: {done}/{n}개 · {} · 줄바꿈 {}",
+            match as_ {
+                PasteAs::Plain => "평문",
+                _ => "원본",
+            },
+            if newline { "있음" } else { "없음" }
+        );
     }
 
     /// 팝업이 닫힌 다음 바퀴 — 포커스 복원 + 키 주입.
@@ -1512,9 +1554,11 @@ impl ApplicationHandler<ShellEvent> for Shell {
                     self.open_settings(el);
                 }
                 PopupAction::Pick { index, as_ } => self.pick(index, as_),
-                PopupAction::PickStack(ids) => {
+                PopupAction::PickStack { ids, as_, newline } => {
                     self.close_popup();
-                    let _ = self.proxy.send_event(ShellEvent::PasteStack(ids));
+                    let _ = self
+                        .proxy
+                        .send_event(ShellEvent::PasteStack { ids, as_, newline });
                 }
             }
             return;
@@ -1563,7 +1607,7 @@ impl ApplicationHandler<ShellEvent> for Shell {
             },
             ShellEvent::RestoreClipboard(id) => self.restore_clipboard(id),
             ShellEvent::PasteAfterClose(as_) => self.paste_now(as_),
-            ShellEvent::PasteStack(ids) => self.paste_stack(&ids),
+            ShellEvent::PasteStack { ids, as_, newline } => self.paste_stack(&ids, as_, newline),
             // ★ 연결 표시(09-04) — 릴레이 이벤트든 LAN 세션 변화(SyncTick)든 **같은 판정**으로 갱신:
             //   동기화 Off = 숨김 · 켜짐 = 릴레이 연결 ∨ LAN 피어 연결(릴레이 None·프로필 실행도 표시된다).
             ShellEvent::ThumbReady { id, w, h, rgba } => {
@@ -1643,8 +1687,9 @@ impl ApplicationHandler<ShellEvent> for Shell {
         if self.app.take_sync_respawn() {
             crate::sync_cmd::spawn_if_enabled(&self.app.conf, self.proxy.clone());
         }
-        // ★ 단축키 설정 동기(09-04) — 바뀌면 플랫폼 재등록(Windows 즉시).
+        // ★ 단축키 설정 동기(09-04) — 바뀌면 플랫폼 재등록(Windows 즉시) · 창 안 키맵(09-08)은 창에 새 표.
         self.apply_hotkeys(false);
+        self.apply_keymap();
         // ★ 검색 방식 동기(09-04 · `find.mode`) — 설정 창에서 바꾸면 다음 박동에 열린 창이 다시 거른다.
         let mode = nclip_core::search::Mode::from_code(self.app.conf.state.get("find.mode"));
         if self.main.set_search_mode(mode) {
@@ -1996,8 +2041,10 @@ pub(crate) fn run() {
         thumb_migrated: 0,
         search_idx: search_idx.clone(),
         hotkey_sig: hk_sig,
+        keymap_sig: String::new(),
         watch_off: false,
     };
+    shell.apply_keymap();
     shell.main.set_mono_font(mono_font.clone());
     shell.popup.set_mono_font(mono_font);
     shell.main.set_thumbs(thumbs.clone());

@@ -138,21 +138,37 @@ General 안내문 그대로:
 | `app.lang` | Combo | 시스템 | 언어(ko/en/ja) | B |
 | `app.data_path` | 정보행 | — | ★ 데이터 위치(포터블/폴백 **표시만**) | B |
 
-### 3-2. 단축키 (Shortcuts)
+### 3-2. 단축키 (Shortcuts) — ★ 09-08 구현 반영(하위 그룹 **전역 / 창 안**)
+
+**전역**(OS 등록 · 수식 키 필수 · `nclip_core::hotkey::ACTIONS`):
 
 | key | 종류 | 기본값(Win/Linux · mac) | 출처 |
 |---|---|---|:--:|
 | `key.open` | Hotkey | ★ **`Shift+Alt+C`**(09-04 사용자 · 종전 Ctrl+Shift+V) · mac ⇧⌥C | M |
 | `key.open_alt` | Hotkey | **없음**(보조 — 같은 동작 · 원하면 지정 · 09-04 사용자 "기본 None") | N |
 | `key.paste_plain` | Hotkey | `Shift+Alt+X` — 맨 앞 항목의 평문을 게시·주입 · 0.3초 뒤 원본 복원(09-04) | N |
-| `key.main_window` | Hotkey | — | N |
-| `key.pin` | Hotkey | `Ctrl+P` · `⌥P` | M |
-| `key.delete` | Hotkey | `Delete` · `⌥⌫` | M |
-| `key.preview` | Hotkey | `Ctrl+Space` · `^Space` | M |
-| `key.paste_plain` | Hotkey | `Shift+Enter` | M |
-| `key.view_mode_1/2/3` | Hotkey | `Ctrl+1/2/3` | N |
 
-> ★ 각 필드에 **✕(해제) 버튼**과 **충돌 감지 표시**(FR-U-9).
+**창 안**(09-08 사용자 — "각 단축키는 설정 가능하게 · 내장 단축키도 전부 항목에" · `WINDOW_ACTIONS` · OS 등록 없음 ·
+팝업/메인창이 **물리 키 자리 + 수식 키 넷 정확 일치**로 판정 · 글자·숫자·`,`만 Ctrl/Alt/Win 필수 · Enter/Delete/Space는 단독 가능):
+
+| key | 동작 | 기본값 Win/Linux · mac | 창 |
+|---|---|---|---|
+| `key.pick` | 선택 항목 붙여넣기 / 복사 (원본) | `Enter` | 팝업·메인 |
+| `key.pick_plain` | 평문으로 | `Shift+Enter` | 팝업·메인 |
+| `key.pick_n` | 보이는 N번째(숫자 자리 = 1~9) | `Ctrl+1` · `⌘1` | 팝업·메인 |
+| `key.stack_toggle` | 스택 담기/빼기 | `Ctrl+Space` | 팝업 |
+| `key.stack_paste` | 순차 붙여넣기(원본) | `Enter` | 팝업 |
+| `key.stack_paste_nl` | 순차 + 항목 사이 줄바꿈(Enter 주입) | `Alt+Enter` | 팝업 |
+| `key.stack_paste_plain` | 순차 평문 | `Shift+Enter` | 팝업 |
+| `key.stack_paste_plain_nl` | 순차 평문 + 줄바꿈 | `Shift+Alt+Enter` | 팝업 |
+| `key.pin` | 고정/해제 | `Ctrl+P` · `⌘P` | 메인 |
+| `key.delete` | 삭제 | `Delete` | 메인 |
+| `key.settings` | 설정 열기 | `Ctrl+,` · `⌘,` | 팝업·메인 |
+| `key.view_rich` / `_compact` / `_plain` | 보기 3모드 | `Alt+1/2/3` · `⌥1/2/3` | 메인 |
+
+> ★ 각 행은 **캡처 오버레이**(누르면 변경 · 제거 = 없음)로 바꾼다. 빈 값 = 그 동작 키 없음(배지·툴팁·힌트에서도 빠진다).
+> 표시(번호 배지 · 상태줄 `Alt+1/2/3` · ⚙ 툴팁 · 팝업 푸터 힌트)는 전부 설정값에서 나온다(`nexa-clip::keys::Keymap`).
+> 미구현(명세만): `key.main_window` · `key.preview` · 전체 비우기 · 충돌 감지 표시(FR-U-9).
 
 ### 3-3. 캡처 (Capture)
 
