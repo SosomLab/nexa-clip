@@ -10,7 +10,7 @@
 ★ **줄바꿈 = Enter 키 주입**(`PasteInjector::send_newline` — Win `SendInput` · mac `CGEvent` · Linux XTest/포털 `KEY_ENTER`): 클립보드에 `"\n"`을 올려 Ctrl+V 하면 이력에 공백 항목이 잡힌다. 마지막 항목 뒤엔 없음 · 평문 표현이 없는 항목(이미지)은 원본으로(건너뛰지 않는다).
 ★ **창 안 단축키 14종 → 설정**(`nclip_core::hotkey::WINDOW_ACTIONS` · 설정 → 단축키 → 하위 그룹 **전역**/**창 안**): 선택/평문/N번째(`Ctrl+1` 패턴)/스택 담기/순차 4변형/고정/삭제/설정/보기 3. 판정은 `nexa-clip::keys::Keymap`(물리 키 자리 · 수식 키 넷 **정확 일치** — AltGr 자연 배제) · 캡처 규칙 분리(전역 = 수식 필수 · 창 안 = 글자·숫자·`,`만) · `KeyCode` +`Backspace`·`,`.
 ★ **표시도 설정값**: 번호 배지 · 상태줄 `Alt+1/2/3`(수식 공유 시 접기) · 툴바 툴팁(📌 🗑 복사/평문 ⚙) · 팝업 푸터(스택 시 **2줄**: 개수·순차·+줄바꿈 / 평문·평문+줄바꿈·담기). 지운 키 = 배지·괄호 빠짐.
-**실측**: 워크스페이스 테스트 ✓(core 135 · ui 165 · nexa-clip 36 — `hotkey_rows_match_core`로 레지스트리 기본값 = core 원천 강제) · 3타깃 clippy(check-3os) · 릴리스 설치본 교체·재시작. **⏳ 실기** [21 §12-1 K12~K22](21-manual-test.md).
+**실측**: 워크스페이스 테스트 ✓(core 135 · ui 165 · nexa-clip 36 — `hotkey_rows_match_core`로 레지스트리 기본값 = core 원천 강제) · 3타깃 clippy(check-3os) ✓ · 릴리스 설치본 교체·재시작(2회 · #8648). **병합** `eb0dcb4`(main) · push · CI ⏳. **⏳ 실기** [21 §12-1 K12~K22](21-manual-test.md).
 
 ## 2026-09-07 (2차 · win) — ★ 창 안 키맵 정비(T-47) — 항목 선택 `Ctrl/⌘+1~9` · 보기 `Alt/⌥+1/2/3` · 적용 단축키를 화면에 표시
 
