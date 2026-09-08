@@ -70,6 +70,11 @@ Actions → publish-windows-packages → *Run workflow* · `force=true`. 첫 제
 xattr -dr com.apple.quarantine "/Applications/Nexa Clip.app"
 ```
 
+## ⚠️ macOS 손쉬운 사용 권한과 업그레이드
+
+TCC(권한 DB)는 앱을 번들 ID + **코드 서명 요구사항**으로 기억한다. 애드혹 서명은 요구사항이 바이너리 해시(`cdhash`)라 **업그레이드마다 옛 항목이 새 앱과 맞지 않는다** — 토글이 ON으로 보여도 `AXIsProcessTrusted = false`, 껐다 켜도 무효, 항목 삭제만 통한다(09-07 사용자 실기).
+→ Cask `postflight`와 앱 시작(`nclip-plat paste::warm_up`) 양쪽에서 `tccutil reset Accessibility io.github.sosomlab.nexa-clip`(sudo 불요)을 돌린 뒤 권한 대화상자를 띄운다 — 사용자는 [켜기]만. 근본 처방은 안정 서명 신원(요구사항이 인증서가 된다 · [TODO T-48](../docs/TODO.md)).
+
 ## 설치 위치와 권한
 
 Windows 설치본은 사용자 단위(`%LOCALAPPDATA%\Programs\NexaClip` · HKCU) — 관리자 권한 불요, winget/choco 무인 설치(`/S`) 통과.

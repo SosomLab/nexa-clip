@@ -480,6 +480,65 @@ mod imp {
         }
     }
 
+    /// 지금 손쉬운 사용이 허용돼 있는가(대화상자 없음).
+    pub(super) fn is_trusted() -> bool {
+        unsafe { AXIsProcessTrusted() }
+    }
+
+    /// ★ 낡은 TCC 항목 정리(09-07 사용자 실기 — `brew upgrade` 뒤 토글이 **ON인데 붙여넣기 불가**,
+    /// 껐다 켜고 재시작해도 그대로 · 항목을 `−`로 지우고 다시 켜야 통했다):
+    /// TCC는 앱을 번들 ID + **코드 서명 요구사항**으로 기억한다. 애드혹 서명은 요구사항이 바이너리
+    /// 해시(`designated => cdhash H"…"`)라 업그레이드로 바이너리가 바뀌면 이전 항목이 새 앱과 맞지
+    /// 않는다 — 토글은 `auth_value`만 바꾸고 요구사항은 옛것이라 무효. 처방은 항목 **삭제**뿐이므로
+    /// 대화상자를 띄우기 **전에** 우리 번들 ID로 `tccutil reset`을 돌린다(sudo 불요 · 항목이 없어도
+    /// 무해 · 거부 상태였다면 사라졌다가 대화상자가 같은 OFF로 다시 만든다 = 오늘과 같은 UX).
+    /// Cask `postflight`도 같은 일을 하지만(업그레이드 시점) `.dmg` 직접 설치·수동 교체는 여기서만
+    /// 잡힌다. 번들 밖(`cargo run`)은 번들 ID가 없어 건너뛴다. 반환 = 리셋한 번들 ID.
+    /// 근본 처방은 안정 서명 신원(요구사항이 인증서가 된다 — T-48).
+    pub(super) fn reset_stale_trust() -> Option<String> {
+        let id = bundle_id()?;
+        let out = std::process::Command::new("/usr/bin/tccutil")
+            .args(["reset", "Accessibility", &id])
+            .output()
+            .ok()?;
+        out.status.success().then_some(id)
+    }
+
+    /// 실행 중인 번들의 `CFBundleIdentifier` — 번들 밖(테스트·`cargo run`)이면 `None`.
+    pub(super) fn bundle_id() -> Option<String> {
+        const UTF8: u32 = 0x0800_0100; // kCFStringEncodingUTF8
+        #[link(name = "CoreFoundation", kind = "framework")]
+        extern "C" {
+            fn CFBundleGetMainBundle() -> CFTypeRef;
+            fn CFBundleGetIdentifier(bundle: CFTypeRef) -> CFTypeRef;
+            fn CFStringGetCString(
+                s: CFTypeRef,
+                buf: *mut core::ffi::c_char,
+                size: isize,
+                enc: u32,
+            ) -> bool;
+        }
+        // SAFETY: Get 계열은 소유권을 넘기지 않는다(해제 없음) · 반환은 전부 nil 관용 검사.
+        unsafe {
+            let bundle = CFBundleGetMainBundle();
+            if bundle.is_null() {
+                return None;
+            }
+            let s = CFBundleGetIdentifier(bundle);
+            if s.is_null() {
+                return None;
+            }
+            let mut buf = [0 as core::ffi::c_char; 256];
+            if !CFStringGetCString(s, buf.as_mut_ptr(), buf.len() as isize, UTF8) {
+                return None;
+            }
+            let id = core::ffi::CStr::from_ptr(buf.as_ptr())
+                .to_string_lossy()
+                .into_owned();
+            (!id.is_empty()).then_some(id)
+        }
+    }
+
     pub(super) fn capability() -> PasteCapability {
         if unsafe { AXIsProcessTrusted() } {
             PasteCapability::Full {
@@ -562,6 +621,16 @@ mod imp {
 
     #[allow(dead_code)]
     fn _unused(_: PasteUnsupported) {}
+
+    #[cfg(test)]
+    mod tests {
+        /// 테스트 실행 파일은 번들이 아니다 — `None`이어야 `reset_stale_trust`가 `tccutil`을 부르지 않는다
+        /// (개발 PC의 진짜 권한 항목을 건드리지 않게).
+        #[test]
+        fn bundle_id_outside_bundle_is_none() {
+            assert_eq!(super::bundle_id(), None);
+        }
+    }
 }
 
 // ───────────────────────────── 그 외(Linux 등) ─────────────────────────────
@@ -1026,11 +1095,19 @@ pub fn warm_up(token_path: Option<std::path::PathBuf>) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
         // ★ 손쉬운 사용 권한(09-04) — 없으면 OS 대화상자를 띄운다(허용하면 재시작 없이 동작).
-        if !imp::prompt_trust() {
-            return Err(
-                "손쉬운 사용 권한 미허용 — 시스템 대화상자를 띄웠습니다(허용하면 재시작 없이 붙여넣기 동작)"
-                    .into(),
-            );
+        //   ★ 09-07: 대화상자 **전에** 낡은 TCC 항목을 지운다(brew upgrade 뒤 "토글 ON인데 안 됨" —
+        //   애드혹 서명 = cdhash 요구사항이라 바이너리가 바뀌면 옛 항목이 무효 · 삭제만 통한다).
+        if !imp::is_trusted() {
+            let reset = imp::reset_stale_trust();
+            if !imp::prompt_trust() {
+                let tail = match reset {
+                    Some(id) => format!(" · 낡은 권한 항목 정리함({id})"),
+                    None => String::new(),
+                };
+                return Err(format!(
+                    "손쉬운 사용 권한 미허용 — 시스템 대화상자를 띄웠습니다(허용하면 재시작 없이 붙여넣기 동작){tail}"
+                ));
+            }
         }
     }
     let _ = token_path;
