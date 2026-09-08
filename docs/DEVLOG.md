@@ -2,6 +2,10 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-09-08 (3차 · win) — ★ v0.1.3 릴리스(brew 자동 · ★ winget 첫 제출 · choco 보류) · 문서·위키 최신화 · 원격 병합(T-48 번호 충돌 → T-49)
+
+- winget/choco 점검: clip PR 0 · 피드 0(미제출) · 토큰 실적 = NexaDir 1시간 내 MERGED · beep 새 패키지 PR 09-01부터 OPEN · beep choco 08-21 push 18일째 미노출 → **winget on · choco off**(T-50) · 위키 4페이지(Home·설치·시작하기 스택/키맵·설정 항목 전역/창 안) → [journal](journal/2026-09-08.md)
+
 ## 2026-09-08 (1차 · win) — ★ 스택 순차 붙여넣기 4변형(원본/평문 × 줄바꿈 `Alt+Enter`·`Shift+Alt+Enter`) · ★ 창 안 단축키 14종 설정 승격(T-49)
 
 - `PasteInjector::send_newline`(3-OS Enter 주입 — 클립보드 `\n` 게시는 이력 오염) · `key.*` 창 안 14종 = 설정 → 단축키 → **창 안** 그룹(물리 키 자리 · 수식 키 정확 일치 · 글자·숫자만 수식 필수) · 배지/상태줄/툴팁/푸터 힌트 전부 설정값 · 푸터 2줄 · i18n 20건 · 실기 [21 §12-1](21-manual-test.md) K12~K22 · 릴리스 설치본 교체 → [journal](journal/2026-09-08.md)

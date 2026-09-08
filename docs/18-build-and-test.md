@@ -460,7 +460,8 @@ git tag v0.1.0 && git push origin v0.1.0
 ```
 
 - winget·choco는 저장소 변수 `WINGET_PUBLISH`·`CHOCO_PUSH`와 시크릿(`WINGET_TOKEN`·`CHOCO_API_KEY`·`TAP_TOKEN` · 09-04 사용자 추가)이 있어야 나간다.
-  ★ **v0.1.0(09-04)은 둘 다 `false`** — brew만 낸다(사용자 지시). 다시 켜려면 `gh variable set WINGET_PUBLISH --body true` (choco도 같은 식).
+  ★ **v0.1.0~0.1.2(09-04·05)는 둘 다 `false`** — brew만(사용자 지시). ★ **v0.1.3(09-08)부터 `WINGET_PUBLISH=true`**(첫 제출 · 새 패키지는 수동 검수 — beep 0.2.14 PR이 09-01부터 OPEN인 것과 같은 큐) · `CHOCO_PUSH=false` 유지(beep 08-21 push가 18일째 피드에 없음 — 그 결과를 본 뒤 결정 · [TODO T-50](TODO.md)).
+  ⚠️ choco guard는 **직전 태그 버전이 피드에 있는가**로 판정하므로 clip처럼 이전 릴리스를 제출한 적이 없으면 스위치를 켜도 건너뛴다 — 첫 제출은 `publish-windows-packages` 수동 실행 `force=true`로.
 - ★ **직전 제출이 검수 대기 중이면 그 채널은 자동으로 건너뛴다**(guard 잡 — winget 열린 PR · choco 피드 부재). 릴리스·brew·다른 채널은 그대로.
   사람이 확인한 뒤 강제하려면 `publish-windows-packages` 수동 실행 `force=true`.
 - 태그 없이 산출물만 보려면 Actions → release → *Run workflow*(초안).
@@ -512,8 +513,8 @@ gh run list -R SosomLab/nexa-clip --workflow homebrew -L 1         # 릴리스 �
 
   ```bash
   # ① 최초 1회 — 배포본 설치(릴리스 자산이 곧 사용자가 받는 것)
-  curl -sLO https://github.com/SosomLab/nexa-clip/releases/download/v0.1.2/nexa-clip-0.1.2-linux-x64.deb
-  sudo dpkg -i nexa-clip-0.1.2-linux-x64.deb
+  curl -sLO https://github.com/SosomLab/nexa-clip/releases/download/v0.1.3/nexa-clip-0.1.3-linux-x64.deb
+  sudo dpkg -i nexa-clip-0.1.3-linux-x64.deb
   #    (로컬 소스로 만들어 설치하려면)  scripts/dev-install-linux.sh --deb
 
   # ② 이후 반복 — 고치고 이 한 줄(빌드 → 종료 → /usr/bin 교체 → 설치 런처로 재시작)
