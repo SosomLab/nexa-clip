@@ -243,7 +243,7 @@ General 안내문 그대로:
 | `ui.show_special_symbols` | Checkbox | on | 특수 기호 표시 | M |
 | `ui.show_search` | Combo | 항상 | 검색창 표시(항상/입력 시) | M |
 | `ui.show_footer` | Checkbox | on | 하단 바 표시 | M |
-| `ui.tray_recent_n` | RadioInput | 8 | ★ **트레이 메뉴 최근 항목 수(5~10)** | N |
+| `ui.tray_recent_n` | RadioInput | 8 | ★ **트레이 메뉴 최근 항목 수(5~10)** · 설명에 단위(개) — 09-13부터 Number 항목 설명은 전부 `(단위: …)` 표기 | N |
 | `ui.tray_show_recent` | Checkbox | on | ★ 트레이 아이콘 옆 최근 항목 표시 | M |
 | `ui.dock_icon` | Checkbox | on | ★ **Dock 아이콘 표시**(mac 전용 — 끔 = Accessory·메뉴바에서만 · 09-04) | N |
 | `ui.font.*` | 폰트 슬롯 | — | 글꼴·크기(beep 슬롯 구조 그대로) | B |
@@ -276,7 +276,8 @@ General 안내문 그대로:
 | ★ `sync.file_auto_mb` | Number(0·10·50·200·1000) | **50** | 합계가 이하인 파일 항목은 받자마자 **백그라운드 저속** 사전 캐시 · 0 = 끔 |
 | ★ `sync.file_bg_kbps` | Number(0·256·1024·4096) | **1024** | 백그라운드 속도 상한(KB/s) · 0 = 무제한 · 붙여넣기 대기 전송은 제한 없음 |
 | ★ `sync.file_max_mb` | Number(100·1000·10000) | **1000** | 붙여넣기 시 받아올 **합계** 상한 — 넘으면 경로만 + 로그(한 바이트 전에 판정) |
-| ★ `sync.file_cache_mb` | Number(500·2000·10000) | **2000** | 캐시 용량 — 초과 시 오래된 것부터 삭제(전송 중 제외) · 위치 `<data>/cache/files/<열쇠>/` |
+| ★ `sync.file_cache_mb` | Number(500·2000·10000) | **2000** | 캐시 용량 — 초과 시 오래된 것부터 삭제(전송 중 제외) · 위치 = `sync.file_dir` 아래 `<열쇠>/<원본 이름>` |
+| ★ `sync.file_dir` | Text | **빈 값** | ★ **받은 파일 저장 폴더**(09-13) — 빈 값 = **OS 사용자 다운로드 폴더 아래 `Nexa Clip`**(Win `%USERPROFILE%\Downloads` · mac `~/Downloads` · Linux XDG `user-dirs.dirs` → `~/Downloads`) · 다운로드 폴더 없으면 `<data>/cache/files` · 값 있으면 그대로(`~` = 홈) · 변경 즉시 · **이후 전송부터**(받은 파일은 안 옮김) · 옛 폴더는 캐시 판정에 남음(2PC 가드) |
 | ★ `about.info` | Report | — | **정보**(09-12) — 버전·`(release/debug)` · git SHA(+dirty)·빌드 시각(`build.rs`) · 실행 파일 경로·크기·수정 · **SHA-256**(두 줄) · OS/arch · 데이터 폴더. 호스트가 부팅 워커 결과로 채움 · 비영속 |
 | ★ `about.copy` | Action | — | 위 내용을 평문으로 클립보드에(버그 보고용) |
 | `sync.retry` | Radio | `normal` | 재시도 정책 — 실패 n회째 = base×2^(n−1)(상한 · ±20% 지터 · 성공 시 초기화) · normal 5s→5분 · patient 15s→15분 · eager 2s→1분 |

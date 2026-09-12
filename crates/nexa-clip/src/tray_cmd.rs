@@ -1888,6 +1888,8 @@ impl ApplicationHandler<ShellEvent> for Shell {
                         }
                     );
                 }
+                // ★ 전송 패널 토글(09-13 사용자 — 툴바 바닥 연결/⚙ 위 버튼) — 창 안 상태(영속 없음).
+                MainAction::ToggleXfer => self.main.toggle_xfer(),
                 MainAction::TogglePreview => {
                     let on = self.app.conf.state.get("ui.preview_open") != "on";
                     self.app.conf.set(
@@ -2429,7 +2431,13 @@ pub(crate) fn run() {
     // ★ 고정폭 글꼴(09-04) — 터미널/코드 리치 런의 Mono 슬롯(없으면 주 글꼴).
     let mono_font = crate::conf::load_mono_font(&conf, &font);
     // ★ 파일 내용 공유(09-12 · DR-30) — 캐시 관리자 + 펌프(세션이 없어도 상주 · 요청은 세션 있을 때만).
-    crate::xfer::init(&crate::conf::data_dir());
+    // ★ 저장 폴더(09-13) = `sync.file_dir`(비면 OS 다운로드 폴더 아래 `Nexa Clip`) · 종전 위치는 캐시 판정용으로 기억.
+    {
+        let data = crate::conf::data_dir();
+        let dir = crate::xfer::resolve_file_dir(conf.state.get("sync.file_dir"), &data);
+        println!("파일 공유: 저장 폴더 {}", dir.display());
+        crate::xfer::init(dir, Some(data.join("cache").join("files")));
+    }
     crate::xfer::set_policy(xfer_policy(&conf));
     crate::xfer::spawn_pump(el.create_proxy());
     // ★ M2 동기화 기반(09-03) — 켜져 있으면 릴레이 접속 스레드 상주(상태는 proxy로 통지).

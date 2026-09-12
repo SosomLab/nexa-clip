@@ -191,6 +191,9 @@ pub(crate) struct Manager {
     next_req: u32,
     policy: Policy,
     cache_dir: PathBuf,
+    /// ★ 이전 저장 폴더들(09-13 — 설정으로 바꾼 뒤에도 거기서 게시된 파일을 **우리 캐시**로 알아본다 ·
+    ///   2PC 연쇄 가드 `is_cache_path`가 폴더 교체로 뚫리지 않게).
+    prev_dirs: Vec<PathBuf>,
     /// 확인된 캐시(열쇠 → 최종 경로) — stat을 한 번만.
     cached: HashMap<String, PathBuf>,
     /// 붙여넣기가 기다리는 항목(하나) — 완료되면 셸이 게시·주입한다.
@@ -211,6 +214,7 @@ impl Manager {
             next_req: 1,
             policy: Policy::default(),
             cache_dir,
+            prev_dirs: Vec::new(),
             cached: HashMap::new(),
             pending_paste: None,
             offered: HashSet::new(),
@@ -225,6 +229,34 @@ impl Manager {
 
     pub(crate) fn policy(&self) -> Policy {
         self.policy
+    }
+
+    /// ★ 저장 폴더 교체(09-13 · `sync.file_dir`) — 이후 전송부터 새 폴더. 진행 중인 `.part`는 제 경로를
+    /// 이미 들고 있어 영향이 없고, 옛 폴더는 [`Self::is_cache_path`]가 계속 알아본다. 캐시 메모는 비운다
+    /// (열쇠→경로가 옛 폴더를 가리키므로 — 다음 조회가 새 폴더를 stat 해 미스면 다시 받는다).
+    pub(crate) fn set_cache_dir(&mut self, dir: PathBuf) {
+        if dir == self.cache_dir {
+            return;
+        }
+        let _ = std::fs::create_dir_all(&dir);
+        let old = std::mem::replace(&mut self.cache_dir, dir);
+        if !self.prev_dirs.contains(&old) {
+            self.prev_dirs.push(old);
+        }
+        self.cached.clear();
+    }
+
+    /// 지금 저장 폴더(테스트 확인용).
+    #[cfg(test)]
+    pub(crate) fn cache_dir(&self) -> &Path {
+        &self.cache_dir
+    }
+
+    /// 옛 폴더를 기억시킨다(부팅 — 설정 전 기본 위치 `<data>/cache/files`의 파일도 캐시로 판정).
+    pub(crate) fn remember_dir(&mut self, dir: PathBuf) {
+        if dir != self.cache_dir && !self.prev_dirs.contains(&dir) {
+            self.prev_dirs.push(dir);
+        }
     }
 
     // ───────────────────────────── 보내는 쪽
@@ -321,9 +353,11 @@ impl Manager {
     /// ★ 이 경로가 **우리 캐시 안**인가(09-12 연쇄 차단) — 캐시에서 게시한 파일을 감시가 되읽은 캡처는
     /// 남에게 보낼 것이 아니다(상대에겐 뜻 없는 경로이고, 보내면 상대가 또 캐시해 되돌려 보낸다).
     pub(crate) fn is_cache_path(&self, p: &str) -> bool {
-        let cache = self.cache_dir.to_string_lossy();
         let norm = |s: &str| s.replace('/', "\\").to_lowercase();
-        norm(p).starts_with(&norm(&cache))
+        let q = norm(p);
+        std::iter::once(&self.cache_dir)
+            .chain(self.prev_dirs.iter())
+            .any(|d| q.starts_with(&norm(&d.to_string_lossy())))
     }
 
     /// 항목의 파일 전부가 캐시돼 있으면 경로들.
@@ -948,15 +982,47 @@ fn safe_name(path: &str) -> String {
 
 static MANAGER: Mutex<Option<Manager>> = Mutex::new(None);
 
-/// 시작 때 한 번 — 캐시 디렉터리 = `<data>/cache/files`.
-pub(crate) fn init(data_dir: &Path) {
-    let m = Manager::new(
-        data_dir.join("cache").join("files"),
-        crate::devices::is_online,
-    );
+/// 시작 때 한 번 — 저장 폴더 = [`resolve_file_dir`]. `legacy`(설정 도입 전 위치 `<data>/cache/files`)가
+/// 실재하면 기억해 둔다 — 거기서 게시된 파일도 우리 캐시로 판정(2PC 연쇄 가드).
+pub(crate) fn init(cache_dir: PathBuf, legacy: Option<PathBuf>) {
+    let mut m = Manager::new(cache_dir, crate::devices::is_online);
+    if let Some(l) = legacy.filter(|l| l.is_dir()) {
+        m.remember_dir(l);
+    }
     if let Ok(mut g) = MANAGER.lock() {
         *g = Some(m);
     }
+}
+
+/// ★ 저장 폴더 교체(09-13 · 설정 창이 `sync.file_dir` 변경 시).
+pub(crate) fn set_cache_dir(dir: PathBuf) {
+    let _ = with(|m| m.set_cache_dir(dir));
+}
+
+/// 프로그램 폴더 이름 — 다운로드 폴더 아래 이 이름으로 만든다.
+pub(crate) const FILE_DIR_NAME: &str = "Nexa Clip";
+
+/// ★ `sync.file_dir` → 실제 저장 폴더(09-13 사용자 — "기본은 운영체제의 사용자 다운로드 폴더").
+///
+/// | 설정값 | 결과 |
+/// |---|---|
+/// | 비어 있지 않음 | 그 경로(앞의 `~`는 홈으로) |
+/// | 비어 있음 · OS 다운로드 폴더 있음 | `<Downloads>/Nexa Clip` |
+/// | 비어 있음 · 다운로드 폴더 없음 | `<data>/cache/files`(종전 위치) |
+pub(crate) fn resolve_file_dir(setting: &str, data_dir: &Path) -> PathBuf {
+    let v = setting.trim();
+    if !v.is_empty() {
+        if let Some(rest) = v.strip_prefix('~') {
+            if let Some(h) = nclip_plat::paths::home_dir() {
+                return h.join(rest.trim_start_matches(['/', '\\']));
+            }
+        }
+        return PathBuf::from(v);
+    }
+    nclip_plat::paths::downloads_dir().map_or_else(
+        || data_dir.join("cache").join("files"),
+        |d| d.join(FILE_DIR_NAME),
+    )
 }
 
 /// 관리자에 접근(초기화 전이면 기본값/무시).
@@ -1412,6 +1478,46 @@ mod tests {
         assert!(rx.all_cached(&mb).is_some(), "새 것은 남는다");
         let mut fresh = Manager::new(rx.cache_dir.clone(), online);
         assert!(fresh.all_cached(&ma).is_none(), "오래된 것이 비워졌다");
+    }
+
+    /// ★ 저장 폴더 교체(09-13) — 새 폴더로 실체화되고, 옛 폴더의 파일도 여전히 **우리 캐시**로 판정된다
+    ///   (설정을 바꾼 뒤 옛 캐시를 붙여넣어도 2PC 연쇄가 다시 열리지 않는다).
+    #[test]
+    fn changing_dir_keeps_recognizing_old_dir() {
+        let a = tmp("dirA");
+        let b = tmp("dirB");
+        let mut m = Manager::new(a.clone(), online);
+        let in_a = a.join("k").join("x.txt").to_string_lossy().into_owned();
+        m.set_cache_dir(b.clone());
+        assert_eq!(m.cache_dir(), b.as_path());
+        assert!(b.is_dir(), "새 폴더는 만들어진다");
+        assert!(m.is_cache_path(&in_a), "옛 폴더도 캐시");
+        let in_b = b.join("k").join("x.txt").to_string_lossy().into_owned();
+        assert!(m.is_cache_path(&in_b));
+        assert!(!m.is_cache_path("/elsewhere/x.txt"));
+        // 같은 폴더로 다시 = 무시(이전 목록이 늘지 않는다).
+        m.set_cache_dir(b.clone());
+        assert_eq!(m.prev_dirs.len(), 1);
+        let _ = std::fs::remove_dir_all(&a);
+        let _ = std::fs::remove_dir_all(&b);
+    }
+
+    /// ★ 설정값 해석(09-13) — 값이 있으면 그대로(`~` 전개) · 비면 다운로드 폴더 아래 프로그램 폴더 또는 데이터 폴더.
+    #[test]
+    fn resolve_file_dir_prefers_setting_then_downloads() {
+        let data = tmp("data");
+        assert_eq!(
+            resolve_file_dir("  /srv/inbox  ", &data),
+            PathBuf::from("/srv/inbox")
+        );
+        if let Some(h) = nclip_plat::paths::home_dir() {
+            assert_eq!(resolve_file_dir("~/받기", &data), h.join("받기"));
+        }
+        let d = resolve_file_dir("", &data);
+        match nclip_plat::paths::downloads_dir() {
+            Some(dl) => assert_eq!(d, dl.join(FILE_DIR_NAME)),
+            None => assert_eq!(d, data.join("cache").join("files")),
+        }
     }
 
     /// 캐시 안 경로 판정 — 구분자·대소문자 차이를 무시한다(Windows 경로).

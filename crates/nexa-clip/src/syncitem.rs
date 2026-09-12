@@ -465,7 +465,7 @@ mod tests {
     fn own_cache_paths_never_become_a_payload() {
         let _g = policy_lock();
         let dir = std::env::temp_dir().join(format!("nclip-sync-cache-{}", std::process::id()));
-        crate::xfer::init(&dir);
+        crate::xfer::init(dir.join("cache").join("files"), None);
         let cached = dir
             .join("cache")
             .join("files")

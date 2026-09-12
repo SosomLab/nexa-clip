@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-09-13 (1차 · mac) — ★ 전송 패널 토글 버튼 · 설정 설명 단위 · ★ 받은 파일 저장 폴더 설정(기본 = OS 다운로드)
+
+**요청**: ① 전송창 토글 버튼을 툴바 하단 연결표시/⚙ 위에 ② 설정 설명란에 단위 ③ 받은 파일 저장 폴더 설정(기본 = 운영체제 사용자 다운로드 폴더 아래 프로그램 폴더).
+**구현**: `Tool::Xfer`(바닥 구역 3번째 칸 · `download` 벡터 아이콘 · 열림 accent · 닫힌 채 진행 중이면 점) — 새 전송 = 자동 열림 · 자동 열린 패널은 비면 자동 닫힘 · 직접 연 것은 유지. 설명 단위 9항목(`store.max_items` 개 · `max_age_days` 일 · `max_total_mb` MB · `ui.tray_recent_n` 개 · `sync.files_max` 개 · `file_auto_mb`/`file_max_mb`/`file_cache_mb` MB · `file_bg_kbps` KB/s) × 4언어. ★ `sync.file_dir`(Text · 빈 값 = `<OS Downloads>/Nexa Clip` · Linux XDG `user-dirs.dirs` · 없으면 `<data>/cache/files`) — 부팅·변경 즉시 `xfer::set_cache_dir` · **옛 폴더는 `prev_dirs`로 캐시 판정 유지**(2PC 연쇄 가드 보존).
+**검증**: 536 테스트 ✓(+3) · 3-OS clippy ✓ · beep 변경 0. **⏳ 실기**(버튼·패널 자동 열림/닫힘 · 폴더 변경 후 전송 위치 · mac `~/Downloads/Nexa Clip`). → [journal](journal/2026-09-13.md)
+
+---
+
 ## 2026-09-12 (6차 · win) — ★ **정보(About) 화면**(설정 → 정보) — 실행 파일 SHA-256으로 빌드 식별
 
 **요청**: "설치본은 두고 실행 파일만 바꿨을 때 어느 버전인지 알 수 있게 — About + 파일 해시".

@@ -33,5 +33,5 @@ if [[ "${1:-}" != "--quick" ]]; then
     done
 fi
 echo
-if [[ $FAIL -eq 0 ]]; then echo "★ 3-OS 검사 통과 — push 가능 (push 뒤 gh run watch 로 CI도 확인)"; else echo "★ 실패 $FAIL건 — push 금지"; fi
+if [[ $FAIL -eq 0 ]]; then echo "★ 3-OS 검사 통과 — push 가능 (push 뒤 gh run watch 로 CI도 확인)"; else echo "★ 실패 ${FAIL}건 — push 금지"; fi
 [[ $FAIL -eq 0 ]]
