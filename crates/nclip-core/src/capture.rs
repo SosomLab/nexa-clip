@@ -101,6 +101,8 @@ pub fn is_files_format(fmt: &str) -> bool {
             | "x-special/gnome-copied-files"
             | "x-special/KDE-copied-files"
             | "x-special/nautilus-clipboard"
+            // ★ 다른 기기의 파일 약속(09-12 · DR-30) — 내용은 붙여넣을 때 받는다.
+            | crate::remote_files::FORMAT
     )
 }
 
@@ -713,6 +715,9 @@ pub fn paths_of(reps: &[crate::RawRep]) -> Vec<String> {
         let found = match r.format.as_str() {
             "CF_HDROP" => parse_hdrop(&r.data),
             "NSFilenamesPboardType" => parse_plist_paths(&r.data),
+            crate::remote_files::FORMAT => crate::remote_files::RemoteFiles::decode(&r.data)
+                .map(|m| m.paths())
+                .unwrap_or_default(),
             "text/uri-list"
             | "public.file-url"
             | "x-special/gnome-copied-files"

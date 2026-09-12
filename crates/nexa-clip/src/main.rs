@@ -31,6 +31,8 @@ mod syncitem;
 mod thumbs;
 mod tray_cmd;
 mod watch_cmd;
+/// ★ 파일 내용 전송 관리자(09-12 · DR-30) — 캐시·당겨 받기·이어 받기·진행률.
+mod xfer;
 
 use nclip_core::{
     current_lang, tr, ClipboardWatch as _, Msg, PasteAs, PasteCapability, PasteInjector as _,

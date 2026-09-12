@@ -344,6 +344,12 @@ const RADIO_DEFAULTS: &[(&str, &str)] = &[
     // ★ 파일 경로 전파 상한(09-12) — 보통의 복사(몇 개~수십 개)는 그대로 가고,
     //   폴더 전체 선택 같은 폭주만 자른다. 후보는 오름차순이라 첫 후보가 기본이 아니다.
     ("sync.files_max", "1000"),
+    // ★ 파일 내용 공유(09-12 · docs/26 D-65/D-67 조정) — 자동 캐시 50MB(문서·이미지 대부분) ·
+    //   백그라운드 1MB/s · 붙여넣기 시 1000MB(실수로 GB급을 끌어오지 않게) · 캐시 2000MB.
+    ("sync.file_auto_mb", "50"),
+    ("sync.file_bg_kbps", "1024"),
+    ("sync.file_max_mb", "1000"),
+    ("sync.file_cache_mb", "2000"),
     ("ui.theme", "system"),
     ("ui.tray_recent_n", "8"),
     ("store.max_items", "1000"),

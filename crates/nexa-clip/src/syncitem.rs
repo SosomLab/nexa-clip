@@ -18,16 +18,16 @@
 use nclip_core::RawRep;
 
 const MAGIC: &[u8; 4] = b"NCLI";
-/// ★ 파일 경로 목록 파트 — **NUL(`\0`) 구분 원본 경로**(09-12).
+/// ★ 파일 파트(09-12) — [`nclip_core::RemoteFiles`] 인코딩(경로·크기·수정시각 · origin은 비움).
 ///
 /// `text/uri-list`가 아니라 **OS 경로 문자열 그대로** 싣는 이유:
 /// ① 실재 판정(P-1)은 OS 경로로 해야 하고, ② URI 왕복은 Windows 드라이브 문자·역슬래시에서
 /// 손실이 나기 쉬우며, ③ 이 이름을 모르는 **구버전(≤0.1.3)은 조용히 버리고** 함께 실은
 /// `text/plain`을 경로 텍스트로 붙인다 — 앞뒤 호환이 공짜로 선다([`decode`]의 미지 표현 규칙).
 ///
-/// 구분자가 `\0`인 것은 **어느 OS에서도 경로에 들어갈 수 없는 유일한 바이트**이기 때문이다
-/// (`\n`은 Linux 파일명에 들어갈 수 있어 목록이 조용히 쪼개진다).
-const PART_PATHS: &str = "x-nclip/paths";
+/// 크기·수정시각을 함께 싣는 것은 **파일 내용 공유**(DR-30)의 재료다 — 받는 쪽이 한 바이트도
+/// 받기 전에 상한을 판정하고(docs/26 §4-4), 받는 도중 원본이 바뀐 것을 알아챈다.
+const PART_FILES: &str = "x-nclip/files";
 /// 받은 파일 항목을 **항상 경로 텍스트로** 올린다(설정 `sync.files_paste` = `text`).
 /// 세션 스레드가 읽고 UI 스레드(설정 변경·부팅)가 쓴다 — [`set_files_as_text`].
 static FILES_AS_TEXT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -160,11 +160,31 @@ pub(crate) fn from_reps_limited(reps: &[RawRep], files_max: Option<usize>) -> Op
             );
             paths.truncate(max);
         }
-        // 경로는 NUL 구분 원본, 텍스트는 사람이 읽는 줄 목록 — 둘 다 실어 구버전·텍스트 앱까지 받는다.
-        let joined = paths.join("\0");
+        // ★ 메타(크기·수정시각)는 보내는 쪽에서 한 번 읽는다(워커 스레드 · stat만 · 내용은 안 읽는다).
+        //   없는 파일(이미 지워짐)은 크기 0·시각 0으로 — 받는 쪽은 그래도 경로 텍스트를 얻는다.
+        let files: Vec<nclip_core::RemoteFile> = paths
+            .iter()
+            .map(|p| {
+                let meta = std::fs::metadata(p).ok();
+                nclip_core::RemoteFile {
+                    path: p.clone(),
+                    size: meta.as_ref().map_or(0, std::fs::Metadata::len),
+                    mtime: meta.as_ref().map_or(0, crate::xfer::mtime_secs),
+                }
+            })
+            .collect();
+        // ★ 보내는 쪽 제안 목록(DR-30) — 여기 실린 경로만 나중에 서빙한다(임의 읽기 차단).
+        crate::xfer::offer(&paths);
+        let manifest = nclip_core::RemoteFiles {
+            origin_hex: String::new(),
+            origin_name: String::new(),
+            files,
+        }
+        .encode();
+        // 텍스트는 사람이 읽는 줄 목록 — 함께 실어 구버전·텍스트 앱까지 받는다.
         let text = paths.join("\r\n");
         let out = encode(&[
-            (PART_PATHS, joined.as_bytes()),
+            (PART_FILES, manifest.as_slice()),
             ("text/plain", text.as_bytes()),
         ]);
         return (out.len() <= MAX_PAYLOAD).then_some(out);
@@ -187,22 +207,22 @@ pub(crate) fn from_reps_limited(reps: &[RawRep], files_max: Option<usize>) -> Op
     (out.len() <= MAX_PAYLOAD).then_some(out)
 }
 
-/// 받은 경로 목록 → **이 OS의 파일 표현**(적응형 · [docs/08 §3-2](../../../docs/08-clipboard-propagation.md)).
+/// 받은 파일 파트 → **이 OS의 표현**(적응형 · [docs/08 §3-2](../../../docs/08-clipboard-propagation.md) +
+/// [docs/26](../../../docs/26-file-content-sharing.md) 약속).
 ///
 /// | 상황 | 결과 |
 /// |---|---|
 /// | 설정이 *경로 텍스트* | 빈 목록 — 함께 온 `text/plain`이 경로 글자로 붙는다 |
-/// | 경로 전부 실재(P-2) | `CF_HDROP`·`NSFilenamesPboardType`·`gnome-copied-files` |
-/// | 하나라도 부재(P-3) | 빈 목록 + **부재 개수를 로그로**(조용히 실패 금지 · P-4) |
+/// | 경로 전부 실재(P-2 · NAS·같은 경로 구조) | `CF_HDROP`·`NSFilenamesPboardType`·`gnome-copied-files` — 네트워크를 타지 않는다(26 P-3) |
+/// | 부재 + 파일 내용 공유 켬 + 원본을 안다 | ★ **약속**([`nclip_core::remote_files::FORMAT`] 매니페스트) — 붙여넣을 때 원본에서 받는다 |
+/// | 그 외(부재 · 공유 끔) | 빈 목록 + **로그**(조용히 실패 금지 · P-4) |
 ///
 /// ⚠️ 실재 확인은 **파일 시스템 접근**이다 — 세션 스레드에서만 부른다(UI는 기다리지 않는다).
-fn file_reps_of(data: &[u8]) -> Vec<RawRep> {
-    let paths: Vec<String> = data
-        .split(|b| *b == 0)
-        .filter(|p| !p.is_empty())
-        .filter_map(|p| std::str::from_utf8(p).ok())
-        .map(str::to_string)
-        .collect();
+fn file_reps_of(data: &[u8], origin: Option<(&str, &str)>) -> Vec<RawRep> {
+    let Some(mut m) = nclip_core::RemoteFiles::decode(data) else {
+        return Vec::new();
+    };
+    let paths = m.paths();
     if paths.is_empty() {
         return Vec::new();
     }
@@ -217,37 +237,53 @@ fn file_reps_of(data: &[u8]) -> Vec<RawRep> {
         .iter()
         .filter(|p| !std::path::Path::new(p).exists())
         .count();
-    if missing > 0 {
-        println!(
-            "동기화: 파일 {}개 중 {missing}개가 이 기기에 없습니다 — 경로 글자로 올립니다(파일로는 붙여넣을 수 없습니다)",
-            paths.len()
-        );
-        return Vec::new();
+    if missing == 0 {
+        let reps = nclip_plat::clipboard::file_reps(&paths);
+        if !reps.is_empty() {
+            println!(
+                "동기화: 파일 {}개 — 경로가 전부 실재해 **파일로** 올립니다",
+                paths.len()
+            );
+            return reps;
+        }
     }
-    let reps = nclip_plat::clipboard::file_reps(&paths);
-    if reps.is_empty() {
+    // ★ 약속(DR-30) — 원본 기기를 알고 내용 공유가 켜져 있으면 매니페스트로 등재한다.
+    let contents_on = crate::xfer::with(|x| x.policy().contents).unwrap_or(true);
+    if let (Some((hex, name)), true) = (origin, contents_on) {
+        m.origin_hex = hex.to_string();
+        m.origin_name = name.to_string();
         println!(
-            "동기화: 파일 {}개 — 이 OS는 파일 표현 게시가 미이식이라 경로 글자로 올립니다",
-            paths.len()
+            "동기화: 파일 {}개({}MB) — {name}에서 붙여넣을 때 받습니다(이 기기에 없는 경로 {missing}개)",
+            paths.len(),
+            m.total_bytes() / 1_048_576
         );
-    } else {
-        println!(
-            "동기화: 파일 {}개 — 경로가 전부 실재해 **파일로** 올립니다",
-            paths.len()
-        );
+        return vec![RawRep {
+            format: nclip_core::remote_files::FORMAT.to_string(),
+            data: m.encode(),
+        }];
     }
-    reps
+    println!(
+        "동기화: 파일 {}개 중 {missing}개가 이 기기에 없습니다 — 경로 글자로 올립니다(파일로는 붙여넣을 수 없습니다)",
+        paths.len()
+    );
+    Vec::new()
 }
 
 /// 휴대 표현 묶음 → **이 OS**의 클립보드 표현(게시·이력 등재 공용).
+///
+/// `origin` = 보낸 기기 `(PeerId hex, 표시 이름)` — 파일 약속(DR-30)에 박힌다. 에코 지문 계산처럼
+/// 원본이 뜻 없는 자리는 `None`.
 #[must_use]
-pub(crate) fn to_local_reps(parts: &[(String, Vec<u8>)]) -> Vec<RawRep> {
+pub(crate) fn to_local_reps(
+    parts: &[(String, Vec<u8>)],
+    origin: Option<(&str, &str)>,
+) -> Vec<RawRep> {
     let mut reps = Vec::new();
     for (name, data) in parts {
         match name.as_str() {
-            // ★ 파일 경로(09-12) — 적응형 판정은 **여기**서(세션 스레드 · 파일 실재 확인이
+            // ★ 파일(09-12) — 적응형 판정은 **여기**서(세션 스레드 · 파일 실재 확인이
             //   디스크·네트워크 드라이브를 건드리므로 UI 스레드에 두면 멈춘다 · DR-41).
-            PART_PATHS => reps.extend(file_reps_of(data)),
+            PART_FILES => reps.extend(file_reps_of(data, origin)),
             "image/png" => reps.extend(png_reps(data)),
             "text/plain" => {
                 if let Ok(t) = std::str::from_utf8(data) {
@@ -258,6 +294,23 @@ pub(crate) fn to_local_reps(parts: &[(String, Vec<u8>)]) -> Vec<RawRep> {
         }
     }
     reps
+}
+
+/// 클립보드에 **올릴 수 있는** 표현만 — 파일 약속(매니페스트)은 이력용이지 OS 표현이 아니다.
+#[cfg(test)]
+#[must_use]
+pub(crate) fn postable(reps: &[RawRep]) -> Vec<RawRep> {
+    reps.iter()
+        .filter(|r| r.format != nclip_core::remote_files::FORMAT)
+        .cloned()
+        .collect()
+}
+
+/// 파일 약속이 든 묶음인가(받는 쪽 — 지금 게시하지 않고 붙여넣을 때 받는다).
+#[must_use]
+pub(crate) fn has_promise(reps: &[RawRep]) -> bool {
+    reps.iter()
+        .any(|r| r.format == nclip_core::remote_files::FORMAT)
 }
 
 /// PNG → OS 이미지 표현. Windows는 `PNG` + `CF_DIB`(대부분의 앱이 DIB만 읽는다 — "이미지로 복사"와 동일).
@@ -300,9 +353,9 @@ pub(crate) fn describe(parts: &[(String, Vec<u8>)]) -> String {
         .map(|(n, d)| match n.as_str() {
             "text/plain" => format!("text {}자", String::from_utf8_lossy(d).chars().count()),
             "image/png" => format!("image {}KB", d.len() / 1024),
-            PART_PATHS => format!(
-                "files {}개",
-                d.split(|b| *b == 0).filter(|p| !p.is_empty()).count()
+            PART_FILES => nclip_core::RemoteFiles::decode(d).map_or_else(
+                || "files ?".to_string(),
+                |m| format!("files {}개 {}KB", m.files.len(), m.total_bytes() / 1024),
             ),
             other => format!("{other} {}B", d.len()),
         })
@@ -332,7 +385,7 @@ mod tests {
         let d = decode(&p).expect("decode");
         assert_eq!(d, vec![("text/plain".to_string(), b"hello sync".to_vec())]);
         // 되돌리면 이 OS 평문 표현이 나오고, 다시 휴대형으로 만들면 같은 바이트(에코 해시 근거).
-        let back = to_local_reps(&d);
+        let back = to_local_reps(&d, None);
         assert_eq!(from_reps(&back).as_deref(), Some(p.as_slice()));
     }
 
@@ -342,15 +395,35 @@ mod tests {
         L.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
+    /// 보내는 쪽이 만드는 파일 파트(origin 비움).
+    fn manifest_of(paths: &[String]) -> Vec<u8> {
+        nclip_core::RemoteFiles {
+            origin_hex: String::new(),
+            origin_name: String::new(),
+            files: paths
+                .iter()
+                .map(|p| {
+                    let meta = std::fs::metadata(p).ok();
+                    nclip_core::RemoteFile {
+                        path: p.clone(),
+                        size: meta.as_ref().map_or(0, std::fs::Metadata::len),
+                        mtime: meta.as_ref().map_or(0, crate::xfer::mtime_secs),
+                    }
+                })
+                .collect(),
+        }
+        .encode()
+    }
+
     fn paths_in(payload: &[u8]) -> Vec<String> {
         let parts = decode(payload).expect("decode");
-        assert_eq!(parts[0].0, PART_PATHS, "경로가 첫 파트다(이름 순서 고정)");
-        parts[0]
-            .1
-            .split(|b| *b == 0)
-            .filter(|p| !p.is_empty())
-            .map(|p| String::from_utf8_lossy(p).into_owned())
-            .collect()
+        assert_eq!(
+            parts[0].0, PART_FILES,
+            "파일 파트가 첫 파트다(이름 순서 고정)"
+        );
+        nclip_core::RemoteFiles::decode(&parts[0].1)
+            .expect("manifest")
+            .paths()
     }
 
     /// ★ 파일 항목은 **경로 목록 + 경로 텍스트** 두 파트로 간다(09-12 · DR-6).
@@ -397,8 +470,11 @@ mod tests {
         set_files_as_text(false);
         let me = std::env::current_exe().expect("exe");
         let path = me.to_string_lossy().into_owned();
-        let parts = vec![(PART_PATHS.to_string(), path.clone().into_bytes())];
-        let reps = to_local_reps(&parts);
+        let parts = vec![(
+            PART_FILES.to_string(),
+            manifest_of(std::slice::from_ref(&path)),
+        )];
+        let reps = to_local_reps(&parts, None);
         assert!(!reps.is_empty(), "실재하는 경로는 파일로 올린다");
         assert_eq!(nclip_core::paths_of(&reps), vec![path]);
     }
@@ -409,10 +485,33 @@ mod tests {
         let _g = policy_lock();
         set_files_as_text(false);
         let parts = vec![(
-            PART_PATHS.to_string(),
-            b"/nexa-clip/this/does/not/exist.txt".to_vec(),
+            PART_FILES.to_string(),
+            manifest_of(&["/nexa-clip/this/does/not/exist.txt".to_string()]),
         )];
-        assert!(to_local_reps(&parts).is_empty());
+        assert!(
+            to_local_reps(&parts, None).is_empty(),
+            "원본을 모르면 약속도 없다"
+        );
+        // ★ 원본을 알면 **약속**(매니페스트)이 된다 — 파일 항목으로 분류되고 경로도 읽힌다.
+        let reps = to_local_reps(&parts, Some(("ab", "A-데스크톱")));
+        assert!(has_promise(&reps));
+        assert_eq!(
+            nclip_core::classify(&reps.iter().map(|r| r.format.as_str()).collect::<Vec<_>>()),
+            nclip_core::ClipKind::Files
+        );
+        assert_eq!(
+            nclip_core::paths_of(&reps),
+            vec!["/nexa-clip/this/does/not/exist.txt".to_string()]
+        );
+        assert!(
+            postable(&reps).is_empty(),
+            "약속은 OS 클립보드에 올리지 않는다"
+        );
+        let m = nclip_core::RemoteFiles::of_reps(&reps).expect("manifest");
+        assert_eq!(
+            (m.origin_hex.as_str(), m.origin_name.as_str()),
+            ("ab", "A-데스크톱")
+        );
     }
 
     /// ★ **실제 클립보드 전 구간 왕복**(09-12 · Windows) — 보내는 쪽 표현 → 페이로드 → 받는 쪽
@@ -441,7 +540,7 @@ mod tests {
         let payload = from_reps(&sender).expect("payload");
         // ② 받는 쪽 — 디코드 → 적응형(전부 실재) → 파일 표현 + 경로 텍스트.
         let parts = decode(&payload).expect("decode");
-        let local = to_local_reps(&parts);
+        let local = to_local_reps(&parts, None);
         assert!(
             local.iter().any(|r| r.format == "CF_HDROP"),
             "실재하는 경로는 파일로"
@@ -482,10 +581,10 @@ mod tests {
         set_files_as_text(true);
         let me = std::env::current_exe().expect("exe");
         let parts = vec![(
-            PART_PATHS.to_string(),
-            me.to_string_lossy().into_owned().into_bytes(),
+            PART_FILES.to_string(),
+            manifest_of(&[me.to_string_lossy().into_owned()]),
         )];
-        let empty = to_local_reps(&parts).is_empty();
+        let empty = to_local_reps(&parts, None).is_empty();
         set_files_as_text(false);
         assert!(empty, "정책이 텍스트면 파일 표현을 만들지 않는다");
     }

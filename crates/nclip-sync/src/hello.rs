@@ -18,6 +18,64 @@ const TAG_ITEM: &[u8; 4] = b"NCI1";
 pub const CHUNK: usize = 60_000;
 /// 조립 상한(조각 수 × CHUNK) — 이보다 큰 항목은 받지 않는다.
 pub const MAX_ITEM: usize = 32 * 1024 * 1024;
+/// ★ 파일 내용 공유(09-12 · DR-30 · docs/26) — **당겨 받기(pull)** 5종. 받는 쪽이 블록 단위로
+/// `FileReq{offset,len}`를 보내고, 보내는 쪽이 `FileData`×n 뒤 `FileEnd`로 답한다.
+/// 흐름 제어·이어 받기·저속 캐싱이 전부 "다음 블록을 언제 요청하느냐"로 귀결된다.
+///
+/// ```text
+/// FileReq    = "NCF1" ‖ req u32 ‖ offset u64 ‖ len u32 ‖ path_len u16 ‖ path(utf8)
+/// FileData   = "NCF2" ‖ req u32 ‖ offset u64 ‖ data
+/// FileEnd    = "NCF3" ‖ req u32 ‖ size u64 ‖ mtime u64      (블록 끝 · 실제 크기/수정시각)
+/// FileErr    = "NCF4" ‖ req u32 ‖ code u8 ‖ msg(utf8)
+/// FileCancel = "NCF5" ‖ req u32
+/// ```
+const TAG_FREQ: &[u8; 4] = b"NCF1";
+const TAG_FDAT: &[u8; 4] = b"NCF2";
+const TAG_FEND: &[u8; 4] = b"NCF3";
+const TAG_FERR: &[u8; 4] = b"NCF4";
+const TAG_FCAN: &[u8; 4] = b"NCF5";
+/// 파일 데이터 한 프레임의 상한(= [`CHUNK`]) — 블록은 이 프레임 여러 개로 흐른다.
+pub const FILE_FRAME: usize = CHUNK;
+/// 한 요청이 받을 수 있는 블록 상한(8 MiB) — 받는 쪽 메모리·시간 예산.
+pub const FILE_BLOCK_MAX: u32 = 8 * 1024 * 1024;
+/// 경로 길이 상한(u16 필드 · 실경로는 훨씬 짧다).
+pub const FILE_PATH_MAX: usize = 4096;
+
+/// [`PeerMsg::FileErr`] 사유 — 미지 값은 [`FileErrCode::Other`](전방 호환).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FileErrCode {
+    /// 그 경로를 제안한 적이 없다(내 파일 항목에 없는 경로 — 임의 읽기 차단).
+    NotOffered,
+    /// 파일이 없거나 열 수 없다.
+    NotFound,
+    /// 읽기 오류.
+    Io,
+    /// 보내는 쪽이 파일 내용 공유를 껐다.
+    Disabled,
+    /// 기타.
+    Other,
+}
+
+impl FileErrCode {
+    fn to_byte(self) -> u8 {
+        match self {
+            Self::NotOffered => 1,
+            Self::NotFound => 2,
+            Self::Io => 3,
+            Self::Disabled => 4,
+            Self::Other => 0,
+        }
+    }
+    fn from_byte(b: u8) -> Self {
+        match b {
+            1 => Self::NotOffered,
+            2 => Self::NotFound,
+            3 => Self::Io,
+            4 => Self::Disabled,
+            _ => Self::Other,
+        }
+    }
+}
 
 /// 세션 첫 메시지 — 내가 누구로 보이고 싶은가(신원은 세션이 이미 확정했다).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -40,6 +98,35 @@ pub enum PeerMsg {
         idx: u16,
         total: u16,
         data: Vec<u8>,
+    },
+    /// ★ 파일 블록 요청(받는 쪽 → 보내는 쪽) — `offset`부터 `len` 바이트.
+    FileReq {
+        req: u32,
+        offset: u64,
+        len: u32,
+        path: String,
+    },
+    /// 파일 데이터 한 프레임(보내는 쪽 → 받는 쪽) — 요청 블록 안의 연속 구간.
+    FileData {
+        req: u32,
+        offset: u64,
+        data: Vec<u8>,
+    },
+    /// 블록 끝 — 실제 파일 크기·수정시각(받는 쪽이 원본 변경을 알아채는 근거).
+    FileEnd {
+        req: u32,
+        size: u64,
+        mtime: u64,
+    },
+    /// 요청 거절/실패.
+    FileErr {
+        req: u32,
+        code: FileErrCode,
+        msg: String,
+    },
+    /// 받는 쪽이 요청을 거둔다(보내는 쪽은 남은 프레임을 버린다).
+    FileCancel {
+        req: u32,
     },
 }
 
@@ -75,6 +162,55 @@ impl PeerMsg {
                 v.extend_from_slice(&idx.to_le_bytes());
                 v.extend_from_slice(&total.to_le_bytes());
                 v.extend_from_slice(data);
+                v
+            }
+            PeerMsg::FileReq {
+                req,
+                offset,
+                len,
+                path,
+            } => {
+                let p = path.as_bytes();
+                let p = &p[..p.len().min(FILE_PATH_MAX)];
+                let mut v = Vec::with_capacity(22 + p.len());
+                v.extend_from_slice(TAG_FREQ);
+                v.extend_from_slice(&req.to_le_bytes());
+                v.extend_from_slice(&offset.to_le_bytes());
+                v.extend_from_slice(&len.to_le_bytes());
+                v.extend_from_slice(&(p.len() as u16).to_le_bytes());
+                v.extend_from_slice(p);
+                v
+            }
+            PeerMsg::FileData { req, offset, data } => {
+                let mut v = Vec::with_capacity(16 + data.len());
+                v.extend_from_slice(TAG_FDAT);
+                v.extend_from_slice(&req.to_le_bytes());
+                v.extend_from_slice(&offset.to_le_bytes());
+                v.extend_from_slice(data);
+                v
+            }
+            PeerMsg::FileEnd { req, size, mtime } => {
+                let mut v = Vec::with_capacity(24);
+                v.extend_from_slice(TAG_FEND);
+                v.extend_from_slice(&req.to_le_bytes());
+                v.extend_from_slice(&size.to_le_bytes());
+                v.extend_from_slice(&mtime.to_le_bytes());
+                v
+            }
+            PeerMsg::FileErr { req, code, msg } => {
+                let m = msg.as_bytes();
+                let m = &m[..m.len().min(255)];
+                let mut v = Vec::with_capacity(9 + m.len());
+                v.extend_from_slice(TAG_FERR);
+                v.extend_from_slice(&req.to_le_bytes());
+                v.push(code.to_byte());
+                v.extend_from_slice(m);
+                v
+            }
+            PeerMsg::FileCancel { req } => {
+                let mut v = Vec::with_capacity(8);
+                v.extend_from_slice(TAG_FCAN);
+                v.extend_from_slice(&req.to_le_bytes());
                 v
             }
         }
@@ -117,6 +253,54 @@ impl PeerMsg {
                     idx: u16::from_le_bytes(idx.try_into().ok()?),
                     total: u16::from_le_bytes(total.try_into().ok()?),
                     data: data.to_vec(),
+                })
+            }
+            t if t == TAG_FREQ => {
+                let (req, rest) = rest.split_at_checked(4)?;
+                let (off, rest) = rest.split_at_checked(8)?;
+                let (len, rest) = rest.split_at_checked(4)?;
+                let (pl, rest) = rest.split_at_checked(2)?;
+                let pl = usize::from(u16::from_le_bytes(pl.try_into().ok()?));
+                let (path, _) = rest.split_at_checked(pl)?;
+                Some(PeerMsg::FileReq {
+                    req: u32::from_le_bytes(req.try_into().ok()?),
+                    offset: u64::from_le_bytes(off.try_into().ok()?),
+                    len: u32::from_le_bytes(len.try_into().ok()?),
+                    path: std::str::from_utf8(path).ok()?.to_string(),
+                })
+            }
+            t if t == TAG_FDAT => {
+                let (req, rest) = rest.split_at_checked(4)?;
+                let (off, data) = rest.split_at_checked(8)?;
+                Some(PeerMsg::FileData {
+                    req: u32::from_le_bytes(req.try_into().ok()?),
+                    offset: u64::from_le_bytes(off.try_into().ok()?),
+                    data: data.to_vec(),
+                })
+            }
+            t if t == TAG_FEND => {
+                let (req, rest) = rest.split_at_checked(4)?;
+                let (size, rest) = rest.split_at_checked(8)?;
+                let (mtime, _) = rest.split_at_checked(8)?;
+                Some(PeerMsg::FileEnd {
+                    req: u32::from_le_bytes(req.try_into().ok()?),
+                    size: u64::from_le_bytes(size.try_into().ok()?),
+                    mtime: u64::from_le_bytes(mtime.try_into().ok()?),
+                })
+            }
+            t if t == TAG_FERR => {
+                let (req, rest) = rest.split_at_checked(4)?;
+                let (code, msg) = rest.split_first()?;
+                Some(PeerMsg::FileErr {
+                    req: u32::from_le_bytes(req.try_into().ok()?),
+                    code: FileErrCode::from_byte(*code),
+                    msg: String::from_utf8_lossy(msg).into_owned(),
+                })
+            }
+            t if t == TAG_FCAN => {
+                let (req, _) = rest.split_at_checked(4)?;
+                Some(PeerMsg::FileCancel {
+                    req: u32::from_le_bytes(req.try_into().ok()?),
                 })
             }
             t if t == TAG_HELLO => {
@@ -240,6 +424,55 @@ mod tests {
         assert_eq!(out.as_deref(), Some(payload.as_slice()));
         assert!(asm.push(9, 0, 1, vec![1]).is_some(), "단일 조각");
         assert!(asm.push(9, 5, 1, vec![1]).is_none(), "idx ≥ total = 위반");
+    }
+
+    /// ★ 파일 메시지 5종 왕복(09-12) — 오프셋·길이·사유 코드가 그대로 돌아온다.
+    #[test]
+    fn file_messages_roundtrip() {
+        let msgs = [
+            PeerMsg::FileReq {
+                req: 7,
+                offset: 1 << 33,
+                len: 262_144,
+                path: "D:/작업/보고서 초안.xlsx".into(),
+            },
+            PeerMsg::FileData {
+                req: 7,
+                offset: 1 << 33,
+                data: vec![9u8; 1234],
+            },
+            PeerMsg::FileEnd {
+                req: 7,
+                size: 12_345_678_901,
+                mtime: 1_757_000_000,
+            },
+            PeerMsg::FileErr {
+                req: 7,
+                code: FileErrCode::NotOffered,
+                msg: "not offered".into(),
+            },
+            PeerMsg::FileCancel { req: 7 },
+        ];
+        for m in msgs {
+            assert_eq!(PeerMsg::decode(&m.encode()), Some(m.clone()), "{m:?}");
+        }
+        // 미지 사유 코드는 Other로(전방 호환) · 잘린 프레임은 None.
+        let mut err = b"NCF4".to_vec();
+        err.extend_from_slice(&7u32.to_le_bytes());
+        err.push(99);
+        err.push(b'x');
+        assert_eq!(
+            PeerMsg::decode(&err),
+            Some(PeerMsg::FileErr {
+                req: 7,
+                code: FileErrCode::Other,
+                msg: "x".into()
+            })
+        );
+        let mut short = b"NCF3".to_vec();
+        short.extend_from_slice(&7u32.to_le_bytes());
+        short.push(1);
+        assert_eq!(PeerMsg::decode(&short), None);
     }
 
     #[test]

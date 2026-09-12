@@ -568,6 +568,55 @@ pub(crate) const REGISTRY: &[Entry] = &[
         },
         "sync.files_max",
     ),
+    // ★ 파일 내용 공유(09-12 · DR-30 · docs/26) — 붙여넣을 때 원본 기기에서 받기 · 자동 캐시 상한 ·
+    //   백그라운드 속도 · 붙여넣기 시 최대 크기 · 캐시 용량.
+    e(
+        Msg::CatSync,
+        Msg::SetSyncFileContents,
+        Msg::SetSyncFileContentsDesc,
+        SettingKind::Toggle,
+        "sync.file_contents",
+    ),
+    e(
+        Msg::CatSync,
+        Msg::SetSyncFileAuto,
+        Msg::SetSyncFileAutoDesc,
+        SettingKind::Number {
+            presets: &["0", "10", "50", "200", "1000"],
+            suffix: "MB",
+        },
+        "sync.file_auto_mb",
+    ),
+    e(
+        Msg::CatSync,
+        Msg::SetSyncFileBgRate,
+        Msg::SetSyncFileBgRateDesc,
+        SettingKind::Number {
+            presets: &["0", "256", "1024", "4096"], // 0 = 무제한 · 기본 1024(RADIO_DEFAULTS)
+            suffix: "KB/s",
+        },
+        "sync.file_bg_kbps",
+    ),
+    e(
+        Msg::CatSync,
+        Msg::SetSyncFileMax,
+        Msg::SetSyncFileMaxDesc,
+        SettingKind::Number {
+            presets: &["100", "1000", "10000"],
+            suffix: "MB",
+        },
+        "sync.file_max_mb",
+    ),
+    e(
+        Msg::CatSync,
+        Msg::SetSyncFileCache,
+        Msg::SetSyncFileCacheDesc,
+        SettingKind::Number {
+            presets: &["500", "2000", "10000"],
+            suffix: "MB",
+        },
+        "sync.file_cache_mb",
+    ),
     // ★ 연결 해제(09-03 사용자) — 성공 노트 아래쪽 자리(테스트 다음 행).
     e(
         Msg::CatSync,
