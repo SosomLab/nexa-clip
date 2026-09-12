@@ -101,6 +101,8 @@ pub fn is_files_format(fmt: &str) -> bool {
             | "x-special/gnome-copied-files"
             | "x-special/KDE-copied-files"
             | "x-special/nautilus-clipboard"
+            // ★ 다른 기기의 파일 약속(09-12 · DR-30) — 내용은 붙여넣을 때 받는다.
+            | crate::remote_files::FORMAT
     )
 }
 
@@ -630,6 +632,108 @@ fn percent_decode(s: &str) -> String {
         i += 1;
     }
     String::from_utf8(out).unwrap_or_else(|_| s.to_string())
+}
+
+/// 경로 → `file://` URI — [`parse_uri_list`]의 **역방향**(09-12 · 파일 경로 전파 수신측).
+///
+/// ★ POSIX 경로 전용이다(Linux·macOS 파일 표현을 만들 때만 쓴다). Windows는
+/// `CF_HDROP`(UTF-16 경로 그대로)이라 URI를 거치지 않는다 — 드라이브 문자·역슬래시를
+/// URI로 옮기는 규칙은 여기 없다.
+///
+/// 비예약 문자(RFC 3986 `unreserved`) + `/`만 그대로 두고 나머지는 `%XX`로 —
+/// 공백·한글·`#`·`%`가 든 이름이 목록에서 잘리지 않게 한다.
+#[must_use]
+pub fn file_uri(path: &str) -> String {
+    let mut out = String::from("file://");
+    for b in path.as_bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' | b'/' => {
+                out.push(*b as char);
+            }
+            _ => {
+                out.push('%');
+                out.push(
+                    char::from_digit(u32::from(b >> 4), 16)
+                        .unwrap_or('0')
+                        .to_ascii_uppercase(),
+                );
+                out.push(
+                    char::from_digit(u32::from(b & 0xF), 16)
+                        .unwrap_or('0')
+                        .to_ascii_uppercase(),
+                );
+            }
+        }
+    }
+    out
+}
+
+/// macOS `NSFilenamesPboardType`(경로 배열 plist) → 경로.
+///
+/// ⚠️ **XML plist만 읽는다** — 우리가 만들어 게시하는 모양이 XML이다(09-12 전파 수신측).
+/// 이진 plist(`bplist00`)는 **빈 목록**을 돌려준다: 반쯤 해석해 경로를 지어내느니
+/// 없다고 하는 편이 맞다(DR-31 "있는 척 금지"). Finder는 이 타입 대신
+/// `public.file-url`을 내놓으므로 실사용 캡처 경로에는 영향이 없다.
+#[must_use]
+pub fn parse_plist_paths(data: &[u8]) -> Vec<String> {
+    let Ok(text) = std::str::from_utf8(data) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    let mut rest = text;
+    while let Some(i) = rest.find("<string>") {
+        rest = &rest[i + "<string>".len()..];
+        let Some(j) = rest.find("</string>") else {
+            break;
+        };
+        let raw = &rest[..j];
+        rest = &rest[j + "</string>".len()..];
+        out.push(
+            raw.replace("&lt;", "<")
+                .replace("&gt;", ">")
+                .replace("&quot;", "\"")
+                .replace("&apos;", "'")
+                .replace("&amp;", "&"),
+        );
+    }
+    out
+}
+
+/// 표현 묶음 → **파일 경로 목록**(파일 표현이 없으면 빈 목록).
+///
+/// [`crate::ClipSnapshot::file_paths`]의 본체 — 전파 송신([`나가는 페이로드`])처럼
+/// 스냅숏이 아니라 표현만 든 자리에서도 같은 판정을 쓰려고 여기 둔다(09-12).
+///
+/// ⚠️ **같은 경로를 두 번 담지 않는다** — GNOME은 `text/uri-list`와
+/// `x-special/gnome-copied-files`를 함께 내놓아 그대로 두면 파일 하나가 둘로 보인다(08-29).
+///
+/// [`나가는 페이로드`]: ../../../docs/08-clipboard-propagation.md
+#[must_use]
+pub fn paths_of(reps: &[crate::RawRep]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for r in reps {
+        let found = match r.format.as_str() {
+            "CF_HDROP" => parse_hdrop(&r.data),
+            "NSFilenamesPboardType" => parse_plist_paths(&r.data),
+            crate::remote_files::FORMAT => crate::remote_files::RemoteFiles::decode(&r.data)
+                .map(|m| m.paths())
+                .unwrap_or_default(),
+            "text/uri-list"
+            | "public.file-url"
+            | "x-special/gnome-copied-files"
+            | "x-special/KDE-copied-files"
+            | "x-special/nautilus-clipboard" => std::str::from_utf8(&r.data)
+                .map(parse_uri_list)
+                .unwrap_or_default(),
+            _ => continue,
+        };
+        for p in found {
+            if !out.contains(&p) {
+                out.push(p);
+            }
+        }
+    }
+    out
 }
 
 /// 경로에서 **이름만** 뽑는다 — 목록에 전체 경로를 띄우면 길고 사생활이다.
@@ -2387,5 +2491,52 @@ mod cf_html_tests {
     fn malformed_input_is_left_alone() {
         assert!(sanitize_cf_html(b"\xff\xfe not utf8").is_none());
         assert!(sanitize_cf_html(b"no header at all <script>x</script>").is_none());
+    }
+}
+
+/// ★ 파일 경로 표현(09-12 · 기기 간 경로 전파) — URI 왕복 · plist · 중복 제거.
+#[cfg(test)]
+mod file_path_tests {
+    use super::*;
+
+    /// ★ 경로 → URI → 경로(09-12) — 공백·한글·`#`·`%`가 든 이름이 살아 돌아온다.
+    #[test]
+    fn file_uri_round_trips_through_parse_uri_list() {
+        for path in ["/home/나/문서 초안.md", "/tmp/a#b%c.txt", "/srv/plain.txt"] {
+            let uri = file_uri(path);
+            assert!(uri.starts_with("file://"), "{uri}");
+            assert_eq!(parse_uri_list(&uri), vec![path.to_string()], "{uri}");
+        }
+    }
+
+    /// macOS 경로 배열 plist(XML) — 이스케이프된 이름까지 되돌린다.
+    #[test]
+    fn parse_plist_paths_reads_xml_array() {
+        let xml = "<plist><array><string>/a/b.txt</string><string>/c/d &amp; e.md</string></array></plist>";
+        assert_eq!(
+            parse_plist_paths(xml.as_bytes()),
+            vec!["/a/b.txt".to_string(), "/c/d & e.md".to_string()]
+        );
+        // 이진 plist는 **지어내지 않는다**(DR-31).
+        assert!(parse_plist_paths(b"bplist00\x00\x01").is_empty());
+    }
+
+    /// ★ GNOME은 같은 목록을 두 이름으로 내놓는다 — 파일 하나가 둘로 보이면 안 된다(08-29).
+    #[test]
+    fn paths_of_dedupes_double_listing() {
+        let reps = vec![
+            crate::RawRep {
+                format: "text/uri-list".into(),
+                data: b"file:///tmp/a.txt".to_vec(),
+            },
+            crate::RawRep {
+                format: "x-special/gnome-copied-files".into(),
+                data: b"copy\nfile:///tmp/a.txt\nfile:///tmp/b.txt".to_vec(),
+            },
+        ];
+        assert_eq!(
+            paths_of(&reps),
+            vec!["/tmp/a.txt".to_string(), "/tmp/b.txt".to_string()]
+        );
     }
 }

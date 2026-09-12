@@ -170,6 +170,8 @@ const PEER_DEAD: Duration = Duration::from_secs(45);
 pub(crate) enum PeerCmd {
     Item(std::sync::Arc<Vec<u8>>),
     Hello,
+    /// ★ 파일 전송 프레임(09-12 · DR-30) — 요청/데이터/끝/오류/취소. 합치지 않고 순서대로 보낸다.
+    File(nclip_sync::hello::PeerMsg),
 }
 
 /// ★ 피어별 송신 채널(09-04) — 세션 스레드가 등록·해제, `broadcast`/`announce_name`이 밀어 넣는다.
@@ -205,6 +207,16 @@ pub(crate) fn broadcast(payload: Vec<u8>) -> usize {
         .filter(|(hex, _)| crate::devices::is_approved(hex) && crate::devices::is_online(hex))
         .filter(|(_, tx)| tx.send(PeerCmd::Item(arc.clone())).is_ok())
         .count()
+}
+
+/// ★ 파일 전송 프레임을 특정 기기 세션에 민다(09-12) — 세션이 없으면 `false`(펌프가 오프라인 전이).
+pub(crate) fn send_file(hex: &str, msg: nclip_sync::hello::PeerMsg) -> bool {
+    let Ok(g) = PEER_TX.lock() else {
+        return false;
+    };
+    g.iter()
+        .find(|(h, _)| h == hex)
+        .is_some_and(|(_, tx)| tx.send(PeerCmd::File(msg)).is_ok())
 }
 
 /// ★ 기기 이름 재소개(09-05 사용자 — "저장 시점에 바뀐 이름을 연결된 기기에 다시 소개"):
@@ -304,12 +316,20 @@ pub(crate) fn run_peer(
                                 //   UI 스레드는 이력 등재·게시만 한다(09-04 사용자 요구).
                                 match crate::syncitem::decode(&payload) {
                                     Some(parts) => {
-                                        let reps = crate::syncitem::to_local_reps(&parts);
+                                        let reps = crate::syncitem::to_local_reps(
+                                            &parts,
+                                            Some((&hex, &peer_name)),
+                                        );
                                         if reps.is_empty() {
                                             eprintln!("동기화: {peer_name}의 항목에 이 OS로 옮길 표현이 없음 — 버림");
                                         } else {
-                                            let skip_hash = crate::syncitem::from_reps(&reps)
-                                                .map(|p| crate::syncitem::hash(&p));
+                                            // ★ 파일 약속은 지금 게시하지 않는다(붙여넣을 때 받는다) — 에코도 없다.
+                                            let skip_hash = if crate::syncitem::has_promise(&reps) {
+                                                None
+                                            } else {
+                                                crate::syncitem::from_reps(&reps)
+                                                    .map(|p| crate::syncitem::hash(&p))
+                                            };
                                             let _ = proxy.send_event(
                                                 crate::tray_cmd::ShellEvent::SyncItem {
                                                     from: peer_name.clone(),
@@ -367,6 +387,51 @@ pub(crate) fn run_peer(
                             break;
                         }
                     }
+                    // ★ 파일 내용 공유(09-12 · DR-30) — 보내는 쪽: 승인된 기기의 블록 요청만 서빙.
+                    Some(PeerMsg::FileReq {
+                        req,
+                        offset,
+                        len,
+                        path,
+                    }) => {
+                        let frames = if crate::devices::is_approved(&hex) {
+                            crate::xfer::with(|x| x.serve(req, &path, offset, len))
+                                .unwrap_or_default()
+                        } else {
+                            vec![PeerMsg::FileErr {
+                                req,
+                                code: nclip_sync::hello::FileErrCode::NotOffered,
+                                msg: "device not approved".into(),
+                            }]
+                        };
+                        for f in frames {
+                            if s.send(&f.encode()).is_err() {
+                                break 'session;
+                            }
+                        }
+                    }
+                    // 받는 쪽: 세션 스레드가 `.part`에 붙인다(UI는 진행률만 본다).
+                    Some(PeerMsg::FileData { req, offset, data }) => {
+                        let _ = crate::xfer::with(|x| x.on_data(&hex, req, offset, &data));
+                    }
+                    Some(PeerMsg::FileEnd { req, size, mtime }) => {
+                        if let Some(Some(item_id)) =
+                            crate::xfer::with(|x| x.on_end(&hex, req, size, mtime))
+                        {
+                            let _ =
+                                proxy.send_event(crate::tray_cmd::ShellEvent::XferDone { item_id });
+                        }
+                    }
+                    Some(PeerMsg::FileErr { req, code, msg }) => {
+                        eprintln!("동기화: {peer_name} 파일 블록 거절 — {code:?} {msg}");
+                        if let Some(Some(item_id)) =
+                            crate::xfer::with(|x| x.on_err(&hex, req, code, &msg))
+                        {
+                            let _ =
+                                proxy.send_event(crate::tray_cmd::ShellEvent::XferDone { item_id });
+                        }
+                    }
+                    Some(PeerMsg::FileCancel { .. }) => {} // 블록 단위 서빙이라 남은 것이 없다.
                     Some(PeerMsg::Pong) | None => {}
                 }
             }
@@ -378,6 +443,7 @@ pub(crate) fn run_peer(
         let mut latest = None;
         let mut skipped = 0usize;
         let mut reintroduce = false;
+        let mut files = Vec::new();
         while let Ok(cmd) = rx.try_recv() {
             match cmd {
                 PeerCmd::Item(payload) => {
@@ -387,8 +453,21 @@ pub(crate) fn run_peer(
                     latest = Some(payload);
                 }
                 PeerCmd::Hello => reintroduce = true,
+                PeerCmd::File(m) => files.push(m),
             }
         }
+        for m in files {
+            if s.send(&m.encode()).is_err() {
+                break 'session;
+            }
+        }
+        // ★ 전송 중엔 폴링을 촘촘히(09-12) — 블록 요청이 채널에 앉아 있는 시간이 곧 처리량 상한이다.
+        //   평소 250ms(상주 비용 최소) · 전송 중 20ms.
+        s.set_recv_timeout(Some(if crate::xfer::has_active() {
+            Duration::from_millis(20)
+        } else {
+            Duration::from_millis(250)
+        }));
         // ★ 이름 재소개(09-05) — 바뀐 표시 이름으로 Hello를 다시 보낸다(승인 무관 · 릴레이/LAN 공통).
         if reintroduce {
             let hello = Hello::local(display_name(&me));
@@ -529,6 +608,9 @@ pub(crate) fn spawn_if_enabled(
     conf: &crate::conf::Settings,
     proxy: winit::event_loop::EventLoopProxy<crate::tray_cmd::ShellEvent>,
 ) {
+    // ★ 수신 파일 정책(09-12)은 동기화 on/off와 무관하게 먼저 박아 둔다 —
+    //   세션 스레드가 읽는 값이라 나중에 켜질 때 이미 제자리에 있어야 한다.
+    crate::syncitem::set_files_as_text(conf.state.get("sync.files_paste") == "text");
     if conf.state.get("sync.enabled") != "on" {
         return;
     }

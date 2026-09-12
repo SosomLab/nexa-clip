@@ -2,6 +2,18 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-09-12 (3차 · win) — 설치본 교체·재시작(`dev-install-win.ps1` · #26600 → #23728 · SHA 일치) · 진행사항 최신화 · `feat/sync-file-paths` main 병합·push
+
+- 오늘 = 파일 경로 전파(DR-6 완성) + ★ 파일 내용 공유(DR-30/43) + 설치본 교체 · 자동 검증 525 테스트·3-OS ✓ · ⏳ 두 기기 실기 S12~S21(mac 설치본도 교체 필요) → [journal](journal/2026-09-12.md)
+
+## 2026-09-12 (2차 · win) — ★ **파일 내용 공유**(DR-30 본 구현 · T-31c · ★ DR-43 캐시 우선) — 붙여넣을 때 원본에서 당겨 받기(pull) · 로컬 캐시 재사용 · 상한 이하 저속 사전 캐시 · 이어 받기 · 메인창 전송 패널(파일 단위 진행률·중지·재시도) · 배지 · 트레이 점/툴팁/알림 · 설정 5종
+
+- 와이어 `PeerMsg` +5(NCF1~5 · 세션 안) · `nclip-core::remote_files` 약속 매니페스트(이력 표현 한 개 = 영속 공짜) · `nexa-clip::xfer` 관리자(펌프 100ms · Fg 2/Bg 1 · Bg `256KiB/속도` 대기 · 20s×3 타임아웃 · `.part` 이어 받기 · 크기/시각 불일치 = 실패+소거 · 캐시 LRU) · 세션 arms + 전송 중 폴링 20ms · 셸 `resolve_remote_files`(팝업·메인·트레이 공통 · 3초 안 완료 = 주입, 아니면 알림) · 525 테스트(+12 · 관리자 전 구간 루프백) · 3-OS clippy ✓ · beep 와이어 0 · ⏳ 두 기기 실기 [21 §6 S16~S21](21-manual-test.md) → [journal](journal/2026-09-12.md)
+
+## 2026-09-12 (1차 · win) — ★ 기기 간 **파일 전파**(경로 목록 · DR-6 완성) — 적응형 수신(전부 실재 = 파일 / 부재 = 경로 텍스트 · 항상 로그) · 설정 3종(`sync.files`·`sync.files_paste`·`sync.files_max`) · Linux 게시 순위 교정
+
+- 와이어 파트 `x-nclip/paths`(NUL 구분 원본 경로) + `text/plain` — 구버전은 텍스트만 받아 앞뒤 호환 · 실재 확인은 세션 스레드(DR-41) · `file_reps` 3-OS(Win CF_HDROP+DropEffect · mac plist+file-url · Linux gnome-copied-files+uri-list) · `paths_of`/`file_uri`/`parse_plist_paths` 공용 승격 · 512 테스트 + ★ **실제 클립보드 전 구간 왕복(에코 지문 동일) ✓** · 3타깃 clippy ✓ · beep 와이어 변경 0 · 후속 T-51(mac 다중 파일 실기·목록 배지) → [journal](journal/2026-09-12.md)
+
 ## 2026-09-08 (4차 · win) — winget 첫 제출 점검(+8분): `New-Package` · 검증 01~06 ✓ · 07~10 진행 중 · 대응 불요 · 갈래(Pipeline-Passed 대기 / Executable-Error → 댓글 대응) → [journal](journal/2026-09-08.md)
 
 ## 2026-09-08 (3차 · win) — ★ v0.1.3 릴리스 ✅(run 34186690679 11잡 green · 자산 14 · brew 0.1.3 · ★ winget PR #431182/#431183 · choco 보류) · 문서·위키 최신화 · 원격 병합(T-48 번호 충돌 → T-49)

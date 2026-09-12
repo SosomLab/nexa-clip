@@ -44,7 +44,10 @@ impl ClipSnapshot {
     /// 파일 항목의 **경로 목록**(파일 표현이 없으면 빈 목록).
     ///
     /// `CF_HDROP` → `text/uri-list` 순으로 본다. macOS `public.file-url`은 한 항목당
-    /// 표현이 하나씩 오므로 **모아서** 돌려준다.
+    /// 표현이 하나씩 오므로 **모아서** 돌려준다(`NSFilenamesPboardType` plist도 읽는다).
+    ///
+    /// ★ 판정 본체는 [`crate::capture::paths_of`]다 — 전파 송신처럼 스냅숏이 없는 자리와
+    /// **같은 함수**를 쓴다(09-12 · 규칙이 둘로 갈리면 한쪽만 고쳐진다).
     ///
     /// ★ Linux 파일 관리자 표현(`x-special/…-copied-files`)은 **첫 줄이 `cut`/`copy`** 다 —
     /// [`crate::capture::parse_uri_list`]가 `file://` 줄만 받으므로 표식 줄은 저절로 걸러진다.
@@ -54,26 +57,7 @@ impl ClipSnapshot {
     /// 복사해도 목록에 둘로 보인다(08-29).
     #[must_use]
     pub fn file_paths(&self) -> Vec<String> {
-        let mut out: Vec<String> = Vec::new();
-        for r in &self.reps {
-            let found = match r.format.as_str() {
-                "CF_HDROP" => crate::capture::parse_hdrop(&r.data),
-                "text/uri-list"
-                | "public.file-url"
-                | "x-special/gnome-copied-files"
-                | "x-special/KDE-copied-files"
-                | "x-special/nautilus-clipboard" => std::str::from_utf8(&r.data)
-                    .map(crate::capture::parse_uri_list)
-                    .unwrap_or_default(),
-                _ => continue,
-            };
-            for p in found {
-                if !out.contains(&p) {
-                    out.push(p);
-                }
-            }
-        }
-        out
+        crate::capture::paths_of(&self.reps)
     }
 
     /// 파일 항목의 **이름만**(목록 표시용 — 전체 경로는 길고 사생활이다).

@@ -147,6 +147,13 @@ type PendingText = (u64, String, Vec<(String, [u8; 32], u64)>);
 
 /// 다른 스레드(트레이·감시)에서 메인 루프로 쏘는 사건.
 #[derive(Debug)]
+/// [`Shell::resolve_remote_files`]의 답.
+enum Resolved {
+    Ready(Vec<RawRep>),
+    Fetching,
+    Text(Vec<RawRep>),
+}
+
 pub(crate) enum ShellEvent {
     /// 트레이 좌클릭·메뉴 "열기" — 설정 창을 연다(있으면 앞으로).
     Open,
@@ -171,6 +178,10 @@ pub(crate) enum ShellEvent {
         summary: String,
         skip_hash: Option<u64>,
     },
+    /// ★ 파일 전송 진행(09-12 · DR-30) — 펌프 스레드가 250ms 간격으로 깨운다(패널·배지·트레이 갱신).
+    XferTick,
+    /// ★ 파일 전송 항목 종결(전부 완료 또는 실패/중지) — 붙여넣기 대기가 있으면 게시·주입.
+    XferDone { item_id: u64 },
     /// ★ 섬네일 디코드 완료(09-04 · 30 §4) — 워커 스레드 → 캐시.
     ThumbReady {
         id: u64,
@@ -262,15 +273,77 @@ fn content(held: usize, recent: Vec<String>, sync_on: bool) -> TrayContent {
     if sync_on {
         overlay_sync_dot(&mut rgba, ICON_SIDE);
     }
+    // ★ 파일 전송 중(09-12) — 좌하단 파랑 점 + 툴팁에 "N개 받는 중 · P%".
+    let mut tip = tooltip(held);
+    if let Some((n, pct)) = crate::xfer::active_summary() {
+        overlay_xfer_dot(&mut rgba, ICON_SIDE);
+        let line = tr(lang, Msg::TrayXfer)
+            .replacen("{}", &n.to_string(), 1)
+            .replacen("{}", &pct.to_string(), 1);
+        tip = format!("{tip} — {line}");
+    }
     TrayContent {
         rgba,
         side: ICON_SIDE,
-        tooltip: tooltip(held),
+        tooltip: tip,
         name: tr(lang, Msg::AppName).to_string(),
         open_label: tr(lang, Msg::TrayOpen).to_string(),
         quit_label: tr(lang, Msg::TrayQuit).to_string(),
         settings_label: tr(lang, Msg::TraySettings).to_string(),
         recent,
+    }
+}
+
+/// ★ 전송 중 표식(09-12) — 좌하단 파랑 점(상태줄 "None 로컬" 파랑과 같은 계열 · 동기화 녹색 점과 대각).
+fn overlay_xfer_dot(rgba: &mut [u8], side: u32) {
+    let r = ((side as i32) * 5 / 32).max(3);
+    let (cx, cy) = (r, side as i32 - 1 - r);
+    for y in 0..side as i32 {
+        for x in 0..side as i32 {
+            let dx = x - cx;
+            let dy = y - cy;
+            let d2 = dx * dx + dy * dy;
+            if d2 > r * r {
+                continue;
+            }
+            let i = ((y * side as i32 + x) * 4) as usize;
+            let rim = d2 > (r - 2) * (r - 2);
+            let (cr, cg, cb) = if rim {
+                (20u8, 60u8, 140u8)
+            } else {
+                (52u8, 120u8, 246u8)
+            };
+            rgba[i] = cr;
+            rgba[i + 1] = cg;
+            rgba[i + 2] = cb;
+            rgba[i + 3] = 255;
+        }
+    }
+}
+
+/// ★ 파일 내용 공유 정책(09-12) — 설정 5키 → 바이트 단위 [`crate::xfer::Policy`].
+pub(crate) fn xfer_policy(conf: &Settings) -> crate::xfer::Policy {
+    let mb = |k: &str, d: u64| conf.state.get(k).parse::<u64>().unwrap_or(d) * 1024 * 1024;
+    crate::xfer::Policy {
+        contents: conf.state.get("sync.file_contents") == "on",
+        auto_bytes: mb("sync.file_auto_mb", 50),
+        bg_bps: conf
+            .state
+            .get("sync.file_bg_kbps")
+            .parse::<u64>()
+            .unwrap_or(1024)
+            * 1024,
+        max_bytes: mb("sync.file_max_mb", 1000),
+        cache_bytes: mb("sync.file_cache_mb", 2000),
+    }
+}
+
+/// 이 OS의 붙여넣기 키 표기(알림 문구).
+fn paste_key_label() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "⌘V"
+    } else {
+        "Ctrl+V"
     }
 }
 
@@ -978,14 +1051,20 @@ impl Shell {
         let Some(item) = self.history.get(pos) else {
             return;
         };
-        let reps: Vec<RawRep> = Self::reps_for_mode(item, as_);
+        let (item_reps, label) = (item.reps.clone(), item.label.clone());
+        let by_mode = Self::reps_for_mode(item, as_);
+        let reps: Vec<RawRep> = match self.resolve_remote_files(id, &item_reps, as_) {
+            Some(Resolved::Ready(r) | Resolved::Text(r)) => r,
+            Some(Resolved::Fetching) => return,
+            None => by_mode,
+        };
         if reps.is_empty() {
             eprintln!("평문 표현이 없는 항목입니다");
             return;
         }
         match nclip_plat::clipboard::set_reps(&reps) {
             Ok(n) => {
-                println!("복사(메인창): \"{}\" — 표현 {n}개", item.label);
+                println!("복사(메인창): \"{label}\" — 표현 {n}개");
                 self.history.expect_echo(pos);
             }
             Err(e) => eprintln!("복사 실패: {e}"),
@@ -998,9 +1077,15 @@ impl Shell {
         let Some(item) = self.history.get(i) else {
             return;
         };
-        match nclip_plat::clipboard::set_reps(&item.reps) {
+        let (id, item_reps, label) = (item.id, item.reps.clone(), item.label.clone());
+        let reps = match self.resolve_remote_files(id, &item_reps, PasteAs::Original) {
+            Some(Resolved::Ready(r) | Resolved::Text(r)) => r,
+            Some(Resolved::Fetching) => return,
+            None => item_reps,
+        };
+        match nclip_plat::clipboard::set_reps(&reps) {
             Ok(n) => {
-                println!("재적재: \"{}\" — 표현 {n}개 게시", item.label);
+                println!("재적재: \"{label}\" — 표현 {n}개 게시");
                 // ★ 부분 게시의 에코는 원본 승격으로(08-30 Linux 실기 "같은 항목 둘").
                 self.history.expect_echo(i);
             }
@@ -1140,6 +1225,30 @@ impl Shell {
                 snap.reps.len()
             );
         }
+        // ★ 파일 내용 공유(09-12 · DR-30) — 내 파일 항목은 서빙 가능 경로로 제안하고,
+        //   받은 약속은 상한 이하면 백그라운드 사전 캐시 줄에 세운다(저속 · Fg에 양보).
+        if kind == nclip_core::ClipKind::Files {
+            if let Some(front) = self.history.get(0) {
+                match nclip_core::RemoteFiles::of_reps(&front.reps) {
+                    Some(m) if remote.is_some() => {
+                        let id = front.id;
+                        if let Some(crate::xfer::Fetch::Started(n)) =
+                            crate::xfer::with(|x| x.fetch(id, &m, crate::xfer::Prio::Bg))
+                        {
+                            if n > 0 {
+                                println!(
+                                    "파일 공유: {}의 파일 {n}개({}MB) 사전 캐시 대기(백그라운드 저속)",
+                                    m.origin_name,
+                                    m.total_bytes() / 1_048_576
+                                );
+                            }
+                        }
+                    }
+                    None => crate::xfer::offer(&nclip_core::paths_of(&front.reps)),
+                    Some(_) => {}
+                }
+            }
+        }
         // ★ 영속(T-16) — 이력 변화를 그대로 이벤트로 흘린다(id가 짝이다).
         match pushed {
             Pushed::New | Pushed::Replaced => {
@@ -1194,10 +1303,22 @@ impl Shell {
         //   "네트워크 처리가 프로그램을 멈추거나 지연시키지 않게").
         let reps = snap.reps.clone();
         let skip = self.sync_skip;
+        // ★ 파일 경로 전파 정책(09-12)은 **여기(UI 스레드)**서 읽는다 — 설정 맵 조회는 값싸고,
+        //   워커에 값으로 넘기면 설정 창에서 방금 바꾼 값이 다음 복사부터 바로 산다.
+        //   `None` = 파일 항목을 보내지 않는다(`sync.files` 끔).
+        let files_max = (self.app.conf.state.get("sync.files") == "on").then(|| {
+            self.app
+                .conf
+                .state
+                .get("sync.files_max")
+                .parse::<usize>()
+                .unwrap_or(1000)
+                .max(1)
+        });
         let _ = std::thread::Builder::new()
             .name("nclip-sync-out".into())
             .spawn(move || {
-                let Some(payload) = crate::syncitem::from_reps(&reps) else {
+                let Some(payload) = crate::syncitem::from_reps_limited(&reps, files_max) else {
                     return;
                 };
                 let h = crate::syncitem::hash(&payload);
@@ -1230,6 +1351,7 @@ impl Shell {
             self.sync_skip = Some((h, std::time::Instant::now()));
         }
         println!("동기화: ← {from} 항목 수신 — {summary}");
+        let promise = crate::syncitem::has_promise(&reps);
         let snap = ClipSnapshot {
             reps: reps.clone(),
             source_app: Some(format!("{REMOTE_MARK}{from}")),
@@ -1237,6 +1359,11 @@ impl Shell {
             seq: 0,
         };
         self.on_captured(Box::new(snap), Some(from));
+        if promise {
+            // ★ 파일 약속(DR-30) — 지금 게시하지 않는다(붙여넣을 때 받는다). 사전 캐시는 on_captured가 줄 세웠다.
+            println!("동기화: 파일 약속 등재 — 목록에서 고르면 {from}에서 받아 붙여넣습니다");
+            return;
+        }
         // ★ 클립보드 열기 경합(09-04 실기 — 다른 앱/인스턴스가 쥔 순간) — 짧게 몇 번 다시 시도.
         let mut last = Err(String::new());
         for attempt in 0..5 {
@@ -1266,13 +1393,22 @@ impl Shell {
         let Some(item) = self.history.get(index) else {
             return;
         };
-        let reps: Vec<RawRep> = Self::reps_for_mode(item, as_);
+        let (item_id, item_reps, label) = (item.id, item.reps.clone(), item.label.clone());
+        let by_mode = Self::reps_for_mode(item, as_);
+        // ★ 원격 파일 약속(09-12 · DR-30) — 붙여넣을 때 받는다. 받는 중이면 팝업만 닫고 완료를 기다린다.
+        let reps: Vec<RawRep> = match self.resolve_remote_files(item_id, &item_reps, as_) {
+            Some(Resolved::Ready(r) | Resolved::Text(r)) => r,
+            Some(Resolved::Fetching) => {
+                self.close_popup();
+                return;
+            }
+            None => by_mode,
+        };
         if reps.is_empty() {
             // 그 모드가 무의미한 항목 — 있는 척하지 않는다(DR-31).
             eprintln!("이 항목에는 그 방식의 표현이 없습니다 — 원본(Enter)으로 붙여넣으세요");
             return;
         }
-        let label = item.label.clone();
         self.close_popup();
         match nclip_plat::clipboard::set_reps(&reps) {
             Ok(n) => {
@@ -1312,7 +1448,27 @@ impl Shell {
             else {
                 continue;
             };
-            let mut reps = Self::reps_for_mode(item, as_);
+            let mut reps = match nclip_core::RemoteFiles::of_reps(&item.reps) {
+                // ★ 원격 파일 약속(09-12) — 순차 붙여넣기는 기다리지 않는다: 캐시면 파일, 아니면 경로 텍스트.
+                Some(m) => {
+                    match crate::xfer::with(|x| x.all_cached(&m)).flatten() {
+                        Some(paths) => {
+                            let local: Vec<String> = paths
+                                .iter()
+                                .map(|p| p.to_string_lossy().into_owned())
+                                .collect();
+                            let mut r = nclip_plat::clipboard::file_reps(&local);
+                            r.extend(nclip_plat::clipboard::plain_text_reps(&local.join("\r\n")));
+                            r
+                        }
+                        None => {
+                            eprintln!("순차 붙여넣기: 항목 {id}는 아직 받지 않은 원격 파일 — 경로 텍스트로");
+                            nclip_plat::clipboard::plain_text_reps(&m.paths().join("\r\n"))
+                        }
+                    }
+                }
+                None => Self::reps_for_mode(item, as_),
+            };
             if reps.is_empty() {
                 reps = item.reps.clone(); // 평문이 없는 항목은 원본으로.
             }
@@ -1344,6 +1500,198 @@ impl Shell {
             },
             if newline { "있음" } else { "없음" }
         );
+    }
+
+    /// ★ 원격 파일 항목(DR-30 약속)의 붙여넣기 해석 — 항목에 약속이 없으면 `None`(보통 경로).
+    ///
+    /// | 결과 | 뜻 |
+    /// |---|---|
+    /// | `Ready(reps)` | 캐시에 전부 있다 — 실파일 표현(+경로 텍스트) |
+    /// | `Fetching` | 지금 받기 시작했다 — 끝나면 [`on_xfer_done`](Self::on_xfer_done)이 게시·주입 |
+    /// | `Text(reps)` | 파일로는 못 준다(상한·끔·오프라인·경로만 모드) — 경로 텍스트 + 로그(docs/26 §4-2) |
+    fn resolve_remote_files(
+        &mut self,
+        item_id: u64,
+        reps: &[RawRep],
+        as_: PasteAs,
+    ) -> Option<Resolved> {
+        let m = nclip_core::RemoteFiles::of_reps(reps)?;
+        let text_of =
+            |paths: &[String]| nclip_plat::clipboard::plain_text_reps(&paths.join("\r\n"));
+        if as_ == PasteAs::PathOnly {
+            // 경로만 — 원격 내용을 끌어오지 않는다(회선 절약 · docs/26 §4-5).
+            return Some(Resolved::Text(text_of(&m.paths())));
+        }
+        let r = crate::xfer::with(|x| x.fetch(item_id, &m, crate::xfer::Prio::Fg))
+            .unwrap_or(crate::xfer::Fetch::Disabled);
+        use crate::xfer::Fetch as F;
+        Some(match r {
+            F::Ready(paths) => {
+                let local: Vec<String> = paths
+                    .iter()
+                    .map(|p| p.to_string_lossy().into_owned())
+                    .collect();
+                let mut out = nclip_plat::clipboard::file_reps(&local);
+                if as_ != PasteAs::Object {
+                    out.extend(text_of(&local));
+                }
+                println!(
+                    "파일 공유: \"{}\" 캐시 적중 — 파일 {}개 게시",
+                    m.origin_name,
+                    local.len()
+                );
+                Resolved::Ready(out)
+            }
+            F::Started(n) => {
+                let _ = crate::xfer::with(|x| x.set_pending_paste(item_id, as_));
+                println!(
+                    "파일 공유: {}에서 파일 {}개({}MB) 받는 중 — 완료되면 클립보드에 올립니다",
+                    m.origin_name,
+                    n.max(1),
+                    m.total_bytes() / 1_048_576
+                );
+                let lang = current_lang();
+                self.tray.notify(
+                    tr(lang, Msg::XferPanel),
+                    tr(lang, Msg::NotifyFilesFetching),
+                    true,
+                    "",
+                );
+                self.on_xfer_tick();
+                Resolved::Fetching
+            }
+            F::TooLarge { total, max } => {
+                eprintln!(
+                    "파일 공유: 파일 내용 대신 경로만 — 합계 {}MB가 상한 {}MB를 넘습니다 · 조치: 설정 → 동기화 → \"붙여넣기 시 최대 크기\"를 올리거나 원본 기기에서 직접 복사",
+                    total / 1_048_576,
+                    max / 1_048_576
+                );
+                Resolved::Text(text_of(&m.paths()))
+            }
+            F::Disabled => {
+                eprintln!("파일 공유: 경로만 — 파일 내용 받기가 꺼져 있습니다(설정 → 동기화)");
+                Resolved::Text(text_of(&m.paths()))
+            }
+            F::Offline => {
+                eprintln!(
+                    "파일 공유: 파일 받기 불가 — 원본 기기 {} 오프라인 · 조치: 그 기기를 켜거나 자동 캐시 상한을 올리세요(경로 글자로 올립니다)",
+                    m.origin_name
+                );
+                Resolved::Text(text_of(&m.paths()))
+            }
+        })
+    }
+
+    /// ★ 전송 진행(09-12 · 펌프 250ms) — 패널·배지·트레이 갱신(UI 스레드는 스냅숏만 복사한다).
+    fn on_xfer_tick(&mut self) {
+        self.main.set_xfers(crate::xfer::views());
+        self.refresh_tray();
+    }
+
+    /// ★ 항목 전송 종결 — 전부 완료면 캐시에서 게시(+짧으면 주입) · 실패면 알림.
+    fn on_xfer_done(&mut self, item_id: u64) {
+        let lang = current_lang();
+        let done = crate::xfer::with(|x| x.item_done(item_id)).unwrap_or(false);
+        let pending = crate::xfer::with(|x| x.take_pending_paste(item_id)).flatten();
+        if done {
+            let _ = self.ensure_loaded(item_id);
+            let manifest = self
+                .history
+                .get_by_id(item_id)
+                .and_then(|it| nclip_core::RemoteFiles::of_reps(&it.reps));
+            if let Some(m) = manifest {
+                if let Some(paths) = crate::xfer::with(|x| x.all_cached(&m)).flatten() {
+                    let local: Vec<String> = paths
+                        .iter()
+                        .map(|p| p.to_string_lossy().into_owned())
+                        .collect();
+                    let as_ = pending.map_or(PasteAs::Original, |(a, _)| a);
+                    let mut reps = nclip_plat::clipboard::file_reps(&local);
+                    if as_ != PasteAs::Object {
+                        reps.extend(nclip_plat::clipboard::plain_text_reps(&local.join("\r\n")));
+                    }
+                    match nclip_plat::clipboard::set_reps(&reps) {
+                        Ok(n) => {
+                            println!(
+                                "파일 공유: 받기 완료 — 파일 {}개 게시(표현 {n}개)",
+                                local.len()
+                            );
+                            if let Some(pos) = (0..self.history.len())
+                                .find(|&i| self.history.get(i).is_some_and(|it| it.id == item_id))
+                            {
+                                self.history.expect_echo(pos);
+                            }
+                            // ★ 붙여넣기가 기다렸고 금방 끝났으면 주입 — 늦었으면 알림만(사용자는 이미 딴 데 있다).
+                            let injected = matches!(pending, Some((_, dt)) if dt <= crate::xfer::PASTE_INJECT_WINDOW)
+                                && self.paste_auto
+                                && self.paste.restore_and_paste(as_).is_ok();
+                            if !injected {
+                                self.tray.notify(
+                                    tr(lang, Msg::XferPanel),
+                                    &tr(lang, Msg::NotifyFilesReady).replacen(
+                                        "{}",
+                                        paste_key_label(),
+                                        1,
+                                    ),
+                                    false,
+                                    "",
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("파일 공유: 클립보드 게시 실패({e}) — 캐시에는 있습니다")
+                        }
+                    }
+                }
+            }
+        } else if let Some(why) = crate::xfer::with(|x| x.item_failure(item_id)).flatten() {
+            eprintln!(
+                "파일 공유: 받기 실패 — {why} · 조치: 패널에서 재시도하거나 원본 기기를 확인하세요"
+            );
+            if why != "stopped" {
+                self.tray
+                    .notify(tr(lang, Msg::NotifyFilesFailed), &why, false, "");
+            }
+        }
+        self.on_xfer_tick();
+        self.main.on_history_changed(&self.history);
+        if self.popup.is_open() {
+            self.popup.on_history_changed(&self.history);
+        }
+    }
+
+    /// ★ 시작·복원 뒤 한 번(09-12) — 내 파일 항목의 경로를 제안 목록에 · 원격 약속 항목은 사전 캐시 후보로.
+    fn seed_xfer(&mut self) {
+        let mut offered: Vec<String> = Vec::new();
+        let mut promises: Vec<(u64, nclip_core::RemoteFiles)> = Vec::new();
+        let mut i = 0usize;
+        while let Some(it) = self.history.get(i) {
+            i += 1;
+            if it.kind != nclip_core::ClipKind::Files {
+                continue;
+            }
+            match nclip_core::RemoteFiles::of_reps(&it.reps) {
+                Some(m) => promises.push((it.id, m)),
+                None => offered.extend(nclip_core::paths_of(&it.reps)),
+            }
+        }
+        crate::xfer::offer(&offered);
+        let mut queued = 0usize;
+        for (id, m) in &promises {
+            if matches!(
+                crate::xfer::with(|x| x.fetch(*id, m, crate::xfer::Prio::Bg)),
+                Some(crate::xfer::Fetch::Started(n)) if n > 0
+            ) {
+                queued += 1;
+            }
+        }
+        if !offered.is_empty() || !promises.is_empty() {
+            println!(
+                "파일 공유: 제안 경로 {}개 · 원격 약속 {}개(사전 캐시 대기 {queued})",
+                offered.len(),
+                promises.len()
+            );
+        }
     }
 
     /// 팝업이 닫힌 다음 바퀴 — 포커스 복원 + 키 주입.
@@ -1511,8 +1859,31 @@ impl ApplicationHandler<ShellEvent> for Shell {
                     self.popup.on_history_changed(&self.history);
                 }
                 MainAction::CopyImage(id) => self.copy_as_image(id),
+                // ★ 전송 패널(09-12) — 파일 단위 중지·재시도·지우기 · 전체 중지.
+                MainAction::XferStop(req) => {
+                    if crate::xfer::with(|x| x.stop(req)).unwrap_or(false) {
+                        println!("파일 공유: 전송 {req} 중지");
+                    }
+                    self.on_xfer_tick();
+                }
+                MainAction::XferRetry(req) => {
+                    if crate::xfer::with(|x| x.retry(req)).unwrap_or(false) {
+                        println!("파일 공유: 전송 {req} 재시도(이어 받기)");
+                    }
+                    self.on_xfer_tick();
+                }
+                MainAction::XferClear => {
+                    let _ = crate::xfer::with(|x| x.clear_finished(std::time::Duration::ZERO));
+                    self.on_xfer_tick();
+                }
+                MainAction::XferStopAll => {
+                    let n = crate::xfer::with(|x| x.stop_all()).unwrap_or(0);
+                    println!("파일 공유: 전송 {n}개 중지");
+                    self.on_xfer_tick();
+                }
                 MainAction::Delete(id) => {
                     if self.history.remove(id) {
+                        let _ = crate::xfer::with(|x| x.forget_item(id));
                         self.thumbs.borrow_mut().remove(id);
                         self.search_idx.borrow_mut().remove(&id);
                         self.store.remove(id);
@@ -1677,6 +2048,8 @@ impl ApplicationHandler<ShellEvent> for Shell {
                 skip_hash,
             } => self.apply_remote(&from, reps, &summary, skip_hash),
             ShellEvent::Recent(i) => self.repost(i),
+            ShellEvent::XferTick => self.on_xfer_tick(),
+            ShellEvent::XferDone { item_id } => self.on_xfer_done(item_id),
         }
         self.pump_preview();
     }
@@ -2004,6 +2377,10 @@ pub(crate) fn run() {
     let main_font = font.clone();
     // ★ 고정폭 글꼴(09-04) — 터미널/코드 리치 런의 Mono 슬롯(없으면 주 글꼴).
     let mono_font = crate::conf::load_mono_font(&conf, &font);
+    // ★ 파일 내용 공유(09-12 · DR-30) — 캐시 관리자 + 펌프(세션이 없어도 상주 · 요청은 세션 있을 때만).
+    crate::xfer::init(&crate::conf::data_dir());
+    crate::xfer::set_policy(xfer_policy(&conf));
+    crate::xfer::spawn_pump(el.create_proxy());
     // ★ M2 동기화 기반(09-03) — 켜져 있으면 릴레이 접속 스레드 상주(상태는 proxy로 통지).
     crate::sync_cmd::spawn_if_enabled(&conf, el.create_proxy());
 
@@ -2056,6 +2433,7 @@ pub(crate) fn run() {
     // ★ 복원 직후 트레이 메뉴·툴팁 갱신(09-01 사용자 실기 "우클릭에 최근이 안 보임") —
     //   spawn 때는 빈 내용이었고 첫 캡처까지는 아무도 불러주지 않았다.
     shell.refresh_tray();
+    shell.seed_xfer();
     if let Err(e) = el.run_app(&mut shell) {
         eprintln!("이벤트 루프 오류: {e}");
     }

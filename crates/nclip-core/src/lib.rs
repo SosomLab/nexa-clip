@@ -17,13 +17,16 @@ pub mod img;
 pub mod item;
 pub mod paste;
 pub mod ports;
+/// ★ 원격 파일 매니페스트(09-12 · DR-30) — 붙여넣을 때 원본 기기에서 당겨 받는 약속.
+pub mod remote_files;
 /// ★ T-18d 1단 — 제한 리치텍스트 런 파서(09-03).
 pub mod richtext;
 pub mod search;
 
 pub use capture::{
-    capture, classify, classify_with_text, decode_plain, has_content, parse_hdrop, parse_uri_list,
-    select_reps, CapturePolicy, Captured, Preview, PreviewMissing, RepInfo, ThumbInfo,
+    capture, classify, classify_with_text, decode_plain, file_uri, has_content, parse_hdrop,
+    parse_plist_paths, parse_uri_list, paths_of, select_reps, CapturePolicy, Captured, Preview,
+    PreviewMissing, RepInfo, ThumbInfo,
 };
 pub use diag::{DiagLog, Level, Record};
 pub use i18n::{current_lang, set_lang, tr, Lang, Msg};
@@ -32,3 +35,4 @@ pub use paste::{PasteAs, PasteCapability, PasteError, PasteInjector, PasteUnsupp
 pub use ports::{
     ClipSnapshot, ClipboardWatch, RawRep, UnsupportedReason, WatchCapability, WatchError,
 };
+pub use remote_files::{RemoteFile, RemoteFiles};

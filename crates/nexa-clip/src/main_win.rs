@@ -12,6 +12,7 @@
 //! 존재 이유("자주 쓰는 것이 안 떠내려간다"). 툴바 아이콘은 **벡터로 직접** 그린다
 //! (글꼴 글리프는 두부 위험 — 09-01 `−` 교훈 · VT-1).
 
+use crate::xfer::{ItemStatus, State as XferState, XferView};
 use nclip_core::capture::decode_plain;
 use nclip_core::history::History;
 use nclip_core::{current_lang, tr, ClipKind, Msg, PasteAs};
@@ -113,6 +114,50 @@ pub(crate) enum MainAction {
     /// 검색어가 바뀌었다 — 셸이 이력으로 `refresh`를 다시 불러줘야 한다
     /// (창은 이력을 빌리지 않고 스냅샷만 든다).
     QueryChanged,
+    /// ★ 전송 패널(09-12 · DR-30) — 파일 단위 중지.
+    XferStop(u32),
+    /// 파일 단위 재시도(이어 받기).
+    XferRetry(u32),
+    /// 끝난 행 지우기.
+    XferClear,
+    /// 전부 중지.
+    XferStopAll,
+}
+
+/// 전송 패널 버튼 히트(페인트가 기록 · 클릭이 읽는다).
+#[derive(Clone, Copy)]
+enum XferHit {
+    Stop(u32),
+    Retry(u32),
+    Clear,
+    StopAll,
+}
+
+/// ★ 원격 파일 배지(09-12) — 글자·색. 글리프는 글꼴에 없을 수 있어 **글자만** 쓴다.
+fn files_badge(th: &Theme, st: ItemStatus) -> (String, nclip_ctl::theme::Color) {
+    let lang = current_lang();
+    match st {
+        ItemStatus::Cached => (format!("[{}]", tr(lang, Msg::BadgeCached)), th.ok),
+        ItemStatus::Fetching(p) => (format!("[{} {p}%]", tr(lang, Msg::XferActive)), th.accent),
+        ItemStatus::Offline => (format!("[{}]", tr(lang, Msg::XferOffline)), th.warn),
+        ItemStatus::Failed => (format!("[{}]", tr(lang, Msg::XferFailed)), th.danger),
+        ItemStatus::Remote => (format!("[{}]", tr(lang, Msg::BadgeRemote)), th.text_dim),
+    }
+}
+
+/// 바이트 → 사람 단위(KB/MB/GB · 소수 1자리).
+fn human_bytes(b: u64) -> String {
+    const K: f64 = 1024.0;
+    let f = b as f64;
+    if f >= K * K * K {
+        format!("{:.1} GB", f / (K * K * K))
+    } else if f >= K * K {
+        format!("{:.1} MB", f / (K * K))
+    } else if f >= K {
+        format!("{:.0} KB", f / K)
+    } else {
+        format!("{b} B")
+    }
 }
 
 /// 목록 한 행(그리기용 사본 — 이력을 빌리지 않는다).
@@ -138,6 +183,8 @@ struct Row {
     rich: Option<std::rc::Rc<Vec<Vec<nclip_core::richtext::Run>>>>,
     /// 첫 평문 표현(편집 시드 · Rich 보기 둘째 줄) — 없으면 None.
     plain: Option<String>,
+    /// ★ 원격 파일 약속 상태(09-12 · DR-30) — 배지(캐시됨/받는 중/오프라인/실패/원격). `None` = 약속 없음.
+    files: Option<ItemStatus>,
 }
 
 /// 세로 툴바 버튼.
@@ -282,6 +329,9 @@ pub(crate) struct MainWin {
     settings_icon: std::cell::RefCell<Option<(u32, nclip_ctl::theme::IconImage)>>,
     /// ★ 미리보기 패널 열림(09-02 K4 · `ui.preview_open` 영속 — 기본 접힘).
     preview_open: bool,
+    /// ★ 전송 패널(09-12 · DR-30) — 펌프 스냅숏(비면 패널 없음) · 버튼 히트(페인트가 기록).
+    xfers: Vec<XferView>,
+    xfer_hits: std::cell::RefCell<Vec<(Rect, XferHit)>>,
     /// ★ 중복 제외 보기(09-04 사용자) — 같은 내용은 **로컬 1건**, 로컬이 없으면 **가장 최근 수신 1건**만.
     dedup_view: bool,
     /// 미리보기 텍스트 — (항목 id, 읽기용 멀티라인 · wrap · 휠 스크롤만 라우팅).
@@ -368,6 +418,8 @@ impl MainWin {
             watch_icon: std::cell::RefCell::new(None),
             settings_icon: std::cell::RefCell::new(None),
             preview_open: false,
+            xfers: Vec::new(),
+            xfer_hits: std::cell::RefCell::new(Vec::new()),
             preview_tb: None,
             preview_scroll: 0,
             dedup_view: false,
@@ -696,6 +748,10 @@ impl MainWin {
                 img_dims: display_dims(&item.reps).or_else(|| parse_dims(&item.label)),
                 plain,
                 rich,
+                // ★ 원격 파일 약속(09-12) — 캐시 stat은 열쇠당 한 번(관리자가 기억).
+                files: nclip_core::RemoteFiles::of_reps(&item.reps).map(|m| {
+                    crate::xfer::with(|x| x.item_status(&m)).unwrap_or(ItemStatus::Remote)
+                }),
             };
             if row.pinned {
                 pinned.push(row);
@@ -806,25 +862,26 @@ impl MainWin {
             self.toolbar_w(),
             self.header_h(),
             (w - self.toolbar_w()).max(0),
-            (h - self.header_h() - self.status_h() - self.preview_h_of(h)).max(0),
+            (h - self.header_h() - self.status_h() - self.preview_h_of(h) - self.xfer_h_of(h))
+                .max(0),
         )
     }
 
-    /// ★ 미리보기 패널 높이(09-02 K4) — 목록 영역의 35% · 최소 80px.
+    /// ★ 미리보기 패널 높이(09-02 K4) — 목록 영역의 35% · 최소 80px(전송 패널 몫은 뺀다).
     fn preview_h_of(&self, h: i32) -> i32 {
         if !self.preview_open {
             return 0;
         }
-        let avail = (h - self.header_h() - self.status_h()).max(0);
+        let avail = (h - self.header_h() - self.status_h() - self.xfer_h_of(h)).max(0);
         (avail * 35 / 100).max(self.px(80.0)).min(avail)
     }
 
-    /// 미리보기 패널 사각형 — 상태줄 위 · 툴바 오른쪽.
+    /// 미리보기 패널 사각형 — 상태줄(과 전송 패널) 위 · 툴바 오른쪽.
     fn preview_rect(&self, w: i32, h: i32) -> Rect {
         let ph = self.preview_h_of(h);
         Rect::new(
             self.toolbar_w(),
-            h - self.status_h() - ph,
+            h - self.status_h() - self.xfer_h_of(h) - ph,
             (w - self.toolbar_w()).max(0),
             ph,
         )
@@ -1226,6 +1283,35 @@ impl MainWin {
     }
 
     /// ★ 상태줄 점 모드(09-04) — 녹(릴레이 연결) · 파랑(None 로컬) · 진회색(미사용) · 흐림(릴레이 미연결).
+    /// ★ 전송 스냅숏 교체(09-12 · 펌프 250ms) — 같으면 그리지 않는다.
+    pub(crate) fn set_xfers(&mut self, v: Vec<XferView>) {
+        if v != self.xfers {
+            self.xfers = v;
+            self.redraw();
+        }
+    }
+
+    /// 전송 패널 높이 — 머리 24 + 행 24×n(목록 영역의 35% 상한 · 비면 0).
+    fn xfer_h_of(&self, h: i32) -> i32 {
+        if self.xfers.is_empty() {
+            return 0;
+        }
+        let avail = (h - self.header_h() - self.status_h()).max(0);
+        let want = self.px(24.0) + self.px(24.0) * self.xfers.len() as i32 + self.px(4.0);
+        want.min(avail * 35 / 100).max(self.px(52.0)).min(avail)
+    }
+
+    /// 전송 패널 사각형 — 상태줄 바로 위 · 툴바 오른쪽(미리보기 패널은 그 위).
+    fn xfer_rect(&self, w: i32, h: i32) -> Rect {
+        let xh = self.xfer_h_of(h);
+        Rect::new(
+            self.toolbar_w(),
+            h - self.status_h() - xh,
+            (w - self.toolbar_w()).max(0),
+            xh,
+        )
+    }
+
     pub(crate) fn set_sync_mode(&mut self, mode: SyncMode) {
         if self.sync_mode != mode {
             self.sync_mode = mode;
@@ -1580,6 +1666,21 @@ impl MainWin {
                         }
                         return MainAction::None;
                     }
+                    // ★ 전송 패널 버튼(09-12) — 페인트가 기록한 히트 영역.
+                    let xhit = self
+                        .xfer_hits
+                        .borrow()
+                        .iter()
+                        .find(|(r, _)| r.contains(nclip_ctl::geom::Point { x, y }))
+                        .map(|(_, h)| *h);
+                    if let Some(hit) = xhit {
+                        return match hit {
+                            XferHit::Stop(r) => MainAction::XferStop(r),
+                            XferHit::Retry(r) => MainAction::XferRetry(r),
+                            XferHit::Clear => MainAction::XferClear,
+                            XferHit::StopAll => MainAction::XferStopAll,
+                        };
+                    }
                     if let Some(t) = self.tool_at(x, y, h) {
                         return self.act(t);
                     }
@@ -1793,7 +1894,9 @@ impl MainWin {
     }
 
     fn ensure_visible(&mut self, h: i32) {
-        let l_h = (h - self.header_h() - self.status_h() - self.preview_h_of(h)).max(1);
+        let l_h =
+            (h - self.header_h() - self.status_h() - self.preview_h_of(h) - self.xfer_h_of(h))
+                .max(1);
         if self.sel + 1 >= self.row_offs.len() {
             return; // 오프셋 미생성(첫 paint 전) — 다음 paint가 재계산.
         }
@@ -2071,6 +2174,16 @@ impl MainWin {
                     }
                 }
                 let mut right = list.x + list.w - pad;
+                // ★ 원격 파일 배지(09-12) — 캐시됨/받는 중/오프라인/실패/원격.
+                if let Some(st) = row.files {
+                    let (btxt, bcol) = files_badge(&th, st);
+                    dc.select_font(FontSlot::Status, false);
+                    let tw = dc.text_width(&btxt);
+                    right -= tw;
+                    dc.text(right, y + px(6.0), clip, &btxt, bcol);
+                    dc.select_font(FontSlot::Base, false);
+                    right -= px(8.0);
+                }
                 // ★ 번호 단축키 배지(09-07) — 1~9번째 행 우측 끝(팝업과 같은 화법) · 설정값(09-08).
                 let tag = self.keymap.number_badge(vi + 1);
                 if vi < 9 && !tag.is_empty() {
@@ -2237,6 +2350,16 @@ impl MainWin {
             }
             // 우측 메타(출처 · ×n) 먼저 재서 라벨 clip을 줄인다.
             let mut right = list.x + list.w - pad;
+            // ★ 원격 파일 배지(09-12) — 캐시됨/받는 중/오프라인/실패/원격.
+            if let Some(st) = row.files {
+                let (btxt, bcol) = files_badge(&th, st);
+                dc.select_font(FontSlot::Status, false);
+                let tw = dc.text_width(&btxt);
+                right -= tw;
+                dc.text(right, text_y, clip, &btxt, bcol);
+                dc.select_font(FontSlot::Base, false);
+                right -= px(8.0);
+            }
             // ★ 번호 단축키 배지(09-07) — 1~9번째 행 우측 끝 · 설정값(09-08).
             let tag = self.keymap.number_badge(vi + 1);
             if vi < 9 && !tag.is_empty() {
@@ -2437,6 +2560,149 @@ impl MainWin {
         }
 
         // ── ④ 상태 1줄 ──
+        // ── ③c 전송 패널(09-12 · DR-30 · beep 화법) — 파일 단위: 이름 · 받은/전체 · 막대 · % · 속도 · 상태 · [중지/재시도].
+        {
+            let mut hits = self.xfer_hits.borrow_mut();
+            hits.clear();
+            if !self.xfers.is_empty() {
+                let xr = self.xfer_rect(w, h);
+                dc.fill_rect(xr, th.panel_bg_alt);
+                dc.fill_rect(Rect::new(xr.x, xr.y, xr.w, 1), th.border);
+                let lang = current_lang();
+                let row_h = px(24.0);
+                let head_h = px(24.0);
+                let ty = |y: i32| y + px(5.0);
+                // 머리 — 제목 · 개수 + 우측 [모두 중지] [지우기].
+                dc.select_font(FontSlot::Status, true);
+                let title = format!("{} · {}", tr(lang, Msg::XferPanel), self.xfers.len());
+                dc.text(xr.x + pad, ty(xr.y), xr, &title, th.text);
+                dc.select_font(FontSlot::Status, false);
+                let mut bx = xr.x + xr.w - pad;
+                for (label, hit) in [
+                    (Msg::XferClear, XferHit::Clear),
+                    (Msg::XferStopAll, XferHit::StopAll),
+                ] {
+                    let t = tr(lang, label);
+                    let bw = dc.text_width(t) + px(12.0);
+                    bx -= bw;
+                    let br = Rect::new(bx, xr.y + px(3.0), bw, head_h - px(6.0));
+                    dc.stroke_round_rect(br, px(4.0), th.border, 1.0);
+                    dc.text(br.x + px(6.0), br.y + px(2.0), br, t, th.text_dim);
+                    hits.push((br, hit));
+                    bx -= px(6.0);
+                }
+                // 행 — 오른쪽부터 고정 폭(버튼 · 상태 · % · 막대 · 바이트), 이름이 나머지.
+                let mut y = xr.y + head_h;
+                let max_rows = ((xr.h - head_h) / row_h).max(0) as usize;
+                let bar_w = px(110.0);
+                for v in self.xfers.iter().take(max_rows) {
+                    let rr = Rect::new(xr.x, y, xr.w, row_h);
+                    let mut right = xr.x + xr.w - pad;
+                    // [중지] / [재시도] — 완료 행은 버튼 없음.
+                    let btn = match v.state {
+                        XferState::Queued | XferState::Active | XferState::Offline => {
+                            Some((Msg::XferStop, XferHit::Stop(v.req)))
+                        }
+                        XferState::Failed(_) | XferState::Stopped => {
+                            Some((Msg::XferRetry, XferHit::Retry(v.req)))
+                        }
+                        XferState::Done => None,
+                    };
+                    let bslot = px(64.0);
+                    if let Some((label, hit)) = btn {
+                        let t = tr(lang, label);
+                        let bw = (dc.text_width(t) + px(12.0)).min(bslot);
+                        let br = Rect::new(right - bw, y + px(3.0), bw, row_h - px(6.0));
+                        dc.stroke_round_rect(br, px(4.0), th.border, 1.0);
+                        dc.text(br.x + px(6.0), br.y + px(2.0), br, t, th.text);
+                        hits.push((br, hit));
+                    }
+                    right -= bslot + px(8.0);
+                    // 상태(+속도).
+                    let (state_txt, col) = match &v.state {
+                        XferState::Queued => (tr(lang, Msg::XferQueued).to_string(), th.text_dim),
+                        XferState::Active => (
+                            if v.rate > 0.0 {
+                                format!(
+                                    "{} · {}/s",
+                                    tr(lang, Msg::XferActive),
+                                    human_bytes(v.rate as u64)
+                                )
+                            } else {
+                                tr(lang, Msg::XferActive).to_string()
+                            },
+                            th.accent,
+                        ),
+                        XferState::Offline => (tr(lang, Msg::XferOffline).to_string(), th.warn),
+                        XferState::Done => (tr(lang, Msg::XferDone).to_string(), th.ok),
+                        XferState::Failed(_) => (tr(lang, Msg::XferFailed).to_string(), th.danger),
+                        XferState::Stopped => (tr(lang, Msg::XferStopped).to_string(), th.text_dim),
+                    };
+                    let sw = px(150.0);
+                    right -= sw;
+                    dc.text(
+                        right,
+                        ty(y),
+                        Rect::new(right, y, sw, row_h),
+                        &state_txt,
+                        col,
+                    );
+                    right -= px(8.0);
+                    // %.
+                    let pct = format!("{}%", v.pct());
+                    let pw = px(36.0);
+                    right -= pw;
+                    dc.text(right, ty(y), rr, &pct, th.text);
+                    right -= px(6.0);
+                    // 진행 막대.
+                    right -= bar_w;
+                    let bar = Rect::new(right, y + px(9.0), bar_w, px(6.0));
+                    dc.fill_round_rect(bar, px(3.0), th.border);
+                    let fill_w = (bar_w * i32::from(v.pct()) / 100).max(if v.received > 0 {
+                        px(3.0)
+                    } else {
+                        0
+                    });
+                    if fill_w > 0 {
+                        dc.fill_round_rect(Rect::new(bar.x, bar.y, fill_w, bar.h), px(3.0), col);
+                    }
+                    right -= px(8.0);
+                    // 받은/전체.
+                    let bytes = format!("{} / {}", human_bytes(v.received), human_bytes(v.size));
+                    let bw2 = px(130.0);
+                    right -= bw2;
+                    dc.text(
+                        right,
+                        ty(y),
+                        Rect::new(right, y, bw2, row_h),
+                        &bytes,
+                        th.text_dim,
+                    );
+                    right -= px(8.0);
+                    // 이름 · 출처(나머지 폭 · clip).
+                    let name = if v.origin_name.is_empty() {
+                        v.name.clone()
+                    } else {
+                        format!("{} — {}", v.name, v.origin_name)
+                    };
+                    let name_clip = Rect::new(xr.x + pad, y, (right - xr.x - pad).max(0), row_h);
+                    dc.text(xr.x + pad, ty(y), name_clip, &name, th.text);
+                    y += row_h;
+                }
+                if self.xfers.len() > max_rows {
+                    let more = format!("+{}", self.xfers.len() - max_rows);
+                    dc.text(
+                        xr.x + pad,
+                        ty(y).min(xr.y + xr.h - px(16.0)),
+                        xr,
+                        &more,
+                        th.text_dim,
+                    );
+                }
+                dc.select_font(FontSlot::Base, false);
+            }
+        }
+
         let sy = h - self.status_h();
         dc.fill_rect(Rect::new(0, sy, w, self.status_h()), th.chrome_bg);
         dc.fill_rect(Rect::new(0, sy, w, 1), th.border);
