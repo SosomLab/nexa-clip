@@ -148,6 +148,12 @@ pub(crate) fn from_reps_limited(reps: &[RawRep], files_max: Option<usize>) -> Op
     if kind == ClipKind::Files {
         let max = files_max?; // 설정에서 껐다 — 경로 텍스트도 보내지 않는다.
         let mut paths = nclip_core::paths_of(reps);
+        // ★ 우리 캐시의 파일(원격 약속을 실체화한 것)은 **페이로드 자체를 만들지 않는다**(09-12 4차 —
+        //   2PC 연쇄의 근본 차단). 셸의 두 가드(캐시 에코 승격 · broadcast 거부)와 별개로 **여기서** 막아야
+        //   "게시한 표현 ≠ 받은 표현"인 경로에서도 지문 가드에 기대지 않고 단위 테스트로 못 박힌다.
+        if crate::xfer::all_cache_paths(&paths) {
+            return None;
+        }
         if paths.is_empty() {
             // 경로를 못 뽑는 파일 항목 — 탐색기 **잘라내기**는 `CF_HDROP` 없이
             // `Shell IDList Array`(PIDL)만 온다(docs/27 ⑧). 지어내지 않고 보내지 않는다.
@@ -451,6 +457,30 @@ mod tests {
         assert_eq!(paths_in(&payload).len(), 2);
         // 끄면 경로 텍스트조차 나가지 않는다(사용자가 파일을 공유하지 않기로 한 것이다).
         assert!(from_reps_limited(&reps, None).is_none());
+    }
+
+    /// ★ 2PC 연쇄 회귀(09-12 4차) — 우리 캐시 경로의 파일 항목은 **페이로드가 생기지 않는다**.
+    /// 텍스트의 에코 가드(지문·부분집합)는 "게시한 것 = 받은 것"이 전제라 캐시 실체화 경로에선 무력했다.
+    #[test]
+    fn own_cache_paths_never_become_a_payload() {
+        let _g = policy_lock();
+        let dir = std::env::temp_dir().join(format!("nclip-sync-cache-{}", std::process::id()));
+        crate::xfer::init(&dir);
+        let cached = dir
+            .join("cache")
+            .join("files")
+            .join("k")
+            .join("보고서.xlsx")
+            .to_string_lossy()
+            .into_owned();
+        let reps = nclip_plat::clipboard::file_reps(std::slice::from_ref(&cached));
+        assert!(
+            from_reps(&reps).is_none(),
+            "캐시 경로는 전파 페이로드가 되지 않는다"
+        );
+        // 캐시 밖 경로는 여전히 간다.
+        let outside = nclip_plat::clipboard::file_reps(&["/srv/x.txt".to_string()]);
+        assert!(from_reps(&outside).is_some());
     }
 
     /// 탐색기 **잘라내기**는 `CF_HDROP` 없이 온다 — 경로를 못 뽑으면 **보내지 않는다**(지어내기 금지).
