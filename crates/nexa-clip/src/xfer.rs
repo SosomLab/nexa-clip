@@ -318,6 +318,14 @@ impl Manager {
         }
     }
 
+    /// ★ 이 경로가 **우리 캐시 안**인가(09-12 연쇄 차단) — 캐시에서 게시한 파일을 감시가 되읽은 캡처는
+    /// 남에게 보낼 것이 아니다(상대에겐 뜻 없는 경로이고, 보내면 상대가 또 캐시해 되돌려 보낸다).
+    pub(crate) fn is_cache_path(&self, p: &str) -> bool {
+        let cache = self.cache_dir.to_string_lossy();
+        let norm = |s: &str| s.replace('/', "\\").to_lowercase();
+        norm(p).starts_with(&norm(&cache))
+    }
+
     /// 항목의 파일 전부가 캐시돼 있으면 경로들.
     pub(crate) fn all_cached(&mut self, m: &RemoteFiles) -> Option<Vec<PathBuf>> {
         let mut out = Vec::with_capacity(m.files.len());
@@ -961,6 +969,11 @@ pub(crate) fn set_policy(p: Policy) {
     let _ = with(|m| m.set_policy(p));
 }
 
+/// 경로 전부가 우리 캐시 안인가(비면 `false`).
+pub(crate) fn all_cache_paths(paths: &[String]) -> bool {
+    !paths.is_empty() && with(|m| paths.iter().all(|p| m.is_cache_path(p))).unwrap_or(false)
+}
+
 pub(crate) fn offer(paths: &[String]) {
     let _ = with(|m| m.offer(paths));
 }
@@ -1399,6 +1412,17 @@ mod tests {
         assert!(rx.all_cached(&mb).is_some(), "새 것은 남는다");
         let mut fresh = Manager::new(rx.cache_dir.clone(), online);
         assert!(fresh.all_cached(&ma).is_none(), "오래된 것이 비워졌다");
+    }
+
+    /// 캐시 안 경로 판정 — 구분자·대소문자 차이를 무시한다(Windows 경로).
+    #[test]
+    fn cache_path_detection_ignores_separator_and_case() {
+        let dir = tmp("cp");
+        let m = Manager::new(dir.clone(), online);
+        let inside = dir.join("abc").join("x.txt").to_string_lossy().into_owned();
+        assert!(m.is_cache_path(&inside));
+        assert!(m.is_cache_path(&inside.replace('\\', "/").to_uppercase()));
+        assert!(!m.is_cache_path("/somewhere/else/x.txt"));
     }
 
     #[test]

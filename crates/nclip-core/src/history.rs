@@ -404,6 +404,19 @@ impl History {
         }
     }
 
+    /// ★ 항목을 **맨 위로 승격**(`copies` +1) — 캡처가 이 항목의 에코라고 호출자가 **이미 판정**했을 때
+    /// (09-12 · 원격 파일 약속을 캐시에서 게시한 뒤 감시가 되읽은 `CF_HDROP` — 표현이 달라 지문·부분집합
+    /// 규칙으로는 못 알아본다). 없으면 `false`.
+    pub fn promote(&mut self, id: u64) -> bool {
+        let Some(i) = self.items.iter().position(|it| it.id == id) else {
+            return false;
+        };
+        let mut it = self.items.remove(i).unwrap_or_else(|| unreachable!());
+        it.copies += 1;
+        self.items.push_front(it);
+        true
+    }
+
     /// 재적재 직후 호출 — 다음 캡처가 이 항목의 부분집합이면 새 항목이 아니라 **이 항목의
     /// 승격**으로 처리한다(`i` = 현재 인덱스 · 지문으로 기억하므로 순서가 바뀌어도 맞는다).
     pub fn expect_echo(&mut self, i: usize) {
