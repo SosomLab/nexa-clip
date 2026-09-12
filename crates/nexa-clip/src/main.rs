@@ -12,6 +12,8 @@
 //! ★ **K-1 스파이크**(포커스 복원 + 키 주입)다 — 이 왕복이 안 되면 제품이 성립하지 않으므로
 //! 창보다 먼저 검증한다([docs/02 §7](../../docs/02-roadmap.md) · [docs/21](../../docs/21-manual-test.md)).
 
+/// ★ 정보(About) — 버전·빌드·실행 파일 SHA-256(09-12).
+mod about;
 mod cliptext;
 mod conf;
 mod dedup;

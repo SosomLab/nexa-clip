@@ -259,6 +259,8 @@ pub enum Msg {
     CatSync,
     /// 설정 카테고리: 고급.
     CatAdvanced,
+    /// ★ 설정 카테고리: 정보(About · 09-12).
+    CatAbout,
     /// 로그인 시 자동 시작.
     SetAutostart,
     /// 자동 시작 설명.
@@ -547,6 +549,19 @@ pub enum Msg {
     SetSyncEnabledDesc,
     /// 트레이 최근 항목 수.
     SetTrayRecent,
+    /// ★ 정보 화면(09-12) — 보고 행 · 복사 행 · 줄 라벨.
+    SetAboutInfo,
+    SetAboutInfoDesc,
+    SetAboutCopy,
+    SetAboutCopyDesc,
+    SetAboutCopyVerb,
+    AboutBuild,
+    AboutExe,
+    AboutSize,
+    AboutHash,
+    AboutHashPending,
+    AboutOs,
+    AboutData,
     /// 진단 로그.
     SetDiagLog,
     /// 로그 설명.
@@ -819,6 +834,7 @@ impl Msg {
             Msg::CatSearch => ["Search", "검색", "搜索", "検索"],
             Msg::CatSync => ["Sync", "동기화", "同步", "同期"],
             Msg::CatAdvanced => ["Advanced", "고급", "高级", "詳細"],
+            Msg::CatAbout => ["About", "정보", "关于", "情報"],
             Msg::SetAutostart => [
                 "Launch at login",
                 "로그인 시 자동 시작",
@@ -1524,6 +1540,28 @@ impl Msg {
                 "已删除。固定项已保留",
                 "削除しました。固定項目は残しています",
             ],
+            Msg::SetAboutInfo => ["This build", "이 빌드", "此版本", "このビルド"],
+            Msg::SetAboutInfoDesc => [
+                "Version, git commit, build time and the SHA-256 of the running executable — tells builds apart even when only the .exe was swapped in an installed folder.",
+                "버전 · git 커밋 · 빌드 시각 · 실행 중인 실행 파일의 SHA-256 — 설치본은 두고 실행 파일만 바꿨을 때도 어느 빌드인지 알 수 있습니다.",
+                "版本、git 提交、构建时间以及当前可执行文件的 SHA-256——即使只替换了安装目录中的 .exe 也能区分版本。",
+                "バージョン・git コミット・ビルド時刻・実行中の実行ファイルの SHA-256 — インストール先の .exe だけ差し替えた場合でもビルドを識別できます。",
+            ],
+            Msg::SetAboutCopy => ["Copy build info", "빌드 정보 복사", "复制版本信息", "ビルド情報をコピー"],
+            Msg::SetAboutCopyDesc => [
+                "Copies the lines above as plain text for bug reports.",
+                "위 내용을 평문으로 클립보드에 복사합니다(버그 보고용).",
+                "将上述内容作为纯文本复制到剪贴板（用于错误报告）。",
+                "上の内容をプレーンテキストでクリップボードにコピーします（不具合報告用）。",
+            ],
+            Msg::SetAboutCopyVerb => ["Copy", "복사", "复制", "コピー"],
+            Msg::AboutBuild => ["Build", "빌드", "构建", "ビルド"],
+            Msg::AboutExe => ["Executable", "실행 파일", "可执行文件", "実行ファイル"],
+            Msg::AboutSize => ["Size", "크기", "大小", "サイズ"],
+            Msg::AboutHash => ["SHA-256", "SHA-256", "SHA-256", "SHA-256"],
+            Msg::AboutHashPending => ["computing…", "계산 중…", "计算中…", "計算中…"],
+            Msg::AboutOs => ["OS", "OS", "系统", "OS"],
+            Msg::AboutData => ["Data folder", "데이터 폴더", "数据文件夹", "データフォルダ"],
             Msg::SetDiagLog => ["Diagnostic log", "진단 로그", "诊断日志", "診断ログ"],
             Msg::SetDiagLogDesc => [
                 "Local only. Never sent anywhere",
@@ -1556,7 +1594,7 @@ mod tests {
     use super::*;
 
     /// 카탈로그 전수 — 새 `Msg`를 더하면 여기도 더한다(빈칸 검사가 그걸 강제한다).
-    const ALL_MSG: [Msg; 290] = [
+    const ALL_MSG: [Msg; 303] = [
         Msg::AppName,
         Msg::SearchPlaceholder,
         Msg::EmptyHistory,
@@ -1651,6 +1689,7 @@ mod tests {
         Msg::CatSearch,
         Msg::CatSync,
         Msg::CatAdvanced,
+        Msg::CatAbout,
         Msg::SetAutostart,
         Msg::SetAutostartDesc,
         Msg::SetLang,
@@ -1836,6 +1875,18 @@ mod tests {
         Msg::SetHangulCompose,
         Msg::SetSyncEnabledDesc,
         Msg::SetTrayRecent,
+        Msg::SetAboutInfo,
+        Msg::SetAboutInfoDesc,
+        Msg::SetAboutCopy,
+        Msg::SetAboutCopyDesc,
+        Msg::SetAboutCopyVerb,
+        Msg::AboutBuild,
+        Msg::AboutExe,
+        Msg::AboutSize,
+        Msg::AboutHash,
+        Msg::AboutHashPending,
+        Msg::AboutOs,
+        Msg::AboutData,
         Msg::SetDiagLog,
         Msg::SetDiagLogDesc,
         Msg::SetClearHistory,
