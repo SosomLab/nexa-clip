@@ -287,6 +287,7 @@ Material의 상태 전이 90ms보다 11배 길다 — **의도된 예외**다.
 | `socket2` (0.5) | TCP 소켓 옵션(keepalive 등 — 릴레이 링크) | beep `nbeep-net`과 동일 채택 · std만으로는 keepalive 설정 불가 · MIT/Apache-2.0 | 2026-09-03 |
 | `wayland-client` · `wayland-backend` · `wayland-protocols` — Linux 한정 | `wlactivate` — 셸 토큰으로 `xdg_activation.activate`(트레이 "열기"가 창을 앞으로) | winit에 외부 토큰 API가 없다(기존 창). **winit/sctk와 같은 판**(0.31/0.3/0.32 · lock 동일 항목 · `client_system`+`dlopen`은 sctk가 이미 켠 기능 — libwayland는 dlopen · 런타임 의존 0 유지). beep 08-29 산출물 +11KB 실측 · MIT | 2026-08-30 |
 | `chacha20poly1305` · `sha2` · `getrandom` | 영속 암호화(T-16 · DR-37·38) — 레코드·blob AEAD 봉투 · 키 KDF/blob_id · OS 난수 | ★ **암호화 자체 구현 금지 부류** — beep `nbeep-store` 원장과 동일 판(0.10/0.10/0.2 · RustCrypto · MIT/Apache-2.0) | 2026-08-31 |
+| `sha2`(nexa-clip 직접) | ★ 정보 화면 실행 파일 SHA-256(09-12 · 설치본은 두고 실행 파일만 바꿔도 빌드 식별) | 새 crate 0 — nclip-store·nclip-sync가 이미 쓰는 같은 판(0.10)을 앱 crate에서도 참조 · build.rs는 표준 라이브러리 + `git` 명령만 | 2026-09-12 |
 
 ---
 

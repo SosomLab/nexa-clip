@@ -653,6 +653,23 @@ pub(crate) const REGISTRY: &[Entry] = &[
         },
         "hist.clear",
     ),
+    // ── ★ 정보(About · 09-12 사용자) — 버전·빌드·실행 파일 SHA-256(설치본은 두고 실행 파일만 바꿔도 식별) ──
+    e(
+        Msg::CatAbout,
+        Msg::SetAboutInfo,
+        Msg::SetAboutInfoDesc,
+        SettingKind::Report, // 호스트(settings_win)가 `about::report`로 채운다 · 비영속
+        "about.info",
+    ),
+    e(
+        Msg::CatAbout,
+        Msg::SetAboutCopy,
+        Msg::SetAboutCopyDesc,
+        SettingKind::Action {
+            verb: Msg::SetAboutCopyVerb,
+        },
+        "about.copy",
+    ),
 ];
 
 #[cfg(test)]

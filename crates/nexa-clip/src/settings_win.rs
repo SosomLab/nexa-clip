@@ -70,6 +70,8 @@ pub(crate) struct App {
     sync_shown: Option<crate::sync_cmd::SyncStatus>,
     /// 마지막으로 그린 기기 목록 텍스트(변화 때만 set_value).
     devices_text: String,
+    /// ★ 정보 화면 보고 행(09-12) — 해시 워커가 끝나면 폴에서 한 번 더 채운다.
+    about_text: String,
     mods: ModifiersState,
     started: Instant,
     /// 마지막으로 준 크기 — 바뀔 때만 `set_bounds`를 부른다.
@@ -126,6 +128,7 @@ impl App {
             clear_request: false,
             sync_shown: None,
             devices_text: String::new(),
+            about_text: String::new(),
             mods: ModifiersState::empty(),
             started: Instant::now(),
             laid_out: (0, 0),
@@ -774,6 +777,7 @@ impl App {
     ///   수동 Test가 진행 중이면 그 결과가 우선(끝나면 러너 상태가 이어받는다).
     fn poll_sync_status(&mut self) {
         self.refresh_devices();
+        self.refresh_about();
         self.expire_clear_arm();
         // ★ 검색 방식은 창 밖(드롭다운)에서도 바뀐다(09-04) — 설정값을 라디오에 되비춘다(같으면 무효화 없음).
         {
@@ -864,6 +868,18 @@ impl App {
             .set_row_note_toned("sync.test", &msg, tone, &mut inv);
         self.sync_shown = Some(st);
         self.redraw();
+    }
+
+    /// ★ 정보 화면(09-12) — 버전·빌드·실행 파일 SHA-256(워커가 계산 · 준비되면 갱신). 같으면 무효화 없음.
+    fn refresh_about(&mut self) {
+        let text = crate::about::report(nclip_core::current_lang());
+        if text != self.about_text {
+            self.about_text = text.clone();
+            let mut inv = Invalidations::default();
+            self.widget.set_value("about.info", &text, &mut inv);
+            self.laid_out = (0, 0); // 줄 수가 바뀌면 행 높이도 바뀐다(해시 두 줄이 늘어난다).
+            self.redraw();
+        }
     }
 
     /// ★ 기기 목록 행(09-03) — 이 기기 + 만난 기기(이름 · 지문 8자 · OS · 연결/마지막 접속).
@@ -1148,6 +1164,17 @@ impl App {
             //   송신 쪽(`sync.files`·`sync.files_max`)은 복사 때마다 설정을 읽으므로 배선이 없다.
             if key == "sync.files_paste" {
                 crate::syncitem::set_files_as_text(val == "text");
+            }
+            // ★ 빌드 정보 복사(09-12) — 보고 행을 평문으로 클립보드에(감시가 텍스트 항목으로 잡아도 무방).
+            if key == "about.copy" && val == "run" {
+                let text = crate::about::report_plain(nclip_core::current_lang());
+                match nclip_plat::clipboard::set_reps(&nclip_plat::clipboard::plain_text_reps(
+                    &text,
+                )) {
+                    Ok(_) => println!("정보: 빌드 정보 복사 — {} 줄", text.lines().count()),
+                    Err(e) => eprintln!("정보: 복사 실패 — {e}"),
+                }
+                continue;
             }
             // ★ 파일 내용 공유 정책(09-12) — 5키 어느 것이든 바뀌면 관리자에 즉시(다음 블록부터 새 속도·상한).
             if key.starts_with("sync.file_") {

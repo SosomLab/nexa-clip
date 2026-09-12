@@ -277,6 +277,8 @@ General 안내문 그대로:
 | ★ `sync.file_bg_kbps` | Number(0·256·1024·4096) | **1024** | 백그라운드 속도 상한(KB/s) · 0 = 무제한 · 붙여넣기 대기 전송은 제한 없음 |
 | ★ `sync.file_max_mb` | Number(100·1000·10000) | **1000** | 붙여넣기 시 받아올 **합계** 상한 — 넘으면 경로만 + 로그(한 바이트 전에 판정) |
 | ★ `sync.file_cache_mb` | Number(500·2000·10000) | **2000** | 캐시 용량 — 초과 시 오래된 것부터 삭제(전송 중 제외) · 위치 `<data>/cache/files/<열쇠>/` |
+| ★ `about.info` | Report | — | **정보**(09-12) — 버전·`(release/debug)` · git SHA(+dirty)·빌드 시각(`build.rs`) · 실행 파일 경로·크기·수정 · **SHA-256**(두 줄) · OS/arch · 데이터 폴더. 호스트가 부팅 워커 결과로 채움 · 비영속 |
+| ★ `about.copy` | Action | — | 위 내용을 평문으로 클립보드에(버그 보고용) |
 | `sync.retry` | Radio | `normal` | 재시도 정책 — 실패 n회째 = base×2^(n−1)(상한 · ±20% 지터 · 성공 시 초기화) · normal 5s→5분 · patient 15s→15분 · eager 2s→1분 |
 | `sync.test` | Action | — | 릴레이 접속 시험 → 성공 = `sync.enabled` 자동 켬 + 러너 (재)기동 · 연결 중엔 잠금 · 실행 시 자동 Test 노트 |
 | `sync.disconnect` | Action | — | 릴레이 세션 해제(연결 중에만 활성 · Connected 자리에 Disconnected) |

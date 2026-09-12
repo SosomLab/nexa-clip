@@ -1,6 +1,7 @@
 # nexa-clip — 본체. 조립 지점(어댑터 주입) · 생명주기 · 창 라우팅.
 [package]
 name = "nexa-clip"
+build = "build.rs"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -22,6 +23,8 @@ nclip-core.workspace = true
 nclip-ctl.workspace = true
 nclip-plat.workspace = true
 nclip-store.workspace = true
+# ★ 정보 화면 실행 파일 SHA-256(09-12) — nclip-store·nclip-sync가 이미 쓰는 같은 판(새 crate 0 · docs/10 §3).
+sha2 = "0.10"
 nclip-sync = { path = "../nclip-sync" }
 nclip-ui.workspace = true
 nclip-gfx.workspace = true

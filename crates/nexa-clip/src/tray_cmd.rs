@@ -2434,6 +2434,8 @@ pub(crate) fn run() {
     crate::xfer::spawn_pump(el.create_proxy());
     // ★ M2 동기화 기반(09-03) — 켜져 있으면 릴레이 접속 스레드 상주(상태는 proxy로 통지).
     crate::sync_cmd::spawn_if_enabled(&conf, el.create_proxy());
+    // ★ 정보 화면 실행 파일 해시(09-12) — 부팅 때 워커 한 번(UI는 결과만 읽는다).
+    crate::about::spawn_hash();
 
     {
         // ★ 둘째 실행의 "열기" 신호 → 메인창(Windows · 09-03).

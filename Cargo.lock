@@ -1248,6 +1248,7 @@ dependencies = [
  "nclip-sync",
  "nclip-ui",
  "nexa-conf",
+ "sha2",
  "softbuffer",
  "winit",
 ]
