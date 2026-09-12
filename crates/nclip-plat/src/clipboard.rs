@@ -55,6 +55,100 @@ pub fn plain_text_reps(text: &str) -> Vec<RawRep> {
     }
 }
 
+/// ★ **경로 목록 → 이 OS의 파일 표현**(09-12 · 기기 간 파일 경로 전파 수신측 ·
+/// [docs/08 §3-2](../../../docs/08-clipboard-propagation.md) P-2).
+///
+/// 받은 항목을 **파일 객체로** 올릴 때 쓴다 — 경로가 전부 실재할 때만 호출된다(P-1·P-3은
+/// 호출자가 판정한다). 붙여넣을 텍스트 폴백은 [`plain_text_reps`]가 따로 만든다.
+///
+/// | OS | 만드는 표현 |
+/// |---|---|
+/// | Windows | `CF_HDROP`(DROPFILES + UTF-16 경로) + `Preferred DropEffect`(복사) |
+/// | macOS | `NSFilenamesPboardType`(XML plist) + `public.file-url`(첫 경로) |
+/// | Linux | `x-special/gnome-copied-files`(`copy\n` + URI) + `text/uri-list` |
+///
+/// ⚠️ **Linux는 한 표현만 게시된다**(`wl-copy`/`xclip`이 `--type` 하나 — [`imp::pick_rep`]).
+/// 파일 관리자 붙여넣기가 실제로 파일을 만드는 것은 `x-special/gnome-copied-files` 쪽이라
+/// 그것을 1순위로 둔다.
+///
+/// ⚠️ **macOS 다중 파일은 실기 미확인**이다(Windows 자리에서 작성 — T-51). `public.file-url`은
+/// 타입 하나에 URL 하나라 여러 개를 담을 수 없어 legacy `NSFilenamesPboardType`을 함께 낸다.
+/// 둘 다 상대 앱이 못 읽어도 **경로 텍스트는 항상 함께 게시**되므로 조용히 실패하지 않는다(P-4).
+#[must_use]
+pub fn file_reps(paths: &[String]) -> Vec<RawRep> {
+    if paths.is_empty() {
+        return Vec::new();
+    }
+    #[cfg(windows)]
+    {
+        // DROPFILES(20B) ‖ UTF-16LE 경로(각 NUL 종료) ‖ 끝 NUL.
+        let mut data =
+            Vec::with_capacity(20 + paths.iter().map(|p| p.len() * 2 + 2).sum::<usize>());
+        data.extend_from_slice(&20u32.to_le_bytes()); // pFiles = 헤더 크기
+        data.extend_from_slice(&0i32.to_le_bytes()); // pt.x
+        data.extend_from_slice(&0i32.to_le_bytes()); // pt.y
+        data.extend_from_slice(&0i32.to_le_bytes()); // fNC
+        data.extend_from_slice(&1i32.to_le_bytes()); // fWide = UTF-16
+        for p in paths {
+            for u in p.encode_utf16().chain(std::iter::once(0)) {
+                data.extend_from_slice(&u.to_le_bytes());
+            }
+        }
+        data.extend_from_slice(&0u16.to_le_bytes()); // 목록 끝
+        vec![
+            RawRep {
+                format: "CF_HDROP".into(),
+                data,
+            },
+            // 탐색기가 **복사**로 받게 못 박는다(`DROPEFFECT_COPY` = 1 · 없으면 받는 쪽 기본에 맡겨진다).
+            RawRep {
+                format: "Preferred DropEffect".into(),
+                data: 1u32.to_le_bytes().to_vec(),
+            },
+        ]
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let mut plist = String::from(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<plist version=\"1.0\">\n<array>\n",
+        );
+        for p in paths {
+            plist.push_str("<string>");
+            plist.push_str(
+                &p.replace('&', "&amp;")
+                    .replace('<', "&lt;")
+                    .replace('>', "&gt;"),
+            );
+            plist.push_str("</string>\n");
+        }
+        plist.push_str("</array>\n</plist>\n");
+        vec![
+            RawRep {
+                format: "NSFilenamesPboardType".into(),
+                data: plist.into_bytes(),
+            },
+            RawRep {
+                format: "public.file-url".into(),
+                data: nclip_core::file_uri(&paths[0]).into_bytes(),
+            },
+        ]
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
+    {
+        let uris: Vec<String> = paths.iter().map(|p| nclip_core::file_uri(p)).collect();
+        vec![
+            RawRep {
+                format: "x-special/gnome-copied-files".into(),
+                data: format!("copy\n{}", uris.join("\n")).into_bytes(),
+            },
+            RawRep {
+                format: "text/uri-list".into(),
+                data: format!("{}\r\n", uris.join("\r\n")).into_bytes(),
+            },
+        ]
+    }
+}
+
 /// ★ mac 파스텔보드 접근 직렬화(09-04 실측 — 병렬 set/read = SIGSEGV · beep의
 /// "동시 clearContents/set = SIGABRT" 실측의 확장): 쓰기(`set_reps`)와 감시 읽기
 /// (`watch_mac::read_snapshot`)가 **같은 잠금**을 쓴다. 프로세스 밖(다른 앱)과의
@@ -226,7 +320,8 @@ mod imp {
 /// ⚠️ **표현 한 개만 게시한다** — 두 도구 모두 `--type`/`-t` 하나뿐이다(Wayland에서
 /// 다중 표현은 자체 `wl_data_source`가 필요하고, 그건 **입력 시리얼을 가진 표면**이 있어야
 /// `set_selection`이 받아들여진다 — 팝업 창의 시리얼을 빌리는 후속 과제). 대표 표현은
-/// [`pick_rep`]가 고른다: 파일(`text/uri-list`) > 이미지(`image/png`) > 평문 > HTML > 첫 것.
+/// [`pick_rep`]가 고른다: 파일 관리자 표현(`x-special/*-copied-files`) > `text/uri-list` >
+/// 이미지(`image/png`) > 평문 > HTML > 첫 것.
 /// 게시 수는 그래서 최대 1이다 — 호스트가 "표현 N개"라고 찍는 값이 곧 사실이다.
 #[cfg(target_os = "linux")]
 mod imp {
@@ -237,11 +332,15 @@ mod imp {
     /// 표현 우선순위 — 붙여넣기 판단이 가장 잘 되는 것부터.
     fn rank(format: &str) -> u8 {
         match format {
-            "text/uri-list" => 0,
-            "image/png" => 1,
-            "text/plain" => 2,
-            "text/html" => 3,
-            "image/jpeg" | "image/bmp" => 4,
+            // ★ 파일 관리자 붙여넣기가 **실제로 파일을 만드는** 표현이 먼저다(09-12) —
+            //   Nautilus·Nemo·Caja는 이 이름을 보고 복사/이동을 정한다. `text/uri-list`만
+            //   올리면 경로를 아는 앱은 받지만 붙여넣기로 파일이 생기지는 않는다.
+            "x-special/gnome-copied-files" | "x-special/KDE-copied-files" => 0,
+            "text/uri-list" => 1,
+            "image/png" => 2,
+            "text/plain" | "text/plain;charset=utf-8" => 3,
+            "text/html" => 4,
+            "image/jpeg" | "image/bmp" => 5,
             _ => 9,
         }
     }
@@ -349,6 +448,20 @@ mod imp {
                 Some("text/uri-list")
             );
             assert!(pick_rep(&[rep("image/png", b"")]).is_none());
+            // ★ 파일 관리자 표현이 `text/uri-list`보다 먼저다(09-12) — 하나만 게시되는
+            //   Linux에서 이 순서가 곧 "붙여넣으면 파일이 생기는가"를 정한다.
+            let reps = [
+                rep("text/uri-list", b"file:///a"),
+                rep(
+                    "x-special/gnome-copied-files",
+                    b"copy
+file:///a",
+                ),
+            ];
+            assert_eq!(
+                pick_rep(&reps).map(|r| r.format.as_str()),
+                Some("x-special/gnome-copied-files")
+            );
         }
 
         #[test]
@@ -531,6 +644,66 @@ mod mac_tests {
             echo_subset(&reps, &snap.reps),
             "PNG가 그대로 돌아와야 이미지 전파 수신 게시가 선다 — 읽힌 표현: {:?}",
             snap.reps.iter().map(|r| &r.format).collect::<Vec<_>>()
+        );
+    }
+}
+
+/// ★ 경로 → 파일 표현 → 경로 **왕복**(09-12) — OS 호출이 없는 순수 검사라 3-OS 모두에서 돈다.
+///
+/// 이 왕복이 깨지면 받은 파일 항목의 **에코 지문**이 어긋나 되돌려 보내기가 새고
+/// (`from_reps`가 같은 바이트를 못 만든다), 목록의 이름 표시도 함께 무너진다.
+#[cfg(test)]
+mod file_rep_tests {
+    use super::*;
+
+    #[test]
+    fn file_reps_round_trip_to_paths() {
+        let paths = vec![
+            "/tmp/보고서 초안.xlsx".to_string(),
+            "/tmp/a#b%c.md".to_string(),
+        ];
+        let reps = file_reps(&paths);
+        assert!(!reps.is_empty(), "3-OS 전부 파일 표현을 만든다");
+        assert_eq!(
+            nclip_core::paths_of(&reps),
+            paths,
+            "공백·#·% 가 든 이름도 그대로 돌아온다"
+        );
+    }
+
+    #[test]
+    fn empty_paths_make_no_reps() {
+        assert!(
+            file_reps(&[]).is_empty(),
+            "빈 목록으로 표현을 지어내지 않는다"
+        );
+    }
+
+    /// Windows `CF_HDROP`은 **wide 플래그와 이중 NUL**이 맞아야 탐색기가 읽는다.
+    #[cfg(windows)]
+    #[test]
+    fn hdrop_header_is_wide_and_double_nul_terminated() {
+        let reps = file_reps(&["C:\\x.txt".to_string()]);
+        let h = reps
+            .iter()
+            .find(|r| r.format == "CF_HDROP")
+            .expect("CF_HDROP");
+        assert_eq!(
+            u32::from_le_bytes(h.data[..4].try_into().expect("헤더 4B")),
+            20
+        );
+        assert_eq!(
+            u32::from_le_bytes(h.data[16..20].try_into().expect("wide 플래그 4B")),
+            1
+        );
+        assert_eq!(
+            &h.data[h.data.len() - 4..],
+            &[0, 0, 0, 0],
+            "경로 NUL + 목록 끝 NUL"
+        );
+        assert!(
+            reps.iter().any(|r| r.format == "Preferred DropEffect"),
+            "복사 의도를 못 박는다"
         );
     }
 }

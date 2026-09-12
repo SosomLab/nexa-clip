@@ -4,6 +4,17 @@
 
 ---
 
+## 2026-09-12 (1차 · win) — ★ **기기 간 파일 전파**(경로 목록 · 적응형 수신) + 설정 3종
+
+**요청**: "파일 복사 시 파일이 복사되는 기능 구현 상태 확인" → "**기기간 전파 기능 구현 · 제약·설정은 옵션으로**" → "가능한 테스트는 전체 자동으로".
+**확인**: 로컬 왕복(복사 → 목록 → 붙여넣기 = 진짜 파일)은 Win/mac 완비. 빠진 자리는 **전파** 하나 — `syncitem::from_reps`가 `Files`면 `None`(09-04 1단 "후속").
+**구현**: 파트 `x-nclip/paths`(**NUL 구분 원본 경로** — URI 아님: OS 경로로 실재 판정 · Windows 드라이브 왕복 손실 회피 · `\0`만이 3-OS 공통 금지 바이트) + `text/plain`(경로 줄) → **구버전(≤0.1.3)은 미지 파트를 버리고 텍스트만 붙인다**(앞뒤 호환). 수신 = **적응형**(docs/08 §3-1 "다"): 세션 스레드에서 실재 확인 → 전부 실재 **파일 표현**(P-2) / 하나라도 부재 **경로 텍스트**(P-3) / **항상 로그**(P-4) · UI 스레드는 파일 시스템을 안 만진다(DR-41). `nclip_plat::clipboard::file_reps` 신설(Win `CF_HDROP`+`Preferred DropEffect` · mac `NSFilenamesPboardType`+`public.file-url` · Linux `gnome-copied-files`+`uri-list`) · ★ Linux `pick_rep` 1순위 = `x-special/*-copied-files`(하나만 게시되므로 "붙여넣으면 파일이 생기는가"가 여기서 갈린다). 탐색기 **잘라내기**(HDROP 없음)는 보내지 않는다(지어내기 금지).
+**설정**(동기화): `sync.files` on · `sync.files_paste` adaptive/text · `sync.files_max` 1000(100·1000·10000) · i18n 8키×4언어 · 수신 정책은 부팅+변경 두 자리에서 전역 스위치(`set_policy` 화법).
+**검증**: 워크스페이스 **512 ✓**(신규 11) · ★ **실제 클립보드 전 구간 왕복 ✓**(송신 → 수신 변환 → `set_reps` → `read_snapshot` → 경로 동일 · **에코 지문 동일** — `--ignored real_clipboard`) · 기존 ignored 왕복 ✓ · `check-3os` 3타깃 ✓ · beep 와이어·서버·규약 변경 **0**(페이로드는 릴레이에 불투명).
+**후속(T-51)**: mac 다중 파일 게시 실기 · 목록 행 배지(`\u26a0` 이 PC에 없음) · 실재 확인은 수신 시 1회(P-1 문자 그대로의 "붙여넣기 직전"은 UI 스레드 차단 위험으로 보류) · 원격 파일 **내용**은 여전히 DR-30/T-31c. → [journal](journal/2026-09-12.md)
+
+---
+
 ## 2026-09-08 (3차 · win) — ★ **v0.1.3 릴리스** · winget 첫 제출 · choco 보류 · 문서·위키 최신화
 
 **요청**: "문서·위키 최신화 → push · 새 버전 릴리스 · winget/choco 진행 상태 점검해 포함 여부 결정 · brew는 바로".

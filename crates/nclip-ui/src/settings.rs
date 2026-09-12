@@ -341,6 +341,9 @@ const RADIO_DEFAULTS: &[(&str, &str)] = &[
     // ★ 동기화 서버(09-03) — beep 공식 릴레이·기본 포트(같은 서버 공유 · DP-1).
     ("sync.relay", "beepd.sosomlab.com"),
     ("sync.port", "47300"),
+    // ★ 파일 경로 전파 상한(09-12) — 보통의 복사(몇 개~수십 개)는 그대로 가고,
+    //   폴더 전체 선택 같은 폭주만 자른다. 후보는 오름차순이라 첫 후보가 기본이 아니다.
+    ("sync.files_max", "1000"),
     ("ui.theme", "system"),
     ("ui.tray_recent_n", "8"),
     ("store.max_items", "1000"),

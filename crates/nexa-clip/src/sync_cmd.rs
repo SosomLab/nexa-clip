@@ -529,6 +529,9 @@ pub(crate) fn spawn_if_enabled(
     conf: &crate::conf::Settings,
     proxy: winit::event_loop::EventLoopProxy<crate::tray_cmd::ShellEvent>,
 ) {
+    // ★ 수신 파일 정책(09-12)은 동기화 on/off와 무관하게 먼저 박아 둔다 —
+    //   세션 스레드가 읽는 값이라 나중에 켜질 때 이미 제자리에 있어야 한다.
+    crate::syncitem::set_files_as_text(conf.state.get("sync.files_paste") == "text");
     if conf.state.get("sync.enabled") != "on" {
         return;
     }

@@ -2,6 +2,10 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-09-12 (1차 · win) — ★ 기기 간 **파일 전파**(경로 목록 · DR-6 완성) — 적응형 수신(전부 실재 = 파일 / 부재 = 경로 텍스트 · 항상 로그) · 설정 3종(`sync.files`·`sync.files_paste`·`sync.files_max`) · Linux 게시 순위 교정
+
+- 와이어 파트 `x-nclip/paths`(NUL 구분 원본 경로) + `text/plain` — 구버전은 텍스트만 받아 앞뒤 호환 · 실재 확인은 세션 스레드(DR-41) · `file_reps` 3-OS(Win CF_HDROP+DropEffect · mac plist+file-url · Linux gnome-copied-files+uri-list) · `paths_of`/`file_uri`/`parse_plist_paths` 공용 승격 · 512 테스트 + ★ **실제 클립보드 전 구간 왕복(에코 지문 동일) ✓** · 3타깃 clippy ✓ · beep 와이어 변경 0 · 후속 T-51(mac 다중 파일 실기·목록 배지) → [journal](journal/2026-09-12.md)
+
 ## 2026-09-08 (4차 · win) — winget 첫 제출 점검(+8분): `New-Package` · 검증 01~06 ✓ · 07~10 진행 중 · 대응 불요 · 갈래(Pipeline-Passed 대기 / Executable-Error → 댓글 대응) → [journal](journal/2026-09-08.md)
 
 ## 2026-09-08 (3차 · win) — ★ v0.1.3 릴리스 ✅(run 34186690679 11잡 green · 자산 14 · brew 0.1.3 · ★ winget PR #431182/#431183 · choco 보류) · 문서·위키 최신화 · 원격 병합(T-48 번호 충돌 → T-49)

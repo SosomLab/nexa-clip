@@ -351,6 +351,17 @@ pub enum Msg {
     SyncRetryNormal,
     SyncRetryPatient,
     SyncRetryEager,
+    /// ★ 파일 경로 전파 on/off(09-12 · DR-6).
+    SetSyncFiles,
+    SetSyncFilesDesc,
+    /// 받은 파일 항목을 파일로 올릴지 경로 글자로 올릴지(docs/08 §3-1 안 "다" vs "나").
+    SetSyncFilesPaste,
+    SetSyncFilesPasteDesc,
+    SyncFilesAdaptive,
+    SyncFilesTextOnly,
+    /// 한 항목에 실어 보낼 경로 수 상한.
+    SetSyncFilesMax,
+    SetSyncFilesMaxDesc,
     SyncRelayOff,
     StSyncLanOnly,
     SyncApprove,
@@ -977,6 +988,54 @@ impl Msg {
             Msg::SyncRetryNormal => ["Normal (5 s → 5 min)", "표준 (5초 → 5분)", "标准（5 秒 → 5 分钟）", "標準（5秒 → 5分）"],
             Msg::SyncRetryPatient => ["Patient (15 s → 15 min)", "느긋 (15초 → 15분)", "耐心（15 秒 → 15 分钟）", "のんびり（15秒 → 15分）"],
             Msg::SyncRetryEager => ["Eager (2 s → 1 min)", "적극 (2초 → 1분)", "积极（2 秒 → 1 分钟）", "積極（2秒 → 1分）"],
+            Msg::SetSyncFiles => [
+                "Propagate file paths",
+                "파일 경로 전파",
+                "传播文件路径",
+                "ファイルパスを伝播",
+            ],
+            Msg::SetSyncFilesDesc => [
+                "Copy files and your other devices get the path list, not the contents (DR-6). The receiving device pastes real files when every path exists there (shared or network folders), otherwise the paths as text — it never fails silently. Off: file items are not sent at all.",
+                "파일을 복사하면 다른 기기에 **내용이 아니라 경로 목록**이 갑니다(DR-6). 받는 기기에 경로가 전부 있으면(공유·네트워크 폴더) 진짜 파일로, 아니면 경로 글자로 붙습니다 — 조용히 실패하지 않습니다. 끄면 파일 항목은 아예 보내지 않습니다.",
+                "复制文件时，其他设备收到的是路径列表而非内容（DR-6）。接收设备上路径全部存在时（共享或网络文件夹）粘贴为真实文件，否则粘贴为路径文本——不会悄无声息地失败。关闭则完全不发送文件项。",
+                "ファイルをコピーすると、他の端末には内容ではなく**パス一覧**が届きます（DR-6）。受け取った端末にパスがすべて存在すれば（共有・ネットワークフォルダ）実際のファイルとして、なければパス文字列として貼り付きます — 黙って失敗しません。オフにするとファイル項目は送りません。",
+            ],
+            Msg::SetSyncFilesPaste => [
+                "Pasting received files",
+                "받은 파일 붙여넣기",
+                "粘贴收到的文件",
+                "受け取ったファイルの貼り付け",
+            ],
+            Msg::SetSyncFilesPasteDesc => [
+                "Adaptive checks each path on this device and pastes real files only when all of them exist. Paths as text never touches the file system — pick it on metered links or when the other device's paths mean nothing here.",
+                "적응형은 경로를 이 기기에서 하나씩 확인해 **전부 있을 때만** 파일로 올립니다. 경로 텍스트는 파일 시스템을 건드리지 않습니다 — 상대 기기의 경로가 여기선 뜻이 없을 때 고릅니다.",
+                "自适应会在本设备逐个检查路径，仅当全部存在时才粘贴为真实文件。仅路径文本则完全不访问文件系统——当对方路径在此毫无意义时选择它。",
+                "適応型はこの端末でパスを一つずつ確認し、すべて存在するときだけ実ファイルとして貼り付けます。パス文字列のみはファイルシステムに触れません — 相手のパスがここでは意味を持たない場合に選びます。",
+            ],
+            Msg::SyncFilesAdaptive => [
+                "Adaptive (files if the paths exist)",
+                "적응형 (경로가 있으면 파일)",
+                "自适应（路径存在则为文件）",
+                "適応型（パスがあればファイル）",
+            ],
+            Msg::SyncFilesTextOnly => [
+                "Paths as text only",
+                "경로 텍스트만",
+                "仅路径文本",
+                "パス文字列のみ",
+            ],
+            Msg::SetSyncFilesMax => [
+                "Max file paths",
+                "파일 경로 최대 개수",
+                "文件路径上限",
+                "ファイルパスの上限",
+            ],
+            Msg::SetSyncFilesMaxDesc => [
+                "Upper bound for one copy. Selecting 10,000 files would otherwise send one enormous item; paths past the limit are dropped and the cut is logged.",
+                "한 번 복사에 실어 보낼 경로 수 상한입니다. 1만 개를 선택 복사하면 한 항목이 통째로 흐르므로, 넘는 경로는 버리고 잘랐다는 사실을 로그로 남깁니다.",
+                "单次复制的上限。选中一万个文件会发送一个巨大的条目；超出的路径将被丢弃并记录。",
+                "1回のコピーの上限です。1万個を選ぶと巨大な項目が流れるため、超えたパスは捨てて切ったことを記録します。",
+            ],
             Msg::SyncRelayOff => ["None", "None", "None", "None"],
             Msg::StSyncLanOnly => [
                 "Relay: None — devices on the same network connect directly",
@@ -1366,7 +1425,7 @@ mod tests {
     use super::*;
 
     /// 카탈로그 전수 — 새 `Msg`를 더하면 여기도 더한다(빈칸 검사가 그걸 강제한다).
-    const ALL_MSG: [Msg; 255] = [
+    const ALL_MSG: [Msg; 263] = [
         Msg::AppName,
         Msg::SearchPlaceholder,
         Msg::EmptyHistory,
@@ -1511,6 +1570,14 @@ mod tests {
         Msg::SyncRetryNormal,
         Msg::SyncRetryPatient,
         Msg::SyncRetryEager,
+        Msg::SetSyncFiles,
+        Msg::SetSyncFilesDesc,
+        Msg::SetSyncFilesPaste,
+        Msg::SetSyncFilesPasteDesc,
+        Msg::SyncFilesAdaptive,
+        Msg::SyncFilesTextOnly,
+        Msg::SetSyncFilesMax,
+        Msg::SetSyncFilesMaxDesc,
         Msg::SyncRelayOff,
         Msg::StSyncLanOnly,
         Msg::SyncApprove,

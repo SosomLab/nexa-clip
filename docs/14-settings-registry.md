@@ -269,13 +269,16 @@ General 안내문 그대로:
 | `sync.passphrase` | Text(비밀) | — | 페어링 패스프레이즈 · 눈(보기) · 생성(2단 확인 · 생성 시 표시) · 서버로 안 감 |
 | `sync.relay` | RadioInput | `beepd.sosomlab.com` | 공식 릴레이 · 직접 입력 · **`none`** = 같은 네트워크만(포트·Test·Disconnect 잠금 · Test 없이 즉시 적용 · ★ 핸들·암호를 뒤늦게 채워도 800ms 뒤 **자동 재기동**(09-05) — 서버 릴레이는 정보 변경 = 해제 → Test) |
 | `sync.port` | RadioInput | `47300` | 릴레이 TCP 제어 포트 |
+| ★ `sync.files` | Switch | **on** | **파일 경로 전파**(09-12 · DR-6) — 복사한 파일을 **내용이 아니라 경로 목록**으로 보낸다. 끄면 파일 항목은 아예 보내지 않는다(경로 텍스트도) |
+| ★ `sync.files_paste` | Radio | `adaptive` | 받은 파일 항목 — **적응형**(경로가 이 기기에 전부 있으면 파일 표현, 아니면 경로 텍스트 · [08 §3-1](08-clipboard-propagation.md) 안 "다") / **`text`** = 경로 텍스트만(파일 시스템을 건드리지 않는다 · 안 "나"). 세션 스레드가 읽으므로 부팅·변경 즉시 전역 스위치에 반영 |
+| ★ `sync.files_max` | Number(100·1000·10000) | **1000** | 한 항목에 실어 보낼 경로 수 상한 — 넘는 경로는 버리고 자른 사실을 로그로 |
 | `sync.retry` | Radio | `normal` | 재시도 정책 — 실패 n회째 = base×2^(n−1)(상한 · ±20% 지터 · 성공 시 초기화) · normal 5s→5분 · patient 15s→15분 · eager 2s→1분 |
 | `sync.test` | Action | — | 릴레이 접속 시험 → 성공 = `sync.enabled` 자동 켬 + 러너 (재)기동 · 연결 중엔 잠금 · 실행 시 자동 Test 노트 |
 | `sync.disconnect` | Action | — | 릴레이 세션 해제(연결 중에만 활성 · Connected 자리에 Disconnected) |
 | `sync.devices` | ★ DeviceList | — | 만난 기기 행별 **[승인/해제][삭제]** + 온라인 행 6자리 대조 코드 · `연결됨 (LAN/relay)` · 승인 전엔 전파 없음 |
 | `ui.dedup_view` | (숨김 · 메인 툴바 토글) | **on** | 중복 제외 보기(같은 내용 한 행 · 로컬 우선 · 출처 메타) — 팝업도 동일 |
 
-**설계만 있고 미구현**(D-20·DR-29): `sync.overwrite_mode` · `sync.remote_media` · `sync.pause` · `sync.relay_received` · 신뢰 목록 자동 승인 토글 → T-27 잔여·T-24.
+**설계만 있고 미구현**(D-20·DR-29): `sync.overwrite_mode` · `sync.remote_media` · `sync.pause` · `sync.relay_received` · 신뢰 목록 자동 승인 토글 → T-27 잔여·T-24. (전파 타입 토글 중 **파일**은 09-12 `sync.files`로 구현 — 텍스트·이미지 토글은 아직 없다.)
 
 ### 3-10. 고급 (Advanced)
 

@@ -1144,6 +1144,11 @@ impl App {
             if key == "sync.retry" {
                 crate::sync_cmd::set_policy(&val);
             }
+            // ★ 받은 파일 항목 붙여넣기 방식(09-12) — 즉시 반영(다음 수신부터 새 정책).
+            //   송신 쪽(`sync.files`·`sync.files_max`)은 복사 때마다 설정을 읽으므로 배선이 없다.
+            if key == "sync.files_paste" {
+                crate::syncitem::set_files_as_text(val == "text");
+            }
             // ★ 기기 이름(09-03) — 즉시 반영 + ★ 저장 박자(1s 디바운스)에 연결된 기기 전부에 재소개(09-05).
             if key == "sync.device_name" {
                 crate::sync_cmd::set_device_name(&val);

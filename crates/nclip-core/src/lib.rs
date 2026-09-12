@@ -22,8 +22,9 @@ pub mod richtext;
 pub mod search;
 
 pub use capture::{
-    capture, classify, classify_with_text, decode_plain, has_content, parse_hdrop, parse_uri_list,
-    select_reps, CapturePolicy, Captured, Preview, PreviewMissing, RepInfo, ThumbInfo,
+    capture, classify, classify_with_text, decode_plain, file_uri, has_content, parse_hdrop,
+    parse_plist_paths, parse_uri_list, paths_of, select_reps, CapturePolicy, Captured, Preview,
+    PreviewMissing, RepInfo, ThumbInfo,
 };
 pub use diag::{DiagLog, Level, Record};
 pub use i18n::{current_lang, set_lang, tr, Lang, Msg};

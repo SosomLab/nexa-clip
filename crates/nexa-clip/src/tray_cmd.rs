@@ -1194,10 +1194,22 @@ impl Shell {
         //   "네트워크 처리가 프로그램을 멈추거나 지연시키지 않게").
         let reps = snap.reps.clone();
         let skip = self.sync_skip;
+        // ★ 파일 경로 전파 정책(09-12)은 **여기(UI 스레드)**서 읽는다 — 설정 맵 조회는 값싸고,
+        //   워커에 값으로 넘기면 설정 창에서 방금 바꾼 값이 다음 복사부터 바로 산다.
+        //   `None` = 파일 항목을 보내지 않는다(`sync.files` 끔).
+        let files_max = (self.app.conf.state.get("sync.files") == "on").then(|| {
+            self.app
+                .conf
+                .state
+                .get("sync.files_max")
+                .parse::<usize>()
+                .unwrap_or(1000)
+                .max(1)
+        });
         let _ = std::thread::Builder::new()
             .name("nclip-sync-out".into())
             .spawn(move || {
-                let Some(payload) = crate::syncitem::from_reps(&reps) else {
+                let Some(payload) = crate::syncitem::from_reps_limited(&reps, files_max) else {
                     return;
                 };
                 let h = crate::syncitem::hash(&payload);
