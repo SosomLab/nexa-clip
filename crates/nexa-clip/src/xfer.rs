@@ -227,6 +227,29 @@ impl Manager {
         self.policy = p;
     }
 
+    /// ★ 최신 항목 즉시 받기(09-13 사용자 — "다른 PC에서 복사한 파일이 바로 붙여넣기되지 않는다") —
+    /// 이 항목의 진행 중 전송을 **Fg**로 올린다: 저속 상한을 받지 않고 다른 Bg는 양보한다.
+    /// 상한 판정(`auto_bytes` · 0 = 끔)은 이미 [`Self::fetch`]가 Bg로 했으므로 자동 캐시 설정은 그대로 산다.
+    /// 돌려주는 값 = 올린 전송 수.
+    pub(crate) fn boost(&mut self, item_id: u64) -> usize {
+        let now = Instant::now();
+        let mut n = 0;
+        for t in self.list.iter_mut().filter(|t| {
+            t.item_id == item_id
+                && matches!(t.state, State::Queued | State::Active | State::Offline)
+        }) {
+            if t.prio != Prio::Fg {
+                t.prio = Prio::Fg;
+                t.next_at = now;
+                n += 1;
+            }
+        }
+        if n > 0 {
+            self.dirty = true;
+        }
+        n
+    }
+
     pub(crate) fn policy(&self) -> Policy {
         self.policy
     }
@@ -1478,6 +1501,39 @@ mod tests {
         assert!(rx.all_cached(&mb).is_some(), "새 것은 남는다");
         let mut fresh = Manager::new(rx.cache_dir.clone(), online);
         assert!(fresh.all_cached(&ma).is_none(), "오래된 것이 비워졌다");
+    }
+
+    /// ★ 최신 항목 즉시 받기(09-13) — Bg로 줄 선 전송을 `boost`하면 Fg가 되어 속도 상한(여기선 1 B/s)에
+    ///   걸리지 않고 끝난다. 상한 판정은 fetch 시점의 Bg 규칙 그대로(자동 캐시 0이면 애초에 안 선다).
+    #[test]
+    fn boost_lifts_background_to_foreground() {
+        let dir = tmp("boost");
+        let (_, m) = source(&dir, "new.bin", 300 * 1024);
+        let mut tx = Manager::new(dir.join("tx"), online);
+        tx.offer(&m.paths());
+        let mut rx = Manager::new(dir.join("rx"), online);
+        rx.set_policy(Policy {
+            bg_bps: 1,
+            ..Policy::default()
+        });
+        assert_eq!(rx.fetch(9, &m, Prio::Bg), Fetch::Started(1));
+        assert_eq!(rx.boost(9), 1);
+        assert_eq!(rx.boost(9), 0, "이미 Fg면 0");
+        assert!(rx.views().iter().all(|v| v.prio == Prio::Fg));
+        assert_eq!(
+            pump(&mut rx, &tx, &m.origin_hex, 200),
+            Some(9),
+            "저속 상한 없이 끝난다"
+        );
+        assert!(matches!(rx.fetch(9, &m, Prio::Fg), Fetch::Ready(_)));
+        let mut off = Manager::new(dir.join("off"), online);
+        off.set_policy(Policy {
+            auto_bytes: 0,
+            ..Policy::default()
+        });
+        assert_eq!(off.fetch(9, &m, Prio::Bg), Fetch::Disabled);
+        assert_eq!(off.boost(9), 0, "자동 캐시 끔이면 올릴 전송이 없다");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// ★ 저장 폴더 교체(09-13) — 새 폴더로 실체화되고, 옛 폴더의 파일도 여전히 **우리 캐시**로 판정된다
