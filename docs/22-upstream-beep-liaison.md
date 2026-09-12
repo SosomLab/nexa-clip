@@ -47,6 +47,7 @@
 | **I-8** | ★ **공용 크레이트 `nexa-conf` — 미지 키가 known이 되면 한 줄만** | 🟡 공유 | **[반영]**(beep `92c92ab` 09-05 · `serialize` known 우선 + 회귀 테스트) · clip 반영(09-05) · 전달문 [32 A-2](32-beep-handover.md) | `serialize`가 미지 키를 **무조건 뒤에 재방출**한다. 어떤 키가 나중에 등재되면(구버전이 미지 키로 보존 → 신버전이 known으로 씀) **같은 키가 파일에 두 줄** 남는다(clip 실측 5키 중복 · 마지막 줄이 이기는 파서라 값 자체는 무해하지만 파일이 계속 자란다). clip은 `known`에 있는 키의 unknown 줄을 건너뛰게 고쳤다. ★ **beep 사본도 동일** — 키를 새로 등재할 때 같은 증상이 난다 |
 | **I-9** | ★ **beep → clip · `nbeep-relay` 선택적 PSK 경로(XXpsk3)** | 🟡 공유 | **[보류]**(09-06 · 와이어 무변경 → 사본 동기 **불요**) | beep ADR-0015(`feat/userid-handle` 병합 `1cfb9ff` 09-06)가 `connect_via_rids_first` · `hs_initiate(psk: Option)` · `accept_any → via_psk` 를 추가했다. **`C2s`/`S2c`·kind·상수·핸드셰이크 순서·`"nbeep-rid-v1"`·prologue 전부 그대로**(PSK는 Noise 패턴 내부 · 서버 통과) · beepd-v0.2.5 그대로 → `nclip-sync`가 맞출 것 없음. 흡수는 "승인 0회" 용도라 DR-39([09 §6-3](09-identity-and-pairing.md) 기기별 승인 유지)와 방향이 다르다 → T-45 사용자 결정 |
 | **I-10** | **beep → clip 회신 대기 — ADR-0015 3건** | 🟡 공유 | **[전달]**(beep → clip 방향 · 09-06 beep journal "회신 예정" · 44 §7에 아직 미기재) | beep이 clip에 회신하겠다고 적은 것: ① `sync.passphrase` **평문 저장**(clip `settings.cfg` — beep은 KDF·래핑으로 감쌈) ② **도메인 등재** — beep `nbeep-user-*` 계열을 [07 §3-4](07-device-rendezvous.md) 앱 식별자 표에 나란히 ③ **XXpsk3 채택** 권유. 회신이 오면 이 행을 갱신하고 T-45에서 판단 |
+| **I-11** | ★ **beep → clip · 보안 프로그램(AV·EDR·IDS) 탐지 가능성 검토(R-22)** | 🟡 공유 | **[수신]**(09-13 · beep `1d5428d` 09-10 검토 + `478c659` mac `arp -an` 스폰 폐지 · clip 대응 = **T-54**) | beep이 코드 전수 조사로 *"개별이 아니라 **조합**이 RAT 모양"* 을 정리했다(무서명 + 자동 실행 + 고정 리스너 + 고정 호스트 아웃바운드 + AMSI 동적 로드 · 순위 8건 · 지렛대 = 서명). ★ **clip 대조 결과**: 네트워크 축은 **clip이 더 조용**(멀티캐스트·ARP 이웃 유니캐스트·원시 소켓·AMSI·Toolhelp **전부 없음** · LAN = 브로드캐스트 비콘 47301/5초 · 릴레이 47300)이지만, **clip 고유 축**(클립보드 상시 감시 T1115 · 전역 단축키 · **키 입력 주입** · 포커스 창 조작)이 EDR 기준 **키로거/RAT 모양을 더 강하게** 만든다. ★ 또 beep R-22 ③(mac `arp -an` 13초 스폰)의 **clip 판이 더 심하다** — Linux Wayland에서 `wl-paste`를 **500ms~2s마다** 스폰(하루 4만~17만 exec). 서명 결정(T-48)은 두 제품 공통 지렛대 → **beep에 되돌려 줄 것 없음**(clip 내부 과제) |
 
 ---
 
@@ -80,5 +81,6 @@
 | **I-4** glare | ⏸ [전달] | **beep X-11 사용자 결정** — 채택 시 clip 규칙(PeerId 사전순 · D-15)과 같은지 확인 → [반영] |
 | **I-9** relay PSK 경로 | [보류] | 동기 불요. 흡수 여부 = T-45 |
 | **I-10** beep 회신 3건 | [전달](beep→clip) | 회신 도착 시 갱신 → T-45 |
+| **I-11** R-22 탐지 가능성 | [수신](beep→clip) | clip 판 조사 완료(09-13) → **T-54**(Wayland `wl-paste` 스폰 축소 · 실측 · 서명 T-48) |
 
 > 🟢 **clip 쪽 사용자 확인 대기는 없다**(09-06). 다음 사용자 결정은 T-45(beep 회신 후).
