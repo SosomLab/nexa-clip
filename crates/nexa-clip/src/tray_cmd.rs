@@ -1211,6 +1211,48 @@ impl Shell {
         ) && self.app.conf.state.get("ui.image_preview") == "on")
             .then(|| make_thumb(&snap.reps))
             .flatten();
+        // ★ 캐시 에코(09-12 · 2PC 연쇄 차단): 원격 파일 약속을 캐시에서 게시하면 감시가 그 `CF_HDROP`을
+        //   되읽는다. 표현이 약속(매니페스트)과 달라 지문·부분집합 규칙으로는 못 알아보고 **새 로컬 파일
+        //   항목**이 되어 상대에게 전파됐다 → 상대가 우리 캐시 경로를 약속으로 받아 또 캐시·게시 → 무한.
+        //   여기서 경로가 전부 우리 캐시 안이면 **그 약속 항목의 승격**으로 흡수하고 전파하지 않는다.
+        let own_cache = kind == nclip_core::ClipKind::Files
+            && remote.is_none()
+            && crate::xfer::all_cache_paths(&nclip_core::paths_of(&snap.reps));
+        if own_cache {
+            let paths = nclip_core::paths_of(&snap.reps);
+            let mut i = 0usize;
+            let mut hit = None;
+            while let Some(it) = self.history.get(i) {
+                i += 1;
+                let Some(m) = nclip_core::RemoteFiles::of_reps(&it.reps) else {
+                    continue;
+                };
+                let cached = crate::xfer::with(|x| x.all_cached(&m)).flatten();
+                if cached.is_some_and(|c| {
+                    c.len() == paths.len()
+                        && c.iter()
+                            .zip(&paths)
+                            .all(|(a, b)| a.to_string_lossy().eq_ignore_ascii_case(b))
+                }) {
+                    hit = Some(it.id);
+                    break;
+                }
+            }
+            match hit {
+                Some(id) if self.history.promote(id) => {
+                    self.store.touch(id);
+                    println!("이력: Promoted — 캐시 게시 에코(원격 파일 약속 승격 · 전파 안 함)");
+                }
+                _ => println!("이력: 캐시 경로 캡처 — 약속 항목 없음(무시 · 전파 안 함)"),
+            }
+            self.index_front();
+            self.refresh_tray();
+            self.main.on_history_changed(&self.history);
+            if self.popup.is_open() {
+                self.popup.on_history_changed(&self.history);
+            }
+            return;
+        }
         // ★ 재적재로 되돌아온 우리 게시도 여기로 온다 — 승격(맨 위로)이
         //   곧 에코 처리다(항목이 늘지 않는다).
         let pushed: Pushed = self.history.push(&snap, kind, label, thumb);
@@ -1298,6 +1340,10 @@ impl Shell {
         // 릴레이 연결 여부로 막지 않는다(09-04 LAN 직결) — 승인·온라인 피어가 없으면 broadcast가 0을 돌려준다.
         if !crate::sync_cmd::has_peers() {
             return; // 보낼 곳이 없으면 워커도 띄우지 않는다(대부분의 복사).
+        }
+        // ★ 우리 캐시의 파일(원격 약속을 실체화한 것)은 **절대 전파하지 않는다**(09-12 연쇄 차단 · 이중 방어).
+        if crate::xfer::all_cache_paths(&nclip_core::paths_of(&snap.reps)) {
+            return;
         }
         // ★ 페이로드 생성(DIB→PNG 인코드 등)은 **워커 스레드**에서 — UI 스레드는 표현 복제만(09-04 사용자:
         //   "네트워크 처리가 프로그램을 멈추거나 지연시키지 않게").
@@ -1593,7 +1639,11 @@ impl Shell {
         let lang = current_lang();
         let done = crate::xfer::with(|x| x.item_done(item_id)).unwrap_or(false);
         let pending = crate::xfer::with(|x| x.take_pending_paste(item_id)).flatten();
-        if done {
+        // ★ 사전 캐시(백그라운드) 완료는 **게시하지 않는다**(09-12 연쇄 차단) — 사용자가 붙여넣기를 청한 적이
+        //   없다. 배지가 `[캐시됨]`으로 바뀌고, 나중에 고르면 즉시 게시된다.
+        if done && pending.is_none() {
+            println!("파일 공유: 사전 캐시 완료 — 항목 {item_id}(게시 없음 · 고르면 즉시)");
+        } else if done {
             let _ = self.ensure_loaded(item_id);
             let manifest = self
                 .history
@@ -1648,7 +1698,8 @@ impl Shell {
             eprintln!(
                 "파일 공유: 받기 실패 — {why} · 조치: 패널에서 재시도하거나 원본 기기를 확인하세요"
             );
-            if why != "stopped" {
+            // 알림은 붙여넣기를 기다리던 경우만(사전 캐시 실패는 로그·배지로 충분).
+            if why != "stopped" && pending.is_some() {
                 self.tray
                     .notify(tr(lang, Msg::NotifyFilesFailed), &why, false, "");
             }
