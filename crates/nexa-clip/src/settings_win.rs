@@ -1180,6 +1180,12 @@ impl App {
             if key.starts_with("sync.file_") {
                 crate::xfer::set_policy(crate::tray_cmd::xfer_policy(&self.conf));
             }
+            // ★ 받은 파일 저장 폴더(09-13) — 즉시 교체(이후 전송부터 · 옛 폴더는 캐시 판정에 남는다).
+            if key == "sync.file_dir" {
+                let dir = crate::xfer::resolve_file_dir(&val, &crate::conf::data_dir());
+                println!("파일 공유: 저장 폴더 → {}", dir.display());
+                crate::xfer::set_cache_dir(dir);
+            }
             // ★ 기기 이름(09-03) — 즉시 반영 + ★ 저장 박자(1s 디바운스)에 연결된 기기 전부에 재소개(09-05).
             if key == "sync.device_name" {
                 crate::sync_cmd::set_device_name(&val);

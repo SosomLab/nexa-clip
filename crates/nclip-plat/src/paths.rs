@@ -16,12 +16,52 @@ pub fn home_dir() -> Option<PathBuf> {
 
 /// 다운로드 폴더 — 실체화 기본 대상. 없으면 `None`(호출자가 대안을 정한다).
 ///
-/// 리눅스의 XDG 사용자 폴더 설정(`user-dirs.dirs`)까지는 보지 않는다(v1) —
-/// `$HOME/Downloads`가 없으면 `None`이고, 대상 폴더 선택 UI는 M4 후반.
+/// Windows `%USERPROFILE%\Downloads` · macOS `~/Downloads` · ★ Linux는 XDG 사용자 폴더
+/// (`$XDG_DOWNLOAD_DIR` → `~/.config/user-dirs.dirs`의 `XDG_DOWNLOAD_DIR`)를 먼저 보고
+/// 없으면 `~/Downloads`(09-13 — 받은 파일 저장 폴더 기본값이 OS 다운로드 폴더가 되면서).
 #[must_use]
 pub fn downloads_dir() -> Option<PathBuf> {
-    let d = home_dir()?.join("Downloads");
+    let home = home_dir()?;
+    #[cfg(target_os = "linux")]
+    if let Some(d) = xdg_download_dir(&home) {
+        if d.is_dir() {
+            return Some(d);
+        }
+    }
+    let d = home.join("Downloads");
     d.is_dir().then_some(d)
+}
+
+/// Linux XDG 다운로드 폴더 — 환경 변수 → `user-dirs.dirs` 순. 절대 경로만 받는다.
+#[cfg(target_os = "linux")]
+fn xdg_download_dir(home: &std::path::Path) -> Option<PathBuf> {
+    if let Some(v) = std::env::var_os("XDG_DOWNLOAD_DIR") {
+        let p = PathBuf::from(v);
+        if p.is_absolute() {
+            return Some(p);
+        }
+    }
+    let cfg = std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home.join(".config"));
+    let text = std::fs::read_to_string(cfg.join("user-dirs.dirs")).ok()?;
+    parse_user_dirs_download(&text, home)
+}
+
+/// `user-dirs.dirs`에서 `XDG_DOWNLOAD_DIR="$HOME/…"` 한 줄을 읽는다(따옴표·`$HOME` 전개).
+/// OS 무관 순수 함수 — 3-OS 모두에서 테스트된다.
+#[must_use]
+pub fn parse_user_dirs_download(text: &str, home: &std::path::Path) -> Option<PathBuf> {
+    let line = text
+        .lines()
+        .map(str::trim)
+        .find(|l| l.starts_with("XDG_DOWNLOAD_DIR="))?;
+    let raw = line["XDG_DOWNLOAD_DIR=".len()..].trim().trim_matches('"');
+    let p = match raw.strip_prefix("$HOME") {
+        Some(rest) => home.join(rest.trim_start_matches('/')),
+        None => PathBuf::from(raw),
+    };
+    p.is_absolute().then_some(p)
 }
 
 #[cfg(test)]
@@ -34,6 +74,30 @@ mod tests {
         if let Some(h) = home_dir() {
             assert!(h.is_dir(), "홈이 디렉터리가 아니다: {}", h.display());
         }
+    }
+
+    /// ★ XDG `user-dirs.dirs` 파서(09-13) — `$HOME` 전개 · 따옴표 · 주석/다른 키 무시 · 상대 경로 거부.
+    #[test]
+    fn user_dirs_download_line_is_parsed() {
+        let home = std::path::Path::new("/home/u");
+        let text =
+            "# comment\nXDG_DESKTOP_DIR=\"$HOME/Desktop\"\nXDG_DOWNLOAD_DIR=\"$HOME/받기\"\n";
+        assert_eq!(
+            parse_user_dirs_download(text, home),
+            Some(PathBuf::from("/home/u/받기"))
+        );
+        assert_eq!(
+            parse_user_dirs_download("XDG_DOWNLOAD_DIR=\"/mnt/dl\"", home),
+            Some(PathBuf::from("/mnt/dl"))
+        );
+        assert_eq!(
+            parse_user_dirs_download("XDG_DOWNLOAD_DIR=\"rel\"", home),
+            None
+        );
+        assert_eq!(
+            parse_user_dirs_download("XDG_DESKTOP_DIR=\"$HOME/D\"", home),
+            None
+        );
     }
 
     #[test]

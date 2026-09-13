@@ -380,6 +380,10 @@ pub enum Msg {
     /// 캐시 용량(MB).
     SetSyncFileCache,
     SetSyncFileCacheDesc,
+    /// ★ 받은 파일 저장 폴더(09-13 사용자) — 빈 값 = OS 사용자 다운로드 폴더 아래 `Nexa Clip`.
+    SetSyncFileDir,
+    SetSyncFileDirDesc,
+    SetSyncFileDirHint,
     /// 전송 패널·배지·알림.
     XferPanel,
     XferStop,
@@ -390,6 +394,8 @@ pub enum Msg {
     XferActive,
     XferOffline,
     XferDone,
+    /// 패널이 열려 있는데 전송이 없다(09-13 토글 버튼).
+    XferNone,
     XferFailed,
     XferStopped,
     BadgeCached,
@@ -429,6 +435,8 @@ pub enum Msg {
     StatusView,
     /// 미리보기 패널 토글 툴팁(09-02 K4).
     TipPreview,
+    /// ★ 전송 패널 토글 툴팁(09-13).
+    TipXfer,
     /// ★ 감시 토글 툴팁(09-04) — 감시 중: 누르면 중지.
     TipCaptureStop,
     /// 감시 중지됨: 누르면 재개.
@@ -549,6 +557,7 @@ pub enum Msg {
     SetSyncEnabledDesc,
     /// 트레이 최근 항목 수.
     SetTrayRecent,
+    SetTrayRecentDesc,
     /// ★ 정보 화면(09-12) — 보고 행 · 복사 행 · 줄 라벨.
     SetAboutInfo,
     SetAboutInfoDesc,
@@ -911,10 +920,10 @@ impl Msg {
             ],
             Msg::SetMaxItems => ["Maximum items", "최대 항목 수", "最大条目数", "最大項目数"],
             Msg::SetMaxItemsDesc => [
-                "Older items are removed first; pinned items are kept",
-                "오래된 항목부터 지워집니다. 고정한 항목은 남습니다",
-                "优先删除旧条目，固定项会保留",
-                "古い項目から削除されます。ピン留めは残ります",
+                "Older items are removed first; pinned items are kept (unit: items)",
+                "오래된 항목부터 지워집니다. 고정한 항목은 남습니다 (단위: 개)",
+                "优先删除旧条目，固定项会保留（单位：条）",
+                "古い項目から削除されます。ピン留めは残ります（単位：件）",
             ],
             Msg::SetSortBy => ["Sort by", "정렬", "排序方式", "並び順"],
             Msg::ValRecentCopy => [
@@ -985,17 +994,17 @@ impl Msg {
             ],
             Msg::SetMaxAge => ["Keep for (days)", "보관 기간(일)", "保留天数", "保持日数"],
             Msg::SetMaxAgeDesc => [
-                "0 = keep forever. Older unpinned items are removed",
-                "0 = 무제한 · 기한이 지난 비고정 항목을 삭제합니다",
-                "0 = 永久保留。删除超期的未固定项",
-                "0 = 無期限。期限切れの未固定項目を削除",
+                "0 = keep forever. Older unpinned items are removed (unit: days)",
+                "0 = 무제한 · 기한이 지난 비고정 항목을 삭제합니다 (단위: 일)",
+                "0 = 永久保留。删除超期的未固定项（单位：天）",
+                "0 = 無期限。期限切れの未固定項目を削除（単位：日）",
             ],
             Msg::SetMaxTotal => ["Storage limit (MB)", "총용량 상한(MB)", "存储上限(MB)", "保存上限(MB)"],
             Msg::SetMaxTotalDesc => [
-                "Oldest unpinned items are removed first when over the limit",
-                "초과하면 오래된 비고정 항목부터 삭제합니다(핀 면제)",
-                "超出时从最旧的未固定项开始删除",
-                "超過時は古い未固定項目から削除",
+                "Oldest unpinned items are removed first when over the limit (unit: MB)",
+                "초과하면 오래된 비고정 항목부터 삭제합니다(핀 면제) (단위: MB)",
+                "超出时从最旧的未固定项开始删除（单位：MB）",
+                "超過時は古い未固定項目から削除（単位：MB）",
             ],
             Msg::TrayOpen => ["Open", "열기", "打开", "開く"],
             Msg::TrayQuit => ["Quit", "종료", "退出", "終了"],
@@ -1081,10 +1090,10 @@ impl Msg {
                 "ファイルパスの上限",
             ],
             Msg::SetSyncFilesMaxDesc => [
-                "Upper bound for one copy. Selecting 10,000 files would otherwise send one enormous item; paths past the limit are dropped and the cut is logged.",
-                "한 번 복사에 실어 보낼 경로 수 상한입니다. 1만 개를 선택 복사하면 한 항목이 통째로 흐르므로, 넘는 경로는 버리고 잘랐다는 사실을 로그로 남깁니다.",
-                "单次复制的上限。选中一万个文件会发送一个巨大的条目；超出的路径将被丢弃并记录。",
-                "1回のコピーの上限です。1万個を選ぶと巨大な項目が流れるため、超えたパスは捨てて切ったことを記録します。",
+                "Upper bound for one copy. Selecting 10,000 files would otherwise send one enormous item; paths past the limit are dropped and the cut is logged. (unit: items)",
+                "한 번 복사에 실어 보낼 경로 수 상한입니다. 1만 개를 선택 복사하면 한 항목이 통째로 흐르므로, 넘는 경로는 버리고 잘랐다는 사실을 로그로 남깁니다. (단위: 개)",
+                "单次复制的上限。选中一万个文件会发送一个巨大的条目；超出的路径将被丢弃并记录。（单位：条）",
+                "1回のコピーの上限です。1万個を選ぶと巨大な項目が流れるため、超えたパスは捨てて切ったことを記録します。（単位：件）",
             ],
             Msg::SetSyncFileContents => [
                 "Fetch file contents on paste",
@@ -1105,10 +1114,10 @@ impl Msg {
                 "自動キャッシュ上限",
             ],
             Msg::SetSyncFileAutoDesc => [
-                "File items whose total size is within this limit are fetched in the background at low speed right after they arrive, so pasting is instant and still works if the source goes offline. 0 turns pre-caching off.",
-                "합계가 이 크기 이하인 파일 항목은 받자마자 **백그라운드에서 천천히** 미리 받아 둡니다 — 붙여넣기가 즉시 되고 원본이 꺼져도 살아남습니다. 0 = 미리 받지 않음.",
-                "总大小在此限制内的文件项在到达后立即在后台低速获取，粘贴即刻完成，且源设备离线后仍可用。0 表示关闭预缓存。",
-                "合計サイズがこの上限以内のファイル項目は、届いた直後にバックグラウンドで低速に先読みします — 貼り付けが即座になり、元の端末がオフラインでも使えます。0 で先読みをオフ。",
+                "File items whose total size is within this limit are fetched in the background at low speed right after they arrive, so pasting is instant and still works if the source goes offline. 0 turns pre-caching off. (unit: MB)",
+                "합계가 이 크기 이하인 파일 항목은 받자마자 **백그라운드에서 천천히** 미리 받아 둡니다 — 붙여넣기가 즉시 되고 원본이 꺼져도 살아남습니다. 0 = 미리 받지 않음. (단위: MB)",
+                "总大小在此限制内的文件项在到达后立即在后台低速获取，粘贴即刻完成，且源设备离线后仍可用。0 表示关闭预缓存。（单位：MB）",
+                "合計サイズがこの上限以内のファイル項目は、届いた直後にバックグラウンドで低速に先読みします — 貼り付けが即座になり、元の端末がオフラインでも使えます。0 で先読みをオフ。（単位：MB）",
             ],
             Msg::SetSyncFileBgRate => [
                 "Background speed limit",
@@ -1117,10 +1126,10 @@ impl Msg {
                 "バックグラウンド速度上限",
             ],
             Msg::SetSyncFileBgRateDesc => [
-                "Pre-caching never exceeds this rate. A transfer you are waiting on for a paste is not limited.",
-                "미리 받기는 이 속도를 넘지 않습니다. 붙여넣기로 기다리는 전송은 제한하지 않습니다.",
-                "预缓存不会超过此速率。粘贴时等待的传输不受限制。",
-                "先読みはこの速度を超えません。貼り付けで待っている転送は制限しません。",
+                "Pre-caching never exceeds this rate. A transfer you are waiting on for a paste is not limited. (unit: KB/s)",
+                "미리 받기는 이 속도를 넘지 않습니다. 붙여넣기로 기다리는 전송은 제한하지 않습니다. (단위: KB/s)",
+                "预缓存不会超过此速率。粘贴时等待的传输不受限制。（单位：KB/s）",
+                "先読みはこの速度を超えません。貼り付けで待っている転送は制限しません。（単位：KB/s）",
             ],
             Msg::SetSyncFileMax => [
                 "Max size to fetch on paste",
@@ -1129,10 +1138,10 @@ impl Msg {
                 "貼り付け時の最大サイズ",
             ],
             Msg::SetSyncFileMaxDesc => [
-                "Above this total, only the paths are pasted as text and the reason is logged. The decision is made before a single byte flows, so the target app never gets a promise that fails.",
-                "합계가 이보다 크면 경로만 글자로 붙이고 사유를 로그에 남깁니다. 한 바이트도 흐르기 전에 판정하므로 대상 앱이 '주겠다고 하고 못 주는' 일이 없습니다.",
-                "超过此总量时仅将路径作为文本粘贴并记录原因。在传输任何字节之前即作出判断，目标应用不会收到无法兑现的承诺。",
-                "合計がこれを超えると、パスだけを文字として貼り付け、理由を記録します。1バイトも流れる前に判定するので、対象アプリが果たせない約束を受け取ることはありません。",
+                "Above this total, only the paths are pasted as text and the reason is logged. The decision is made before a single byte flows, so the target app never gets a promise that fails. (unit: MB)",
+                "합계가 이보다 크면 경로만 글자로 붙이고 사유를 로그에 남깁니다. 한 바이트도 흐르기 전에 판정하므로 대상 앱이 '주겠다고 하고 못 주는' 일이 없습니다. (단위: MB)",
+                "超过此总量时仅将路径作为文本粘贴并记录原因。在传输任何字节之前即作出判断，目标应用不会收到无法兑现的承诺。（单位：MB）",
+                "合計がこれを超えると、パスだけを文字として貼り付け、理由を記録します。1バイトも流れる前に判定するので、対象アプリが果たせない約束を受け取ることはありません。（単位：MB）",
             ],
             Msg::SetSyncFileCache => [
                 "File cache size",
@@ -1141,10 +1150,28 @@ impl Msg {
                 "ファイルキャッシュ容量",
             ],
             Msg::SetSyncFileCacheDesc => [
-                "Received files stay here for reuse. When the cache grows past this size, the oldest files are removed first.",
-                "받은 파일은 여기 남아 다시 쓰입니다. 이 용량을 넘으면 오래된 것부터 지웁니다.",
-                "收到的文件保留在此以便重用。超过此大小时先删除最旧的文件。",
-                "受信したファイルはここに残して再利用します。この容量を超えると古いものから削除します。",
+                "Received files stay here for reuse. When the cache grows past this size, the oldest files are removed first. (unit: MB)",
+                "받은 파일은 여기 남아 다시 쓰입니다. 이 용량을 넘으면 오래된 것부터 지웁니다. (단위: MB)",
+                "收到的文件保留在此以便重用。超过此大小时先删除最旧的文件。（单位：MB）",
+                "受信したファイルはここに残して再利用します。この容量を超えると古いものから削除します。（単位：MB）",
+            ],
+            Msg::SetSyncFileDir => [
+                "Received files folder",
+                "받은 파일 저장 폴더",
+                "接收文件的保存文件夹",
+                "受信ファイルの保存フォルダ",
+            ],
+            Msg::SetSyncFileDirDesc => [
+                "Files received from other devices are saved here (one subfolder per item). Leave empty to use the OS Downloads folder → Nexa Clip. Applies to new transfers; files already received stay where they are.",
+                "다른 기기에서 받은 파일이 저장되는 폴더입니다(항목마다 하위 폴더). 비우면 운영체제의 사용자 다운로드 폴더 아래 Nexa Clip 폴더를 씁니다. 이후 전송부터 적용되고 이미 받은 파일은 그 자리에 남습니다.",
+                "从其他设备接收的文件保存在此（每个条目一个子文件夹）。留空则使用操作系统的下载文件夹下的 Nexa Clip。对之后的传输生效，已接收的文件保持原位。",
+                "他の端末から受信したファイルの保存先です（項目ごとにサブフォルダ）。空欄なら OS のダウンロードフォルダ下の Nexa Clip を使います。以後の転送から適用され、受信済みのファイルはそのまま残ります。",
+            ],
+            Msg::SetSyncFileDirHint => [
+                "Downloads/Nexa Clip",
+                "다운로드/Nexa Clip",
+                "下载/Nexa Clip",
+                "ダウンロード/Nexa Clip",
             ],
             Msg::XferPanel => ["File transfers", "파일 전송", "文件传输", "ファイル転送"],
             Msg::XferStop => ["Stop", "중지", "停止", "停止"],
@@ -1155,6 +1182,7 @@ impl Msg {
             Msg::XferActive => ["Receiving", "받는 중", "接收中", "受信中"],
             Msg::XferOffline => ["Source offline", "원본 오프라인", "源设备离线", "元の端末がオフライン"],
             Msg::XferDone => ["Done", "완료", "完成", "完了"],
+            Msg::XferNone => ["No transfers", "전송 없음", "没有传输", "転送なし"],
             Msg::XferFailed => ["Failed", "실패", "失败", "失敗"],
             Msg::XferStopped => ["Stopped", "중지됨", "已停止", "停止済み"],
             Msg::BadgeCached => ["cached", "캐시됨", "已缓存", "キャッシュ済み"],
@@ -1235,6 +1263,7 @@ impl Msg {
             Msg::TipSettings => ["Settings ({})", "설정 ({})", "设置 ({})", "設定 ({})"],
             Msg::StatusView => ["{} · {}", "{} · {}", "{} · {}", "{} · {}"],
             Msg::TipPreview => ["Preview", "미리보기", "预览", "プレビュー"],
+            Msg::TipXfer => ["File transfers panel", "파일 전송 패널", "文件传输面板", "ファイル転送パネル"],
             Msg::TipCaptureStop => [
                 "Capturing — click to stop",
                 "캡처 중 — 누르면 캡처 중지",
@@ -1515,6 +1544,12 @@ impl Msg {
                 "托盘菜单中的最近条目数",
                 "トレイメニューの最近の項目数",
             ],
+            Msg::SetTrayRecentDesc => [
+                "How many recent items the tray menu lists (unit: items)",
+                "트레이 메뉴에 보일 최근 항목 수입니다 (단위: 개)",
+                "托盘菜单显示的最近条目数（单位：条）",
+                "トレイメニューに表示する最近の項目数（単位：件）",
+            ],
             Msg::SetClearHistory => [
                 "Delete all history",
                 "기록 모두 삭제",
@@ -1594,7 +1629,7 @@ mod tests {
     use super::*;
 
     /// 카탈로그 전수 — 새 `Msg`를 더하면 여기도 더한다(빈칸 검사가 그걸 강제한다).
-    const ALL_MSG: [Msg; 303] = [
+    const ALL_MSG: [Msg; 309] = [
         Msg::AppName,
         Msg::SearchPlaceholder,
         Msg::EmptyHistory,
@@ -1758,6 +1793,9 @@ mod tests {
         Msg::SetSyncFileMaxDesc,
         Msg::SetSyncFileCache,
         Msg::SetSyncFileCacheDesc,
+        Msg::SetSyncFileDir,
+        Msg::SetSyncFileDirDesc,
+        Msg::SetSyncFileDirHint,
         Msg::XferPanel,
         Msg::XferStop,
         Msg::XferRetry,
@@ -1767,6 +1805,7 @@ mod tests {
         Msg::XferActive,
         Msg::XferOffline,
         Msg::XferDone,
+        Msg::XferNone,
         Msg::XferFailed,
         Msg::XferStopped,
         Msg::BadgeCached,
@@ -1800,6 +1839,7 @@ mod tests {
         Msg::TipSettings,
         Msg::StatusView,
         Msg::TipPreview,
+        Msg::TipXfer,
         Msg::TipCaptureStop,
         Msg::TipCaptureResume,
         Msg::TipSyncRelay,
@@ -1875,6 +1915,7 @@ mod tests {
         Msg::SetHangulCompose,
         Msg::SetSyncEnabledDesc,
         Msg::SetTrayRecent,
+        Msg::SetTrayRecentDesc,
         Msg::SetAboutInfo,
         Msg::SetAboutInfoDesc,
         Msg::SetAboutCopy,

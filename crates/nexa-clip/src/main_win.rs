@@ -122,6 +122,8 @@ pub(crate) enum MainAction {
     XferClear,
     /// 전부 중지.
     XferStopAll,
+    /// ★ 전송 패널 열기/닫기(09-13) — 창 안 상태(영속 없음).
+    ToggleXfer,
 }
 
 /// 전송 패널 버튼 히트(페인트가 기록 · 클릭이 읽는다).
@@ -205,6 +207,9 @@ enum Tool {
     /// ★ 감시 토글(09-04 사용자) — 2상: 감시 중 = `stop_circle` 벽돌색(누르면 중지) · 중지됨 = `play_circle`
     ///   초록(누르면 재개). 아이콘·색·툴팁이 현재 상태와 다음 동작을 함께 말한다. 세션 한정(영속 없음).
     WatchOff,
+    /// ★ 전송 패널 토글(09-13 사용자 — 툴바 바닥, 연결 아이콘·⚙ 위). 켜짐 = accent ·
+    ///   닫힌 채 진행 중인 전송이 있으면 accent 점(트레이 점과 같은 뜻).
+    Xfer,
     Settings,
 }
 
@@ -331,6 +336,10 @@ pub(crate) struct MainWin {
     preview_open: bool,
     /// ★ 전송 패널(09-12 · DR-30) — 펌프 스냅숏(비면 패널 없음) · 버튼 히트(페인트가 기록).
     xfers: Vec<XferView>,
+    /// ★ 전송 패널 열림(09-13) — 버튼으로 토글 · 전송이 새로 생기면 자동으로 열리고(`xfer_auto`),
+    ///   자동으로 열린 것은 목록이 비면 자동으로 닫힌다. 사용자가 직접 연 것은 그대로.
+    xfer_open: bool,
+    xfer_auto: bool,
     xfer_hits: std::cell::RefCell<Vec<(Rect, XferHit)>>,
     /// ★ 중복 제외 보기(09-04 사용자) — 같은 내용은 **로컬 1건**, 로컬이 없으면 **가장 최근 수신 1건**만.
     dedup_view: bool,
@@ -419,6 +428,8 @@ impl MainWin {
             settings_icon: std::cell::RefCell::new(None),
             preview_open: false,
             xfers: Vec::new(),
+            xfer_open: false,
+            xfer_auto: false,
             xfer_hits: std::cell::RefCell::new(Vec::new()),
             preview_tb: None,
             preview_scroll: 0,
@@ -915,6 +926,17 @@ impl MainWin {
         )
     }
 
+    /// ★ 전송 패널 토글 자리(09-13) — 바닥 구역 맨 위(연결 아이콘 위).
+    fn xfer_btn_rect(&self, h: i32) -> Rect {
+        let side = self.px(28.0);
+        Rect::new(
+            (self.toolbar_w() - side) / 2,
+            h - self.status_h() - side * 3 - self.px(18.0),
+            side,
+            side,
+        )
+    }
+
     /// ⚙ — 바닥 고정(VT-4).
     fn settings_rect(&self, h: i32) -> Rect {
         let side = self.px(28.0);
@@ -929,6 +951,9 @@ impl MainWin {
     fn tool_at(&self, x: i32, y: i32, h: i32) -> Option<Tool> {
         if self.settings_rect(h).contains_xy(x, y) {
             return Some(Tool::Settings);
+        }
+        if self.xfer_btn_rect(h).contains_xy(x, y) {
+            return Some(Tool::Xfer);
         }
         for (k, t) in TOOLS_TOP.iter().enumerate() {
             if let Some(t) = t {
@@ -1031,7 +1056,12 @@ impl MainWin {
     ///   **평문 복사** = 서식 있는 글(`PasteAs::applicable`에 Plain) · **이미지로 복사** = 텍스트 계열(Text·RichText).
     fn tool_enabled(&self, t: Tool) -> bool {
         match t {
-            Tool::Preview | Tool::Dedup | Tool::AlwaysTop | Tool::WatchOff | Tool::Settings => true,
+            Tool::Preview
+            | Tool::Dedup
+            | Tool::AlwaysTop
+            | Tool::WatchOff
+            | Tool::Xfer
+            | Tool::Settings => true,
             Tool::CopyPlain => self
                 .rows
                 .get(self.sel)
@@ -1052,6 +1082,7 @@ impl MainWin {
             (Tool::Settings, _) => MainAction::OpenSettings,
             (Tool::AlwaysTop, _) => MainAction::ToggleAlwaysTop,
             (Tool::Preview, _) => MainAction::TogglePreview,
+            (Tool::Xfer, _) => MainAction::ToggleXfer,
             (Tool::WatchOff, _) => MainAction::ToggleWatch,
             // 값 적용은 셸 왕복(`apply_dedup`) — 영속과 화면이 한 곳에서 맞는다(미리보기 토글과 같은 문법).
             (Tool::Dedup, _) => MainAction::DedupView(!self.dedup_view),
@@ -1285,19 +1316,49 @@ impl MainWin {
     /// ★ 상태줄 점 모드(09-04) — 녹(릴레이 연결) · 파랑(None 로컬) · 진회색(미사용) · 흐림(릴레이 미연결).
     /// ★ 전송 스냅숏 교체(09-12 · 펌프 250ms) — 같으면 그리지 않는다.
     pub(crate) fn set_xfers(&mut self, v: Vec<XferView>) {
-        if v != self.xfers {
-            self.xfers = v;
-            self.redraw();
+        if v == self.xfers {
+            return;
         }
+        let was_empty = self.xfers.is_empty();
+        self.xfers = v;
+        // ★ 자동 표시/접힘(09-13) — 새 전송이 생기면 열고, 자동으로 열린 패널은 비면 닫는다.
+        //   사용자가 버튼으로 연 패널은 비어도 그대로(닫는 것도 사용자 몫).
+        if was_empty && !self.xfers.is_empty() && !self.xfer_open {
+            self.xfer_open = true;
+            self.xfer_auto = true;
+        } else if self.xfers.is_empty() && self.xfer_auto {
+            self.xfer_open = false;
+            self.xfer_auto = false;
+        }
+        self.redraw();
     }
 
-    /// 전송 패널 높이 — 머리 24 + 행 24×n(목록 영역의 35% 상한 · 비면 0).
+    /// ★ 전송 패널 토글(09-13 사용자 — 툴바 버튼). 직접 연 것은 자동으로 닫히지 않는다.
+    pub(crate) fn toggle_xfer(&mut self) {
+        self.xfer_open = !self.xfer_open;
+        self.xfer_auto = false;
+        self.sync_preview();
+        self.redraw();
+    }
+
+    /// 닫힌 패널의 버튼 점 — 진행 중(대기·받는 중·오프라인 대기) 전송이 있는가.
+    fn xfer_active(&self) -> bool {
+        self.xfers.iter().any(|v| {
+            matches!(
+                v.state,
+                XferState::Queued | XferState::Active | XferState::Offline
+            )
+        })
+    }
+
+    /// 전송 패널 높이 — 머리 24 + 행 24×n(목록 영역의 35% 상한 · 닫혀 있으면 0 · 비어 있으면 안내 1행).
     fn xfer_h_of(&self, h: i32) -> i32 {
-        if self.xfers.is_empty() {
+        if !self.xfer_open {
             return 0;
         }
         let avail = (h - self.header_h() - self.status_h()).max(0);
-        let want = self.px(24.0) + self.px(24.0) * self.xfers.len() as i32 + self.px(4.0);
+        let rows = self.xfers.len().max(1) as i32;
+        let want = self.px(24.0) + self.px(24.0) * rows + self.px(4.0);
         want.min(avail * 35 / 100).max(self.px(52.0)).min(avail)
     }
 
@@ -2052,6 +2113,7 @@ impl MainWin {
             }
         }
         self.draw_tool(dc, self.settings_rect(h), Tool::Settings, true);
+        self.draw_tool(dc, self.xfer_btn_rect(h), Tool::Xfer, true);
         // ★ 동기화 연결 아이콘(09-03 — beep Lucide 자산 동일: cable=연결 · unplug=끊김).
         if let Some(on) = self.sync_on {
             let col = if on {
@@ -2564,7 +2626,7 @@ impl MainWin {
         {
             let mut hits = self.xfer_hits.borrow_mut();
             hits.clear();
-            if !self.xfers.is_empty() {
+            if self.xfer_open {
                 let xr = self.xfer_rect(w, h);
                 dc.fill_rect(xr, th.panel_bg_alt);
                 dc.fill_rect(Rect::new(xr.x, xr.y, xr.w, 1), th.border);
@@ -2688,6 +2750,15 @@ impl MainWin {
                     let name_clip = Rect::new(xr.x + pad, y, (right - xr.x - pad).max(0), row_h);
                     dc.text(xr.x + pad, ty(y), name_clip, &name, th.text);
                     y += row_h;
+                }
+                if self.xfers.is_empty() {
+                    dc.text(
+                        xr.x + pad,
+                        ty(xr.y + head_h),
+                        xr,
+                        tr(lang, Msg::XferNone),
+                        th.text_dim,
+                    );
                 }
                 if self.xfers.len() > max_rows {
                     let more = format!("+{}", self.xfers.len() - max_rows);
@@ -2839,6 +2910,9 @@ impl MainWin {
     fn tool_rect_of(&self, tool: Tool, h: i32) -> Rect {
         if tool == Tool::Settings {
             return self.settings_rect(h);
+        }
+        if tool == Tool::Xfer {
+            return self.xfer_btn_rect(h);
         }
         for (k, t) in TOOLS_TOP.iter().enumerate() {
             if *t == Some(tool) {
@@ -3064,6 +3138,35 @@ impl MainWin {
                     let half = px(10.0);
                     let dst = Rect::new(cx - half, cy - half, half * 2, half * 2);
                     dc.image_scaled(dst, img, r);
+                }
+            }
+            Tool::Xfer => {
+                // ★ Material `download`(09-13) — 아래 화살표(막대 + 삼각 머리) + 받침. 열림 = accent.
+                //   닫힌 채 진행 중 전송이 있으면 우상단 accent 점(트레이 점과 같은 뜻).
+                let c = if self.xfer_open { th.accent } else { ink };
+                let shaft_w = px(2.0).max(2);
+                dc.fill_rect(
+                    Rect::new(cx - shaft_w / 2, cy - px(8.0), shaft_w, px(8.0)),
+                    c,
+                );
+                dc.fill_triangle(
+                    (cx - px(5.5), cy - px(1.0)),
+                    (cx + px(5.5), cy - px(1.0)),
+                    (cx, cy + px(4.5)),
+                    c,
+                );
+                dc.fill_round_rect(
+                    Rect::new(cx - px(7.0), cy + px(6.5), px(14.0), px(2.0).max(2)),
+                    px(1.0),
+                    c,
+                );
+                if !self.xfer_open && self.xfer_active() {
+                    let d = px(6.0);
+                    dc.fill_round_rect(
+                        Rect::new(r.x + r.w - d - px(2.0), r.y + px(2.0), d, d),
+                        d / 2,
+                        th.accent,
+                    );
                 }
             }
             Tool::Settings => {
@@ -3528,6 +3631,7 @@ impl MainWin {
             Tool::Preview => tr(lang, Msg::TipPreview),
             Tool::Dedup => tr(lang, Msg::DedupLabel),
             Tool::AlwaysTop => tr(lang, Msg::TipAlwaysTop),
+            Tool::Xfer => tr(lang, Msg::TipXfer),
             Tool::WatchOff => tr(
                 lang,
                 if self.watch_off {
