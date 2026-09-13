@@ -537,6 +537,16 @@ fn serve_loop(conn: &Arc<RustConnection>, win: Window, atoms: &Atoms, shared: &A
 }
 
 /// 게시 — TIMESTAMP 취득(zero-append 트릭 · ICCCM: CurrentTime 금지) 후 소유권 획득·검증.
+/// ★ 평문 표현인가 — **두 철자를 다 받는다**(09-13).
+///
+/// 감시가 잡은 텍스트는 `text/plain`이지만, 우리가 합성하는 텍스트(경로만·평문·편집)는
+/// [`crate::clipboard::plain_text_reps`]가 `text/plain;charset=utf-8`로 만든다. 종전에는
+/// 앞의 것만 평문으로 쳐서 **합성 텍스트가 `UTF8_STRING`·`STRING` 별칭 없이 나갔고**,
+/// 그 별칭만 요청하는 GTK·Qt·터미널이 붙여넣지 못했다(사용자 실기 09-13 · 09-05 감사 T-41 ③).
+fn is_plain_text_format(format: &str) -> bool {
+    matches!(format, "text/plain" | "text/plain;charset=utf-8")
+}
+
 fn publish(
     conn: &RustConnection,
     win: Window,
@@ -568,7 +578,14 @@ fn publish(
     let mut entries: Vec<Entry> = Vec::new();
     for r in reps {
         let bytes = Arc::new(r.data.clone());
-        let atom = if r.format == "text/plain" {
+        // ★ 09-13 — 평문 판정은 **두 철자 다**다. `plain_text_reps`가 합성하는 텍스트
+        //   (경로만·평문·편집)는 `text/plain;charset=utf-8`로 오는데, 종전에는 `"text/plain"`
+        //   정확 일치일 때만 별칭을 달아 **합성 텍스트가 `UTF8_STRING` 없이 나갔다** →
+        //   GTK·Qt·터미널이 붙여넣지 못했다(사용자 실기 09-13 "Alt+Enter가 안 붙는다" ·
+        //   09-05 Linux 감사 T-41 ③이 지목한 자리). 감시가 잡은 텍스트는 `text/plain`이라
+        //   증상이 가려져 있었다.
+        let is_plain = is_plain_text_format(&r.format);
+        let atom = if is_plain {
             atoms.text_plain
         } else {
             conn.intern_atom(false, r.format.as_bytes())
@@ -578,7 +595,7 @@ fn publish(
                 .atom
         };
         entries.push((atom, atom, Arc::clone(&bytes)));
-        if r.format == "text/plain" {
+        if is_plain {
             let utf8 = atoms.UTF8_STRING;
             entries.push((utf8, utf8, Arc::clone(&bytes)));
             entries.push((
@@ -814,5 +831,46 @@ mod tests {
         assert_eq!(img, big);
         // 상한 도중 집행 — 큰 표현을 작은 cap으로 읽으면 정직하게 None.
         assert!(read_target("image/png", 1024).is_none());
+    }
+
+    /// ★ 09-13 왕복 — **합성 텍스트**(`plain_text_reps`가 내는 `text/plain;charset=utf-8`)를
+    /// 게시하면 `UTF8_STRING`·`STRING`이 광고되고 그 이름으로 읽힌다.
+    ///
+    /// 이 단언이 없어서 "경로만/평문이 게시·주입은 성공하는데 아무 데도 안 붙는" 상태가
+    /// 살아 있었다(사용자 실기 09-13). 실기 없이 이 자리를 지킨다.
+    /// `DISPLAY=:0 cargo test -p nclip-plat -- --ignored x11_synth_text`
+    #[test]
+    #[ignore = "X 서버가 필요(Xvfb 또는 실 세션)"]
+    fn x11_synth_text_advertises_aliases() {
+        let reps = crate::clipboard::plain_text_reps("/tmp/a.txt");
+        assert_eq!(reps[0].format, "text/plain;charset=utf-8", "합성 철자 전제");
+        set_reps(&reps).expect("게시");
+        let targets = list_targets(64 * 1024).expect("TARGETS");
+        for want in [
+            "UTF8_STRING",
+            "STRING",
+            "text/plain",
+            "text/plain;charset=utf-8",
+        ] {
+            assert!(
+                targets.iter().any(|t| t == want),
+                "{want} 없음 — {targets:?}"
+            );
+        }
+        assert_eq!(
+            read_target("UTF8_STRING", 1024).expect("텍스트"),
+            b"/tmp/a.txt"
+        );
+        assert_eq!(read_target("STRING", 1024).expect("텍스트"), b"/tmp/a.txt");
+    }
+
+    /// ★ 09-13 — 합성 텍스트(`;charset=utf-8`)도 평문이라야 별칭이 붙는다.
+    #[test]
+    fn both_plain_text_spellings_get_aliases() {
+        assert!(is_plain_text_format("text/plain"));
+        assert!(is_plain_text_format("text/plain;charset=utf-8"));
+        assert!(!is_plain_text_format("text/uri-list"));
+        assert!(!is_plain_text_format("x-special/gnome-copied-files"));
+        assert!(!is_plain_text_format("image/png"));
     }
 }

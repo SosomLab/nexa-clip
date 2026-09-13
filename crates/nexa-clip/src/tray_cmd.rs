@@ -598,7 +598,7 @@ impl Shell {
         let Some(item) = self.history.get_by_id(id) else {
             return;
         };
-        let reps = Self::reps_for_mode(item, PasteAs::Plain);
+        let reps = Self::reps_for_mode(&item.reps, PasteAs::Plain);
         if reps.is_empty() {
             eprintln!("평문 붙여넣기: 맨 앞 항목에 평문 표현이 없습니다");
             return;
@@ -1012,31 +1012,31 @@ impl Shell {
 
     /// ★ 모드 선별 + 폴백(09-01 J2) — 파일 항목의 "경로만"은 평문 표현이 아예 없을 수
     /// 있어(탐색기 복사 = CF_HDROP뿐) 경로 목록에서 평문을 **만들어** 준다.
-    fn reps_for_mode(item: &nclip_core::history::HistoryItem, as_: PasteAs) -> Vec<RawRep> {
-        let filtered = as_.filter_reps(&item.reps);
+    ///
+    /// ★ 표현만 받는 **순수 함수**다(09-13) — 항목 전체가 아니라 `reps`만 보므로
+    /// 테스트가 `HistoryItem` 조립 없이 3-OS 표현을 그대로 넣어 볼 수 있다.
+    fn reps_for_mode(reps: &[RawRep], as_: PasteAs) -> Vec<RawRep> {
+        let filtered = as_.filter_reps(reps);
         if !filtered.is_empty() {
             return filtered;
         }
         match as_ {
-            // 경로만 — 평문 표현이 없는 파일 항목은 CF_HDROP에서 경로를 합성(09-01).
-            PasteAs::PathOnly => {
-                let paths: Vec<String> = item
-                    .reps
-                    .iter()
-                    .filter(|r| r.format == "CF_HDROP")
-                    .flat_map(|r| nclip_core::capture::parse_hdrop(&r.data))
-                    .collect();
+            // ★ 경로만·평문 — 평문 표현이 없는 파일 항목은 **경로 목록에서 합성**한다.
+            //   ⚠️ 09-13 수정: 종전에는 `CF_HDROP`에서만 뽑아 **Windows 전용**이었다 —
+            //   Linux(`x-special/gnome-copied-files`)·mac(`NSFilenamesPboardType`)에서는
+            //   빈 표현이 나와 아무 일도 일어나지 않았다(사용자 실기 09-13).
+            //   `file_paths()`(= `capture::paths_of`)는 네 OS 표현을 이미 전부 안다.
+            PasteAs::PathOnly | PasteAs::Plain => {
+                let paths = nclip_core::capture::paths_of(reps);
                 if paths.is_empty() {
-                    Vec::new()
-                } else {
-                    nclip_plat::clipboard::plain_text_reps(&paths.join("\r\n"))
+                    // 평문은 파일이 아닌 항목도 온다 — PPT 글상자는 SVG에서 글자를 뽑는다
+                    //   (09-02 사용자 요청 · 표시와 같은 `<text>` 추출).
+                    return nclip_core::capture::svg_text(reps)
+                        .map(|t| nclip_plat::clipboard::plain_text_reps(&t))
+                        .unwrap_or_default();
                 }
+                nclip_plat::clipboard::plain_text_reps(&paths.join("\r\n"))
             }
-            // ★ 평문 — PPT 글상자는 평문 표현이 아예 없다(09-02 사용자 요청) →
-            //   표시와 같은 SVG <text> 추출을 CF_UNICODETEXT로 합성해 붙여넣는다.
-            PasteAs::Plain => nclip_core::capture::svg_text(&item.reps)
-                .map(|t| nclip_plat::clipboard::plain_text_reps(&t))
-                .unwrap_or_default(),
             _ => Vec::new(),
         }
     }
@@ -1052,7 +1052,7 @@ impl Shell {
             return;
         };
         let (item_reps, label) = (item.reps.clone(), item.label.clone());
-        let by_mode = Self::reps_for_mode(item, as_);
+        let by_mode = Self::reps_for_mode(&item.reps, as_);
         let reps: Vec<RawRep> = match self.resolve_remote_files(id, &item_reps, as_) {
             Some(Resolved::Ready(r) | Resolved::Text(r)) => r,
             Some(Resolved::Fetching) => return,
@@ -1443,7 +1443,7 @@ impl Shell {
             return;
         };
         let (item_id, item_reps, label) = (item.id, item.reps.clone(), item.label.clone());
-        let by_mode = Self::reps_for_mode(item, as_);
+        let by_mode = Self::reps_for_mode(&item.reps, as_);
         // ★ 원격 파일 약속(09-12 · DR-30) — 붙여넣을 때 받는다. 받는 중이면 팝업만 닫고 완료를 기다린다.
         let reps: Vec<RawRep> = match self.resolve_remote_files(item_id, &item_reps, as_) {
             Some(Resolved::Ready(r) | Resolved::Text(r)) => r,
@@ -1516,7 +1516,7 @@ impl Shell {
                         }
                     }
                 }
-                None => Self::reps_for_mode(item, as_),
+                None => Self::reps_for_mode(&item.reps, as_),
             };
             if reps.is_empty() {
                 reps = item.reps.clone(); // 평문이 없는 항목은 원본으로.
@@ -1567,8 +1567,11 @@ impl Shell {
         let m = nclip_core::RemoteFiles::of_reps(reps)?;
         let text_of =
             |paths: &[String]| nclip_plat::clipboard::plain_text_reps(&paths.join("\r\n"));
-        if as_ == PasteAs::PathOnly {
-            // 경로만 — 원격 내용을 끌어오지 않는다(회선 절약 · docs/26 §4-5).
+        if as_.is_text_only() {
+            // ★ 경로만·평문 — 원격 내용을 끌어오지 않는다(회선 절약 · docs/26 §4-5).
+            //   ⚠️ 09-13 수정: 평문이 여기서 안 갈라져 `원본`과 같은 가지로 흘렀다 —
+            //   파일 표현이 만들어지고 **Linux는 표현 하나만 게시**(`pick_rep`)라
+            //   그 파일 표현이 이겨 텍스트가 통째로 사라졌다(사용자 실기 09-13).
             return Some(Resolved::Text(text_of(&m.paths())));
         }
         let r = crate::xfer::with(|x| x.fetch(item_id, &m, crate::xfer::Prio::Fg))
@@ -2533,4 +2536,87 @@ pub(crate) fn run() {
         println!("기록 비움: sec.clear_on_quit = on");
     }
     println!("종료합니다 — 이번 상주에서 {}개 보관.", shell.history.len());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rep(format: &str, data: &[u8]) -> RawRep {
+        RawRep {
+            format: format.into(),
+            data: data.to_vec(),
+        }
+    }
+
+    /// 합성된 경로 텍스트를 읽어 온다 — 평문 표현의 이름은 OS마다 다르다.
+    fn text_of(reps: &[RawRep]) -> String {
+        let r = reps.first().expect("표현이 있어야 한다");
+        if cfg!(windows) {
+            let u: Vec<u16> = r
+                .data
+                .chunks_exact(2)
+                .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                .take_while(|&u| u != 0)
+                .collect();
+            String::from_utf16_lossy(&u)
+        } else {
+            String::from_utf8_lossy(&r.data).into_owned()
+        }
+    }
+
+    /// ★ 09-13 결함 ⓑ — 경로 합성이 `CF_HDROP`에만 걸려 **Windows 전용**이었다.
+    /// 세 OS의 파일 표현 어느 것에서도 경로만/평문이 경로 텍스트를 내야 한다.
+    #[test]
+    fn path_only_synthesizes_text_on_every_os_file_rep() {
+        let mut hdrop = Vec::new();
+        hdrop.extend_from_slice(&20u32.to_le_bytes()); // pFiles
+        hdrop.extend_from_slice(&[0u8; 12]); // pt
+        hdrop.extend_from_slice(&1u32.to_le_bytes()); // fWide
+        for u in "C:\\a.txt".encode_utf16().chain([0, 0]) {
+            hdrop.extend_from_slice(&u.to_le_bytes());
+        }
+        let cases: [(&str, RawRep, &str); 3] = [
+            ("windows", rep("CF_HDROP", &hdrop), "C:\\a.txt"),
+            (
+                "linux",
+                rep("x-special/gnome-copied-files", b"copy\nfile:///tmp/a.txt"),
+                "/tmp/a.txt",
+            ),
+            (
+                "macos",
+                rep("public.file-url", b"file:///Users/k/a.txt"),
+                "/Users/k/a.txt",
+            ),
+        ];
+        for (os, r, want) in cases {
+            for as_ in [PasteAs::PathOnly, PasteAs::Plain] {
+                let out = Shell::reps_for_mode(std::slice::from_ref(&r), as_);
+                assert!(
+                    !out.is_empty(),
+                    "{os} {as_:?} — 빈 표현이면 아무 일도 안 난다"
+                );
+                assert_eq!(text_of(&out), want, "{os} {as_:?}");
+            }
+        }
+    }
+
+    /// 평문 표현이 이미 있으면 합성하지 않고 그것을 쓴다(종전 동작 유지).
+    #[test]
+    fn existing_plain_rep_wins_over_synthesis() {
+        let reps = [
+            rep("x-special/gnome-copied-files", b"copy\nfile:///tmp/a.txt"),
+            rep("text/plain", b"eeny meeny"),
+        ];
+        let out = Shell::reps_for_mode(&reps, PasteAs::Plain);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].format, "text/plain");
+    }
+
+    /// 파일도 SVG도 아닌 항목의 경로만 = 줄 것이 없다(정직하게 빈 표현).
+    #[test]
+    fn path_only_on_non_file_item_is_empty() {
+        let reps = [rep("image/png", b"\x89PNG")];
+        assert!(Shell::reps_for_mode(&reps, PasteAs::PathOnly).is_empty());
+    }
 }

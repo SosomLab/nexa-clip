@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-09-13 (5차 · Linux VM) — ★ 파일 항목 붙여넣기 **3결함 수정**(T-56)
+
+**신고**: "팝업에서 파일 선택 후 `Shift+Enter`가 안 된다" → "**`Alt+Enter`로도 안 된다**".
+**원인 셋**: ⓐ [`resolve_remote_files`](../crates/nexa-clip/src/tray_cmd.rs)가 `경로만`만 텍스트로 갈라내고 **`평문`은 `원본`과 같은 가지** → 파일 표현이 만들어지고 Linux는 표현 하나만 게시(`pick_rep`)라 텍스트가 사라짐(+평문인데 원격 내용을 끌어옴) · ⓑ 경로 합성 폴백이 **`CF_HDROP` 전용** → Linux·**mac**은 빈 표현 = 무반응 · ★ ⓒ **`selection_x11` 게시가 별칭(`UTF8_STRING`·`STRING`·`TEXT`)을 `"text/plain"` 정확 일치일 때만** 달아, 합성 텍스트(`text/plain;charset=utf-8` — 경로만·평문·편집)가 **별칭 없이** 나갔다 = "게시·주입 성공인데 안 붙는"의 **진범**(09-05 감사 **T-41 ③ 해소** — 그때는 원인을 도구 파이프로 오인).
+**수정**: `PasteAs::is_text_only()` 신설 · 폴백을 `capture::paths_of`로(3-OS 공통) · 게시 평문 판정을 두 철자 다 받게(`is_plain_text_format`) · `reps_for_mode`를 **순수 함수**로(결함 ⓑ가 테스트 없이 산 이유).
+**증명**: 실 X 서버 왕복 테스트 — 수정 전 TARGETS `text/plain;charset=utf-8` **하나뿐**(사용자가 겪던 목록 · FAILED) → 수정 후 `UTF8_STRING`·`STRING`·`text/plain` 광고(ok). **538 테스트 · 3타깃+fmt ✓** · 설치본 교체 `pid 44323`. 브랜치 `fix/paste-mode-file-items-09-13` · ⏳ 사용자 실기(팝업 `Alt+Enter`·`Shift+Enter`). → [journal](journal/2026-09-13.md)
+
+---
+
 ## 2026-09-13 (4차 · Linux VM) — 저장소 최신화 · Linux 게이트 · 설치본 0.1.1 → 0.1.3 · ★ 잘라내기 3-OS 비대칭 발견
 
 **최신화**: clip `4224133` → `9ad8f78`(**32 ff** · v0.1.2·v0.1.3) · beep `5537f5c` → `1d5428d`(**66 ff** · v0.2.14·v0.2.15). 이 PC는 09-05 이후 방치돼 **두 릴리스 + 09-12 미릴리스 9커밋**이 빠져 있었다.

@@ -2,6 +2,10 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-09-13 (5차 · Linux VM) — ★ **파일 항목 붙여넣기 3결함 수정** — ⓐ 평문이 `원본` 가지로 흘러 무시됨 · ⓑ 경로 합성 폴백이 `CF_HDROP` 전용(Linux·mac 무반응) · ★ ⓒ **X11 게시가 합성 텍스트에 `UTF8_STRING`·`STRING` 별칭을 안 달았다**(= "게시·주입은 성공인데 안 붙는" 진범 · 09-05 감사 T-41 ③ 해소) · 538 테스트(신규 5 + 실 X11 왕복) · 3타깃+fmt ✓
+
+- 실 X 서버 대조: 수정 전 TARGETS = `text/plain;charset=utf-8` 하나뿐(사용자가 겪던 그 목록) → 수정 후 `UTF8_STRING`·`STRING`·`text/plain` 광고 · `reps_for_mode`를 순수 함수로 바꿔 3-OS 표현을 테스트에서 직접 넣는다 → [journal](journal/2026-09-13.md)
+
 ## 2026-09-13 (4차 · Linux VM) — 저장소 최신화(clip 32 ff · v0.1.2/v0.1.3 · beep 66 ff · v0.2.14/v0.2.15) · Linux 게이트 **533 테스트 ✓ · 3타깃 clippy ✓** · 설치본 **0.1.1 → 0.1.3** 교체·재시작(mac과 LAN 직결 즉시 성립) · 원장 **I-11**(beep R-22 탐지 가능성 → clip 판 = T-54)
 
 - ★ **실기 발견 — 잘라내기 3-OS 비대칭(T-53)**: Linux `gnome-copied-files`의 `cut`/`copy` 동사를 `paths_of`가 버려 **잘라내기도 전파된다**(21 §6 S15 기대와 불일치 · Windows는 HDROP 부재라 자연히 안 감) · S12 송신은 ✓ · S13/S16~S22는 mac도 09-12 빌드여야 해 보류 → [journal](journal/2026-09-13.md)

@@ -159,6 +159,19 @@ impl PasteAs {
         }
     }
 
+    /// ★ **글자만 주는 모드인가**(평문 · 경로만) — 파일 항목에서 둘은 같은 뜻이다.
+    ///
+    /// 파일 항목의 평문 = 경로 텍스트라서([`Self::filter_reps`]), 원격 파일 항목이면
+    /// 둘 다 **내용을 받아오지 않고** 경로 글자만 준다(회선 절약 · docs/26 §4-5).
+    ///
+    /// ⚠️ 09-13 이전에는 `PathOnly`만 그렇게 갈라내서, 평문이 `Original`과 같은 가지로
+    /// 흘러 파일 표현이 만들어졌다 — **Linux는 표현을 하나만 게시**하므로(`pick_rep`)
+    /// 그 파일 표현이 이기고 텍스트가 사라졌다(사용자 실기 09-13).
+    #[must_use]
+    pub fn is_text_only(self) -> bool {
+        matches!(self, PasteAs::Plain | PasteAs::PathOnly)
+    }
+
     /// i18n 라벨 키.
     #[must_use]
     pub fn label(self) -> crate::Msg {
@@ -282,5 +295,15 @@ mod tests {
                 assert_ne!(a, b, "라벨이 겹친다");
             }
         }
+    }
+
+    /// ★ 09-13 — 파일 항목에서 **평문과 경로만은 같은 뜻**이다(둘 다 경로 글자).
+    /// 이 판정이 빠져 평문이 `Original`과 같은 가지로 흘렀다.
+    #[test]
+    fn plain_and_path_only_are_text_only() {
+        assert!(PasteAs::Plain.is_text_only());
+        assert!(PasteAs::PathOnly.is_text_only());
+        assert!(!PasteAs::Original.is_text_only());
+        assert!(!PasteAs::Object.is_text_only());
     }
 }
