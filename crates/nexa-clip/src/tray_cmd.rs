@@ -465,6 +465,29 @@ struct Shell {
     watch_off: bool,
 }
 
+/// 캐시된 로컬 경로들을 **모드에 맞는 게시 표현**으로(09-13 · 순수 함수라 테스트가 직접 본다).
+///
+/// | 모드 | 내보내는 것 |
+/// |---|---|
+/// | 원본 | 파일 표현 + 경로 텍스트 |
+/// | 개체 | 파일 표현만 |
+/// | ★ 평문·경로만 | **경로 텍스트만** |
+///
+/// ⚠️ 마지막 줄이 핵심이다 — 글자만 청했는데 파일 표현을 얹으면 **Linux는 표현을 하나만
+/// 게시하므로**([`nclip_plat::clipboard`] `pick_rep`) 파일 표현이 이겨 텍스트가 사라진다.
+/// 같은 결함을 [`Shell::resolve_remote_files`]에서 고쳤고(09-13), 여기가 두 번째 자리다.
+fn cached_reps(local: &[String], as_: PasteAs) -> Vec<RawRep> {
+    let mut reps = if as_.is_text_only() {
+        Vec::new()
+    } else {
+        nclip_plat::clipboard::file_reps(local)
+    };
+    if as_ != PasteAs::Object {
+        reps.extend(nclip_plat::clipboard::plain_text_reps(&local.join("\r\n")));
+    }
+    reps
+}
+
 impl Shell {
     /// 이력이 변했다 — 트레이 메뉴·툴팁을 새 내용으로.
     fn refresh_tray(&self) {
@@ -1660,10 +1683,7 @@ impl Shell {
             .iter()
             .map(|p| p.to_string_lossy().into_owned())
             .collect();
-        let mut reps = nclip_plat::clipboard::file_reps(&local);
-        if as_ != PasteAs::Object {
-            reps.extend(nclip_plat::clipboard::plain_text_reps(&local.join("\r\n")));
-        }
+        let reps = cached_reps(&local, as_);
         match nclip_plat::clipboard::set_reps(&reps) {
             Ok(n) => {
                 println!(
@@ -2611,6 +2631,27 @@ mod tests {
         let out = Shell::reps_for_mode(&reps, PasteAs::Plain);
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].format, "text/plain");
+    }
+
+    /// ★ 09-13 — 캐시 게시도 **글자만 청한 모드에는 파일 표현을 얹지 않는다**.
+    /// (얹으면 Linux 단일 게시에서 파일 표현이 이겨 텍스트가 사라진다 — 같은 결함 2호.)
+    #[test]
+    fn cached_reps_never_add_file_reps_for_text_modes() {
+        let local = vec!["/tmp/a.txt".to_string()];
+        for as_ in [PasteAs::Plain, PasteAs::PathOnly] {
+            let out = cached_reps(&local, as_);
+            assert!(
+                out.iter().all(|r| nclip_core::is_plain_format(&r.format)),
+                "{as_:?} — 파일 표현이 섞였다: {:?}",
+                out.iter().map(|r| &r.format).collect::<Vec<_>>()
+            );
+            assert_eq!(text_of(&out), "/tmp/a.txt");
+        }
+        // 원본 = 파일 + 텍스트 · 개체 = 파일만(종전 동작 유지).
+        assert!(cached_reps(&local, PasteAs::Original).len() > 1);
+        let obj = cached_reps(&local, PasteAs::Object);
+        assert!(!obj.is_empty());
+        assert!(obj.iter().all(|r| !nclip_core::is_plain_format(&r.format)));
     }
 
     /// 파일도 SVG도 아닌 항목의 경로만 = 줄 것이 없다(정직하게 빈 표현).
