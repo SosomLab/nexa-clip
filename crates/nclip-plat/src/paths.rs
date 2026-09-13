@@ -61,7 +61,9 @@ pub fn parse_user_dirs_download(text: &str, home: &std::path::Path) -> Option<Pa
         Some(rest) => home.join(rest.trim_start_matches('/')),
         None => PathBuf::from(raw),
     };
-    p.is_absolute().then_some(p)
+    // ★ POSIX 절대 경로 판정을 **문자로**(09-13 CI) — `Path::is_absolute`는 Windows에서 `/home/…`을
+    //   상대 경로로 보므로 3-OS 테스트가 win 잡에서 깨졌다. XDG 파일은 Linux 것이라 `/` 시작이 곧 절대다.
+    p.to_string_lossy().starts_with('/').then_some(p)
 }
 
 #[cfg(test)]
