@@ -2,6 +2,8 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-09-13 (4차 · win) — 저장소 최신화(mac 5커밋 ff `9ad8f78→f47856a` · 충돌 0) · 변경 분석(토글 버튼 · 설정 단위 · `sync.file_dir` 다운로드 폴더 · 즉시 반영 `boost`/`publish_cached` = 5차 구조 가드 위 조건부 복원 · CI win 수정) · win 534 테스트 ✓ · 설치본은 아직 9ad8f78 → [journal](journal/2026-09-13.md)
+
 ## 2026-09-13 (3차 · mac) — 진행사항 최신화 · `feat/xfer-toggle-file-dir`(커밋 3) → main 병합 · push · ⏳ 두 기기 실기(설치본 교체 뒤) → [journal](journal/2026-09-13.md)
 
 ## 2026-09-13 (2차 · mac) — ★ 다른 PC 파일이 바로 붙여넣기되지 않던 문제(사용자 실기) — 원인 = 약속 미게시(2차) + 사전 캐시 완료 미게시(4차) · 수정 = 최신 약속 `boost`(Fg · 저속 상한 없음) + 완료 시 **이력 맨 앞이면 게시**(`publish_cached` · 5차 구조 가드 위) · 537 테스트 · 3-OS ✓ → [journal](journal/2026-09-13.md)
