@@ -334,7 +334,7 @@ pub(crate) const REGISTRY: &[Entry] = &[
     e(
         Msg::CatAppearance,
         Msg::SetTrayRecent,
-        Msg::SetTrayRecent,
+        Msg::SetTrayRecentDesc,
         SettingKind::Number {
             presets: TRAY_N_PRESETS,
             suffix: "",
@@ -616,6 +616,18 @@ pub(crate) const REGISTRY: &[Entry] = &[
             suffix: "MB",
         },
         "sync.file_cache_mb",
+    ),
+    // ★ 받은 파일 저장 폴더(09-13 사용자) — 빈 값 = OS 사용자 다운로드 폴더 아래 `Nexa Clip`
+    //   (`nclip_plat::paths::downloads_dir` · 없으면 `<data>/cache/files`). 이후 전송부터 적용.
+    e(
+        Msg::CatSync,
+        Msg::SetSyncFileDir,
+        Msg::SetSyncFileDirDesc,
+        SettingKind::Text {
+            hint: Msg::SetSyncFileDirHint,
+            secret: false,
+        },
+        "sync.file_dir",
     ),
     // ★ 연결 해제(09-03 사용자) — 성공 노트 아래쪽 자리(테스트 다음 행).
     e(

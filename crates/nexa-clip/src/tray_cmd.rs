@@ -1278,8 +1278,11 @@ impl Shell {
                             crate::xfer::with(|x| x.fetch(id, &m, crate::xfer::Prio::Bg))
                         {
                             if n > 0 {
+                                // ★ 최신 항목은 제한 없이 바로 받는다(09-13 사용자 — "복사하면 바로 붙여넣기") —
+                                //   끝났을 때 아직 이력 맨 앞이면 `on_xfer_done`이 클립보드에 게시한다.
+                                let fg = crate::xfer::with(|x| x.boost(id)).unwrap_or(0);
                                 println!(
-                                    "파일 공유: {}의 파일 {n}개({}MB) 사전 캐시 대기(백그라운드 저속)",
+                                    "파일 공유: {}의 파일 {n}개({}MB) 즉시 받기(Fg {fg} · 저속 상한 없음) — 완료 시 최신 항목이면 클립보드 반영",
                                     m.origin_name,
                                     m.total_bytes() / 1_048_576
                                 );
@@ -1635,63 +1638,84 @@ impl Shell {
     }
 
     /// ★ 항목 전송 종결 — 전부 완료면 캐시에서 게시(+짧으면 주입) · 실패면 알림.
+    /// 캐시된 파일 항목을 **OS 클립보드에 게시**(파일 표현 + 경로 텍스트) — 성공이면 `true`.
+    /// 되읽힌 캡처는 `on_captured`의 캐시 에코 승격이 흡수하고, `from_reps`는 캐시 경로 페이로드를 만들지 않는다
+    /// (09-12 4·5차) — 그래서 여기서 게시해도 2PC 연쇄가 열리지 않는다.
+    fn publish_cached(&mut self, item_id: u64, as_: PasteAs) -> bool {
+        let _ = self.ensure_loaded(item_id);
+        let Some(m) = self
+            .history
+            .get_by_id(item_id)
+            .and_then(|it| nclip_core::RemoteFiles::of_reps(&it.reps))
+        else {
+            return false;
+        };
+        let Some(paths) = crate::xfer::with(|x| x.all_cached(&m)).flatten() else {
+            return false;
+        };
+        let local: Vec<String> = paths
+            .iter()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect();
+        let mut reps = nclip_plat::clipboard::file_reps(&local);
+        if as_ != PasteAs::Object {
+            reps.extend(nclip_plat::clipboard::plain_text_reps(&local.join("\r\n")));
+        }
+        match nclip_plat::clipboard::set_reps(&reps) {
+            Ok(n) => {
+                println!(
+                    "파일 공유: 받기 완료 — 파일 {}개 게시(표현 {n}개)",
+                    local.len()
+                );
+                if let Some(pos) = (0..self.history.len())
+                    .find(|&i| self.history.get(i).is_some_and(|it| it.id == item_id))
+                {
+                    self.history.expect_echo(pos);
+                }
+                true
+            }
+            Err(e) => {
+                eprintln!("파일 공유: 클립보드 게시 실패({e}) — 캐시에는 있습니다");
+                false
+            }
+        }
+    }
+
     fn on_xfer_done(&mut self, item_id: u64) {
         let lang = current_lang();
         let done = crate::xfer::with(|x| x.item_done(item_id)).unwrap_or(false);
         let pending = crate::xfer::with(|x| x.take_pending_paste(item_id)).flatten();
-        // ★ 사전 캐시(백그라운드) 완료는 **게시하지 않는다**(09-12 연쇄 차단) — 사용자가 붙여넣기를 청한 적이
-        //   없다. 배지가 `[캐시됨]`으로 바뀌고, 나중에 고르면 즉시 게시된다.
         if done && pending.is_none() {
-            println!("파일 공유: 사전 캐시 완료 — 항목 {item_id}(게시 없음 · 고르면 즉시)");
+            // ★ 사전 캐시 완료(09-13 사용자 — "다른 PC에서 복사한 파일이 바로 붙여넣기되지 않는다"):
+            //   그 항목이 **아직 이력 맨 앞**(그 뒤 아무것도 복사하지 않음)이면 클립보드에 게시한다 — DR-28
+            //   "수신측은 바로 시스템 클립보드에 반영"을 파일에도. 맨 앞이 아니면 사용자의 더 새 클립보드를
+            //   덮지 않는다(배지 `[캐시됨]` · 고르면 즉시). 09-12 4차가 껐던 게시를 5차 구조 가드 위에서 되살린 것.
+            let newest = self.history.get(0).is_some_and(|it| it.id == item_id);
+            if newest {
+                if self.publish_cached(item_id, PasteAs::Original) {
+                    println!(
+                        "파일 공유: 사전 캐시 완료 — 최신 항목이라 클립보드 게시(이 PC에서 바로 붙여넣기 가능)"
+                    );
+                }
+            } else {
+                println!(
+                    "파일 공유: 사전 캐시 완료 — 항목 {item_id}(최신 항목이 아니라 게시 없음 · 고르면 즉시)"
+                );
+            }
         } else if done {
-            let _ = self.ensure_loaded(item_id);
-            let manifest = self
-                .history
-                .get_by_id(item_id)
-                .and_then(|it| nclip_core::RemoteFiles::of_reps(&it.reps));
-            if let Some(m) = manifest {
-                if let Some(paths) = crate::xfer::with(|x| x.all_cached(&m)).flatten() {
-                    let local: Vec<String> = paths
-                        .iter()
-                        .map(|p| p.to_string_lossy().into_owned())
-                        .collect();
-                    let as_ = pending.map_or(PasteAs::Original, |(a, _)| a);
-                    let mut reps = nclip_plat::clipboard::file_reps(&local);
-                    if as_ != PasteAs::Object {
-                        reps.extend(nclip_plat::clipboard::plain_text_reps(&local.join("\r\n")));
-                    }
-                    match nclip_plat::clipboard::set_reps(&reps) {
-                        Ok(n) => {
-                            println!(
-                                "파일 공유: 받기 완료 — 파일 {}개 게시(표현 {n}개)",
-                                local.len()
-                            );
-                            if let Some(pos) = (0..self.history.len())
-                                .find(|&i| self.history.get(i).is_some_and(|it| it.id == item_id))
-                            {
-                                self.history.expect_echo(pos);
-                            }
-                            // ★ 붙여넣기가 기다렸고 금방 끝났으면 주입 — 늦었으면 알림만(사용자는 이미 딴 데 있다).
-                            let injected = matches!(pending, Some((_, dt)) if dt <= crate::xfer::PASTE_INJECT_WINDOW)
-                                && self.paste_auto
-                                && self.paste.restore_and_paste(as_).is_ok();
-                            if !injected {
-                                self.tray.notify(
-                                    tr(lang, Msg::XferPanel),
-                                    &tr(lang, Msg::NotifyFilesReady).replacen(
-                                        "{}",
-                                        paste_key_label(),
-                                        1,
-                                    ),
-                                    false,
-                                    "",
-                                );
-                            }
-                        }
-                        Err(e) => {
-                            eprintln!("파일 공유: 클립보드 게시 실패({e}) — 캐시에는 있습니다")
-                        }
-                    }
+            let as_ = pending.map_or(PasteAs::Original, |(a, _)| a);
+            if self.publish_cached(item_id, as_) {
+                // ★ 붙여넣기가 기다렸고 금방 끝났으면 주입 — 늦었으면 알림만(사용자는 이미 딴 데 있다).
+                let injected = matches!(pending, Some((_, dt)) if dt <= crate::xfer::PASTE_INJECT_WINDOW)
+                    && self.paste_auto
+                    && self.paste.restore_and_paste(as_).is_ok();
+                if !injected {
+                    self.tray.notify(
+                        tr(lang, Msg::XferPanel),
+                        &tr(lang, Msg::NotifyFilesReady).replacen("{}", paste_key_label(), 1),
+                        false,
+                        "",
+                    );
                 }
             }
         } else if let Some(why) = crate::xfer::with(|x| x.item_failure(item_id)).flatten() {
@@ -1888,6 +1912,8 @@ impl ApplicationHandler<ShellEvent> for Shell {
                         }
                     );
                 }
+                // ★ 전송 패널 토글(09-13 사용자 — 툴바 바닥 연결/⚙ 위 버튼) — 창 안 상태(영속 없음).
+                MainAction::ToggleXfer => self.main.toggle_xfer(),
                 MainAction::TogglePreview => {
                     let on = self.app.conf.state.get("ui.preview_open") != "on";
                     self.app.conf.set(
@@ -2429,7 +2455,13 @@ pub(crate) fn run() {
     // ★ 고정폭 글꼴(09-04) — 터미널/코드 리치 런의 Mono 슬롯(없으면 주 글꼴).
     let mono_font = crate::conf::load_mono_font(&conf, &font);
     // ★ 파일 내용 공유(09-12 · DR-30) — 캐시 관리자 + 펌프(세션이 없어도 상주 · 요청은 세션 있을 때만).
-    crate::xfer::init(&crate::conf::data_dir());
+    // ★ 저장 폴더(09-13) = `sync.file_dir`(비면 OS 다운로드 폴더 아래 `Nexa Clip`) · 종전 위치는 캐시 판정용으로 기억.
+    {
+        let data = crate::conf::data_dir();
+        let dir = crate::xfer::resolve_file_dir(conf.state.get("sync.file_dir"), &data);
+        println!("파일 공유: 저장 폴더 {}", dir.display());
+        crate::xfer::init(dir, Some(data.join("cache").join("files")));
+    }
     crate::xfer::set_policy(xfer_policy(&conf));
     crate::xfer::spawn_pump(el.create_proxy());
     // ★ M2 동기화 기반(09-03) — 켜져 있으면 릴레이 접속 스레드 상주(상태는 proxy로 통지).
