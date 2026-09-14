@@ -11,7 +11,9 @@
 **수정**: `.cargo/config.toml`에 두 windows-msvc 타깃 `+crt-static` · ★ **`release.yml`의 env `RUSTFLAGS` 제거**(env가 config의 target rustflags를 **통째로 덮어써** 릴리스 산출물만 조용히 동적 CRT로 나갔을 자리 — 경고 게이트는 ci.yml·check-3os가 이미 맡는다) · ★ **Windows DLL 게이트 신설**(glibc 심볼 게이트의 짝 — `vcruntime*`/`msvcp*`/`msvcr*` 임포트가 보이면 배포 중단).
 **검증**: 두 실행 파일 임포트에서 **VCRUNTIME·UCRT 전부 사라짐**(남은 것은 전부 OS 기본 DLL) · 크기 +104KB/+95KB(10MB 게이트 여유) · **539 테스트 · 3타깃 clippy + fmt ✓** · arm64는 컴파일 ✓(`/defaultlib:libcmt` 확인) · 링크는 CI 검증(이 PC에 MSVC arm64 크로스 도구 없음).
 **winget PR**: 0.1.3 PR 2건은 이미 공개된 산출물을 가리켜 고칠 수 없다 → **닫고 v0.1.4로 재제출**(사용자 결정 · guard가 "열린 PR = 대기"라 닫아야 자동 제출이 나간다).
-**릴리스**: `Cargo.toml` **0.1.4** · 범위 = v0.1.3 이후 **29커밋**(파일 경로 전파 · 파일 내용 공유 · 연쇄 수정 + 구조 가드 · 붙여넣기 3결함 · 전송 패널 토글 · `sync.file_dir` · About 화면 · 정적 CRT). → [journal](journal/2026-09-14.md)
+**게이트·병합**: 539 테스트 · 3타깃+fmt ✓ → 병합 `d880f8e` · push · **CI run `34808275267` 3잡 success**.
+**릴리스 ✅ v0.1.4**: 범위 = v0.1.3 이후 **29커밋**(파일 경로 전파 · 파일 내용 공유 · 연쇄 수정 + 구조 가드 · 붙여넣기 3결함 · 전송 패널 토글 · `sync.file_dir` · About 화면 · 정적 CRT). release run `34808488187` **11잡 전부 success** · 자산 **14** · **brew 탭 `adf164b` 0.1.4** · ★ **Windows DLL 게이트가 x64·arm64 둘 다 통과**(신설 게이트 첫 실전 · arm64는 이 PC에 크로스 도구가 없어 CI가 처음 링크까지 검증) · ★ **winget 재제출 [#434300](https://github.com/microsoft/winget-pkgs/pull/434300)(설치본)·[#434302](https://github.com/microsoft/winget-pkgs/pull/434302)(포터블)** — guard가 열린 PR 0을 보고 통과시켰다(닫기가 재제출의 전제였다) · choco는 예정대로 skip.
+**⏳ 남은 것**: winget 새 PR 검수(정적 CRT가 들어갔으니 `Validation-Executable-Error`가 안 나와야 한다 — **이번 판정이 곧 원인 진단의 검증**) · 설치본 교체 후 3-OS 실기([21 §6](21-manual-test.md) S13·S16 후반·S17·S19~S21 · 팝업 `Alt+Enter`·`Shift+Enter`) · choco 보류(T-50). → [journal](journal/2026-09-14.md)
 
 ---
 
