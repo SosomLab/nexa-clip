@@ -4,7 +4,8 @@
 
 ## 2026-09-14 (1차 · win) — winget·choco 점검 → ★ **winget 검수 실패의 진짜 원인 = `VCRUNTIME140.dll` 동적 링크**(0xC0000135 · 깨끗한 Windows에서 실행 즉시 사망 = 사용자 결함) · **정적 CRT 전환**(`+crt-static` · ★ `release.yml` env `RUSTFLAGS` 제거 = config를 덮어써 릴리스만 조용히 동적이 될 자리) · ★ **Windows DLL 게이트** 신설 · 539 테스트 · 3타깃 ✓ · **v0.1.4 릴리스**
 
-- winget #431182/#431183은 09-11에 `Validation-Executable-Error`로 갈렸다(09-08 "대응 불요" 판단의 반대 갈래) → 닫고 수정판 재제출 · choco는 보류 유지(T-50) · 임포트에서 VCRUNTIME·UCRT 전부 사라짐(+104KB/+95KB) → [journal](journal/2026-09-14.md)
+- winget #431182/#431183은 09-11에 `Validation-Executable-Error`로 갈렸다(09-08 "대응 불요" 판단의 반대 갈래) → 닫고 수정판 재제출 · choco는 보류 유지(T-50) · 임포트에서 VCRUNTIME·UCRT 전부 사라짐(+104KB/+95KB)
+- **릴리스 ✅ v0.1.4** — release run `34808488187` 11잡 success · 자산 14 · brew 탭 `adf164b` 0.1.4 · ★ DLL 게이트 x64·arm64 통과(첫 실전) · ★ winget 재제출 [#434300](https://github.com/microsoft/winget-pkgs/pull/434300)·[#434302](https://github.com/microsoft/winget-pkgs/pull/434302) · choco skip → [journal](journal/2026-09-14.md)
 
 ## 2026-09-13 (7차 · Linux VM) — 갈라진 main 병합 2회(mac 1~3차 + 내 수정 브랜치 · 코드 자동 병합 · 문서 7건 충돌 해소 · 내 기록 4·5차로 재번호) · ★ 병합이 드러낸 모순 2건 정리 — `publish_cached`에 같은 결함 2호(`cached_reps` 순수 함수로 통일) · **21 §6 S18·S22 기대 개정**(사전 캐시 완료 게시가 09-13에 되살아났는데 점검표는 옛 동작) · 543 테스트 · 3타깃+fmt ✓ → [journal](journal/2026-09-13.md)
 
