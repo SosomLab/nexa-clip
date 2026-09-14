@@ -61,6 +61,18 @@ Actions → publish-windows-packages → *Run workflow* · `force=true`. 첫 제
 
 변수가 꺼져 있거나 판정에 걸려도 매니페스트는 **항상 만들어** 아티팩트·릴리스 자산으로 올린다 — 손으로 제출할 수 있게.
 
+## ⚠️ Windows — 정적 CRT (09-14)
+
+Rust `*-pc-windows-msvc`의 기본값은 **CRT 동적 링크**라 산출물이 `VCRUNTIME140.dll`을 요구한다. 이 DLL은 Windows 구성요소가
+아니라 **VC++ 재배포 패키지**로만 깔린다 — 즉 기본값 그대로 배포하면 **깨끗한 Windows에서 실행 즉시 죽는다**
+(`0xC0000135 STATUS_DLL_NOT_FOUND` · winget 검수기가 실측해 v0.1.3 제출이 반려됐다: PR #431182/#431183).
+→ [`.cargo/config.toml`](../.cargo/config.toml)에서 두 windows-msvc 타깃에 `-C target-feature=+crt-static`.
+
+🔴 **워크플로에 env `RUSTFLAGS`를 넣지 말 것** — env `RUSTFLAGS`는 `.cargo/config.toml`의 target별 `rustflags`를 **통째로
+덮어써** 정적 CRT가 **릴리스 산출물에서만 조용히 빠진다**(로컬은 멀쩡하므로 안 드러난다). `release.yml`의 env는 그래서 걷어냈고,
+경고 게이트는 `ci.yml`(clippy `-D warnings`)·`scripts/check-3os.sh`가 맡는다. 마지막 방어선은 `release.yml`의
+**Windows DLL 게이트** — 산출물에 `vcruntime*`/`msvcp*`/`msvcr*` 임포트가 보이면 배포를 멈춘다(Linux glibc 심볼 게이트의 짝).
+
 ## ⚠️ macOS 격리(quarantine)
 
 서명·공증이 없는 앱은 격리 표식이 붙어 있으면 실행 즉시 SIGKILL 된다(beep 08-11 실측 · 애드혹 서명으로도 못 넘음).

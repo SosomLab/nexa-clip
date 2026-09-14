@@ -4,6 +4,17 @@
 
 ---
 
+## 2026-09-14 (1차 · win) — ★ **winget 검수 실패의 진짜 원인 = `VCRUNTIME140.dll` 동적 링크** · 정적 CRT 전환 · v0.1.4 릴리스
+
+**점검**: ★ **winget PR 2건이 09-11에 실패로 갈렸다** — #431182(설치본)·#431183(포터블) 둘 다 `Validation-Executable-Error` + 검수기 댓글 `exit -1073741515 = 0xC0000135 STATUS_DLL_NOT_FOUND`(두 실행 파일 모두). 09-08에 "봇 지적 0 · 대응 불요"로 닫아둔 갈래가 나쁜 쪽으로 정해졌다. **choco**: 피드 0건(미제출) · 09-08이 켜짐 조건으로 건 선행 관찰이 아직 안 끝나 **보류 유지**(T-50).
+**★ 원인**: 산출물 임포트 테이블 실측 — `nexa-clip.exe`·`nclip-imgdec.exe`가 **`VCRUNTIME140.dll`**(+`api-ms-win-crt-*`)을 요구한다. 이건 Windows 구성요소가 아니라 **VC++ 재배포 패키지**로만 깔린다. Rust msvc 기본값이 CRT 동적 링크라 우리는 *"VC++ 재배포가 이미 깔린 PC에서만 도는 앱"* 을 배포해 왔고, 개발·실기 PC는 전부 그 조건을 만족해 **한 번도 안 드러났다**. 검수 문제가 아니라 **깨끗한 Windows에서 실행 즉시 죽는 사용자 결함**(DR-1 단일 바이너리 전제 위반).
+**수정**: `.cargo/config.toml`에 두 windows-msvc 타깃 `+crt-static` · ★ **`release.yml`의 env `RUSTFLAGS` 제거**(env가 config의 target rustflags를 **통째로 덮어써** 릴리스 산출물만 조용히 동적 CRT로 나갔을 자리 — 경고 게이트는 ci.yml·check-3os가 이미 맡는다) · ★ **Windows DLL 게이트 신설**(glibc 심볼 게이트의 짝 — `vcruntime*`/`msvcp*`/`msvcr*` 임포트가 보이면 배포 중단).
+**검증**: 두 실행 파일 임포트에서 **VCRUNTIME·UCRT 전부 사라짐**(남은 것은 전부 OS 기본 DLL) · 크기 +104KB/+95KB(10MB 게이트 여유) · **539 테스트 · 3타깃 clippy + fmt ✓** · arm64는 컴파일 ✓(`/defaultlib:libcmt` 확인) · 링크는 CI 검증(이 PC에 MSVC arm64 크로스 도구 없음).
+**winget PR**: 0.1.3 PR 2건은 이미 공개된 산출물을 가리켜 고칠 수 없다 → **닫고 v0.1.4로 재제출**(사용자 결정 · guard가 "열린 PR = 대기"라 닫아야 자동 제출이 나간다).
+**릴리스**: `Cargo.toml` **0.1.4** · 범위 = v0.1.3 이후 **29커밋**(파일 경로 전파 · 파일 내용 공유 · 연쇄 수정 + 구조 가드 · 붙여넣기 3결함 · 전송 패널 토글 · `sync.file_dir` · About 화면 · 정적 CRT). → [journal](journal/2026-09-14.md)
+
+---
+
 ## 2026-09-13 (7차 · Linux VM) — 갈라진 main 병합 · ★ 병합이 드러낸 모순 2건 정리
 
 **병합**: `origin/main`(mac 1~3차 · 5커밋)과 내 문서 2커밋이 **갈라져** 병합 2회 — 문서 7건 충돌 해소 · ★ 내 기록을 **4·5차(Linux VM)** 로 재번호(차수 = 기계 무관 하루 통짜 · 09-05 선례) · **코드는 자동 병합**(mac의 `on_xfer_done`·`publish_cached`와 내 `resolve_remote_files`·`reps_for_mode`가 안 겹침).

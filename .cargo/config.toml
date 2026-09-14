@@ -1,1 +1,15 @@
 # 작업공간 공통 cargo 설정 — 규칙은 여기 한 곳에만 둔다.
+
+# ★ Windows = **정적 CRT**(09-14 · winget 검수 실패 #431182/#431183 · `0xC0000135 STATUS_DLL_NOT_FOUND`).
+#   Rust의 `*-pc-windows-msvc` 기본값은 CRT 동적 링크라 산출물이 `VCRUNTIME140.dll`을 요구한다 — 이 DLL은
+#   Windows 구성요소가 아니라 **VC++ 재배포 패키지**로만 깔린다. 즉 깨끗한 Windows에서는 실행 즉시 죽었다
+#   (winget 검수기가 실측: `nexa-clip.exe`·`nclip-imgdec.exe` 둘 다 exit -1073741515).
+#   `+crt-static`으로 CRT를 바이너리에 넣어 **재배포 패키지 없이 도는 단일 실행 파일**로 되돌린다(DR-1 전제).
+#   ⚠️ 이 설정은 **env `RUSTFLAGS`가 있으면 통째로 무시된다**(env가 config보다 우선) —
+#      그래서 `release.yml`의 env `RUSTFLAGS`를 걷어냈다. 워크플로에 RUSTFLAGS를 다시 넣지 말 것.
+#   게이트: `release.yml`의 "Windows DLL 게이트"가 산출물에 VCRUNTIME이 보이면 배포를 멈춘다.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
