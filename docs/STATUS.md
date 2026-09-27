@@ -9,7 +9,8 @@
 **최신화**: `26e3379` → `46a06be`(4 ff · Linux `c` 스톰 수정). Windows 영향 = 잔향 게이트가 합성 집합 기반으로 좁고 정확해짐 · mac 무동작 · 서버/와이어 변경 없음.
 **설치본**: `dev-install-win.ps1` release → pid 11892 · SHA-256 일치.
 **릴리스 판단 = 필요**: v0.1.4 뒤 사용자 가시 변경이 Linux 팝업 결함 수정 — 릴리스로만 전달된다. 게이트 3타깃 clippy+fmt ✓ · 543 테스트(Windows 호스트) ✓.
-**winget**: 0.1.4 PR 2건 **Validation-Completed**(정적 CRT 진단 검증 ✓) · 모더레이터 대기(New-Package) → 0.1.5는 guard가 자동 skip. **choco**: beep 0.2.2가 validator·verifier Passed · 모더레이터 대기 → 구성 문제 없음 판단, **`CHOCO_PUSH=true` + 첫 제출 force 수동 실행**(그동안만 `WINGET_PUBLISH=false`). → [journal](journal/2026-09-27.md)
+**winget**: 0.1.4 PR 2건 **Validation-Completed**(정적 CRT 진단 검증 ✓) · 모더레이터 대기(New-Package) → 0.1.5는 guard가 자동 skip. **choco**: beep 0.2.2가 validator·verifier Passed · 모더레이터 대기 → 구성 문제 없음 판단, **`CHOCO_PUSH=true`**(09-27 설정) · 첫 제출(force 수동 실행 · 그동안만 `WINGET_PUBLISH=false`)은 **☐ 사용자 승인 대기**.
+**릴리스 ✅ v0.1.5** — release run `36327096120` 11잡 success · 자산 14 · draft=false · brew 탭 갱신 · guard: winget skip(0.1.4 PR 열림) · choco skip(0.1.4 피드 부재 = 첫 제출 전) · push 뒤 CI `36327093211` success. → [journal](journal/2026-09-27.md)
 
 ---
 

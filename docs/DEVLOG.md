@@ -2,7 +2,7 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
-## 2026-09-27 (2차 · win) — 최신화(4 ff) · Windows 설치본 교체(pid 11892 · SHA 일치) · ★ **v0.1.5 릴리스**(Linux `c` 스톰 수정 전달 · 543 테스트 · 3타깃 ✓) · winget 0.1.4 **검수 통과(Validation-Completed)** → 모더레이터 대기라 0.1.5는 guard skip · ★ **choco 첫 제출 구성**(`CHOCO_PUSH=true` · force 수동 실행) → [journal](journal/2026-09-27.md)
+## 2026-09-27 (2차 · win) — 최신화(4 ff) · Windows 설치본 교체(pid 11892 · SHA 일치) · ★ **v0.1.5 릴리스**(Linux `c` 스톰 수정 전달 · 543 테스트 · 3타깃 ✓) · winget 0.1.4 **검수 통과(Validation-Completed)** → 모더레이터 대기라 0.1.5는 guard skip · ★ **choco 켬**(`CHOCO_PUSH=true` · 첫 제출 force 실행은 사용자 승인 대기) · release run `36327096120` 11잡 success · 자산 14 · CI ✓ → [journal](journal/2026-09-27.md)
 
 ## 2026-09-27 (1차 · Linux VM) — ★ **팝업 단축키 `c` 스톰(T-15d) 근인 확정·수정** — 자동 재현 하네스(`scripts/linux-keyprobe` 신설)로 X 서버 사실을 찍음: GNOME/XWayland는 팝업 포커스 **뒤에** `c`를 서버에 눌림으로 올리고 **수식키를 쥔 채 `c`를 먼저 떼면 mutter가 해제를 삼켜 `c` 고착**(손을 떼도 오토리피트 무한 · 해제만 주입해도 안 풀림 · 팝업이 닫혀야 풀림) · ★ 앱 계측(`NEXA_CLIP_KEYDIAG`)이 1차 수정의 전제를 뒤집음(합성 Pressed 0건 · 첫 팬텀이 `repeat=false`) → 확정 처방 = **X 서버 키 상태 프로브**(`keystate_x11` · 800ms 창) + `keys::FocusResidue`(해제까지 입력 아님) · 검색창 `ac` 실측 · **548 테스트** · 3타깃+fmt ✓ · 설치본 교체 → [journal](journal/2026-09-27.md)
 
