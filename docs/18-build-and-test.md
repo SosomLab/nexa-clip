@@ -443,6 +443,39 @@ cargo run -p nexa-clip -- watch    # 계속 감시. NEXA_CLIP_DIAG=1 로 진단 
 com.canonical.dbusmenu GetLayout iias -- 0 -1 0` · `Event isvu -- <id> clicked s "" 0`(id 3 열기 · 4 종료 · 100+ 최근).
 ⚠️ `pkill -f "nexa-clip tray"`는 그 문자열을 인자로 가진 셸 자신도 죽인다 — `pgrep -x nexa-clip`으로 확인.
 
+### 9-12. ★ 팝업 단축키 잔향(`c` 스톰) 자동 재현 — `scripts/linux-keyprobe`(09-27)
+
+**증상**: 전역 단축키(예 `Shift+Alt+C`)로 팝업을 띄우면 **손을 다 뗐는데도** 검색창에 `cccc…`(한글 자판 `ㅊ`)가 끝없이 들어간다.
+mac·Windows 없음. **근인(09-27 실측 · mutter 50.1 · XWayland 24.1.10)**: ① 팝업(XWayland 창)이 포커스를 받는 순간 X 서버 키 상태에
+`Shift·Alt·c`가 **눌림으로 등록**된다(raw 이벤트 없이 — 컴포지터의 enter 상태 전달) ② 사용자가 **수식키를 쥔 채 `c`를 먼저 떼면
+mutter가 그 해제를 삼킨다**(단축키가 소비한 키의 해제) → X 서버에 `c` 해제가 영영 안 와 **고착** → 서버 오토리피트 무한. 수식키를 먼저
+떼면 해제가 정상 도착해 증상 없음. 포털 RemoteDesktop으로 **해제만** 주입해도 안 풀린다(누름/뗌은 풀림 · 팝업이 닫혀 포커스가 떠나면
+XWayland가 전부 해제). 앱 쪽 처방 = [`nclip-plat::keystate_x11`](../crates/nclip-plat/src/keystate_x11.rs)(X `QueryKeymap` 프로브 · 포커스 뒤 800ms 창) +
+[`keys::FocusResidue`](../crates/nexa-clip/src/keys.rs)(그 키는 **해제까지 입력이 아니다**). ⚠️ winit의 FocusIn 합성 Pressed 집합은 이 환경에서 **비어 있다**
+(서버 등록이 FocusIn 뒤) — 그래서 앱이 직접 서버를 되묻는다.
+
+하네스는 사람 없이 이 순서를 그대로 재현한다 — 포털로 단축키를 누르고·유지하고·**순서를 바꿔 떼며** XI2 raw 키 이벤트와 `QueryKeymap`
+(서버가 눌렸다고 믿는 키)을 시각과 함께 찍고 팝업 스크린샷을 남긴 뒤 원상 복구(고착 풀기 · Esc)한다.
+
+```sh
+cd scripts/linux-keyprobe && cargo build          # 워크스페이스 밖 독립 패키지(제품 빌드·CI 무관)
+# ★ 앱 이름의 스코프 안에서 — 에디터 터미널 그대로 띄우면 포털이 VS Code로 오인해 승인 대화창에서 멈춘다(9-11 · 09-05와 같은 함정)
+systemd-run --user --scope --quiet --unit "app-gnome-nexa\x2dclip-$RANDOM.scope" \
+  env NCLIP_RD_TOKEN=$HOME/.config/nexa-clip/portal-remotedesktop.token KEYPROBE_SHOT=/tmp/keyprobe.png \
+  target/debug/linux-keyprobe 300 c-first 60        # 고착 재현(수정 전 = cccc… · 수정 후 = 검색창 비어 있음)
+#                              300 mods-first 60    # 수식키 먼저 = 정상(대조)
+#                              80 c-first 20        # 포커스 전 전부 해제 = 정상(대조)
+# KEYPROBE_UNSTICK=release  → 해제만 주입으로는 안 풀리는 것 실증 · KEYPROBE_ESC_FIRST=1 → 팝업 닫으면 풀리는지
+# KEYPROBE_TYPE=30,46,46    → 고착 중 타이핑(a·c·c): 검색은 되고 첫 c 한 글자만 빠진다(알려진 한계)
+```
+
+전제: 설치본이 떠 있고 단축키 등록 ✓ · `xdotool` · ImageMagick `import`. 로그의 `X RawKeyRelease kc=54`(c) 유무와 `서버 눌린 키 [54]`가
+판정선이다. 앱 로그가 아니라 **X 서버 사실**을 찍으므로 winit·앱 수정과 무관하게 컴포지터 동작을 대조할 수 있다.
+⚠️ **앱 재시작 직후 첫 팝업은 ~1s 뒤에 떠** 손을 다 뗀 뒤 포커스가 오므로 고착이 안 생긴다(무효 회차) — 한 번 열었다 닫은 뒤 돌린다.
+XKB 오토리피트는 raw 이벤트가 **없고** `xev -id`로도 창의 KeyPress가 안 보였다 — **앱이 무엇을 받았는가**는 앱 계측으로만 본다:
+`NEXA_CLIP_KEYDIAG=1`로 띄우면 팝업의 `KeyboardInput`(state·물리/논리 키·text·repeat·synthetic·admitted)·`Ime`·프로브 결과를 stdout에 찍는다
+(설치본 조건으로 보려면 release 바이너리를 앱 이름 스코프에서 직접: `systemd-run --user --scope --unit "app-nexa\x2dclip-$$.scope" env NEXA_CLIP_KEYDIAG=1 target/release/nexa-clip`).
+
 ---
 
 ## 10. 배포 — `release.yml` · brew · winget · Chocolatey (09-04)

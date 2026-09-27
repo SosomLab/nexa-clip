@@ -1,0 +1,13 @@
+# scripts/linux-keyprobe — Linux 팝업 단축키 잔향(`c` 스톰) 자동 재현 하네스(09-27). 워크스페이스 밖의 독립 패키지
+# (`[workspace]` 빈 표) — 제품 빌드·CI·check-3os에 섞이지 않는다. 사용법은 src/main.rs 머리·docs/18 §9.
+[package]
+name = "linux-keyprobe"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+nclip-plat = { path = "../../crates/nclip-plat" }
+x11rb = { version = "0.13", default-features = false, features = ["xinput"] }
+
+[workspace]

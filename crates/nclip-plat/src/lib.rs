@@ -24,6 +24,9 @@ pub mod host;
 #[cfg(target_os = "linux")]
 pub mod hotkey_linux;
 pub mod imgdec;
+/// ★ X 서버 키 상태(포커스 잔향 게이트의 원천 · 09-27).
+#[cfg(target_os = "linux")]
+pub mod keystate_x11;
 pub mod paste;
 pub mod paths;
 #[cfg(target_os = "linux")]

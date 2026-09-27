@@ -230,6 +230,24 @@ pub fn tap_key(code: i32, with_ctrl: bool) -> Result<(), String> {
     })
 }
 
+/// ★ 진단 전용(09-27 · Linux `c` 스톰 조사) — evdev 키코드 시퀀스를 **누름/뗌·간격까지** 지정해 넣는다.
+/// 각 단계 = `(keycode, pressed, 뒤이어 쉴 ms)`. 실기 하네스가 단축키(Shift+Alt+C)의 유지 시간·해제
+/// 순서를 바꿔 가며 재현하는 데 쓴다. 제품 코드 경로는 부르지 않는다.
+///
+/// # Errors
+/// 세션 실패 · 전송 실패(재시도 후).
+pub fn key_seq(steps: &[(i32, bool, u64)]) -> Result<(), String> {
+    with_session_retry(&|s| {
+        for &(code, pressed, rest_ms) in steps {
+            key(s, code, pressed)?;
+            if rest_ms > 0 {
+                std::thread::sleep(std::time::Duration::from_millis(rest_ms));
+            }
+        }
+        Ok(())
+    })
+}
+
 /// 세션이 살아 있는지(호스트 진단용).
 #[must_use]
 pub fn has_session() -> bool {
