@@ -12,7 +12,7 @@
 **★ 전제를 뒤집은 앱 계측**(`NEXA_CLIP_KEYDIAG=1` 신설): 1차 수정(winit 합성 Pressed 집합 기반)이 하네스에서 그대로 실패 → 계측하니 **합성 Pressed 0건**(X 서버 등록이 FocusIn 뒤) · 첫 팬텀 `c`가 등록 +500ms 뒤 `repeat=false`로 옴(winit 소프트웨어 판정) → 종전 `fresh_press` 게이트가 뚫린 이유.
 **수정(확정)**: 잔향 원천 = **X 서버 키 상태**(`nclip-plat::keystate_x11::keys_down` = `QueryKeymap`) — 팝업이 `Focused(true)`부터 **800ms 프로브 창** 동안 틱·뗌·수식키·IME마다 30ms 간격으로 되물어 눌린 키를 `keys::FocusResidue`에 묶고 **해제가 올 때까지 통째로 무시**(3-OS 공통 코드 · 다른 OS는 합성 집합만 · mac 무동작). 알려진 한계 = 고착 중 `c` 재입력 첫 글자 손실. `remote_input_linux::key_seq`(진단) · 단위 테스트 5 · [18 §9-12](18-build-and-test.md).
 **수정 후 실기(F3)**: 프로브 t+57ms 잔향 +3 → 팬텀·리피트 85건 전부 차단 → 검색창 **`ac`**(a·c·c 타이핑) ✓ · 대조(mods-first) 회귀 없음. 부수 관찰 → **T-57**(단축키 500ms 이상 쥐면 컴포지터 리피트로 팝업 토글) · **T-58**(`*` 글리프 회차).
-**게이트**: **548 테스트**(신규 5) · 3타깃 clippy + fmt ✓ · 설치본 교체(release · `/usr/bin`) → 설치본 하네스 재확인 ✓. → [journal](journal/2026-09-27.md)
+**게이트**: **548 테스트**(신규 5) · 3타깃 clippy + fmt ✓ · 설치본 교체(release · `/usr/bin` · pid 380635) → 설치본 하네스 I1 재확인(검색창 `ac`) ✓ · main 병합 `cbbf5b6` · push. → [journal](journal/2026-09-27.md)
 
 ---
 

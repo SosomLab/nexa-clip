@@ -41,7 +41,7 @@
 | ✅ | ★ **`watch`·`peek` 진단 명령** — 복사한 것이 무엇으로 잡히는지 실기로 본다 |
 | ✅ | ★ **실기 18건 회귀 박제**(PPT·Excel·Edge·VS Code·Greenshot·CopyQ) |
 | ✅ | ★ **캡처 파이프라인** — 종류 판정 · `Preview` · 용량 규칙([27](27-capture-cases.md) → `nclip-core::capture`) |
-| 🚧 | `nclip-plat` — 전역 단축키 · **직전 포커스 창 복원 + 키 주입** · 트레이 · 자동시작 — **Win ✅ · Linux ✅(08-30 · SNI/포털/XTest · ★ 단축키 사용자 실기 ✓ 09-05 · Wayland 네이티브 앱 실기 ⏳) · ★ mac 트레이 ✅(09-04 · NSStatusItem + Dock 정책) · mac 단축키 ☐** |
+| 🚧 | `nclip-plat` — 전역 단축키 · **직전 포커스 창 복원 + 키 주입** · 트레이 · 자동시작 — **Win ✅ · Linux ✅(08-30 · SNI/포털/XTest · ★ 단축키 사용자 실기 ✓ 09-05 · ★ 팝업 단축키 글자 고착(T-15d) 근인 확정·수정 ✅ 09-27 = X 키 상태 프로브 + 잔향 게이트 · 자동 재현 하네스 · Wayland 네이티브 앱 실기 ⏳) · ★ mac 트레이 ✅(09-04 · NSStatusItem + Dock 정책) · mac 단축키 ☐** |
 | ✅ | ★ **창을 앞으로(Linux/X11 · 09-05)** — winit `focus_window()`가 `_NET_ACTIVE_WINDOW`를 소스=1(앱)로 보내 Mutter 포커스 탈취 방지에 막히던 것("준비됨" 알림 + 창이 뒤에) → **페이저 소스(=2)로 직접 올림**. 메인창·설정 창 · 신규/재표시 **공통 길목**(`bring_to_front`) · Mutter 존중 실증 테스트 |
 | ✅ | ★ **설치본 자리에서 실기(3-OS 갖춤 · 09-05)** — Linux `scripts/dev-install-linux.sh`(win `dev-install-win.ps1` · mac `dev-install-mac.sh`의 Linux 판): 배포 `.deb` 설치본(`/usr/bin`)에 릴리스 빌드를 원자 교체 → **설치 `.desktop` 경로 지정 실행**(직접 실행·systemd-run은 포털이 앱을 식별 못 해 전역 단축키 등록 실패) · 데이터 `~/.config/nexa-clip` |
 | ✅ | ★ **v0.1.4(09-14)** — ★ **Windows 정적 CRT**(`VCRUNTIME140.dll` 동적 링크 = 깨끗한 Windows에서 실행 즉시 사망 · winget 검수가 처음 드러냈다) + **Windows DLL 게이트** · 기기 간 **파일 경로 전파**(DR-6 완성) · ★ **파일 내용 공유**(DR-30/DR-43) · 2PC 연쇄 수정 + 구조 가드 · 붙여넣기 3결함 · 전송 패널 토글 · `sync.file_dir` · About 화면. **release run `34808488187` 11잡 success · 자산 14 · brew 탭 0.1.4 · winget 재제출 #434300/#434302(⏳ 검수) · choco skip** |
