@@ -227,6 +227,105 @@ pub(crate) fn keycode_token(pk: &winit::keyboard::PhysicalKey) -> Option<&'stati
     })
 }
 
+/// ★ 키 진단 로그(09-27) — `NEXA_CLIP_KEYDIAG=1`이면 팝업이 받는 `KeyboardInput`·`Ime` 이벤트를 stdout에 전부 찍는다
+/// (X 서버 사실은 `scripts/linux-keyprobe`가 · winit이 앱에 무엇을 넘겼는가는 이것만이 안다 — xev·raw 로거로는
+/// 볼 수 없다: XI2 마스크가 걸린 창의 core KeyPress는 타 클라이언트에 안 가고 XKB 오토리피트는 raw 이벤트가 없다).
+pub(crate) fn diag() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("NEXA_CLIP_KEYDIAG").is_some_and(|v| !v.is_empty()))
+}
+
+/// ★ 포커스 잔향 게이트(09-27 · Linux `c` 스톰 · T-15d 근인 확정) — 창이 포커스를 받을 때 **이미 눌려 있던**
+/// 키는 그 키의 **해제가 올 때까지** 이 창의 입력이 아니다.
+///
+/// winit은 X11(`FocusIn` → `handle_pressed_keys`)·Windows(`WM_SETFOCUS` → `synthesize_kbd_state`)에서 눌려 있는
+/// 키 전부를 `is_synthetic: true` **Pressed**로 먼저 알려 준다(mac은 없음 = 게이트 무동작). 그 집합이 곧 "단축키를
+/// 누른 손"이다. 종전(09-05)엔 합성 이벤트만 버리고 **첫 진짜 누름을 보면 잔향이 끝났다고 봤는데**, GNOME(mutter
+/// 50 · XWayland 24.1)에서는 실측상 ① 팝업이 포커스를 받는 순간 XWayland 키 상태에 `c`가 눌림으로 등록되고(raw 이벤트
+/// 없이) ② 사용자가 **수식키를 쥔 채 `c`를 먼저 떼면 mutter가 그 해제를 삼켜** X 서버에 안 보낸다 → `c`가 **영구
+/// 고착** → X 서버 오토리피트가 무한(`cccc…`). 첫 리피트가 winit에는 `repeat: false`(소프트웨어 판정 · 포커스 뒤
+/// 첫 누름)로 와서 종전 게이트를 그대로 통과했다. 포털 RemoteDesktop으로 해제만 주입해도 풀리지 않는다(실측) —
+/// 그래서 **해제를 볼 때까지 그 키를 통째로 무시**한다. 실기 하네스 = `scripts/linux-keyprobe`.
+///
+/// 알려진 한계: 고착 상태에서 사용자가 `c`를 **다시** 누르면 X 서버는 그것을 리피트로 보내(해제가 와야 풀림)
+/// 첫 `c` 한 글자가 빠진다. 두 번째부터 정상 · 팝업이 닫히면 XWayland가 전부 해제한다(실측).
+#[derive(Clone, Debug, Default)]
+pub(crate) struct FocusResidue {
+    held: Vec<winit::keyboard::PhysicalKey>,
+}
+
+impl FocusResidue {
+    /// 창을 열 때·포커스를 잃을 때 — 잔향 집합 초기화.
+    pub(crate) fn clear(&mut self) {
+        self.held.clear();
+    }
+
+    /// 키 이벤트 하나를 이 창이 **처리해도 되는가**. 합성 이벤트는 집합만 갱신하고 항상 `false`.
+    /// 잔향 키의 진짜 Pressed(리피트든 아니든)는 `false` · 그 키의 Released가 오면 집합에서 빠지고 `true`.
+    pub(crate) fn admit(
+        &mut self,
+        pk: &winit::keyboard::PhysicalKey,
+        pressed: bool,
+        synthetic: bool,
+    ) -> bool {
+        if synthetic {
+            if pressed {
+                if !self.held.contains(pk) {
+                    self.held.push(*pk);
+                }
+            } else {
+                self.held.retain(|k| k != pk);
+            }
+            return false;
+        }
+        if pressed {
+            !self.held.contains(pk)
+        } else {
+            self.held.retain(|k| k != pk);
+            true
+        }
+    }
+
+    /// 외부 조회(X 서버 `QueryKeymap`)로 안 "지금 눌려 있는 키"를 잔향으로 묶는다 — 이미 있으면 그대로.
+    /// (Linux 프로브와 테스트만 부른다 — 다른 OS 산출물에서는 죽은 코드가 맞다.)
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    pub(crate) fn mark_held(&mut self, pk: winit::keyboard::PhysicalKey) {
+        if !self.held.contains(&pk) {
+            self.held.push(pk);
+        }
+    }
+
+    /// ★ X 서버 키 상태 프로브(Linux · 09-27) — 서버가 눌렸다고 믿는 키 전부를 잔향으로. 반환 = 새로 묶인 수.
+    ///   winit 합성 집합이 비어 있는 이유는 [`nclip_plat::keystate_x11`] 참조. 다른 OS = 무동작(0).
+    pub(crate) fn probe_x11(&mut self) -> usize {
+        #[cfg(target_os = "linux")]
+        {
+            use winit::platform::scancode::PhysicalKeyExtScancode as _;
+            let Some(down) = nclip_plat::keystate_x11::keys_down() else {
+                return 0;
+            };
+            let before = self.held.len();
+            for kc in down {
+                // X keycode = evdev 스캔코드 + 8 (winit Linux 백엔드의 `from_scancode` 규약).
+                let pk = winit::keyboard::PhysicalKey::from_scancode(kc.saturating_sub(8));
+                if !matches!(pk, winit::keyboard::PhysicalKey::Unidentified(_)) {
+                    self.mark_held(pk);
+                }
+            }
+            self.held.len() - before
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            0
+        }
+    }
+
+    /// 잔향으로 묶인 키 수(진단·테스트).
+    pub(crate) fn len(&self) -> usize {
+        self.held.len()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -321,5 +420,86 @@ mod tests {
             Chord::of(&PhysicalKey::Code(K::Digit7), true, false, false, false),
             Some(chord("Ctrl+7"))
         );
+    }
+
+    // ── FocusResidue(09-27 · Linux `c` 스톰) ──
+    use winit::keyboard::{KeyCode as WK, PhysicalKey as PK};
+
+    /// T1 실측 재현: 포커스 때 Shift·Alt·c 합성 Pressed → X 오토리피트(첫 것은 repeat=false)가 무한 · 해제는 영영 없음.
+    #[test]
+    fn residue_swallows_stuck_key_storm_until_release() {
+        let mut r = FocusResidue::default();
+        for k in [WK::ShiftLeft, WK::AltLeft, WK::KeyC] {
+            assert!(!r.admit(&PK::Code(k), true, true), "합성은 처리하지 않는다");
+        }
+        assert_eq!(r.len(), 3);
+        for _ in 0..200 {
+            assert!(
+                !r.admit(&PK::Code(WK::KeyC), true, false),
+                "고착 리피트는 전부 버린다"
+            );
+        }
+        // 수식키 해제는 정상 도착(실측) → 집합에서 빠진다 · 처리 자체는 허용(팝업은 Released를 쓰지 않는다).
+        assert!(r.admit(&PK::Code(WK::AltLeft), false, false));
+        assert!(r.admit(&PK::Code(WK::ShiftLeft), false, false));
+        assert_eq!(r.len(), 1);
+        // 잔향과 무관한 키는 즉시 입력이다(검색은 계속 된다).
+        assert!(r.admit(&PK::Code(WK::KeyA), true, false));
+        // 사용자가 c를 다시 눌러 뗀 뒤(T2 실측 — 누름/뗌이 와야 풀린다) 부터 c가 산다.
+        assert!(
+            !r.admit(&PK::Code(WK::KeyC), true, false),
+            "고착 중 재누름은 서버 리피트 = 한 글자 빠짐(알려진 한계)"
+        );
+        assert!(r.admit(&PK::Code(WK::KeyC), false, false));
+        assert!(r.admit(&PK::Code(WK::KeyC), true, false));
+        assert_eq!(r.len(), 0);
+    }
+
+    /// ★ 09-27 계측: 포커스 때 합성 Pressed가 **없다**(X 서버 등록이 FocusIn 뒤) — 프로브(`mark_held`)가 넣은
+    /// 키도 같은 규칙: 첫 팬텀(repeat=false)부터 전부 버리고, 해제가 오면 산다.
+    #[test]
+    fn residue_from_probe_swallows_phantom_first_press() {
+        let mut r = FocusResidue::default();
+        r.mark_held(PK::Code(WK::ShiftLeft));
+        r.mark_held(PK::Code(WK::KeyC));
+        r.mark_held(PK::Code(WK::KeyC)); // 중복 무해
+        assert_eq!(r.len(), 2);
+        assert!(
+            !r.admit(&PK::Code(WK::KeyC), true, false),
+            "팬텀 첫 누름(repeat=false)"
+        );
+        assert!(!r.admit(&PK::Code(WK::KeyC), true, false), "리피트");
+        assert!(r.admit(&PK::Code(WK::ShiftLeft), false, false));
+        assert!(
+            r.admit(&PK::Code(WK::KeyA), true, false),
+            "다른 키는 즉시 입력"
+        );
+        assert!(r.admit(&PK::Code(WK::KeyC), false, false));
+        assert!(r.admit(&PK::Code(WK::KeyC), true, false));
+        assert_eq!(r.len(), 0);
+    }
+
+    /// T4 실측: 수식키를 먼저 떼면 c 해제가 정상 도착 → 그 뒤 c는 입력.
+    #[test]
+    fn residue_released_key_becomes_input() {
+        let mut r = FocusResidue::default();
+        r.admit(&PK::Code(WK::KeyC), true, true);
+        assert!(!r.admit(&PK::Code(WK::KeyC), true, false));
+        assert!(r.admit(&PK::Code(WK::KeyC), false, false));
+        assert!(r.admit(&PK::Code(WK::KeyC), true, false));
+    }
+
+    /// 포커스 상실의 합성 Released(winit X11 FocusOut)·clear 는 집합을 비운다 — mac처럼 합성이 없으면 게이트는 무동작.
+    #[test]
+    fn residue_clears_on_synthetic_release_and_clear() {
+        let mut r = FocusResidue::default();
+        r.admit(&PK::Code(WK::KeyV), true, true);
+        assert!(!r.admit(&PK::Code(WK::KeyV), false, true));
+        assert!(r.admit(&PK::Code(WK::KeyV), true, false));
+        r.admit(&PK::Code(WK::KeyV), true, true);
+        r.clear();
+        assert!(r.admit(&PK::Code(WK::KeyV), true, false));
+        let mut none = FocusResidue::default();
+        assert!(none.admit(&PK::Code(WK::KeyV), true, false));
     }
 }

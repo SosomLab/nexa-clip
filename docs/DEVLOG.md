@@ -2,6 +2,10 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-09-27 (1차 · Linux VM) — ★ **팝업 단축키 `c` 스톰(T-15d) 근인 확정·수정** — 자동 재현 하네스(`scripts/linux-keyprobe` 신설)로 X 서버 사실을 찍음: GNOME/XWayland는 팝업 포커스 **뒤에** `c`를 서버에 눌림으로 올리고 **수식키를 쥔 채 `c`를 먼저 떼면 mutter가 해제를 삼켜 `c` 고착**(손을 떼도 오토리피트 무한 · 해제만 주입해도 안 풀림 · 팝업이 닫혀야 풀림) · ★ 앱 계측(`NEXA_CLIP_KEYDIAG`)이 1차 수정의 전제를 뒤집음(합성 Pressed 0건 · 첫 팬텀이 `repeat=false`) → 확정 처방 = **X 서버 키 상태 프로브**(`keystate_x11` · 800ms 창) + `keys::FocusResidue`(해제까지 입력 아님) · 검색창 `ac` 실측 · **548 테스트** · 3타깃+fmt ✓ · 설치본 교체 → [journal](journal/2026-09-27.md)
+
+- 알려진 한계 = 고착 중 `c` 재입력 첫 글자 손실(두 번째부터 정상) · 부수 관찰 T-57(단축키 500ms 이상 쥐면 팝업 토글) · T-58(`*` 글리프 회차)
+
 ## 2026-09-14 (1차 · win) — winget·choco 점검 → ★ **winget 검수 실패의 진짜 원인 = `VCRUNTIME140.dll` 동적 링크**(0xC0000135 · 깨끗한 Windows에서 실행 즉시 사망 = 사용자 결함) · **정적 CRT 전환**(`+crt-static` · ★ `release.yml` env `RUSTFLAGS` 제거 = config를 덮어써 릴리스만 조용히 동적이 될 자리) · ★ **Windows DLL 게이트** 신설 · 539 테스트 · 3타깃 ✓ · **v0.1.4 릴리스**
 
 - winget #431182/#431183은 09-11에 `Validation-Executable-Error`로 갈렸다(09-08 "대응 불요" 판단의 반대 갈래) → 닫고 수정판 재제출 · choco는 보류 유지(T-50) · 임포트에서 VCRUNTIME·UCRT 전부 사라짐(+104KB/+95KB)

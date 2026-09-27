@@ -161,6 +161,14 @@ pub(crate) struct Popup {
     /// ★ 열린 뒤 **오토리피트가 아닌** 키 누름을 봤는가(09-05 T-15d) — 그 전의 repeat는 단축키 손이
     ///   아직 안 떨어진 X 서버 오토리피트(`v`/`c` 연속 입력)라 버린다.
     fresh_press: bool,
+    /// ★ 포커스 잔향 게이트(09-27) — 포커스 때 이미 눌려 있던 키는 해제까지 입력이 아니다([`crate::keys::FocusResidue`]).
+    ///   `fresh_press`만으로는 GNOME/XWayland의 **고착 키**(해제가 영영 안 옴 · 첫 리피트가 `repeat: false`)를 못 막았다.
+    residue: crate::keys::FocusResidue,
+    /// ★ 잔향 프로브 창(09-27) — 포커스 뒤 이 시각까지 틱·비(非)누름 이벤트마다 X 서버 키 상태를 물어 잔향을 묶는다.
+    ///   첫 진짜 입력(admitted Pressed)이 오면 닫는다. `None` = 안 묻는다.
+    probe_until: Option<std::time::Instant>,
+    /// 마지막 프로브 시각(틱이 16ms라 30ms 간격으로 죈다).
+    probe_last: Option<std::time::Instant>,
     /// 마지막 커서 위치(winit은 클릭 이벤트에 좌표를 싣지 않는다).
     cursor: (i32, i32),
     /// ★ 검색 색인(09-04) — id → 소문자 검색문(셸이 채운다 · 없으면 라벨로).
@@ -176,6 +184,10 @@ pub(crate) struct Popup {
 /// 오토리피트·해제 순서 차이로 `v`가 새 창에 배달된다. 사람이 검색을 시작하는
 /// 속도보다 짧고, 키 해제보다 길게.
 const TYPE_GRACE: std::time::Duration = std::time::Duration::from_millis(150);
+
+/// ★ 잔향 프로브 창(09-27) — 포커스 뒤 이 동안 X 서버 키 상태를 되묻는다. 컴포지터가 단축키 키를 서버에 올리는
+/// 시점(실측 포커스 +50~300ms)과 오토리피트 지연(GNOME 최소 100ms · 기본 500ms) 사이를 넉넉히 덮는다.
+const PROBE_WINDOW: std::time::Duration = std::time::Duration::from_millis(800);
 
 /// 좌상단 (x, y)를 **커서가 든 모니터** 안으로 되민다 — 팝업 전체가 화면에 보이게.
 ///
@@ -318,6 +330,9 @@ impl Popup {
             was_focused: false,
             opened_at: std::time::Instant::now(),
             fresh_press: false,
+            residue: crate::keys::FocusResidue::default(),
+            probe_until: None,
+            probe_last: None,
             cursor: (0, 0),
             search_mode: nclip_core::search::Mode::Fuzzy,
             search_idx: None,
@@ -510,6 +525,7 @@ impl Popup {
 
     /// 스크롤바 페이드 틱 + ★ 행 hover 의도 수행·페이드(09-04). 반환 = 아직 움직이는 중(셸이 16ms 박동).
     pub(crate) fn tick_ui(&mut self, now_ms: u64) -> bool {
+        let probing = self.probe_residue();
         if let Some(r) = self.row_intent.take_due(now_ms) {
             if self.row_fade.current() != Some(r) {
                 self.row_fade.set(Some(r));
@@ -519,7 +535,36 @@ impl Popup {
         if self.bars.tick(now_ms) | self.row_fade.tick(now_ms) {
             self.redraw();
         }
-        self.row_fade.is_animating() || self.row_intent.is_waiting(now_ms)
+        self.row_fade.is_animating() || self.row_intent.is_waiting(now_ms) || probing
+    }
+
+    /// ★ 잔향 프로브(09-27) — 창이 열려 있으면 X 서버 키 상태를 물어 눌린 키를 잔향으로 묶는다(30ms 간격).
+    ///   반환 = 창이 아직 열려 있음(셸이 16ms 박동을 유지하도록).
+    fn probe_residue(&mut self) -> bool {
+        let Some(until) = self.probe_until else {
+            return false;
+        };
+        let now = std::time::Instant::now();
+        if now >= until {
+            self.probe_until = None;
+            return false;
+        }
+        if self
+            .probe_last
+            .is_some_and(|t| now.duration_since(t) < std::time::Duration::from_millis(30))
+        {
+            return true;
+        }
+        self.probe_last = Some(now);
+        let added = self.residue.probe_x11();
+        if added > 0 && crate::keys::diag() {
+            println!(
+                "키진단 팝업 프로브: 잔향 +{added} (총 {}) t+{}ms",
+                self.residue.len(),
+                self.opened_at.elapsed().as_millis()
+            );
+        }
+        true
     }
 
     /// 캐럿 깜빡임 위상(셸 타이머) — 바뀌면 다시 그린다.
@@ -624,6 +669,9 @@ impl Popup {
         self.was_focused = false;
         self.opened_at = std::time::Instant::now();
         self.fresh_press = false;
+        self.residue.clear();
+        self.probe_until = None;
+        self.probe_last = None;
         self.refresh(hist);
         // ★ 열 때 선택 = 최신 항목(핀 구획 뒤에 있어도 · 09-02).
         self.sel = self
@@ -825,18 +873,25 @@ impl Popup {
                     self.opened_at = std::time::Instant::now();
                 }
                 self.was_focused = true;
+                // ★ 잔향 프로브 시작(09-27) — 지금 한 번 + 창이 닫힐 때까지 틱마다.
+                self.probe_until = Some(std::time::Instant::now() + PROBE_WINDOW);
+                self.probe_residue();
             }
             // ★ 포커스 상실 = 닫기(Maccy 관례) — 단, **받아 본 적이 있을 때만**.
             //   생성 직후 `Focused(false)`가 먼저 오는 환경(잠금·일부 WM)에서
             //   열리자마자 닫히는 것을 막는다(08-28 실기).
             WindowEvent::Focused(false) if self.was_focused => return PopupAction::Close,
-            WindowEvent::Focused(false) => {}
+            WindowEvent::Focused(false) => {
+                self.residue.clear();
+                self.probe_until = None;
+            }
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 self.scale = *scale_factor as f32;
                 self.redraw();
             }
             WindowEvent::RedrawRequested => self.paint(),
             WindowEvent::ModifiersChanged(m) => {
+                self.probe_residue();
                 self.shift = m.state().shift_key();
                 self.ctrl = m.state().control_key();
                 self.alt = m.state().alt_key();
@@ -846,6 +901,13 @@ impl Popup {
             //   Commit은 버퍼에 확정. (winit `set_ime_allowed(true)` — open에서 켜 둔다.)
             WindowEvent::Ime(ime) => {
                 use winit::event::Ime;
+                self.probe_residue();
+                if crate::keys::diag() {
+                    println!(
+                        "키진단 팝업 IME: {ime:?} t+{}ms",
+                        self.opened_at.elapsed().as_millis()
+                    );
+                }
                 let mut inv = Invalidations::default();
                 let changed = match ime {
                     Ime::Preedit(t, _) => {
@@ -1027,15 +1089,43 @@ impl Popup {
                 is_synthetic,
                 ..
             } => {
+                // ★ 포커스 잔향 게이트(09-27 · T-15d 근인 확정): 포커스 때 이미 눌려 있던 키(합성 Pressed 집합)는
+                //   그 키의 **해제가 올 때까지** 통째로 버린다 — GNOME/XWayland는 단축키 글자의 해제를 삼켜
+                //   X 서버에 키가 고착되고(오토리피트 무한 `cccc…`), 첫 리피트는 winit에 `repeat: false`로 온다.
+                //   Released는 집합만 갱신한다(팝업은 Released로 아무것도 하지 않는다).
+                if event.state != ElementState::Pressed {
+                    // 뗌은 안전한 프로브 시점(지금 이벤트가 누름이 아니라 "지금 눌린 키"가 곧 잔향이다).
+                    self.probe_residue();
+                }
+                let admitted = self.residue.admit(
+                    &event.physical_key,
+                    event.state == ElementState::Pressed,
+                    *is_synthetic,
+                );
+                if admitted && event.state == ElementState::Pressed && !*is_synthetic {
+                    // 첫 진짜 입력 — 이후 프로브는 사용자가 치는 키를 잔향으로 오인할 수 있어 닫는다.
+                    self.probe_until = None;
+                }
+                if crate::keys::diag() {
+                    println!(
+                        "키진단 팝업: {:?} phys={:?} logical={:?} text={:?} repeat={} synthetic={} admitted={} t+{}ms",
+                        event.state,
+                        event.physical_key,
+                        event.logical_key,
+                        event.text,
+                        event.repeat,
+                        is_synthetic,
+                        admitted,
+                        self.opened_at.elapsed().as_millis()
+                    );
+                }
+                if !admitted {
+                    return PopupAction::None;
+                }
                 if event.state != ElementState::Pressed {
                     return PopupAction::None;
                 }
-                // ★ T-15d(09-05): X11 백엔드는 포커스 진입 때 **눌린 키 전부를 합성 Pressed로** 올린다
-                //   (수식키 상태 없이 → text="v") · 그 뒤 X 서버 오토리피트가 이어진다. 합성 이벤트와,
-                //   진짜 새 누름을 보기 전의 repeat는 단축키 잔향이다.
-                if *is_synthetic {
-                    return PopupAction::None;
-                }
+                // ★ T-15d(09-05): 진짜 새 누름을 보기 전의 repeat는 단축키 잔향이다(위 게이트의 2차 방어).
                 if event.repeat && !self.fresh_press {
                     return PopupAction::None;
                 }
