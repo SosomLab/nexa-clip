@@ -4,6 +4,7 @@
 
 | 브랜치 | 생성 | 병합 | 커밋 수 | 요약 |
 |---|---|---|---:|---|
+| `docs/progress-09-28b` | 2026-09-28 | 2026-09-28 | 1 | 답변 한글 규칙(CLAUDE.md §4) · winget/choco 점검 박제(winget 0.1.4 모더레이터 대기 2주째 · choco 미제출) · STATUS·DEVLOG·journal 09-28 2차 |
 | `docs/progress-09-28` | 2026-09-28 | 2026-09-28 | 2 | 진행사항 최신화 — v0.1.5 릴리스 결과 박제(release run `36327096120` · CI ✓) · 09-27 STATUS 정리 · MILESTONES v0.1.5 행 · journal 09-28 · 위키 v0.1.5 반영(Home · 설치 · 문제 해결) · choco 첫 제출 ☐ 사용자 실행 대기 |
 | `release/v0.1.5-09-27` | 2026-09-27 | 2026-09-27 | 1 | ★ **v0.1.5 릴리스 준비**(사용자 요청 09-27 — "릴리스 필요 여부 확인 · 필요 시 진행 · winget/choco 검토·구성") — 버전 0.1.4→0.1.5(Cargo.toml·lock) · Linux `c` 스톰 수정 전달 · 3타깃+fmt ✓ · 543 테스트 · 설치본 교체(pid 11892) · winget 0.1.4 검수 통과 확인 · choco 첫 제출 구성(T-50) |
 | `fix/linux-popup-stuck-key-09-27` | 2026-09-27 | 2026-09-27 | 1 | ★ **팝업 단축키 `c` 스톰(T-15d) 근인 확정·수정**(사용자 제보 09-27 — "손을 뗐는데도 `c`/`ㅊ` 연속 · Linux만") — 자동 재현 하네스 `scripts/linux-keyprobe`(포털 주입 + XI2 raw 키 로그 + `QueryKeymap` + 스크린샷)로 실측: 팝업 포커스 **뒤** X 서버에 `Shift·Alt·c` 눌림 등록 → **수식키를 쥔 채 `c`를 먼저 떼면 mutter가 해제를 삼켜 `c` 고착** → 오토리피트 무한(수식키 먼저 = 정상 · 해제만 주입 안 풀림 · 팝업 닫히면 풀림). ★ 앱 계측(`NEXA_CLIP_KEYDIAG=1`)이 1차 수정(winit 합성 집합)의 전제를 뒤집음(합성 0건 · 첫 팬텀 `repeat=false`) → 확정 = `nclip-plat::keystate_x11`(X `QueryKeymap`) 프로브 800ms 창 + `keys::FocusResidue`(해제까지 입력 아님 · `fresh_press`는 2차 방어) · `remote_input_linux::key_seq` · 단위 테스트 5 · **548 테스트** · docs 18 §9-12 · 3타깃+fmt ✓ · 설치본 교체 · 하네스 재확인(검색창 `ac`) ✓ |

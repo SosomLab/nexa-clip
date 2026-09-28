@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-09-28 (2차 · win) — 답변 한글 규칙 · winget/choco 점검
+
+**규칙**: CLAUDE.md §4 첫 줄 = **답변은 한글로**(진행 알림 포함).
+**winget**: 0.1.4 PR 2건 OPEN · `REVIEW_REQUIRED` · 09-14 모더레이터 안내 뒤 2주째 무변화 · 매니페스트 미반영(설치 불가) — beep도 첫 등록 3회 미머지(0.2.16 #436462 OPEN). 할 일 없음.
+**choco**: 미제출(피드 0 · 페이지 404 · 수동 실행 0회) — 첫 제출 force 실행 ☐ 사용자 승인 대기. → [journal](journal/2026-09-28.md)
+
+---
+
 ## 2026-09-28 (1차 · win) — 진행사항 최신화 · 위키 v0.1.5 반영
 
 **점검**: winget #434300/#434302 = 그대로 OPEN(`Validation-Completed` · 모더레이터 대기) · choco 피드 0건(첫 제출 전) · 변수 `WINGET_PUBLISH=true` · `CHOCO_PUSH=true` · brew 탭 `c9f5bdf` = 0.1.5 ✓.
