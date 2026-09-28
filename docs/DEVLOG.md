@@ -2,6 +2,8 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-09-28 (3차 · win) — ★ **Chocolatey 첫 제출**(v0.1.5 · 설치본·포터블) — force 수동 실행(run `36364532264`) 동안만 winget 끔 → push 성공 · 모더레이션 큐(Validation/Verification Pending) · 변수 복구 → [journal](journal/2026-09-28.md)
+
 ## 2026-09-28 (2차 · win) — ★ **답변 한글 규칙**(CLAUDE.md §4) · winget/choco 점검 — winget 0.1.4 모더레이터 대기 2주째(설치 불가 · beep도 첫 등록 미머지) · choco 미제출(첫 제출 사용자 승인 대기) → [journal](journal/2026-09-28.md)
 
 ## 2026-09-28 (1차 · win) — 진행사항 최신화 — winget 0.1.4 여전히 모더레이터 대기 · choco 첫 제출 전(사용자 실행 대기) · brew 0.1.5 ✓ · ★ 위키 v0.1.5 반영(Home · 설치 · 문제 해결 = Linux 글자 고착 수정) → [journal](journal/2026-09-28.md)
