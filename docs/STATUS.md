@@ -4,13 +4,19 @@
 
 ---
 
-## 2026-09-27 (2차 · win) — ★ v0.1.5 릴리스 · choco 첫 제출 구성
+## 2026-09-28 (1차 · win) — 진행사항 최신화 · 위키 v0.1.5 반영
 
-**최신화**: `26e3379` → `46a06be`(4 ff · Linux `c` 스톰 수정). Windows 영향 = 잔향 게이트가 합성 집합 기반으로 좁고 정확해짐 · mac 무동작 · 서버/와이어 변경 없음.
-**설치본**: `dev-install-win.ps1` release → pid 11892 · SHA-256 일치.
-**릴리스 판단 = 필요**: v0.1.4 뒤 사용자 가시 변경이 Linux 팝업 결함 수정 — 릴리스로만 전달된다. 게이트 3타깃 clippy+fmt ✓ · 543 테스트(Windows 호스트) ✓.
-**winget**: 0.1.4 PR 2건 **Validation-Completed**(정적 CRT 진단 검증 ✓) · 모더레이터 대기(New-Package) → 0.1.5는 guard가 자동 skip. **choco**: beep 0.2.2가 validator·verifier Passed · 모더레이터 대기 → 구성 문제 없음 판단, **`CHOCO_PUSH=true` + 첫 제출 force 수동 실행**(그동안만 `WINGET_PUBLISH=false`). → [journal](journal/2026-09-27.md)
+**점검**: winget #434300/#434302 = 그대로 OPEN(`Validation-Completed` · 모더레이터 대기) · choco 피드 0건(첫 제출 전) · 변수 `WINGET_PUBLISH=true` · `CHOCO_PUSH=true` · brew 탭 `c9f5bdf` = 0.1.5 ✓.
+**위키**: Home 최신 버전 v0.1.5 · 설치(winget 최종 검수 중 · choco 구성 완료·첫 제출 예정) · 문제 해결(Linux 글자 고착 v0.1.5 수정 · 알려진 한계).
+**☐ 남은 것**: choco 첫 제출(`WINGET_PUBLISH=false` → `publish-windows-packages` `tag=v0.1.5 force=true` → `WINGET_PUBLISH=true` 복구 — 사용자 실행/승인) · winget 머지 대기 · Linux 설치본 0.1.5 실기. → [journal](journal/2026-09-28.md)
 
+---
+
+## 2026-09-27 (2차 · win) — ★ v0.1.5 릴리스 · choco 켬
+
+**최신화**: `26e3379` → `46a06be`(4 ff · Linux `c` 스톰 수정). Windows 영향 = 잔향 게이트가 합성 집합 기반으로 좁고 정확해짐 · mac 무동작 · 서버/와이어 변경 없음. **설치본** 교체 pid 11892 · SHA-256 일치.
+**릴리스 ✅ v0.1.5**(판단 = Linux 팝업 결함 수정은 릴리스로만 전달) — 3타깃 clippy+fmt ✓ · 543 테스트(Windows 호스트) ✓ · release run `36327096120` 11잡 success · 자산 14 · brew 탭 갱신 · CI `36327093211` ✓.
+**winget**: 0.1.4 PR 2건 **Validation-Completed**(정적 CRT 진단 검증 ✓) · 모더레이터 대기 → 0.1.5는 guard skip(의도대로). **choco**: beep 0.2.2 validator·verifier Passed 확인 → **`CHOCO_PUSH=true`** · 첫 제출은 guard가 skip하므로 force 수동 실행 필요(☐ 사용자 승인). → [journal](journal/2026-09-27.md)
 ---
 
 ## 2026-09-27 (1차 · Linux VM) — ★ 팝업 단축키 `c` 스톰(T-15d) **근인 확정·수정** · 자동 재현 하네스 신설
