@@ -2,6 +2,8 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-09-28 (2차 · win) — ★ **답변 한글 규칙**(CLAUDE.md §4) · winget/choco 점검 — winget 0.1.4 모더레이터 대기 2주째(설치 불가 · beep도 첫 등록 미머지) · choco 미제출(첫 제출 사용자 승인 대기) → [journal](journal/2026-09-28.md)
+
 ## 2026-09-28 (1차 · win) — 진행사항 최신화 — winget 0.1.4 여전히 모더레이터 대기 · choco 첫 제출 전(사용자 실행 대기) · brew 0.1.5 ✓ · ★ 위키 v0.1.5 반영(Home · 설치 · 문제 해결 = Linux 글자 고착 수정) → [journal](journal/2026-09-28.md)
 
 ## 2026-09-27 (2차 · win) — 최신화(4 ff) · Windows 설치본 교체(pid 11892 · SHA 일치) · ★ **v0.1.5 릴리스**(Linux `c` 스톰 수정 전달 · 543 테스트 · 3타깃 ✓) · winget 0.1.4 **검수 통과(Validation-Completed)** → 모더레이터 대기라 0.1.5는 guard skip · ★ **choco 켬**(`CHOCO_PUSH=true` · 첫 제출 force 실행은 사용자 승인 대기) · release run `36327096120` 11잡 success · 자산 14 · CI ✓ → [journal](journal/2026-09-27.md)

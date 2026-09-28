@@ -49,6 +49,7 @@
 
 ## 4. 작업 규약
 
+- 🔴 **답변은 한글로** — 최종 답변·중간 진행 알림 모두 한국어로 쓴다(코드·명령·식별자·로그 원문은 그대로).
 - **문서·커밋/푸시 규약 SSOT = [docs/16](docs/16-doc-git-conventions.md)** — 4층 문서 체계 · 작성 규칙 8 · 커밋/브랜치/푸시 필수 규칙.
 - 기록: 일자 상세 `docs/journal/YYYY-MM-DD.md`(시간 역순) + [DEVLOG](docs/DEVLOG.md) 요약 + [MILESTONES](docs/MILESTONES.md) + [BRANCHES](docs/BRANCHES.md). **한 작업 = 한 트랜잭션 갱신**.
 - **큰 단위 = 브랜치, 세부 기능 = 커밋. push는 사용자 명시 요청 시에만.**
