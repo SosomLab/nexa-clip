@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-09-28 (3차 · win) — ★ Chocolatey 첫 제출(v0.1.5)
+
+**제출**: `WINGET_PUBLISH=false` → `publish-windows-packages` `tag=v0.1.5 force=true`(run `36364532264` success) → `nexa-clip`·`nexa-clip-portable` 0.1.5 **push 성공** → `WINGET_PUBLISH=true` 복구. 패키지 페이지 생성 · Validation/Verification Pending.
+**☐ 남은 것**: choco 자동 검사 결과 메일 → 사람 모더레이션(수 주 예상) · winget 0.1.4 머지 대기 · Linux 설치본 0.1.5 실기. → [journal](journal/2026-09-28.md)
+
+---
+
 ## 2026-09-28 (2차 · win) — 답변 한글 규칙 · winget/choco 점검
 
 **규칙**: CLAUDE.md §4 첫 줄 = **답변은 한글로**(진행 알림 포함).
