@@ -4,6 +4,7 @@
 
 | 브랜치 | 생성 | 병합 | 커밋 수 | 요약 |
 |---|---|---|---:|---|
+| `docs/progress-09-29` | 2026-09-29 | 2026-09-29 | 1 | 진행사항 최신화 — choco 0.1.5 자동 검사 통과(모더레이터 대기) · winget 무변화 · ★ 새 버전 배포 불필요 판단(v0.1.5 이후 코드 변경 0) · STATUS·DEVLOG·journal 09-29·T-50 |
 | `docs/progress-09-28c` | 2026-09-28 | 2026-09-28 | 1 | ★ Chocolatey 첫 제출(v0.1.5) 박제 — run `36364532264` · push 성공 · 모더레이션 대기 · T-50 · MILESTONES · 위키 설치/Home 반영 |
 | `docs/progress-09-28b` | 2026-09-28 | 2026-09-28 | 1 | 답변 한글 규칙(CLAUDE.md §4) · winget/choco 점검 박제(winget 0.1.4 모더레이터 대기 2주째 · choco 미제출) · STATUS·DEVLOG·journal 09-28 2차 |
 | `docs/progress-09-28` | 2026-09-28 | 2026-09-28 | 2 | 진행사항 최신화 — v0.1.5 릴리스 결과 박제(release run `36327096120` · CI ✓) · 09-27 STATUS 정리 · MILESTONES v0.1.5 행 · journal 09-28 · 위키 v0.1.5 반영(Home · 설치 · 문제 해결) · choco 첫 제출 ☐ 사용자 실행 대기 |
