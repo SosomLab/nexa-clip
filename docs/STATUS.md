@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-09-29 (1차 · win) — 진행사항 최신화 · 새 버전 배포 검토
+
+**점검**: ★ choco 0.1.5(설치본·포터블) **Validation·Verification Passed** → 사람 모더레이터 대기 · winget 0.1.4 PR 2건 그대로(09-14 이후 무변화) · CI main ✓.
+**배포 검토**: **불필요** — `v0.1.5..HEAD` 4커밋 전부 문서 · winget/choco는 어차피 guard skip · Release·brew는 이미 0.1.5. 다음 계기 = 코드 수정(T-53/T-55 파서 결정 · T-57 · T-54 ⓐ) 들어갈 때 v0.1.6.
+**☐ 남은 것**: choco·winget 모더레이터 대기 · Linux 설치본 0.1.5 실기 · T-53 결정. → [journal](journal/2026-09-29.md)
+
+---
+
 ## 2026-09-28 (3차 · win) — ★ Chocolatey 첫 제출(v0.1.5)
 
 **제출**: `WINGET_PUBLISH=false` → `publish-windows-packages` `tag=v0.1.5 force=true`(run `36364532264` success) → `nexa-clip`·`nexa-clip-portable` 0.1.5 **push 성공** → `WINGET_PUBLISH=true` 복구. 패키지 페이지 생성 · Validation/Verification Pending.
