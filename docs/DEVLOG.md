@@ -2,6 +2,8 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-10-03 (1차 · linux) — 최신화(11 ff · v0.1.5 · 코드 = 버전 올림뿐) · ★ **Linux 설치본 0.1.5 교체**(로컬 `.deb` 재설치 · pkexec · 전 파일 · SHA 일치 · pid 61607) · ★ **트레이 연결 배지 미표시 = 09-04 규칙(릴레이 기준)** + 이 PC `relay=none` · LAN 세션 0 · 주석 모순 → 🔴 T-59 결정 → [journal](journal/2026-10-03.md)
+
 ## 2026-09-29 (1차 · win) — 진행사항 최신화 · ★ **새 버전 배포 불필요** 판단(v0.1.5 이후 코드 변경 0 · 문서만) · ★ choco 0.1.5 **자동 검사 통과**(Validation·Verification Passed 둘 다 · 사람 모더레이터 대기) · winget 0.1.4 15일째 무변화 → [journal](journal/2026-09-29.md)
 
 ## 2026-09-28 (3차 · win) — ★ **Chocolatey 첫 제출**(v0.1.5 · 설치본·포터블) — force 수동 실행(run `36364532264`) 동안만 winget 끔 → push 성공 · 모더레이션 큐(Validation/Verification Pending) · 변수 복구 → [journal](journal/2026-09-28.md)
