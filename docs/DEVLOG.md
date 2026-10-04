@@ -2,6 +2,10 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-10-04 (6차 · win) — 진행사항 최신화 · 오늘 마감 — choco 0.1.5 재제출 뒤 자동 검사 **Pending**(새 댓글 0 · 피드 0 · 설치 불가) · winget 0.1.4 PR 2건 무변화(09-14) · CI ✓(`702053f` · `74ca850`) · 코드 변경 0 · ☐ 사용자 결정 = winget 열린 PR 닫고 0.1.5 영어판 재제출(권장) · V3 7일 확인 → [journal](journal/2026-10-04.md)
+
+## 2026-10-04 (5차 · win) — 전수 시험(V3) 시점 개정(사용자) — 기본은 안 돌림 · 기록 없음 · 핵심 로직 수정(`[V3 · 핵심]`) · 7일 경과 + 수정 있음 · 배포 전에만 · "그날 최초·마지막·3시간 간헐" 삭제 → [33 §5-7](33-collab-session-operation.md) · [journal](journal/2026-10-04.md)
+
 ## 2026-10-04 (4차 · win) — ★ push `f58ed64..702053f`(4커밋 · `--no-ff`) · CI `37180571155` ✅(3-OS) · ★ **choco 0.1.5 같은 버전 재제출 완료**(run `37180572461` · 그동안만 `WINGET_PUBLISH=false` → 복구) — 페이지 상태 "Waiting for Maintainer" → **"Updated"** · 영어 설명·Copyright 표시 확인 · ⏳ 자동 검사·검수자 재검토 · ☐ winget 열린 PR(0.1.4 · ko-KR) 교체 = 사용자 결정 → [journal](journal/2026-10-04.md)
 
 ## 2026-10-04 (3차 · win) — ★ **스토어 제출물 전부 영어** 규칙(사용자) — winget·choco 제출 틀(설명·주석·`Write-Host`·YAML 주석) 영어만 · 한국어 병기 없음 · nuspec 영어만 · choco ps1 4개 영어 · winget 틀 6개 `ko-KR` → `en-US` · 게이트 = 출력 전체 ASCII 밖 글자 0(BOM 예외) · 음성 3건·양성 확인(첫 판 BOM 처리 실수를 양성 대조로 잡음) · ☐ winget 열린 PR(0.1.4 · ko-KR) 교체 = 사용자 결정 대기 → [journal](journal/2026-10-04.md)
