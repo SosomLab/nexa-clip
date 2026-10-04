@@ -8,7 +8,7 @@
 # | 채널 | 스위치 변수 | 시크릿 | 대기 판정 |
 # | --- | --- | --- | --- |
 # | winget | `WINGET_PUBLISH=true` | `WINGET_TOKEN` | microsoft/winget-pkgs에 우리 패키지 식별자를 단 **열린 PR**이 있으면 대기 |
-# | Chocolatey | `CHOCO_PUSH=true` | `CHOCO_API_KEY` | 공개 피드에 **직전 릴리스 버전**이 아직 없으면 대기(모더레이션 중 패키지는 피드에 숨는다) |
+# | Chocolatey | `CHOCO_PUSH=true` | `CHOCO_API_KEY` | **직전 릴리스 버전**이 아직 승인되지 않았으면 대기(IsApproved=true로 판정 — 검수 중 패키지도 Id+Version 조회에는 나온다) |
 #
 # 수동 실행의 `force=true`는 대기 판정을 무시한다(사람이 확인했을 때만).
 name: publish-windows-packages
@@ -83,7 +83,7 @@ jobs:
           echo "winget 제출: $go"
 
       - id: choco
-        name: Chocolatey 대기 판정(직전 버전이 공개 피드에 있는가)
+        name: Chocolatey 대기 판정(직전 버전이 승인됐는가)
         shell: bash
         run: |
           set -euo pipefail
@@ -98,8 +98,12 @@ jobs:
                 pv="${prev#v}"
                 for pkg in nexa-clip nexa-clip-portable; do
                   url="https://community.chocolatey.org/api/v2/Packages()?\$filter=Id%20eq%20'$pkg'%20and%20Version%20eq%20'$pv'"
-                  if ! curl -fsS "$url" | grep -q "<entry>"; then
-                    echo "::warning::choco: $pkg $pv 이(가) 아직 공개 피드에 없다(모더레이션 대기) — 이번 릴리스는 제출을 건너뛴다."
+                  # ★ 판정 = **승인됨(IsApproved=true)** — 항목이 있느냐가 아니다(10-04 · v0.1.6 실측):
+                  #   Id+Version으로 물으면 **검수 중인 패키지도 항목이 돌아온다**(IsApproved=false ·
+                  #   PackageStatus=Submitted). 종전에는 `<entry>` 유무만 봐서 "공개됨"으로 오판했고,
+                  #   push가 403으로 거부돼 잡이 빨갛게 끝났다.
+                  if ! curl -fsS "$url" | grep -q '<d:IsApproved m:type="Edm.Boolean">true'; then
+                    echo "::warning::choco: $pkg $pv 이(가) 아직 승인되지 않았다(모더레이션 대기) — 이번 릴리스는 제출을 건너뛴다."
                     go=false
                   fi
                 done
