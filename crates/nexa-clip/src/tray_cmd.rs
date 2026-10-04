@@ -1859,14 +1859,22 @@ impl Shell {
         else {
             return;
         };
-        let lines = nclip_core::richtext::html_runs_of(&item.reps, 500).unwrap_or_else(|| {
-            let text = crate::main_win::plain_of(&item.reps)
-                .or_else(|| nclip_core::capture::svg_text(&item.reps))
-                .unwrap_or_else(|| item.label.clone());
-            crate::render_img::plain_runs(&text)
+        // ★ 복사 때 **원본 앱이 준 그림**이 있으면 그것을 쓴다(10-04 사용자 — "자체 렌더링이 아니라
+        //   복사해 준 이미지를"). Excel 범위·PPT 글상자는 앱이 그린 그림(벡터·PNG)이 함께 오는데,
+        //   종전에는 그것을 두고도 HTML 런을 우리가 다시 그려 모양이 달랐다(표 선·셀 색·병합이 사라짐).
+        //   그림이 없는 항목(웹 글 등)만 종전대로 직접 그린다.
+        const SIDE_MAX: u32 = 4096;
+        let rendered = decode_image(&item.reps, SIDE_MAX).or_else(|| {
+            let lines = nclip_core::richtext::html_runs_of(&item.reps, 500).unwrap_or_else(|| {
+                let text = crate::main_win::plain_of(&item.reps)
+                    .or_else(|| nclip_core::capture::svg_text(&item.reps))
+                    .unwrap_or_else(|| item.label.clone());
+                crate::render_img::plain_runs(&text)
+            });
+            let imgs = crate::main_win::decode_inline_images(&lines);
+            crate::render_img::render_runs(&self.font, &lines, &imgs)
         });
-        let imgs = crate::main_win::decode_inline_images(&lines);
-        let Some((w, h, rgba)) = crate::render_img::render_runs(&self.font, &lines, &imgs) else {
+        let Some((w, h, rgba)) = rendered else {
             eprintln!("이미지 렌더 실패 — 내용이 비었거나 너무 큽니다");
             return;
         };

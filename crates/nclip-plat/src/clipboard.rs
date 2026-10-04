@@ -271,11 +271,54 @@ mod imp {
         }
     }
 
+    /// 바이트를 HGLOBAL에 담아 올린다. 성공하면 메모리는 **시스템 소유**(해제 금지),
+    /// 실패한 것만 되돌려 해제한다.
+    ///
+    /// # Safety
+    /// 클립보드가 이 스레드에서 열려 있어야 한다.
+    unsafe fn post_bytes(fmt: u32, data: &[u8]) -> bool {
+        unsafe {
+            let h = GlobalAlloc(GMEM_MOVEABLE, data.len());
+            if h == 0 {
+                return false;
+            }
+            let p = GlobalLock(h);
+            if p.is_null() {
+                GlobalFree(h);
+                return false;
+            }
+            core::ptr::copy_nonoverlapping(data.as_ptr(), p.cast::<u8>(), data.len());
+            GlobalUnlock(h);
+            if SetClipboardData(fmt, h) == 0 {
+                GlobalFree(h);
+                return false;
+            }
+            true
+        }
+    }
+
     pub(super) fn set_reps(reps: &[RawRep]) -> Result<usize, String> {
         let postable: Vec<&RawRep> = reps.iter().filter(|r| !r.data.is_empty()).collect();
         if postable.is_empty() {
             return Err("게시할 표현이 없습니다(핸들 포맷뿐)".into());
         }
+        // ★ 셀 범위 항목의 비트맵(10-04 사용자 — "이력에서 골라 그림판에 붙여도 그림으로") —
+        //   감시는 Excel 범위의 비트맵을 받지 않는다(범위가 조금만 커도 수백 MB). 대신 함께 받아 둔
+        //   벡터 그림에서 **게시하는 순간에** `CF_DIB`를 만들어 얹는다(보관 0). 되읽을 때 감시는
+        //   셀 범위의 비트맵을 다시 건너뛰므로 에코 판정(부분집합 = 원본 승격)이 그대로 맞는다.
+        let cell_dib: Option<Vec<u8>> = (reps
+            .iter()
+            .any(|r| nclip_core::capture::is_cell_range_format(&r.format))
+            && !postable
+                .iter()
+                .any(|r| matches!(r.format.as_str(), "CF_DIB" | "CF_DIBV5")))
+        .then(|| {
+            postable
+                .iter()
+                .find(|r| r.format == "CF_ENHMETAFILE")
+                .and_then(|r| crate::emf::dib_from_bytes(&r.data, 4096))
+        })
+        .flatten();
         let guard = open_clipboard().ok_or("클립보드를 열지 못했습니다")?;
         let mut posted = 0usize;
         // SAFETY: guard가 배타로 열었다. 각 HGLOBAL은 SetClipboardData 성공 시
@@ -288,20 +331,24 @@ mod imp {
                 if fmt == 0 {
                     continue;
                 }
-                let h = GlobalAlloc(GMEM_MOVEABLE, r.data.len());
-                if h == 0 {
+                // ⚠️ `CF_ENHMETAFILE`은 **핸들 포맷** — 바이트를 HGLOBAL에 담으면 받는 앱이
+                //   메타파일로 못 쓴다(10-04 — 종전에는 그렇게 올라가고 있었다). 진짜 핸들로 만든다.
+                if fmt == 14 {
+                    if let Some(hemf) = crate::emf::handle_from_bytes(&r.data) {
+                        if SetClipboardData(fmt, hemf) == 0 {
+                            crate::emf::delete_handle(hemf);
+                        } else {
+                            posted += 1;
+                        }
+                    }
                     continue;
                 }
-                let p = GlobalLock(h);
-                if p.is_null() {
-                    GlobalFree(h);
-                    continue;
+                if post_bytes(fmt, &r.data) {
+                    posted += 1;
                 }
-                core::ptr::copy_nonoverlapping(r.data.as_ptr(), p.cast::<u8>(), r.data.len());
-                GlobalUnlock(h);
-                if SetClipboardData(fmt, h) == 0 {
-                    GlobalFree(h);
-                } else {
+            }
+            if let Some(dib) = &cell_dib {
+                if post_bytes(8, dib) {
                     posted += 1;
                 }
             }

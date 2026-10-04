@@ -2243,6 +2243,17 @@ impl MainWin {
                     }
                 }
                 let mut right = list.x + list.w - pad;
+                // ★ 종류 아이콘(10-04 사용자 — "저장된 것이 파일·이미지·서식 글·일반 글인지 그림으로") —
+                //   Rich 보기는 왼쪽 거터에 자리가 없어 **우측 끝**에 둔다(다른 보기는 섬네일 자리).
+                {
+                    let side = px(14.0);
+                    let iy = y + px(6.0);
+                    right -= side;
+                    if iy >= clip.y && iy + side <= clip.y + clip.h {
+                        crate::kind_icon::draw(dc, right, iy, side, row.kind, th.text_dim);
+                    }
+                    right -= px(8.0);
+                }
                 // ★ 원격 파일 배지(09-12) — 캐시됨/받는 중/오프라인/실패/원격.
                 if let Some(st) = row.files {
                     let (btxt, bcol) = files_badge(&th, st);

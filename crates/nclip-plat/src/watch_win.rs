@@ -324,13 +324,23 @@ pub fn read_snapshot() -> Option<ClipSnapshot> {
             fmt = EnumClipboardFormats(fmt);
         }
         let names: Vec<&str> = formats.iter().map(|(_, n)| n.as_str()).collect();
+        // ★ Excel 범위 주소(`Link` — 없으면 `ObjectLink`) — 주소 글자뿐이라 청해도 그리지 않는다.
+        //   그림을 청할지 말지를 이것으로 정한다([`nclip_core::capture::cell_range_dims`]).
+        let link: Option<Vec<u8>> = ["Link", "ObjectLink"].iter().find_map(|want| {
+            let (id, _) = formats.iter().find(|(_, n)| n == want)?;
+            read_hglobal(*id)
+        });
         let mut reps = Vec::new();
         for (fmt, name) in &formats {
             let fmt = *fmt;
             // ★ Excel 행·열 전체 복사 — 그림 표현을 청하면 Excel이 "그림이 너무 커서
-            //   잘립니다"를 띄운다(10-04 실기). 셀 범위의 그림 표현은 청하지 않는다.
-            if nclip_core::capture::skip_render(&names, name) {
-                diag(&format!("셀 범위 — 그림 표현 건너뜀({name})"));
+            //   잘립니다"를 띄운다(10-04 실기). 상한 이내의 일반 범위에서 벡터 그림만 청한다.
+            if nclip_core::capture::skip_render(&names, name, link.as_deref()) {
+                diag(&format!(
+                    "셀 범위 — 그림 표현 건너뜀({name} · 범위 {:?})",
+                    link.as_deref()
+                        .and_then(nclip_core::capture::cell_range_dims)
+                ));
                 continue;
             }
             // ⚠️ 핸들 포맷은 바이트를 읽지 않는다 — 이름만 담는다.

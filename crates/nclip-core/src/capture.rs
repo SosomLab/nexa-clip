@@ -277,19 +277,91 @@ pub fn is_cell_range_format(fmt: &str) -> bool {
     matches!(fmt, "Biff12" | "Biff8" | "Biff5" | "XML Spreadsheet")
 }
 
+/// 셀 범위의 그림을 받는 상한(10-04 사용자 확정 — "추천 구현") — 화면 몇 장 분량의 표까지.
+/// 넘으면 글·서식만 받는다. Excel이 오류를 띄우는 정확한 경계는 문서화돼 있지 않아 보수적으로 잡았다.
+pub const CELL_PICTURE_MAX_ROWS: u32 = 200;
+/// 열 상한([`CELL_PICTURE_MAX_ROWS`]와 한 벌).
+pub const CELL_PICTURE_MAX_COLS: u32 = 50;
+/// 셀 수 상한(행 × 열).
+pub const CELL_PICTURE_MAX_CELLS: u32 = 5_000;
+
+/// ★ Excel `Link` 표현에서 **복사한 범위의 크기**(행 수 · 열 수)를 읽는다.
+///
+/// `Link`(DDE 연결 정보)는 `앱\0문서·시트\0범위\0\0` 꼴의 작은 글자열이고, 범위는 R1C1 표기다
+/// (`R1C1:R14C13`). 주소일 뿐이라 **청해도 Excel이 아무것도 그리지 않는다** — 그림을 청하기
+/// **전에** 범위를 알 수 있는 유일한 자리다.
+///
+/// | 범위 글자 | 뜻 | 결과 |
+/// |---|---|---|
+/// | `R1C1:R14C13` | 일반 범위 | `Some((14, 13))` |
+/// | `R3C2` | 셀 하나 | `Some((1, 1))` |
+/// | `C1` · `C1:C3` | **열 전체** | `None` |
+/// | `R5` · `R5:R9` | **행 전체** | `None` |
+/// | 그 밖(여러 구역 · 못 읽음) | — | `None` |
+///
+/// `None` = **크기를 모른다 = 그림을 청하지 않는다**(안전한 쪽). 행·열 글자는 Excel 언어에 따라
+/// 다르므로(`R`/`C` · 독일어 `Z`/`S` · 프랑스어 `L`/`C`) 글자를 가리지 않고 **"글자 + 숫자" 토막 수**로 읽는다 —
+/// 토막 둘 = 셀 주소, 하나 = 행 또는 열 전체.
+#[must_use]
+pub fn cell_range_dims(link: &[u8]) -> Option<(u32, u32)> {
+    // 마지막 비어 있지 않은 NUL 구분 칸이 범위다(앞의 문서·시트 이름은 비ASCII일 수 있어 건드리지 않는다).
+    let item = link.split(|b| *b == 0).filter(|f| !f.is_empty()).nth(2)?;
+    let item = std::str::from_utf8(item).ok()?;
+    // 셀 주소 하나 → (행, 열). 토막이 둘이 아니면 행·열 전체이거나 모르는 꼴.
+    let cell = |s: &str| -> Option<(u32, u32)> {
+        let mut nums = Vec::new();
+        let mut rest = s;
+        while !rest.is_empty() {
+            let letters = rest.chars().take_while(char::is_ascii_alphabetic).count();
+            let digits = rest[letters..]
+                .chars()
+                .take_while(char::is_ascii_digit)
+                .count();
+            if letters == 0 || digits == 0 {
+                return None;
+            }
+            nums.push(rest[letters..letters + digits].parse::<u32>().ok()?);
+            rest = &rest[letters + digits..];
+        }
+        (nums.len() == 2).then(|| (nums[0], nums[1]))
+    };
+    let (from, to) = item.split_once(':').unwrap_or((item, item));
+    let ((r1, c1), (r2, c2)) = (cell(from)?, cell(to)?);
+    Some((r1.abs_diff(r2) + 1, c1.abs_diff(c2) + 1))
+}
+
 /// ★ **이 표현은 원본 앱에 렌더링을 청하지 않는다** — 셀 범위 복사의 그림 표현(10-04 사용자 실기).
 ///
 /// Excel은 지연 렌더링이라 **누가 달라고 할 때** 표현을 만든다. 행·열 전체를 복사한 뒤
 /// 그림 표현(`CF_ENHMETAFILE`·`CF_DIB`…)을 청하면 Excel이 범위 전체를 그림으로 그리려다
 /// **"그림이 너무 커서 잘립니다"** 대화상자를 사용자에게 띄운다 — 감시가 전부 읽는 한
-/// 복사할 때마다 뜬다. 셀 범위는 글·서식 표현(평문 · HTML · Biff)이 본체이고 그림은
-/// 곁가지이므로, 셀 범위 표식이 있으면 그림 표현은 **읽지도 담지도 않는다**.
+/// 복사할 때마다 뜬다.
 ///
-/// `names` = 지금 클립보드에 있는 표현 이름 전부, `fmt` = 판정할 표현.
+/// 그렇다고 그림을 전부 버리면 **"복사한 Excel 그대로의 그림"** 을 잃는다(10-04 사용자 —
+/// 1차 수정이 과했다). 그래서 셀 범위일 때:
+///
+/// - **벡터 그림(`CF_ENHMETAFILE`) 하나만**, 그것도 `Link`로 읽은 범위가
+///   **상한 이내의 일반 범위**일 때만 청한다([`cell_range_dims`] · [`CELL_PICTURE_MAX_CELLS`]).
+/// - 비트맵(`CF_DIB` 등)은 **언제나** 청하지 않는다 — 범위가 조금만 커도 수백 MB라
+///   보관 예산을 한 번에 밀어낸다. 미리보기·"이미지로 복사"는 벡터 그림으로 충분하다.
+/// - 행·열 전체 · 상한 초과 · 범위를 못 읽음(`link` 없음) = 그림 없이 글·서식만.
+///
+/// `names` = 지금 클립보드에 있는 표현 이름 전부, `fmt` = 판정할 표현, `link` = `Link` 표현의 바이트.
 #[must_use]
-pub fn skip_render<S: AsRef<str>>(names: &[S], fmt: &str) -> bool {
-    (is_bitmap_format(fmt) || is_metafile_format(fmt))
-        && names.iter().any(|n| is_cell_range_format(n.as_ref()))
+pub fn skip_render<S: AsRef<str>>(names: &[S], fmt: &str, link: Option<&[u8]>) -> bool {
+    if !(is_bitmap_format(fmt) || is_metafile_format(fmt))
+        || !names.iter().any(|n| is_cell_range_format(n.as_ref()))
+    {
+        return false;
+    }
+    if fmt != "CF_ENHMETAFILE" {
+        return true;
+    }
+    !link.and_then(cell_range_dims).is_some_and(|(rows, cols)| {
+        rows <= CELL_PICTURE_MAX_ROWS
+            && cols <= CELL_PICTURE_MAX_COLS
+            && rows.saturating_mul(cols) <= CELL_PICTURE_MAX_CELLS
+    })
 }
 
 /// ★ **앱 고유 포맷인가** — 아는 표준도 곁다리도 아니면 벤더다([§2](#2--벤더-포맷을-목록으로-알아보지-않는다)).
@@ -1910,10 +1982,34 @@ mod tests {
         );
     }
 
-    /// ★ 셀 범위의 그림 표현은 청하지 않는다 — Excel 행·열 전체 복사에서
-    /// "그림이 너무 커서 잘립니다"가 뜨던 원인(10-04 실기).
+    /// `Link` 범위 글자 → 크기. 행·열 전체와 못 읽는 꼴은 `None`(= 그림을 청하지 않는다).
     #[test]
-    fn cell_range_skips_picture_render() {
+    fn cell_range_dims_reads_link_item() {
+        let link = |item: &str| format!("Excel\0[세방.xlsx]권한 매트릭스\0{item}\0\0").into_bytes();
+        assert_eq!(cell_range_dims(&link("R1C1:R14C13")), Some((14, 13)));
+        assert_eq!(cell_range_dims(&link("R3C2")), Some((1, 1)));
+        assert_eq!(
+            cell_range_dims(&link("R14C13:R1C1")),
+            Some((14, 13)),
+            "거꾸로 잡은 범위"
+        );
+        // 다른 언어의 Excel(독일어 Z/S) — 글자를 가리지 않는다.
+        assert_eq!(cell_range_dims(&link("Z2S3:Z5S4")), Some((4, 2)));
+        // 행·열 전체 = 크기를 모른다.
+        for whole in ["C1", "C1:C3", "R5", "R5:R9"] {
+            assert_eq!(cell_range_dims(&link(whole)), None, "{whole}");
+        }
+        // 여러 구역 · 깨진 값 · 칸이 모자람.
+        assert_eq!(cell_range_dims(&link("R1C1:R2C2,R5C1:R6C2")), None);
+        assert_eq!(cell_range_dims(&link("")), None);
+        assert_eq!(cell_range_dims(b"Excel\0Sheet1\0\0"), None);
+        assert_eq!(cell_range_dims(b""), None);
+    }
+
+    /// ★ 셀 범위의 그림 — **상한 이내의 일반 범위에서 벡터 그림만** 청한다(10-04).
+    /// 행·열 전체는 Excel이 "그림이 너무 커서 잘립니다"를 띄우므로 청하지 않는다.
+    #[test]
+    fn cell_range_picture_policy() {
         let excel = [
             "CF_ENHMETAFILE",
             "CF_METAFILEPICT",
@@ -1924,25 +2020,43 @@ mod tests {
             "HTML Format",
             "CF_UNICODETEXT",
             "CF_DIB",
+            "Link",
         ];
-        for f in [
-            "CF_ENHMETAFILE",
-            "CF_METAFILEPICT",
-            "CF_BITMAP",
-            "CF_DIB",
-            "CF_DIBV5",
-            "PNG",
-        ] {
-            assert!(skip_render(&excel, f), "{f}는 청하지 않는다");
+        let link = |item: &str| format!("Excel\0[b.xlsx]S\0{item}\0\0").into_bytes();
+        let small = link("R1C1:R14C13");
+        // 일반 범위 — 벡터 그림은 청하고, 비트맵은 언제나 청하지 않는다.
+        assert!(!skip_render(&excel, "CF_ENHMETAFILE", Some(&small)));
+        for f in ["CF_METAFILEPICT", "CF_BITMAP", "CF_DIB", "CF_DIBV5", "PNG"] {
+            assert!(skip_render(&excel, f, Some(&small)), "{f}는 청하지 않는다");
         }
+        // 행·열 전체 · 상한 초과 · 범위를 모름 — 벡터 그림도 청하지 않는다.
+        for item in ["C1", "R5:R9", "R1C1:R201C1", "R1C1:R1C51", "R1C1:R200C50"] {
+            assert!(
+                skip_render(&excel, "CF_ENHMETAFILE", Some(&link(item))),
+                "{item}"
+            );
+        }
+        assert!(skip_render(&excel, "CF_ENHMETAFILE", None), "Link 없음");
+        // 상한 경계 — 100행 × 50열 = 5,000셀은 받는다.
+        assert!(!skip_render(
+            &excel,
+            "CF_ENHMETAFILE",
+            Some(&link("R1C1:R100C50"))
+        ));
         // 글·서식 표현은 그대로 읽는다 — 셀 범위의 본체다.
-        for f in ["Biff12", "XML Spreadsheet", "HTML Format", "CF_UNICODETEXT"] {
-            assert!(!skip_render(&excel, f), "{f}는 읽는다");
+        for f in [
+            "Biff12",
+            "XML Spreadsheet",
+            "HTML Format",
+            "CF_UNICODETEXT",
+            "Link",
+        ] {
+            assert!(!skip_render(&excel, f, None), "{f}는 읽는다");
         }
         // ⚠️ 셀 범위가 아니면 그림은 그대로 읽는다 — PPT 도형·스크린샷이 미리보기를 잃으면 안 된다.
         let ppt = ["Art::GVML ClipFormat", "PNG", "CF_ENHMETAFILE", "CF_DIB"];
         for f in ["PNG", "CF_ENHMETAFILE", "CF_DIB"] {
-            assert!(!skip_render(&ppt, f), "PPT의 {f}는 읽는다");
+            assert!(!skip_render(&ppt, f, None), "PPT의 {f}는 읽는다");
         }
     }
 
