@@ -4,6 +4,8 @@
 
 | 브랜치 | 생성 | 병합 | 커밋 수 | 요약 |
 |---|---|---|---:|---|
+| `fix/store-metadata-english-10-04` | 2026-10-04 | 2026-10-04 | 2 | ★ **Chocolatey 0.1.5 검수자 수정 요청 대응 + 스토어 제출물 전부 영어**(사용자 10-04) — nuspec 2 영어만 + `<copyright>` · choco ps1 4 영어 · winget 틀 6 `ko-KR` → `en-US` · `render-manifests.sh` 게이트(copyright · 영어 License 줄 · ASCII 밖 글자 0) · 릴리스 노트 영어 라이선스 줄 · 09-29 "모더레이터 대기" 오판 정정 · 재발 방지 규칙 A~D(18 §10 · packaging/README) · ★ 협업 세션 운영 기준 [33](33-collab-session-operation.md) · 병합 해시 = 병합 커밋 참조 |
+| `docs/progress-10-03` | 2026-10-03 | 2026-10-03 | 1 | 진행사항 최신화(linux) — 11 ff·v0.1.5 분석 · ★ Linux 설치본 0.1.5 교체(로컬 .deb · pkexec · 전 파일 · SHA 일치) · ★ 트레이 연결 배지 미표시 원인 = 09-04 ① 릴레이 기준 + `relay=none` · LAN 세션 0 · 주석 2곳 모순 → T-59 · STATUS·DEVLOG·journal 10-03 |
 | `docs/progress-09-29` | 2026-09-29 | 2026-09-29 | 1 | 진행사항 최신화 — choco 0.1.5 자동 검사 통과(모더레이터 대기) · winget 무변화 · ★ 새 버전 배포 불필요 판단(v0.1.5 이후 코드 변경 0) · STATUS·DEVLOG·journal 09-29·T-50 |
 | `docs/progress-09-28c` | 2026-09-28 | 2026-09-28 | 1 | ★ Chocolatey 첫 제출(v0.1.5) 박제 — run `36364532264` · push 성공 · 모더레이션 대기 · T-50 · MILESTONES · 위키 설치/Home 반영 |
 | `docs/progress-09-28b` | 2026-09-28 | 2026-09-28 | 1 | 답변 한글 규칙(CLAUDE.md §4) · winget/choco 점검 박제(winget 0.1.4 모더레이터 대기 2주째 · choco 미제출) · STATUS·DEVLOG·journal 09-28 2차 |
