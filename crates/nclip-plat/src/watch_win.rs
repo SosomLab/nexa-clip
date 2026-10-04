@@ -302,7 +302,9 @@ pub fn read_snapshot() -> Option<ClipSnapshot> {
     let snap = unsafe {
         let seq = u64::from(GetClipboardSequenceNumber());
         let concealed = read_concealed();
-        let mut reps = Vec::new();
+        // ★ 이름을 **먼저 전부** 모은다 — `GetClipboardData`는 지연 렌더링을 일으키므로
+        //   무엇을 청할지는 표현 목록 전체를 보고 정한다([`nclip_core::capture::skip_render`]).
+        let mut formats = Vec::new();
         let mut fmt = EnumClipboardFormats(0);
         while fmt != 0 {
             let name = standard_name(fmt).map_or_else(
@@ -318,6 +320,19 @@ pub fn read_snapshot() -> Option<ClipSnapshot> {
                 },
                 str::to_string,
             );
+            formats.push((fmt, name));
+            fmt = EnumClipboardFormats(fmt);
+        }
+        let names: Vec<&str> = formats.iter().map(|(_, n)| n.as_str()).collect();
+        let mut reps = Vec::new();
+        for (fmt, name) in &formats {
+            let fmt = *fmt;
+            // ★ Excel 행·열 전체 복사 — 그림 표현을 청하면 Excel이 "그림이 너무 커서
+            //   잘립니다"를 띄운다(10-04 실기). 셀 범위의 그림 표현은 청하지 않는다.
+            if nclip_core::capture::skip_render(&names, name) {
+                diag(&format!("셀 범위 — 그림 표현 건너뜀({name})"));
+                continue;
+            }
             // ⚠️ 핸들 포맷은 바이트를 읽지 않는다 — 이름만 담는다.
             //   ★ 예외: EMF(14)는 GetEnhMetaFileBits로 실바이트를 뽑는다(09-02).
             let data = if fmt == 14 {
@@ -327,8 +342,10 @@ pub fn read_snapshot() -> Option<ClipSnapshot> {
             } else {
                 read_hglobal(fmt).unwrap_or_default()
             };
-            reps.push(RawRep { format: name, data });
-            fmt = EnumClipboardFormats(fmt);
+            reps.push(RawRep {
+                format: name.clone(),
+                data,
+            });
         }
         ClipSnapshot {
             reps,
