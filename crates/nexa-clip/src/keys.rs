@@ -235,6 +235,28 @@ pub(crate) fn diag() -> bool {
     *ON.get_or_init(|| std::env::var_os("NEXA_CLIP_KEYDIAG").is_some_and(|v| !v.is_empty()))
 }
 
+/// X 키코드로 본 수식키(evdev + 8) — Ctrl·Shift·Alt·Super 좌우.
+#[cfg(target_os = "linux")]
+const X_MODIFIER_KEYCODES: [u32; 8] = [37, 50, 62, 64, 105, 108, 133, 134];
+
+/// 수식키인가 — 잔향 집합에서 글자 키와 가른다.
+fn is_modifier(pk: &winit::keyboard::PhysicalKey) -> bool {
+    use winit::keyboard::{KeyCode as K, PhysicalKey};
+    matches!(
+        pk,
+        PhysicalKey::Code(
+            K::ShiftLeft
+                | K::ShiftRight
+                | K::ControlLeft
+                | K::ControlRight
+                | K::AltLeft
+                | K::AltRight
+                | K::SuperLeft
+                | K::SuperRight
+        )
+    )
+}
+
 /// ★ 포커스 잔향 게이트(09-27 · Linux `c` 스톰 · T-15d 근인 확정) — 창이 포커스를 받을 때 **이미 눌려 있던**
 /// 키는 그 키의 **해제가 올 때까지** 이 창의 입력이 아니다.
 ///
@@ -317,6 +339,70 @@ impl FocusResidue {
         #[cfg(not(target_os = "linux"))]
         {
             0
+        }
+    }
+
+    /// ★ 잔향에 **글자 키**(수식키가 아닌 키)가 남아 있는가(10-04) — 있으면 IME 입력도 잔향으로 본다.
+    ///
+    /// 한글 입력 상태에서는 고착된 글자 키의 오토리피트가 `KeyboardInput`이 아니라 **IME 이벤트**
+    /// (`Preedit`·`Commit` "ㅊ")로 온다 — 키 게이트만으로는 못 막는다(10-04 사용자 재신고 · 하네스 재현).
+    pub(crate) fn has_letters(&self) -> bool {
+        self.held.iter().any(|k| !is_modifier(k))
+    }
+
+    /// ★ X 서버가 **이미 뗐다고** 아는 잔향 키를 집합에서 뺀다(Linux · 10-04) — 입력기가 해제 이벤트를
+    ///   삼켜도 잔향이 풀리게. 반환 = 뺀 수. 다른 OS = 무동작(0).
+    pub(crate) fn sync_released_x11(&mut self) -> usize {
+        #[cfg(target_os = "linux")]
+        {
+            use winit::platform::scancode::PhysicalKeyExtScancode as _;
+            let Some(down) = nclip_plat::keystate_x11::keys_down() else {
+                return 0;
+            };
+            let before = self.held.len();
+            self.held
+                .retain(|k| k.to_scancode().is_some_and(|sc| down.contains(&(sc + 8))));
+            before - self.held.len()
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            0
+        }
+    }
+
+    /// ★ **고착된 글자 키**의 evdev 코드(Linux · 10-04) — X 서버에는 눌려 있는데 수식키는 전부 떼어진 잔향 글자 키.
+    ///
+    /// 단축키(`Shift+Alt+C`)를 누른 손이 수식키까지 다 뗐는데 글자 키만 서버에 남아 있다 = mutter가 그 해제를
+    /// 삼킨 고착이다(09-27 실측). 수식키가 아직 눌려 있으면 사용자가 쥐고 있는 중이라 빈 목록.
+    /// 호출자는 이 키들에 **누름 + 뗌**을 주입해 푼다(뗌만으로는 안 풀린다 · 실측). 다른 OS = 빈 목록.
+    pub(crate) fn stuck_letters_x11(&self) -> Vec<i32> {
+        #[cfg(target_os = "linux")]
+        {
+            use winit::platform::scancode::PhysicalKeyExtScancode as _;
+            let Some(down) = nclip_plat::keystate_x11::keys_down() else {
+                return Vec::new();
+            };
+            let mods_down = self
+                .held
+                .iter()
+                .filter(|k| is_modifier(k))
+                .filter_map(|k| k.to_scancode())
+                .any(|sc| down.contains(&(sc + 8)))
+                || down.iter().any(|kc| X_MODIFIER_KEYCODES.contains(kc));
+            if mods_down {
+                return Vec::new();
+            }
+            self.held
+                .iter()
+                .filter(|k| !is_modifier(k))
+                .filter_map(|k| k.to_scancode())
+                .filter(|sc| down.contains(&(sc + 8)))
+                .filter_map(|sc| i32::try_from(sc).ok())
+                .collect()
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            Vec::new()
         }
     }
 
@@ -420,6 +506,22 @@ mod tests {
             Chord::of(&PhysicalKey::Code(K::Digit7), true, false, false, false),
             Some(chord("Ctrl+7"))
         );
+    }
+
+    /// ★ 10-04 — 잔향에 글자 키가 있으면 IME 입력도 잔향이다(수식키만 남았으면 아니다).
+    #[test]
+    fn residue_letters_gate_ime() {
+        use winit::keyboard::{KeyCode, PhysicalKey};
+        let mut r = FocusResidue::default();
+        assert!(!r.has_letters());
+        r.mark_held(PhysicalKey::Code(KeyCode::ShiftLeft));
+        r.mark_held(PhysicalKey::Code(KeyCode::AltLeft));
+        assert!(!r.has_letters(), "수식키만 = 글자 잔향 없음");
+        r.mark_held(PhysicalKey::Code(KeyCode::KeyC));
+        assert!(r.has_letters());
+        // 해제가 오면 풀린다.
+        assert!(r.admit(&PhysicalKey::Code(KeyCode::KeyC), false, false));
+        assert!(!r.has_letters());
     }
 
     // ── FocusResidue(09-27 · Linux `c` 스톰) ──

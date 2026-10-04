@@ -169,6 +169,17 @@ pub(crate) struct Popup {
     probe_until: Option<std::time::Instant>,
     /// 마지막 프로브 시각(틱이 16ms라 30ms 간격으로 죈다).
     probe_last: Option<std::time::Instant>,
+    /// ★ 고착 풀기 창(10-04) — 잔향에 글자 키가 남아 있는 동안 이 시각까지 X 서버를 되물어, 수식키가 다 떼어졌는데
+    ///   글자 키만 남아 있으면 **누름 + 뗌을 한 번 주입**해 푼다(창이 열릴 때마다 한 번).
+    unstick_until: Option<std::time::Instant>,
+    /// 이번 열림에서 고착 풀기를 이미 시도했는가.
+    unstick_done: bool,
+    /// ★ 잔향 때문에 IME 이벤트를 버린 적이 있는가(10-04) — 잔향이 풀리면 입력기 조합 상태를 비운다.
+    ime_gated: bool,
+    /// 이번 열림에서 잔향에 글자 키가 있었는가 — 풀리는 순간을 알아채기 위한 표식.
+    had_letters: bool,
+    /// 잔향이 풀린 뒤에도 IME 이벤트를 잠깐 더 버리는 시한([`IME_GRACE`]).
+    ime_grace_until: Option<std::time::Instant>,
     /// 마지막 커서 위치(winit은 클릭 이벤트에 좌표를 싣지 않는다).
     cursor: (i32, i32),
     /// ★ 검색 색인(09-04) — id → 소문자 검색문(셸이 채운다 · 없으면 라벨로).
@@ -188,6 +199,32 @@ const TYPE_GRACE: std::time::Duration = std::time::Duration::from_millis(150);
 /// ★ 잔향 프로브 창(09-27) — 포커스 뒤 이 동안 X 서버 키 상태를 되묻는다. 컴포지터가 단축키 키를 서버에 올리는
 /// 시점(실측 포커스 +50~300ms)과 오토리피트 지연(GNOME 최소 100ms · 기본 500ms) 사이를 넉넉히 덮는다.
 const PROBE_WINDOW: std::time::Duration = std::time::Duration::from_millis(800);
+
+/// 잔향이 풀린 뒤 IME 이벤트를 더 버리는 유예(10-04) — 입력기는 비동기라 주입한 누름의 조합이 해제보다 늦게 온다.
+const IME_GRACE: std::time::Duration = std::time::Duration::from_millis(150);
+
+/// 포털로 키 누름/뗌을 주입한다(evdev 코드 · 누름 여부 · 뒤 쉼 ms) — UI 스레드는 기다리지 않는다(DR-41).
+/// Linux 전용 — 다른 OS는 고착이 생기지 않아 부를 일이 없다(무동작).
+fn inject_keys(steps: Vec<(i32, bool, u64)>) {
+    #[cfg(target_os = "linux")]
+    {
+        let _ = std::thread::Builder::new()
+            .name("nclip-unstick".into())
+            .spawn(move || {
+                if let Err(e) = nclip_plat::remote_input_linux::key_seq(&steps) {
+                    eprintln!("팝업: 키 주입 실패({e})");
+                }
+            });
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = steps;
+    }
+}
+
+/// ★ 고착 풀기 창(10-04) — 포커스 뒤 이 동안 고착된 글자 키를 지켜보다 수식키가 다 떼어지면 푼다.
+/// 단축키를 길게 쥐는 손까지 덮되, 끝없이 박동하지 않게 상한을 둔다.
+const UNSTICK_WINDOW: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// 좌상단 (x, y)를 **커서가 든 모니터** 안으로 되민다 — 팝업 전체가 화면에 보이게.
 ///
@@ -321,6 +358,11 @@ impl Popup {
             residue: crate::keys::FocusResidue::default(),
             probe_until: None,
             probe_last: None,
+            unstick_until: None,
+            unstick_done: false,
+            ime_gated: false,
+            had_letters: false,
+            ime_grace_until: None,
             cursor: (0, 0),
             search_mode: nclip_core::search::Mode::Fuzzy,
             search_idx: None,
@@ -526,16 +568,90 @@ impl Popup {
         self.row_fade.is_animating() || self.row_intent.is_waiting(now_ms) || probing
     }
 
+    /// ★ 고착 풀기(10-04 사용자 재신고 — "간혹 ㅊ(c) 키가 잡혀 안 떨어진다") — 잔향에 글자 키가 남아 있는 동안
+    ///   X 서버를 되물어 ① 서버가 이미 뗐다고 아는 키는 잔향에서 빼고 ② 수식키는 다 떼어졌는데 글자 키만 서버에
+    ///   남아 있으면(mutter가 해제를 삼킨 고착) 포털로 **누름 + 뗌**을 한 번 주입해 푼다(뗌만으로는 안 풀린다 ·
+    ///   09-27 실측). 잔향이 풀리면 입력기 조합 상태를 비운다. 반환 = 아직 지켜보는 중(16ms 박동 유지).
+    fn unstick_tick(&mut self) -> bool {
+        let now = std::time::Instant::now();
+        // 잔향이 풀린 직후의 짧은 유예 — 주입한 누름의 IME 조합이 뒤늦게 도착한다(입력기는 비동기).
+        if let Some(t) = self.ime_grace_until {
+            if now < t {
+                return true;
+            }
+            self.ime_grace_until = None;
+            self.reset_ime_if_gated();
+            return false;
+        }
+        let Some(until) = self.unstick_until else {
+            return false;
+        };
+        if !self.residue.has_letters() {
+            if self.had_letters {
+                self.had_letters = false;
+                self.ime_grace_until = Some(now + IME_GRACE);
+                return true;
+            }
+            // 프로브 창이 아직 열려 있으면 뒤늦게 잔향이 묶일 수 있다 — 그동안은 창을 유지한다.
+            if self.probe_until.is_none() {
+                self.unstick_until = None;
+            }
+            return false;
+        }
+        self.had_letters = true;
+        if now >= until {
+            self.unstick_until = None;
+            return false;
+        }
+        if self.residue.sync_released_x11() > 0 && !self.residue.has_letters() {
+            return true; // 다음 틱이 유예로 넘긴다
+        }
+        if !self.unstick_done {
+            let stuck = self.residue.stuck_letters_x11();
+            if !stuck.is_empty() {
+                self.unstick_done = true;
+                println!(
+                    "팝업: 단축키 글자 키 고착 — 풀기 주입(키 {}개)",
+                    stuck.len()
+                );
+                let steps: Vec<(i32, bool, u64)> = stuck
+                    .iter()
+                    .flat_map(|c| [(*c, true, 15), (*c, false, 15)])
+                    .collect();
+                inject_keys(steps);
+            }
+        }
+        true
+    }
+
+    /// 잔향 때문에 IME 이벤트를 버렸다면 입력기에 남은 조합 글자를 지운다(버린 "ㅊ"가 다음 글자와 합쳐지지 않게).
+    ///
+    /// 입력기를 껐다 켜서 비우면 한/영 상태까지 초기화돼(실측 10-04) 사용자가 다시 한글로 바꿔야 한다 —
+    /// 그래서 **BackSpace 한 번**을 주입한다: 조합 중인 자모는 입력기가 받아 지우고 창에는 오지 않는다.
+    /// IME 이벤트를 버린 적이 없으면(영문 상태) 아무것도 하지 않는다 — 검색창의 글자를 건드리지 않는다.
+    fn reset_ime_if_gated(&mut self) {
+        if !self.ime_gated {
+            return;
+        }
+        self.ime_gated = false;
+        const KEY_BACKSPACE: i32 = 14;
+        inject_keys(vec![(KEY_BACKSPACE, true, 15), (KEY_BACKSPACE, false, 15)]);
+        let mut inv = Invalidations::default();
+        self.search.set_preedit("", &mut inv);
+        self.redraw();
+    }
+
     /// ★ 잔향 프로브(09-27) — 창이 열려 있으면 X 서버 키 상태를 물어 눌린 키를 잔향으로 묶는다(30ms 간격).
     ///   반환 = 창이 아직 열려 있음(셸이 16ms 박동을 유지하도록).
     fn probe_residue(&mut self) -> bool {
+        let unsticking = self.unstick_tick();
         let Some(until) = self.probe_until else {
-            return false;
+            return unsticking;
         };
         let now = std::time::Instant::now();
         if now >= until {
             self.probe_until = None;
-            return false;
+            return unsticking;
         }
         if self
             .probe_last
@@ -660,6 +776,11 @@ impl Popup {
         self.residue.clear();
         self.probe_until = None;
         self.probe_last = None;
+        self.unstick_until = None;
+        self.unstick_done = false;
+        self.ime_gated = false;
+        self.had_letters = false;
+        self.ime_grace_until = None;
         self.refresh(hist);
         // ★ 열 때 선택 = 최신 항목(핀 구획 뒤에 있어도 · 09-02).
         self.sel = self
@@ -865,6 +986,7 @@ impl Popup {
                 self.was_focused = true;
                 // ★ 잔향 프로브 시작(09-27) — 지금 한 번 + 창이 닫힐 때까지 틱마다.
                 self.probe_until = Some(std::time::Instant::now() + PROBE_WINDOW);
+                self.unstick_until = Some(std::time::Instant::now() + UNSTICK_WINDOW);
                 self.probe_residue();
             }
             // ★ 포커스 상실 = 닫기(Maccy 관례) — 단, **받아 본 적이 있을 때만**.
@@ -897,6 +1019,14 @@ impl Popup {
                         "키진단 팝업 IME: {ime:?} t+{}ms",
                         self.opened_at.elapsed().as_millis()
                     );
+                }
+                // ★ 잔향 글자 키가 남아 있는 동안의 IME 입력은 그 키의 오토리피트다(10-04) — 한글 입력 상태에서는
+                //   고착된 `c`가 `KeyboardInput`이 아니라 Preedit/Commit "ㅊ"로 와 키 게이트를 그대로 지나갔다.
+                if (self.residue.has_letters() || self.ime_grace_until.is_some())
+                    && matches!(ime, Ime::Preedit(..) | Ime::Commit(..))
+                {
+                    self.ime_gated = true;
+                    return PopupAction::None;
                 }
                 let mut inv = Invalidations::default();
                 let changed = match ime {
