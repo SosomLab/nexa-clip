@@ -11,6 +11,9 @@ use nclip_gfx::{Color, Font, IconImage, Surface, TextStyle};
 const SIZE: f32 = 18.0;
 /// 사방 여백(px).
 const PAD: i32 = 16;
+/// 표 칸 좌우 여백(px) · 표 테두리 색(흰 바탕 위 중간 회색 · T-63).
+const CELL_PAD: i32 = 8;
+const TABLE_BORDER: (u8, u8, u8) = (150, 150, 150);
 /// 캔버스 상한 — 총화소 16M(RGBA 64MiB) · 변 4000px.
 const SIDE_MAX: i32 = 4000;
 
@@ -28,7 +31,8 @@ pub(crate) fn plain_runs(text: &str) -> Vec<Vec<Run>> {
 }
 
 /// 런들을 흰 바탕 RGBA로 렌더 — ★ 탭 스톱 열맞춤(공백 4칸 격자) + ★ 2단 들여쓰기(em)·배율(줄 높이 = 줄의 최대 배율)
-/// + ★ 인라인 이미지(`imgs` = (줄, 런) → 디코드본 · 원본 크기 · 폭 1200 상한).
+/// + ★ 인라인 이미지(`imgs` = (줄, 런) → 디코드본 · 원본 크기 · 폭 1200 상한)
+/// + ★ 표(T-63 — 열 폭 맞춤 · 칸 채움 · 테두리 · 화면과 같은 [`crate::rich_table::layout`]).
 pub(crate) fn render_runs(
     font: &Font,
     lines: &[Vec<Run>],
@@ -57,7 +61,18 @@ pub(crate) fn render_runs(
         }
         h
     };
+    #[allow(clippy::cast_possible_truncation)]
+    let table = crate::rich_table::layout(lines, em.round() as i32, CELL_PAD, |li, ri, run| {
+        img_at(li, ri).map_or_else(
+            || font.measure(&run.text, SIZE * run.scale).ceil() as i32,
+            |im| fit(im).0.ceil() as i32,
+        )
+    });
     let advance = |li: usize, line: &[Run]| -> f32 {
+        if let Some(t) = table.get(li).and_then(Option::as_ref) {
+            #[allow(clippy::cast_precision_loss)]
+            return (t.x + t.w + 1) as f32;
+        }
         let mut x = 0.0f32;
         for (ri, run) in line.iter().enumerate() {
             x += em * run.indent;
@@ -104,8 +119,41 @@ pub(crate) fn render_runs(
         let y = top + font.ascent(SIZE * sc);
         #[allow(clippy::cast_precision_loss)]
         let mut x = PAD as f32;
+        let trow = table.get(li).and_then(Option::as_ref);
+        if let Some(t) = trow {
+            // ★ 표 행 — 칸 채움 뒤 테두리(1px). 글자는 아래 런 루프가 `run_x` 자리에 그린다.
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            let (ty, th) = (top.round() as i32, line_h.ceil().max(0.0) as i32);
+            for c in &t.cells {
+                if let Some(b) = c.bg {
+                    #[allow(clippy::cast_sign_loss)]
+                    surf.fill_rect(
+                        PAD + c.x,
+                        ty,
+                        c.w.max(0) as u32,
+                        th as u32,
+                        Color::from_rgb(b[0], b[1], b[2]),
+                    );
+                }
+            }
+            let (r, g, b) = TABLE_BORDER;
+            for (bx, by, bw, bh) in crate::rich_table::border_rects(t, th, 1) {
+                #[allow(clippy::cast_sign_loss)]
+                surf.fill_rect(
+                    PAD + bx,
+                    ty + by,
+                    bw.max(0) as u32,
+                    bh.max(0) as u32,
+                    Color::from_rgb(r, g, b),
+                );
+            }
+        }
         for (ri, run) in line.iter().enumerate() {
-            x += em * run.indent;
+            #[allow(clippy::cast_precision_loss)]
+            match trow {
+                Some(t) => x = (PAD + t.run_x[ri]) as f32,
+                None => x += em * run.indent,
+            }
             if let Some(im) = img_at(li, ri) {
                 let (dw, dh) = fit(im);
                 #[allow(clippy::cast_possible_truncation)]
@@ -315,6 +363,65 @@ mod tests {
         assert!(place_shapes(&sizes[..1], &rects).is_none());
         assert!(place_shapes(&sizes, &rects[..2]).is_none());
         assert!(place_shapes(&[(251, 138), (3000, 283), (438, 195)], &rects).is_none());
+    }
+
+    /// ★ T-63 — 표를 그림으로 — 두 열 사이 세로 테두리가 **두 행에서 같은 x**에 서고, 칸 채움이 칸 전체를 덮는다.
+    /// (화면 경로와 같은 배치 함수를 쓰므로 내보내기 경로로 열맞춤·테두리를 증명한다.)
+    #[test]
+    fn table_renders_aligned_borders_and_cell_fill() {
+        let Ok(bytes) = std::fs::read("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf") else {
+            eprintln!("DejaVuSans.ttf 없음 — 건너뜀");
+            return;
+        };
+        let font = Font::from_bytes(bytes, 0).expect("글꼴");
+        let html = "<table><tr><td>a</td><td>wide cell text</td></tr>\
+                    <tr><td>much longer first cell</td><td bgcolor=\"#ff0000\">b</td></tr></table>\
+                    <p>after the table</p>";
+        let reps = [nclip_core::RawRep {
+            format: "text/html".into(),
+            data: html.as_bytes().to_vec(),
+        }];
+        let lines = nclip_core::richtext::html_runs_of(&reps, 10).expect("표");
+        assert_eq!(lines.len(), 3);
+        let (w, h, px) = render_runs(&font, &lines, &[]).expect("렌더");
+        assert!(w > 0 && h > 0);
+        let at = |x: i32, y: i32| -> (u8, u8, u8) {
+            let i = (y as usize * w as usize + x as usize) * 4;
+            (px[i], px[i + 1], px[i + 2])
+        };
+        // 화면과 같은 배치를 다시 구해 기대 자리를 얻는다.
+        let em = font.measure("한", SIZE).max(8.0).round() as i32;
+        let table = crate::rich_table::layout(&lines, em, CELL_PAD, |_, _, r| {
+            font.measure(&r.text, SIZE * r.scale).ceil() as i32
+        });
+        let (r0, r1) = (
+            table[0].as_ref().expect("행 1"),
+            table[1].as_ref().expect("행 2"),
+        );
+        assert!(table[2].is_none(), "표 뒤 문단은 표가 아니다");
+        assert_eq!(r0.cells[1].x, r1.cells[1].x, "둘째 열의 시작이 같다");
+        let line_h = (font.line_height(SIZE) * 1.15).ceil() as i32;
+        let sep_x = PAD + r0.cells[1].x;
+        // 두 행의 가운데 높이에서 — 열 사이 세로선 · 왼쪽·오른쪽 바깥 선.
+        for row in 0..2 {
+            let y = PAD + line_h * row + line_h / 2;
+            assert_eq!(at(sep_x, y), TABLE_BORDER, "행 {row} 열 사이 선");
+            assert_eq!(at(PAD + r0.x, y), TABLE_BORDER, "행 {row} 왼쪽 선");
+            assert_eq!(at(PAD + r0.x + r0.w, y), TABLE_BORDER, "행 {row} 오른쪽 선");
+        }
+        // 가로선 — 위 · 행 사이 · 아래(첫 열 여백 자리에서).
+        for k in 0..=2 {
+            assert_eq!(at(PAD + 3, PAD + line_h * k), TABLE_BORDER, "가로선 {k}");
+        }
+        // 칸 채움 — 둘째 행 둘째 칸의 **오른쪽 끝**(글자 "b"보다 한참 오른쪽)까지 빨강.
+        let y1 = PAD + line_h + line_h / 2;
+        assert_eq!(at(PAD + r1.x + r1.w - 3, y1), (255, 0, 0));
+        // 첫 행 둘째 칸은 채움이 없다(흰 바탕) · 표 오른쪽 바깥도 흰색.
+        assert_eq!(at(PAD + r0.x + r0.w - 3, PAD + 2), (255, 255, 255));
+        assert_eq!(at(w as i32 - 2, y1), (255, 255, 255));
+        // 표 뒤 문단 줄에는 세로선이 없다(문단 글자가 닿지 않는 표 오른쪽 끝 자리).
+        let y2 = PAD + line_h * 2 + line_h / 2;
+        assert_eq!(at(PAD + r0.x + r0.w, y2), (255, 255, 255));
     }
 
     #[test]

@@ -27,6 +27,7 @@ mod main_win;
 mod mode_drop;
 mod popup_win;
 mod render_img;
+mod rich_table;
 mod search_index;
 mod settings_win;
 mod sync_cmd;

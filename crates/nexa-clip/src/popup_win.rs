@@ -1769,11 +1769,37 @@ fn draw(
                 // ★ T-18d 1단 — 메인과 동일(색·굵기 · 탭 스톱 열맞춤).
                 let tab_w = dc.text_width("    ").max(8);
                 let em = dc.text_width("한").max(8);
-                for (k, line) in rich.iter().take(5).enumerate() {
+                // ★ 표(10-05 · T-63) — 메인과 같은 배치(열 폭 맞춤 · 칸 채움 · 테두리).
+                let shown = &rich[..rich.len().min(5)];
+                let table = crate::rich_table::layout(shown, em, px(6.0), |_, _, run| {
+                    dc.select_font_sized(
+                        if run.mono {
+                            FontSlot::Mono
+                        } else {
+                            FontSlot::Base
+                        },
+                        run.bold,
+                        nclip_core::richtext::size_delta(em, run.scale),
+                    );
+                    dc.text_width(&run.text)
+                });
+                for (k, line) in shown.iter().enumerate() {
                     #[allow(clippy::cast_precision_loss)]
                     let ly = y + px(6.0 + 22.0 * k as f32);
+                    let trow = table.get(k).and_then(Option::as_ref);
+                    if let Some(t) = trow {
+                        crate::rich_table::paint_frame(
+                            dc,
+                            t,
+                            (cx0, ly),
+                            px(22.0),
+                            content_clip,
+                            th.border,
+                            px(1.0).max(1),
+                        );
+                    }
                     let mut xoff = 0i32;
-                    for run in line {
+                    for (ri, run) in line.iter().enumerate() {
                         dc.select_font_sized(
                             if run.mono {
                                 FontSlot::Mono
@@ -1783,7 +1809,10 @@ fn draw(
                             run.bold,
                             nclip_core::richtext::size_delta(em, run.scale),
                         );
-                        xoff += nclip_core::richtext::em_px(em, run.indent);
+                        xoff = trow.map_or_else(
+                            || xoff + nclip_core::richtext::em_px(em, run.indent),
+                            |t| t.run_x[ri],
+                        );
                         let col = crate::main_win::run_color(run, th.text, th.window_bg);
                         for (ti, seg) in run.text.split('\t').enumerate() {
                             if ti > 0 {
