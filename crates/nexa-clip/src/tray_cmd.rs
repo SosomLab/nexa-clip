@@ -457,6 +457,10 @@ struct Shell {
     sync_on: Option<bool>,
     /// ★ LAN 직결 세션이 하나라도 있는가(10-04 · T-59) — 트레이 좌하단 파랑 점.
     lan_on: bool,
+    /// ★ 마지막 **로컬** 캡처 시각(10-04) — 클립보드 다리의 되쓰기 흡수 창([`BRIDGE_ECHO_WINDOW`]).
+    last_local: Option<Instant>,
+    /// ★ 우리가 방금 게시한 그림의 크기·시각(10-04) — 다리가 다시 인코드해 올린 같은 그림을 흡수한다.
+    own_image: Option<((u32, u32), Instant)>,
     /// ★ 원격 항목 에코 차단(09-04) — 방금 적용한 항목의 페이로드 지문·시각. 감시가 우리
     ///   게시를 다시 잡아 승격시켜도 **되돌려 보내지 않는다**(핑퐁 방지).
     sync_skip: Option<(u64, std::time::Instant)>,
@@ -523,6 +527,9 @@ fn apply_cell_picture_limits(conf: &Settings) {
         cells: get("cap.cell_pic_cells", def.cells),
     });
 }
+
+/// 클립보드 다리가 복사 뒤 클립보드를 다시 쥐는 시간 창(10-04 실측 — VMware `vmware-user` 2~3초).
+const BRIDGE_ECHO_WINDOW: Duration = Duration::from_secs(5);
 
 /// ★ 축출 로그(T-61 · 10-04) — 이력이 줄면 **몇 건을 왜 지웠는지** 한 줄(조용히 지우지 않는다 · DR-31).
 fn log_evictions(c: nclip_core::history::EvictCounts, left: usize) {
@@ -1231,6 +1238,7 @@ impl Shell {
         match nclip_plat::clipboard::set_reps(&reps) {
             Ok(n) => {
                 println!("재적재: \"{label}\" — 표현 {n}개 게시");
+                self.own_image = crate::main_win::parse_dims(&label).map(|d| (d, Instant::now()));
                 // ★ 부분 게시의 에코는 원본 승격으로(08-30 Linux 실기 "같은 항목 둘").
                 self.history.expect_echo(i);
             }
@@ -1281,6 +1289,48 @@ impl Shell {
                 }
             );
         }
+    }
+
+    /// ★ 이 로컬 캡처가 **직전 항목의 열화판**(클립보드 다리의 되쓰기)인가 — 그렇다면 사유.
+    ///
+    /// - 글: 맨 앞이 방금([`BRIDGE_ECHO_WINDOW`]) 잡은 로컬 서식 글이고, 이번 것이 같은 글의 평문뿐.
+    /// - 그림: 우리가 방금 게시한 그림과 크기가 같고, 맨 앞이 이미 그 그림(우리 게시의 에코)이다.
+    fn bridge_echo(
+        &self,
+        kind: nclip_core::ClipKind,
+        label: &str,
+        reps: &[RawRep],
+    ) -> Option<&'static str> {
+        use nclip_core::ClipKind as K;
+        let front = self.history.get(0)?;
+        if front
+            .source_app
+            .as_deref()
+            .is_some_and(|s| s.starts_with(REMOTE_MARK))
+        {
+            return None;
+        }
+        let fresh = |t: Instant| t.elapsed() < BRIDGE_ECHO_WINDOW;
+        if self.last_local.is_some_and(fresh)
+            && crate::dedup::is_plain_downgrade(
+                front.kind,
+                crate::main_win::plain_of(&front.reps).as_deref(),
+                kind,
+                crate::main_win::plain_of(reps).as_deref(),
+            )
+        {
+            return Some("평문");
+        }
+        if matches!(kind, K::Image | K::Object) && front.kind == K::Image {
+            let dims = crate::main_win::parse_dims(label)?;
+            if self.own_image.is_some_and(|(d, t)| d == dims && fresh(t))
+                && crate::main_win::parse_dims(&front.label) == Some(dims)
+                && front.reps.len() < reps.len()
+            {
+                return Some("그림");
+            }
+        }
+        None
     }
 
     /// 캡처(감시) 또는 원격 항목(`remote = Some(기기명)`)을 이력에 넣는다 — 게이트·요약·썸네일·
@@ -1413,6 +1463,19 @@ impl Shell {
                 self.popup.on_history_changed(&self.history);
             }
             return;
+        }
+        // ★ 클립보드 다리의 되쓰기 흡수(10-04 사용자 실기 — ONLYOFFICE 표·"이미지로 복사" 그림이 둘) —
+        //   가상 머신 클립보드 다리(VMware `vmware-user`)는 복사 몇 초 안에 클립보드를 **자기 것으로 다시
+        //   쥔다**: 글은 평문만, 그림은 다시 인코드한 판으로. 그대로 받으면 같은 내용의 열화판이 새 항목이
+        //   되어 대표를 빼앗고 상대 기기로도 간다. 직전 로컬 항목의 열화판이면 이력에 넣지 않는다.
+        if remote.is_none() {
+            if let Some(why) = self.bridge_echo(kind, &label, &snap.reps) {
+                println!(
+                    "캡처: 클립보드 다리의 되쓰기({why}) — 직전 항목과 같은 내용이라 넣지 않음"
+                );
+                return;
+            }
+            self.last_local = Some(Instant::now());
         }
         // ★ 재적재로 되돌아온 우리 게시도 여기로 온다 — 승격(맨 위로)이
         //   곧 에코 처리다(항목이 늘지 않는다).
@@ -1636,6 +1699,7 @@ impl Shell {
         match nclip_plat::clipboard::set_reps(&reps) {
             Ok(n) => {
                 println!("재적재: \"{label}\" — 표현 {n}개 게시");
+                self.own_image = crate::main_win::parse_dims(&label).map(|d| (d, Instant::now()));
                 // ★ 부분 게시(평문만 · Linux 1단 한 표현)의 에코 = 원본 승격.
                 self.history.expect_echo(index);
             }
@@ -1994,7 +2058,10 @@ impl Shell {
             );
         }
         match nclip_plat::clipboard::set_reps(&reps) {
-            Ok(n) => println!("이미지로 복사: {w}×{h} — 표현 {n}개 게시"),
+            Ok(n) => {
+                println!("이미지로 복사: {w}×{h} — 표현 {n}개 게시");
+                self.own_image = Some(((w, h), Instant::now()));
+            }
             Err(e) => eprintln!("이미지로 복사 실패: {e}"),
         }
         self.release_body(id);
@@ -2680,6 +2747,8 @@ pub(crate) fn run() {
         paste_auto,
         sync_on: None,
         lan_on: false,
+        last_local: None,
+        own_image: None,
         sync_skip: None,
         proxy: el.create_proxy(),
         atop_effective,
