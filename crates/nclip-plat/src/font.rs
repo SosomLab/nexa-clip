@@ -90,9 +90,13 @@ const MONO_CANDIDATES: &[(&str, u32, &str)] = &[
 /// ✓·화살표·수학 기호·이모지를 받는다. **앞이 우선**(기호 전용 본을 먼저, 이모지 본은 마지막 —
 /// 이모지 본이 일반 기호까지 이모지풍으로 바꾸지 않게).
 ///
-/// ⚠️ 정직한 한계: 래스터라이저(ab_glyph)는 TrueType **윤곽**만 그린다. Segoe UI Emoji는 흑백 윤곽을
-/// 함께 담고 있어 Windows는 흑백 이모지가 나오지만, Apple Color Emoji(sbix)·Noto Color Emoji(CBDT)는
-/// 비트맵뿐이라 넣지 않는다(넣으면 빈칸 — 두부보다 못하다). 컬러 이모지는 별도 과제.
+/// ★ 컬러 이모지(10-05 · T-18f) — `nclip-gfx`가 윤곽이 없는 글리프의 **내장 PNG 비트맵**(CBDT·sbix)을
+/// 풀어 색으로 그린다(시스템 글꼴 한정 디코드 예외 — `nclip-gfx/src/bitmap_glyph.rs`). 그래서:
+/// - **Linux** = Noto Color Emoji(CBDT)를 목록 **마지막**에 넣었다(실기 확인).
+/// - **macOS** = Apple Color Emoji(sbix)도 같은 경로로 그려질 것이지만 **미검증**이라 아직 넣지 않았다.
+/// - **Windows** = Segoe UI Emoji의 색은 COLR/CPAL(벡터 레이어)이라 범위 밖 — 함께 든 흑백 윤곽으로 나온다.
+///
+/// ⚠️ 남은 한계: 셰이핑이 없어 ZWJ 연쇄·피부색·국기는 한 글리프로 합쳐지지 않는다(구성 요소가 따로 그려진다).
 #[cfg(target_os = "macos")]
 const SYMBOL_CANDIDATES: &[(&str, u32, &str)] = &[
     (
@@ -139,6 +143,28 @@ const SYMBOL_CANDIDATES: &[(&str, u32, &str)] = &[
         "/usr/share/fonts/opentype/noto/NotoSansSymbols2-Regular.ttf",
         0,
         "Noto Sans Symbols2",
+    ),
+    // ★ 컬러 이모지(CBDT · T-18f) — **반드시 마지막**: 앞의 기호 본에 있는 글자(✓ · → 등)는 흑백 윤곽으로 남는다.
+    //   배포판별 설치 경로(같은 이름은 첫 것만 쓴다): Debian/Ubuntu · Arch · Fedora · openSUSE 계열.
+    (
+        "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf",
+        0,
+        "Noto Color Emoji",
+    ),
+    (
+        "/usr/share/fonts/noto/NotoColorEmoji.ttf",
+        0,
+        "Noto Color Emoji",
+    ),
+    (
+        "/usr/share/fonts/google-noto-color-emoji-fonts/NotoColorEmoji.ttf",
+        0,
+        "Noto Color Emoji",
+    ),
+    (
+        "/usr/share/fonts/noto-color-emoji/NotoColorEmoji.ttf",
+        0,
+        "Noto Color Emoji",
     ),
 ];
 
