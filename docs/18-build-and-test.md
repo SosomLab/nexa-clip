@@ -486,6 +486,11 @@ XKB 오토리피트는 raw 이벤트가 **없고** `xev -id`로도 창의 KeyPre
 **승인 창을 띄운 채 기다린다**(로그에 "키 주입 권한" 줄이 ok도 실패도 안 찍힘 · `busctl --user tree org.freedesktop.portal.Desktop`에 `…/request/…/nclip_rd_start0`이 남음).
 화면의 승인 창에 답하면 "키 주입 권한: ok". 반대 방향(Debug → 설치본)도 같다.
 
+**GNOME 포털 단축키는 (앱, 단축키 id)별로 조합을 기억한다(10-05 · T-38)**: 승인한 조합은 `dconf dump /org/gnome/settings-daemon/global-shortcuts/`의
+`[<앱 ID>] shortcuts=[('a1', {'shortcuts': <['<Shift><Alt>c']>, …}), …]`에 남는다(앱 ID = 스코프 이름 — 설치본 `nexa-clip` · VS Code에서 띄운 Debug `com.microsoft.VSCode`).
+**같은 id로 다시 `BindShortcuts`하면 `preferred_trigger`가 달라도 기억한 옛 조합을 쓰고 승인 창도 안 뜬다** → 앱은 기본이 아닌 조합이면 id에 조합을 넣는다(`a1_shift_alt_v` · 기본 조합은 종전 `a{n}`이라 업그레이드 뒤 재승인 없음).
+단축키가 안 바뀐다는 신고는 먼저 이 덤프에서 그 앱 ID의 조합을 본다. 실측: V로 바꿨다 C로 되돌린 뒤 목록은 `a1`·`a3`만(옛 `a1_shift_alt_v` 항목이 남지 않음 = 바인드마다 목록이 바뀌는 것으로 보임).
+
 **앱이 고착을 스스로 푸는지 보기(10-04 22차 · T-66)**: 앱이 이제 포커스 뒤 5초 안에 고착을 보면 포털로 그 키의 누름+뗌을 주입해 푼다
 (로그 "팝업: 단축키 글자 키 고착 — 풀기 주입(키 N개)"). 하네스가 대신 풀면 앱 동작을 가리므로 `KEYPROBE_UNSTICK=none`으로 돌려
 **하네스는 풀지 않고** `서버 눌린 키`가 `[]`로 돌아오는지만 본다. ⚠️ **입력기 상태에 따라 새는 길이 다르다** — 영문 상태면 고착 글자의 오토리피트가
