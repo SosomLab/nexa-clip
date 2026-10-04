@@ -4,6 +4,9 @@
 
 | 브랜치 | 생성 | 병합 | 커밋 수 | 요약 |
 |---|---|---|---:|---|
+| `fix/onlyoffice-shape-layout-10-04` | 2026-10-04 | 2026-10-04 | 2 | ★ **ONLYOFFICE 개체 여러 개의 원래 배치 복원**(T-65 · 사용자 신고) — HTML `pptData` 이진의 도형 변환 기록(EMU)으로 자리를 읽어 합성(`onlyoffice_shape_rects` · `place_shapes` · `compose_at`) · 배율 안 맞으면 가로 배치로 물러남(휴리스틱) · V2 ✓(test 560) · ✅ 사용자 실기("슬라이드는 정상 동작!") · journal 10-04 20차 · 병합 `d0eb320`(커밋 `4bd8b2c` · `dcacfb3`) · push 안 함 |
+| `fix/html-picture-10-04` | 2026-10-04 | 2026-10-04 | 2 | 글 없이 인라인 그림뿐인 HTML(ONLYOFFICE 프레젠테이션) = **개체** — 그 그림으로 섬네일 · 라벨 "[이미지] W×H" · 개체도 이미지로 복사 · V2 ✓(test 557) · journal 10-04 19차 · 병합 `9d3f498`(커밋 `385dbc4` · `087e50f`) · push 안 함 |
+| `fix/copy-as-image-names-10-04` | 2026-10-04 | 2026-10-04 | 2 | "이미지로 복사"를 그 OS의 표현 이름으로 게시(Linux `image/png` · mac `public.png` · Windows 그대로) + Linux는 그림 항목 직접 생성 · V2 ✓(test 557) · journal 10-04 18차 ⑥·보충 · 병합 `e046eab`(커밋 `2c77b60` · `47ec0c7`) · push 안 함 |
 | `fix/bridge-echo-10-04` | 2026-10-04 | 2026-10-04 | 2 | ★ **클립보드 다리 되쓰기 흡수**(사용자 신고 10-04 · ONLYOFFICE 시트) — `vmware-user`가 5초 안에 평문만/다시 인코드한 그림으로 클립보드를 다시 쥐면 이력에 넣지 않음(`on_captured` · `Shell.last_local`·`own_image`) · 시트 표 서식 붙여넣기 ✓ 실기 · 이미지로 복사 사용자 실기 대기 · T-63 · V2 ✓(check-3os · test 557) · journal 10-04 18차 · 병합 `227e18d`(커밋 `0634890` · `1760e67`) · push 안 함 · 브랜치 남겨 둠 |
 | `fix/linux-qa-10-04b` | 2026-10-04 | 2026-10-04 | 2 | ★ **Linux QA 묶음**(사용자 10-04) — T-62 서식 글 대표 순위(핀 > 서식 > 로컬)·수신 평문 게시 가드 · T-61 축출 로그 · T-55 Nautilus 평문 표식 → 파일 · T-53 ⓐ 잘라내기 미전파(DR-45) · T-59 트레이 점 3개(DR-44 · 좌하단 파랑 = LAN 직결) · 알림 제목 버전 제외 · 그림 상한 설정 3키 · 문서 34(항목 종류) · V3 주기 1일 · journal 10-04 14~17차 · V2 ✓(check-3os · test 557) · 병합 `6e7d817`(커밋 `194b88f` · `d0a5801`) · push 안 함 · 브랜치 남겨 둠 · ⏸ 설치본 교체 보류(권한 거부) |
 | `docs/progress-10-04c` | 2026-10-04 | 2026-10-04 | 1 | 진행사항 최신화 · 오늘 마감(문서만) — journal 10-04 맨 위 요약 1~13차 · 13차(winget 0.1.6 자동 검증 중 · choco 0.1.5 Verification 대기) · STATUS·DEVLOG·TODO T-50 · 병합 해시 = 병합 커밋 참조 |
