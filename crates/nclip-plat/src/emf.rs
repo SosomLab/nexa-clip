@@ -107,6 +107,55 @@ pub fn emf_to_rgba(bytes: &[u8], max_side: u32) -> Option<(u32, u32, Vec<u8>)> {
     }
 }
 
+/// EMF 바이트 → **클립보드에 올릴 `HENHMETAFILE` 핸들**(10-04). 실패는 `None`.
+///
+/// `CF_ENHMETAFILE`은 핸들 포맷이라 바이트를 `HGLOBAL`에 담아 올리면 안 된다 —
+/// 받는 앱이 그 메모리 핸들을 메타파일로 쓰려다 실패한다. `SetClipboardData`가 성공하면
+/// 핸들은 **시스템 소유**이고, 실패했을 때만 [`delete_handle`]로 지운다.
+#[must_use]
+pub fn handle_from_bytes(bytes: &[u8]) -> Option<isize> {
+    if bytes.len() < 88 {
+        return None;
+    }
+    // SAFETY: 길이·포인터가 같은 슬라이스에서 나온다. 실패는 0.
+    let h = unsafe { SetEnhMetaFileBits(bytes.len() as u32, bytes.as_ptr()) };
+    (h != 0).then_some(h)
+}
+
+/// [`handle_from_bytes`]가 만든 핸들을 지운다(클립보드에 넘기지 못했을 때만).
+pub fn delete_handle(hemf: isize) {
+    // SAFETY: 우리가 만든 핸들을 한 번 지운다.
+    unsafe {
+        DeleteEnhMetaFile(hemf);
+    }
+}
+
+/// EMF 바이트 → **`CF_DIB` 바이트**(BITMAPINFOHEADER · 32bpp · 바텀업 BGRA · 흰 바탕).
+///
+/// 그림판처럼 **비트맵만 받는 앱**에 붙이기 위한 것(10-04 사용자 — "mspaint 기준으로 이미지
+/// 붙여넣기가 유지되게"). 감시는 Excel 범위의 비트맵을 받지 않으므로(수백 MB 위험)
+/// 붙여넣는 순간에 벡터 그림에서 만든다 — 보관하지 않는다.
+#[must_use]
+pub fn dib_from_bytes(bytes: &[u8], max_side: u32) -> Option<Vec<u8>> {
+    let (w, h, rgba) = emf_to_rgba(bytes, max_side)?;
+    let (wu, hu) = (w as usize, h as usize);
+    let mut out = Vec::with_capacity(40 + rgba.len());
+    out.extend_from_slice(&40u32.to_le_bytes()); // biSize
+    out.extend_from_slice(&(w as i32).to_le_bytes());
+    out.extend_from_slice(&(h as i32).to_le_bytes()); // 양수 = 바텀업
+    out.extend_from_slice(&1u16.to_le_bytes()); // planes
+    out.extend_from_slice(&32u16.to_le_bytes()); // bpp
+    out.extend_from_slice(&0u32.to_le_bytes()); // BI_RGB
+    out.extend_from_slice(&((wu * hu * 4) as u32).to_le_bytes());
+    out.extend_from_slice(&[0u8; 16]); // ppm×2 · clrUsed · clrImportant
+    for row in (0..hu).rev() {
+        for px in rgba[row * wu * 4..(row + 1) * wu * 4].chunks_exact(4) {
+            out.extend_from_slice(&[px[2], px[1], px[0], 0xFF]);
+        }
+    }
+    Some(out)
+}
+
 /// 본체 — `hemf` 정리는 호출자 몫.
 unsafe fn raster(hemf: Handle, max_side: u32) -> Option<(u32, u32, Vec<u8>)> {
     unsafe {
