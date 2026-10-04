@@ -43,14 +43,24 @@ pub fn bound_trigger() -> String {
     TRIGGER.lock().map(|g| g.clone()).unwrap_or_default()
 }
 
+/// 등록 세대 — 다시 등록할 때마다 오른다. 옛 세대의 대기 스레드는 자기 세대가 아니면 물러난다.
+static GEN: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+/// 지금 살아 있는 포털 세션(연결 · 세션 경로) — 다시 등록할 때 닫는다.
+static CURRENT: Mutex<Option<(Connection, OwnedObjectPath)>> = Mutex::new(None);
+
 /// 포털 등록 + 신호 대기 스레드 기동. 실패도 `Bound { ok: false }`로 **반드시 한 번** 알린다.
+///
+/// ★ 다시 불러도 된다(10-05 · T-38) — 설정에서 단축키를 바꾸면 옛 세션을 닫고 새 조합으로 새 세션을 연다.
+/// 종전에는 기동 때 한 번만 등록해, 바꾼 단축키가 다음 시작에야 먹었다(Windows·mac은 즉시).
 pub fn spawn(
     binds: Vec<(String, String, String)>,
     on_event: Box<dyn Fn(HotkeyEvent) + Send + Sync>,
 ) {
+    use std::sync::atomic::Ordering;
+    let gen = GEN.fetch_add(1, Ordering::SeqCst) + 1;
     let _ = std::thread::Builder::new()
         .name("nclip-hotkey".into())
-        .spawn(move || match run(&binds, &on_event) {
+        .spawn(move || match run(&binds, &on_event, gen) {
             Ok(()) => {}
             Err(e) => {
                 // ★ 사유를 버리지 않는다(09-05) — 종전엔 `Err(_)`라 셸이 "포털이 없거나 거부됨"
@@ -98,7 +108,25 @@ where
 fn run(
     binds: &[(String, String, String)],
     on_event: &(dyn Fn(HotkeyEvent) + Send + Sync),
+    gen: u32,
 ) -> zbus::Result<()> {
+    use std::sync::atomic::Ordering;
+    // 옛 세션 닫기 — 닫아야 셸이 옛 조합을 놓는다(같은 조합을 새 세션이 다시 잡을 수 있다).
+    if let Some((old_conn, old_session)) = CURRENT.lock().ok().and_then(|mut g| g.take()) {
+        let _ = old_conn.call_method(
+            Some(PORTAL_DEST),
+            old_session.as_str(),
+            Some("org.freedesktop.portal.Session"),
+            "Close",
+            &(),
+        );
+    }
+    // 요청·세션 토큰은 세대마다 달라야 한다(같은 경로를 다시 쓰면 응답이 섞인다).
+    let (tok_session_req, tok_session, tok_bind) = (
+        format!("nclip_req_session{gen}"),
+        format!("nclip_session{gen}"),
+        format!("nclip_req_bind{gen}"),
+    );
     let conn = Connection::session()?;
     let portal = Proxy::new(&conn, PORTAL_DEST, PORTAL_PATH, IFACE)?;
     // 포털 부재 = 여기서 실패(version 속성 조회).
@@ -106,15 +134,10 @@ fn run(
 
     // ① 세션.
     let mut opts: HashMap<&str, Value<'_>> = HashMap::new();
-    opts.insert("handle_token", Value::from("nclip_req_session"));
-    opts.insert("session_handle_token", Value::from("nclip_session"));
-    let (code, results) = call_with_response(
-        &conn,
-        &portal,
-        "CreateSession",
-        &(opts,),
-        "nclip_req_session",
-    )?;
+    opts.insert("handle_token", Value::from(tok_session_req.as_str()));
+    opts.insert("session_handle_token", Value::from(tok_session.as_str()));
+    let (code, results) =
+        call_with_response(&conn, &portal, "CreateSession", &(opts,), &tok_session_req)?;
     if code != 0 {
         return Err(zbus::Error::Unsupported);
     }
@@ -136,13 +159,13 @@ fn run(
         shortcuts.push((id.as_str(), sc));
     }
     let mut opts: HashMap<&str, Value<'_>> = HashMap::new();
-    opts.insert("handle_token", Value::from("nclip_req_bind"));
+    opts.insert("handle_token", Value::from(tok_bind.as_str()));
     let (code, results) = call_with_response(
         &conn,
         &portal,
         "BindShortcuts",
         &(&session, shortcuts, "", opts),
-        "nclip_req_bind",
+        &tok_bind,
     )?;
     let trigger = if code == 0 {
         trigger_description(&results)
@@ -162,16 +185,26 @@ fn run(
 
     // ④ 눌림 대기 — 세션이 살아 있는 동안.
     //   ★ 쥐고 있는 동안의 반복은 버린다(10-04 사용자 — "떼기 전에는 1회만") — [`RepeatFilter`].
+    if let Ok(mut g) = CURRENT.lock() {
+        *g = Some((conn.clone(), session.clone()));
+    }
     let first_gap = key_repeat_delay_ms() + REPEAT_SLACK_MS;
     let mut filters: HashMap<String, RepeatFilter> = HashMap::new();
     let started = std::time::Instant::now();
     for msg in activated {
-        let Ok((_s, id, ts, _o)) = msg
+        // 다시 등록됐으면(세대가 바뀜) 이 스레드는 물러난다.
+        if GEN.load(Ordering::SeqCst) != gen {
+            return Ok(());
+        }
+        let Ok((s, id, ts, _o)) = msg
             .body()
             .deserialize::<(OwnedObjectPath, String, u64, Results)>()
         else {
             continue;
         };
+        if s != session {
+            continue; // 다른 세션의 신호.
+        }
         // 포털 시각(ms)이 없으면(0) 받은 시각으로 대신한다.
         #[allow(clippy::cast_possible_truncation)]
         let ts = if ts == 0 {
