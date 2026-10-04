@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-10-05 (11차 · linux) — ★ v0.1.7 릴리스 준비 · 배포 전 V3 ✓
+
+**게시 상태**(03:10 KST): winget 0.1.6 #446464·#446465 = OPEN · Validation-Completed · 모더레이터 대기(사람 댓글 0) · choco 0.1.5 = in moderation · Validation Passed · Verification·Scan Pending · 검수자 새 요구 0 · brew = 0.1.6.
+**판정**: v0.1.7 태그 = winget skip(열린 PR · 닫지 않고 대기) · choco skip(0.1.5 검수 중) · brew 자동. ★ choco guard 결함(직전 git 태그 기준 → 0.1.6 미제출이라 영구 skip) → **"choco에 마지막으로 낸 버전" 기준으로 수정**(개발 세션 · 음성·양성·이력 없음 대조).
+**V3**(협업 세션): rustc 1.99 · check-3os ✓ · test 574 ✓ · Release ✓ `nexa-clip 0.1.7` 4.6MB ≤ 10MB · 유휴 메모리 최고 20.7MB ≤ 40MB · 렌더 게이트 ✓(영어 전용 · copyright) · E2E 생략(wl-copy·xclip 미설치) · Windows·mac 실기 미실시.
+**☐ 다음**: 커밋 → 병합 → push → CI → 태그 v0.1.7 → release 감시 · 저장소 변수 확인(사용자). → [journal](journal/2026-10-05.md)
+
+---
+
 ## 2026-10-05 (10차 · linux) — 진행사항 최신화
 
 **상태**: main `3cc703d` · push `d2d3dbd..3cc703d`(문서) · CI `37221297704` ✅ · **설치본 PID 589231**(`aa383cd` 빌드 · 동작 = 최신 소스) · Debug 없음 · 로컬 rustc 1.99.0 · ★ v0.1.7 후보 누적(10-04 15~22차 + 10-05 1~9차 · 배포 전 V3 필요).
