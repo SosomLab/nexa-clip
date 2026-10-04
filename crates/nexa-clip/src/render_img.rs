@@ -168,6 +168,7 @@ pub(crate) fn render_runs(
 
 /// RGBA → `CF_DIBV5`가 아닌 **`CF_DIB`(BITMAPINFOHEADER · 32bpp · 바텀업 BGRA)** —
 /// PPT·Word가 가장 널리 받는 레거시 형태.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 pub(crate) fn dib_from_rgba(w: u32, h: u32, rgba: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(40 + rgba.len());
     let px = u64::from(w) * u64::from(h);
