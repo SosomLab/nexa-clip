@@ -166,7 +166,7 @@ pub(crate) enum ShellEvent {
         /// 항목 사이에 Enter 한 번.
         newline: bool,
     },
-    /// ★ 동기화 릴레이 연결 상태(09-03) — 트레이 점·메인 인디케이터 갱신.
+    /// ★ 동기화 **릴레이** 연결 상태(09-03) — 트레이 녹색 점·메인 인디케이터 갱신(LAN 직결은 `SyncTick`이 깨운다).
     SyncState(bool),
     /// ★ 러너 상태만 바뀜(접속 중·실패·중단) — 루프를 깨워 설정 창 폴링을 돌린다(09-03).
     SyncTick,
@@ -238,27 +238,25 @@ fn tooltip(held: usize) -> String {
     }
 }
 
-/// ★ 좌상단 녹색 점 오버레이(09-03 — beep 화법: 연결됨 배지).
-fn overlay_sync_dot(rgba: &mut [u8], side: u32) {
-    // ★ 09-03 실기: 아이콘을 가리지 않게 더 작게(5/32) · 좌상단 밀착(중심 = 반지름).
-    let r = ((side as i32) * 5 / 32).max(3);
-    let (cx, cy) = (r, r);
-    for y in 0..side as i32 {
-        for x in 0..side as i32 {
-            let dx = x - cx;
-            let dy = y - cy;
+/// 귀퉁이 점 하나를 아이콘 위에 얹는다 — 테두리(짙은 색) + 본체(밝은 색)라 어두운 배경에서도 또렷하다.
+/// ★ 09-03 실기: 아이콘을 가리지 않게 작게(5/32) · 귀퉁이 밀착(중심 = 반지름).
+fn overlay_dot(rgba: &mut [u8], side: u32, at: Corner, rim: (u8, u8, u8), body: (u8, u8, u8)) {
+    let s = side as i32;
+    let r = (s * 5 / 32).max(3);
+    let (cx, cy) = match at {
+        Corner::TopLeft => (r, r),
+        Corner::BottomLeft => (r, s - 1 - r),
+        Corner::BottomRight => (s - 1 - r, s - 1 - r),
+    };
+    for y in 0..s {
+        for x in 0..s {
+            let (dx, dy) = (x - cx, y - cy);
             let d2 = dx * dx + dy * dy;
             if d2 > r * r {
                 continue;
             }
-            let i = ((y * side as i32 + x) * 4) as usize;
-            // 테두리(짙은 녹) + 본체(밝은 녹) — 어두운 배경에서도 또렷하게.
-            let rim = d2 > (r - 2) * (r - 2);
-            let (cr, cg, cb) = if rim {
-                (16u8, 96u8, 40u8)
-            } else {
-                (46u8, 204u8, 64u8)
-            };
+            let i = ((y * s + x) * 4) as usize;
+            let (cr, cg, cb) = if d2 > (r - 2) * (r - 2) { rim } else { body };
             rgba[i] = cr;
             rgba[i + 1] = cg;
             rgba[i + 2] = cb;
@@ -267,16 +265,55 @@ fn overlay_sync_dot(rgba: &mut [u8], side: u32) {
     }
 }
 
-fn content(held: usize, recent: Vec<String>, sync_on: bool) -> TrayContent {
+/// 트레이 아이콘 귀퉁이 점의 자리.
+#[derive(Clone, Copy)]
+enum Corner {
+    TopLeft,
+    BottomLeft,
+    BottomRight,
+}
+
+/// ★ 트레이 아이콘의 점 세 개(10-04 사용자 확정 · T-59) — 서로 독립이라 함께 뜰 수 있다.
+///
+/// | 자리 | 색 | 뜻 |
+/// |---|---|---|
+/// | 좌상단 | 녹 | 릴레이(온라인) 연결됨 |
+/// | 좌하단 | 파랑 | 같은 네트워크(LAN) 기기와 직결 세션 있음 |
+/// | 우하단 | 주황 | 파일 받는 중 |
+///
+/// 녹·파랑이 함께 = 릴레이와 LAN 직결이 둘 다 살아 있다. 종전에는 LAN 직결만으로는 아무 점도 없어
+/// "동기화되는데 표시가 없다"(10-03 사용자)였고, 좌하단 파랑은 파일 전송 표식이었다(우하단 주황으로 옮김).
+fn content(held: usize, recent: Vec<String>, sync_on: bool, lan_on: bool) -> TrayContent {
     let lang = current_lang();
     let mut rgba = icon_rgba();
     if sync_on {
-        overlay_sync_dot(&mut rgba, ICON_SIDE);
+        overlay_dot(
+            &mut rgba,
+            ICON_SIDE,
+            Corner::TopLeft,
+            (16, 96, 40),
+            (46, 204, 64),
+        );
     }
-    // ★ 파일 전송 중(09-12) — 좌하단 파랑 점 + 툴팁에 "N개 받는 중 · P%".
+    if lan_on {
+        overlay_dot(
+            &mut rgba,
+            ICON_SIDE,
+            Corner::BottomLeft,
+            (20, 60, 140),
+            (52, 120, 246),
+        );
+    }
+    // ★ 파일 전송 중(09-12) — 우하단 주황 점 + 툴팁에 "N개 받는 중 · P%".
     let mut tip = tooltip(held);
     if let Some((n, pct)) = crate::xfer::active_summary() {
-        overlay_xfer_dot(&mut rgba, ICON_SIDE);
+        overlay_dot(
+            &mut rgba,
+            ICON_SIDE,
+            Corner::BottomRight,
+            (150, 80, 0),
+            (255, 160, 20),
+        );
         let line = tr(lang, Msg::TrayXfer)
             .replacen("{}", &n.to_string(), 1)
             .replacen("{}", &pct.to_string(), 1);
@@ -289,37 +326,12 @@ fn content(held: usize, recent: Vec<String>, sync_on: bool) -> TrayContent {
         // ★ 메뉴 머리줄에 버전(10-04 사용자 — "프로그램 이름 옆에 버전") — 설치본을 교체한 뒤
         //   지금 도는 것이 어느 버전인지 트레이에서 바로 보인다.
         name: format!("{} v{}", tr(lang, Msg::AppName), env!("CARGO_PKG_VERSION")),
+        // ★ 알림·단축키 설명에는 버전을 붙이지 않는다(10-04 사용자).
+        plain_name: tr(lang, Msg::AppName).to_string(),
         open_label: tr(lang, Msg::TrayOpen).to_string(),
         quit_label: tr(lang, Msg::TrayQuit).to_string(),
         settings_label: tr(lang, Msg::TraySettings).to_string(),
         recent,
-    }
-}
-
-/// ★ 전송 중 표식(09-12) — 좌하단 파랑 점(상태줄 "None 로컬" 파랑과 같은 계열 · 동기화 녹색 점과 대각).
-fn overlay_xfer_dot(rgba: &mut [u8], side: u32) {
-    let r = ((side as i32) * 5 / 32).max(3);
-    let (cx, cy) = (r, side as i32 - 1 - r);
-    for y in 0..side as i32 {
-        for x in 0..side as i32 {
-            let dx = x - cx;
-            let dy = y - cy;
-            let d2 = dx * dx + dy * dy;
-            if d2 > r * r {
-                continue;
-            }
-            let i = ((y * side as i32 + x) * 4) as usize;
-            let rim = d2 > (r - 2) * (r - 2);
-            let (cr, cg, cb) = if rim {
-                (20u8, 60u8, 140u8)
-            } else {
-                (52u8, 120u8, 246u8)
-            };
-            rgba[i] = cr;
-            rgba[i + 1] = cg;
-            rgba[i + 2] = cb;
-            rgba[i + 3] = 255;
-        }
     }
 }
 
@@ -443,6 +455,8 @@ struct Shell {
     paste_auto: bool,
     /// ★ 동기화 연결 상태(09-03) — None = 기능 꺼짐 · Some(on) = 켜짐/연결 여부.
     sync_on: Option<bool>,
+    /// ★ LAN 직결 세션이 하나라도 있는가(10-04 · T-59) — 트레이 좌하단 파랑 점.
+    lan_on: bool,
     /// ★ 원격 항목 에코 차단(09-04) — 방금 적용한 항목의 페이로드 지문·시각. 감시가 우리
     ///   게시를 다시 잡아 승격시켜도 **되돌려 보내지 않는다**(핑퐁 방지).
     sync_skip: Option<(u64, std::time::Instant)>,
@@ -488,6 +502,52 @@ fn cached_reps(local: &[String], as_: PasteAs) -> Vec<RawRep> {
         reps.extend(nclip_plat::clipboard::plain_text_reps(&local.join("\r\n")));
     }
     reps
+}
+
+/// ★ Excel 셀 범위 그림 상한(10-04 사용자 — "설정으로 추가") — 설정 3키를 코어에 넘긴다.
+/// 못 읽는 값·0은 기본값으로(그림을 통째로 끄는 스위치가 아니다).
+fn apply_cell_picture_limits(conf: &Settings) {
+    use nclip_core::capture::{set_cell_picture_limits, CellPictureLimits};
+    let def = CellPictureLimits::default();
+    let get = |k: &str, d: u32| {
+        conf.state
+            .get(k)
+            .parse::<u32>()
+            .ok()
+            .filter(|v| *v > 0)
+            .unwrap_or(d)
+    };
+    set_cell_picture_limits(CellPictureLimits {
+        rows: get("cap.cell_pic_rows", def.rows),
+        cols: get("cap.cell_pic_cols", def.cols),
+        cells: get("cap.cell_pic_cells", def.cells),
+    });
+}
+
+/// ★ 축출 로그(T-61 · 10-04) — 이력이 줄면 **몇 건을 왜 지웠는지** 한 줄(조용히 지우지 않는다 · DR-31).
+fn log_evictions(c: nclip_core::history::EvictCounts, left: usize) {
+    if c.total() == 0 {
+        return;
+    }
+    let mut why = Vec::new();
+    if c.bytes > 0 {
+        why.push(format!(
+            "용량 예산 {}건({}MB)",
+            c.bytes,
+            c.freed_bytes / 1_000_000
+        ));
+    }
+    if c.cap > 0 {
+        why.push(format!("개수 상한 {}건", c.cap));
+    }
+    if c.age > 0 {
+        why.push(format!("보관 기한 {}건", c.age));
+    }
+    println!(
+        "이력 축출: {}건 — {} · 남은 이력 {left}개(고정 항목은 지우지 않음)",
+        c.total(),
+        why.join(" · ")
+    );
 }
 
 /// ★ 원격 항목의 클립보드 게시 — **전용 스레드에서, 마지막 것만**(10-04 · DR-41).
@@ -543,6 +603,7 @@ impl Shell {
             self.history.len(),
             self.history.recent_labels(self.tray_n),
             self.sync_on == Some(true),
+            self.lan_on,
         ));
     }
 
@@ -1177,7 +1238,8 @@ impl Shell {
         }
     }
 
-    /// ★ 연결 표시 재판정(09-04) — None = 기능 꺼짐(아이콘 없음) · Some(on) = 릴레이 연결 ∨ LAN 피어 연결.
+    /// ★ 연결 표시 재판정(09-04 · 10-04 T-59) — `sync_on`: None = 기능 꺼짐 · Some(on) = **릴레이** 연결 여부
+    /// (트레이 좌상단 녹색 점 · 툴바 아이콘) · `lan_on` = LAN 직결 세션 ≥ 1(트레이 좌하단 파랑 점).
     fn refresh_sync_indicator(&mut self) {
         use crate::main_win::SyncMode;
         use crate::sync_cmd::SyncStatus as S;
@@ -1195,6 +1257,16 @@ impl Shell {
             SyncMode::Local | SyncMode::RelayDown => Some(false),
         };
         self.main.set_sync_mode(mode);
+        // ★ LAN 직결 세션(10-04 · T-59) — 릴레이와 독립이다(None이어도, 릴레이가 끊겨도 뜬다).
+        let lan = mode != SyncMode::Off && crate::sync_cmd::has_lan_peers();
+        if self.lan_on != lan {
+            self.lan_on = lan;
+            self.refresh_tray();
+            println!(
+                "동기화 상태: LAN 직결 {}",
+                if lan { "연결됨" } else { "없음" }
+            );
+        }
         if self.sync_on != next {
             self.sync_on = next;
             self.refresh_tray();
@@ -1217,6 +1289,10 @@ impl Shell {
         // ★ 감시 끄기(09-04) — 로컬 캡처만 버린다(수신 항목은 감시가 아니라 동기화).
         if self.watch_off && remote.is_none() {
             return;
+        }
+        // ★ Nautilus 레거시 표식(T-55 · 10-04) — 평문 내용에 실린 파일 복사를 파일 표현으로 올린다.
+        if nclip_core::capture::promote_nautilus_text(&mut snap.reps) {
+            println!("캡처: 평문에 실린 파일 표식(nautilus-clipboard) → 파일 항목으로 올림");
         }
         // ★ CF_HTML 정제(T-14d · D-62 1단) — 캡처 때 한 번만(재적재·저장은 이미 깨끗).
         for r in &mut snap.reps {
@@ -1245,6 +1321,7 @@ impl Shell {
         // ★ 설정 즉시 반영 — 설정 창에서 바꾼 값이 다음 캡처부터 산다
         //   (게이트·상한·메뉴 개수·자동 붙여넣기 — 재시작 불요).
         self.gate = Gate::from_state(&self.app.conf);
+        apply_cell_picture_limits(&self.app.conf);
         self.history.set_cap(
             self.app
                 .conf
@@ -1403,6 +1480,7 @@ impl Shell {
         for id in self.history.drain_evicted() {
             self.store.remove(id);
         }
+        log_evictions(self.history.take_evict_counts(), self.history.len());
         self.refresh_tray();
         self.main.on_history_changed(&self.history);
         if self.popup.is_open() {
@@ -1427,6 +1505,12 @@ impl Shell {
         // 릴레이 연결 여부로 막지 않는다(09-04 LAN 직결) — 승인·온라인 피어가 없으면 broadcast가 0을 돌려준다.
         if !crate::sync_cmd::has_peers() {
             return; // 보낼 곳이 없으면 워커도 띄우지 않는다(대부분의 복사).
+        }
+        // ★ 잘라내기는 전파하지 않는다(T-53 · 10-04) — 붙여넣으면 원본이 옮겨져 상대의 경로가 허공이 된다.
+        //   Windows는 잘라내기에 CF_HDROP이 없어 저절로 안 간다 — 같은 결로 맞춘다(이력에는 남는다).
+        if nclip_core::capture::is_file_cut(&snap.reps) {
+            println!("동기화: 잘라내기 — 전파하지 않습니다(이 PC 이력에만 남김)");
+            return;
         }
         // ★ 우리 캐시의 파일(원격 약속을 실체화한 것)은 **절대 전파하지 않는다**(09-12 연쇄 차단 · 이중 방어).
         if crate::xfer::all_cache_paths(&nclip_core::paths_of(&snap.reps)) {
@@ -1485,6 +1569,18 @@ impl Shell {
         }
         println!("동기화: ← {from} 항목 수신 — {summary}");
         let promise = crate::syncitem::has_promise(&reps);
+        // ★ 받은 것이 지금 맨 앞 서식 항목의 **평문판**이면 게시하지 않는다(10-04 사용자 실기 —
+        //   서식 글을 복사한 직후 상대가 같은 글을 평문으로 되돌려 보내 클립보드의 서식이 덮였다).
+        let downgrade = self.history.get(0).is_some_and(|front| {
+            crate::dedup::is_plain_downgrade(
+                front.kind,
+                crate::main_win::plain_of(&front.reps).as_deref(),
+                nclip_core::capture::classify(
+                    &reps.iter().map(|r| r.format.as_str()).collect::<Vec<_>>(),
+                ),
+                crate::main_win::plain_of(&reps).as_deref(),
+            )
+        });
         let snap = ClipSnapshot {
             reps: reps.clone(),
             source_app: Some(format!("{REMOTE_MARK}{from}")),
@@ -1503,6 +1599,10 @@ impl Shell {
         //   기다릴 수 있다(`dataForType:` — 응답이 늦은 앱·가상 머신 클립보드 다리). 그동안 여기서
         //   잠금을 기다리면 창·트레이·단축키가 통째로 멎는다. 에코 기대는 게시 전에 걸어 둔다(지문 대조라
         //   게시가 실패해도 다른 복사를 삼키지 않는다).
+        if downgrade {
+            println!("동기화: 클립보드 게시 생략 — 지금 클립보드의 서식 글과 같은 글의 평문입니다");
+            return;
+        }
         self.history.expect_echo(0);
         publish_remote(reps);
     }
@@ -2420,6 +2520,7 @@ pub(crate) fn run() {
     for id in history.drain_evicted() {
         store.remove(id);
     }
+    log_evictions(history.take_evict_counts(), history.len());
 
     // ★ 단축키 목록을 트레이 기동 **전에** 넘긴다(09-04 mac 실기 "⇧⌥C 무동작") —
     //   mac(Carbon)·Linux(포털)는 기동 때 한 번만 읽는다: 뒤에 넘기면 빈 목록으로 등록돼
@@ -2431,7 +2532,7 @@ pub(crate) fn run() {
     //   ★ 복원을 먼저 끝내 첫 우클릭부터 최근이 보인다(09-01 D1 — 예전엔 빈 메뉴로 떴다).
     let proxy = el.create_proxy();
     let Some(tray) = spawn(
-        content(history.len(), history.recent_labels(tray_n), false),
+        content(history.len(), history.recent_labels(tray_n), false, false),
         move |ev| {
             let _ = proxy.send_event(match ev {
                 TrayEvent::Quit => ShellEvent::Quit,
@@ -2528,6 +2629,7 @@ pub(crate) fn run() {
 
     let paste_auto = conf.state.get("paste.auto") == "on";
     let gate = Gate::from_state(&conf);
+    apply_cell_picture_limits(&conf);
 
     // 팝업은 자기 폰트를 따로 든다(mmap 정적 데이터라 값싸다 — App이 font를 소유해서).
     let popup_font = font.clone();
@@ -2577,6 +2679,7 @@ pub(crate) fn run() {
         paste: PlatformPaste::new(),
         paste_auto,
         sync_on: None,
+        lan_on: false,
         sync_skip: None,
         proxy: el.create_proxy(),
         atop_effective,

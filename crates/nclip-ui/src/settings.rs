@@ -352,6 +352,10 @@ const RADIO_DEFAULTS: &[(&str, &str)] = &[
     ("sync.file_cache_mb", "2000"),
     ("ui.theme", "system"),
     ("ui.tray_recent_n", "8"),
+    // ★ Excel 셀 범위 그림 상한(10-04) — nclip_core::capture::CELL_PICTURE_MAX_* 와 같은 값.
+    ("cap.cell_pic_rows", "200"),
+    ("cap.cell_pic_cols", "50"),
+    ("cap.cell_pic_cells", "5000"),
     ("store.max_items", "1000"),
     // ★ T-13(09-01 확정): 기간 무제한(0) + 총용량 500MB.
     ("store.max_age_days", "0"),

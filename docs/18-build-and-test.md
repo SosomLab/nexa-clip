@@ -476,6 +476,11 @@ XKB 오토리피트는 raw 이벤트가 **없고** `xev -id`로도 창의 KeyPre
 `NEXA_CLIP_KEYDIAG=1`로 띄우면 팝업의 `KeyboardInput`(state·물리/논리 키·text·repeat·synthetic·admitted)·`Ime`·프로브 결과를 stdout에 찍는다
 (설치본 조건으로 보려면 release 바이너리를 앱 이름 스코프에서 직접: `systemd-run --user --scope --unit "app-nexa\x2dclip-$$.scope" env NEXA_CLIP_KEYDIAG=1 target/release/nexa-clip`).
 
+**하네스 교훈(10-04 15차 · Debug 인스턴스로 팝업 E2E)**:
+- `NCLIP_RD_TOKEN`은 **쓸 수 있는 파일 경로**로 준다 — 쓸 수 없는 경로면 포털 "원격 데스크톱" 승인 창이 매 실행 뜬다. 쓸 수 있는 경로 + 첫 승인 때 "이 선택 기억" 한 번이면 이후 무인(Debug = VS Code 스코프에서도).
+- `xdotool type` 전에 ibus를 `xkb:us::eng`로 바꾸고 끝나면 `hangul`로 되돌린다 — 안 바꾸면 한글 자모로 들어간다.
+- 팝업이 뜬 뒤의 키(검색어 · Enter)는 xdotool로도 들어간다(팝업 = XWayland 창).
+
 ---
 
 ## 10. 배포 — `release.yml` · brew · winget · Chocolatey (09-04)

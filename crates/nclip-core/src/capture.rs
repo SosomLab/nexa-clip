@@ -285,6 +285,54 @@ pub const CELL_PICTURE_MAX_COLS: u32 = 50;
 /// 셀 수 상한(행 × 열).
 pub const CELL_PICTURE_MAX_CELLS: u32 = 5_000;
 
+/// ★ 셀 범위 그림 상한(행 · 열 · 셀) — 설정에서 바꿀 수 있다(10-04 사용자 — "설정으로 추가").
+/// 기본 = [`CELL_PICTURE_MAX_ROWS`] · [`CELL_PICTURE_MAX_COLS`] · [`CELL_PICTURE_MAX_CELLS`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CellPictureLimits {
+    /// 행 상한.
+    pub rows: u32,
+    /// 열 상한.
+    pub cols: u32,
+    /// 셀 수 상한(행 × 열).
+    pub cells: u32,
+}
+
+impl Default for CellPictureLimits {
+    fn default() -> Self {
+        Self {
+            rows: CELL_PICTURE_MAX_ROWS,
+            cols: CELL_PICTURE_MAX_COLS,
+            cells: CELL_PICTURE_MAX_CELLS,
+        }
+    }
+}
+
+static CELL_LIMIT_ROWS: std::sync::atomic::AtomicU32 =
+    std::sync::atomic::AtomicU32::new(CELL_PICTURE_MAX_ROWS);
+static CELL_LIMIT_COLS: std::sync::atomic::AtomicU32 =
+    std::sync::atomic::AtomicU32::new(CELL_PICTURE_MAX_COLS);
+static CELL_LIMIT_CELLS: std::sync::atomic::AtomicU32 =
+    std::sync::atomic::AtomicU32::new(CELL_PICTURE_MAX_CELLS);
+
+/// 셀 범위 그림 상한을 바꾼다 — 호스트가 설정(`cap.cell_pic_*`)을 읽어 넘긴다. 다음 복사부터 산다.
+pub fn set_cell_picture_limits(l: CellPictureLimits) {
+    use std::sync::atomic::Ordering::Relaxed;
+    CELL_LIMIT_ROWS.store(l.rows, Relaxed);
+    CELL_LIMIT_COLS.store(l.cols, Relaxed);
+    CELL_LIMIT_CELLS.store(l.cells, Relaxed);
+}
+
+/// 지금 적용 중인 셀 범위 그림 상한.
+#[must_use]
+pub fn cell_picture_limits() -> CellPictureLimits {
+    use std::sync::atomic::Ordering::Relaxed;
+    CellPictureLimits {
+        rows: CELL_LIMIT_ROWS.load(Relaxed),
+        cols: CELL_LIMIT_COLS.load(Relaxed),
+        cells: CELL_LIMIT_CELLS.load(Relaxed),
+    }
+}
+
 /// ★ Excel `Link` 표현에서 **복사한 범위의 크기**(행 수 · 열 수)를 읽는다.
 ///
 /// `Link`(DDE 연결 정보)는 `앱\0문서·시트\0범위\0\0` 꼴의 작은 글자열이고, 범위는 R1C1 표기다
@@ -349,6 +397,17 @@ pub fn cell_range_dims(link: &[u8]) -> Option<(u32, u32)> {
 /// `names` = 지금 클립보드에 있는 표현 이름 전부, `fmt` = 판정할 표현, `link` = `Link` 표현의 바이트.
 #[must_use]
 pub fn skip_render<S: AsRef<str>>(names: &[S], fmt: &str, link: Option<&[u8]>) -> bool {
+    skip_render_with(names, fmt, link, cell_picture_limits())
+}
+
+/// [`skip_render`]의 본체 — 상한을 인자로 받는다(순수 · 테스트가 직접 본다).
+#[must_use]
+pub fn skip_render_with<S: AsRef<str>>(
+    names: &[S],
+    fmt: &str,
+    link: Option<&[u8]>,
+    limits: CellPictureLimits,
+) -> bool {
     if !(is_bitmap_format(fmt) || is_metafile_format(fmt))
         || !names.iter().any(|n| is_cell_range_format(n.as_ref()))
     {
@@ -358,9 +417,7 @@ pub fn skip_render<S: AsRef<str>>(names: &[S], fmt: &str, link: Option<&[u8]>) -
         return true;
     }
     !link.and_then(cell_range_dims).is_some_and(|(rows, cols)| {
-        rows <= CELL_PICTURE_MAX_ROWS
-            && cols <= CELL_PICTURE_MAX_COLS
-            && rows.saturating_mul(cols) <= CELL_PICTURE_MAX_CELLS
+        rows <= limits.rows && cols <= limits.cols && rows.saturating_mul(cols) <= limits.cells
     })
 }
 
@@ -827,6 +884,85 @@ pub fn paths_of(reps: &[crate::RawRep]) -> Vec<String> {
         }
     }
     out
+}
+
+/// Nautilus 레거시 표식 — 평문 **내용**의 첫 줄에 오는 이름(형식 이름이 아니다).
+const NAUTILUS_TEXT_MARK: &str = "x-special/nautilus-clipboard";
+
+/// ★ 평문에 실려 온 **Nautilus 레거시 파일 표식**을 파일 표현으로 올린다(T-55 · 10-04).
+///
+/// Nautilus 3.x 계열과 VMware Tools 클립보드 다리(`vmtoolsd -n vmusr`)는 파일 복사를
+/// `text/plain` **내용**에 싣는다:
+///
+/// ```text
+/// x-special/nautilus-clipboard
+/// copy
+/// file:///home/u/a.txt
+/// ```
+///
+/// 형식 이름만 보면 글이라, 그대로 두면 이 생 문자열이 글 항목으로 남고 상대 기기에도 글로 간다.
+/// 첫 줄이 표식이고 `file://` 줄이 하나라도 있으면 그 평문 표현을
+/// `x-special/gnome-copied-files`(동사 줄 + URI) + `text/uri-list`로 **바꿔 놓는다** —
+/// 이후 판정·전파·붙여넣기는 파일 관리자 복사와 같은 길을 탄다. 바꿨으면 `true`.
+pub fn promote_nautilus_text(reps: &mut Vec<crate::RawRep>) -> bool {
+    let Some(i) = reps.iter().position(|r| {
+        plain_rank(&r.format).is_some()
+            && std::str::from_utf8(&r.data).is_ok_and(|t| {
+                let mut lines = t.lines();
+                lines.next().map(str::trim) == Some(NAUTILUS_TEXT_MARK)
+                    && !parse_uri_list(t).is_empty()
+            })
+    }) else {
+        return false;
+    };
+    let text = String::from_utf8_lossy(&reps[i].data).into_owned();
+    let body: Vec<&str> = text
+        .lines()
+        .skip(1)
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .collect();
+    let uris: Vec<&str> = body
+        .iter()
+        .copied()
+        .filter(|l| l.starts_with("file://"))
+        .collect();
+    // 동사 줄이 없는 변종은 복사로 본다(파일을 옮기는 쪽으로 지어내지 않는다).
+    let verb = if body.first() == Some(&"cut") {
+        "cut"
+    } else {
+        "copy"
+    };
+    let copied = format!("{verb}\n{}", uris.join("\n"));
+    // 다른 평문 별칭(같은 생 문자열)은 걷어낸다 — 남기면 붙여넣기에서 글이 이긴다.
+    reps.retain(|r| plain_rank(&r.format).is_none());
+    reps.push(crate::RawRep {
+        format: "x-special/gnome-copied-files".into(),
+        data: copied.into_bytes(),
+    });
+    reps.push(crate::RawRep {
+        format: "text/uri-list".into(),
+        data: format!("{}\r\n", uris.join("\r\n")).into_bytes(),
+    });
+    true
+}
+
+/// ★ **잘라내기**인가(T-53 · 10-04) — Linux 파일 관리자 표현의 첫 줄 동사가 `cut`.
+///
+/// 잘라내기는 붙여넣는 순간 원본이 **옮겨진다** — 다른 기기로 보내면 그쪽에서는 경로만 남고
+/// 원본은 사라질 수 있다. Windows 탐색기는 잘라내기에 `CF_HDROP`을 주지 않아 저절로 안 가므로,
+/// Linux도 같은 결로 **전파하지 않는다**(이 PC 이력에는 남는다). mac은 잘라내기 개념이 없다.
+#[must_use]
+pub fn is_file_cut(reps: &[crate::RawRep]) -> bool {
+    reps.iter().any(|r| {
+        matches!(
+            r.format.as_str(),
+            "x-special/gnome-copied-files"
+                | "x-special/KDE-copied-files"
+                | "x-special/nautilus-clipboard"
+        ) && std::str::from_utf8(&r.data)
+            .is_ok_and(|t| t.lines().next().map(str::trim) == Some("cut"))
+    })
 }
 
 /// 경로에서 **이름만** 뽑는다 — 목록에 전체 경로를 띄우면 길고 사생활이다.
@@ -2709,5 +2845,117 @@ mod file_path_tests {
             paths_of(&reps),
             vec!["/tmp/a.txt".to_string(), "/tmp/b.txt".to_string()]
         );
+    }
+    /// ★ 셀 범위 그림 상한은 설정값을 따른다(10-04) — 상한을 올리면 큰 범위도 벡터 그림을 청한다.
+    #[test]
+    fn cell_picture_limits_are_configurable() {
+        let excel = ["CF_ENHMETAFILE", "Biff12", "Link"];
+        let link = b"Excel\0[b.xlsx]S\0R1C1:R300C10\0\0";
+        let def = CellPictureLimits::default();
+        assert!(
+            skip_render_with(&excel, "CF_ENHMETAFILE", Some(link), def),
+            "기본 200행 초과"
+        );
+        let wide = CellPictureLimits {
+            rows: 500,
+            cols: 50,
+            cells: 5_000,
+        };
+        assert!(!skip_render_with(
+            &excel,
+            "CF_ENHMETAFILE",
+            Some(link),
+            wide
+        ));
+        let few_cells = CellPictureLimits {
+            rows: 500,
+            cols: 50,
+            cells: 2_000,
+        };
+        assert!(
+            skip_render_with(&excel, "CF_ENHMETAFILE", Some(link), few_cells),
+            "셀 수 상한"
+        );
+        // 행·열 전체는 상한과 무관하게 언제나 청하지 않는다.
+        let whole = b"Excel\0[b.xlsx]S\0C1\0\0";
+        let huge = CellPictureLimits {
+            rows: u32::MAX,
+            cols: u32::MAX,
+            cells: u32::MAX,
+        };
+        assert!(skip_render_with(
+            &excel,
+            "CF_ENHMETAFILE",
+            Some(whole),
+            huge
+        ));
+    }
+
+    /// ★ T-55 — 평문 내용에 실린 Nautilus 레거시 표식은 파일 표현으로 올라간다.
+    #[test]
+    fn nautilus_text_mark_is_promoted_to_file_reps() {
+        let rep = |f: &str, d: &str| crate::RawRep {
+            format: f.into(),
+            data: d.as_bytes().to_vec(),
+        };
+        let raw = "x-special/nautilus-clipboard\ncopy\nfile:///tmp/a.txt\nfile:///tmp/b%20c.txt\n";
+        let mut reps = vec![rep("text/plain", raw)];
+        assert!(promote_nautilus_text(&mut reps));
+        assert_eq!(
+            classify(&reps.iter().map(|r| r.format.as_str()).collect::<Vec<_>>()),
+            ClipKind::Files
+        );
+        assert_eq!(
+            paths_of(&reps),
+            vec!["/tmp/a.txt".to_string(), "/tmp/b c.txt".to_string()]
+        );
+        assert!(
+            reps.iter().all(|r| plain_rank(&r.format).is_none()),
+            "생 문자열은 남지 않는다"
+        );
+        assert!(!is_file_cut(&reps));
+
+        // 잘라내기 동사는 보존된다.
+        let mut cut = vec![rep(
+            "text/plain",
+            "x-special/nautilus-clipboard\ncut\nfile:///tmp/a.txt",
+        )];
+        assert!(promote_nautilus_text(&mut cut));
+        assert!(is_file_cut(&cut));
+
+        // 표식이 첫 줄이 아니거나 file:// 줄이 없으면 글 그대로다.
+        for t in [
+            "메모: x-special/nautilus-clipboard\ncopy\nfile:///tmp/a.txt",
+            "x-special/nautilus-clipboard\ncopy\n",
+            "file:///tmp/a.txt",
+        ] {
+            let mut r = vec![rep("text/plain", t)];
+            assert!(!promote_nautilus_text(&mut r), "{t}");
+            assert_eq!(r[0].format, "text/plain");
+        }
+    }
+
+    /// ★ T-53 — 파일 관리자 표현의 첫 줄이 `cut`이면 잘라내기(전파 제외 판정).
+    #[test]
+    fn file_cut_is_read_from_the_verb_line() {
+        let rep = |f: &str, d: &str| crate::RawRep {
+            format: f.into(),
+            data: d.as_bytes().to_vec(),
+        };
+        assert!(is_file_cut(&[rep(
+            "x-special/gnome-copied-files",
+            "cut\nfile:///tmp/a.txt"
+        )]));
+        assert!(is_file_cut(&[rep(
+            "x-special/KDE-copied-files",
+            "cut\nfile:///tmp/a.txt"
+        )]));
+        assert!(!is_file_cut(&[rep(
+            "x-special/gnome-copied-files",
+            "copy\nfile:///tmp/a.txt"
+        )]));
+        // uri-list만 있으면(동사 없음) 복사다 · 글에 cut이 적혀 있어도 무관.
+        assert!(!is_file_cut(&[rep("text/uri-list", "file:///tmp/a.txt")]));
+        assert!(!is_file_cut(&[rep("text/plain", "cut\nfile:///tmp/a.txt")]));
     }
 }

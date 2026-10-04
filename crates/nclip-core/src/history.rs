@@ -21,6 +21,27 @@ use std::collections::VecDeque;
 /// ★ 섬네일 blob 참조(09-04 · 30 §5 A) — (blob id, PNG 길이, 폭, 높이). 인덱스엔 이것만 남고 화소는 blob에.
 pub type ThumbRef = ([u8; 32], u64, u32, u32);
 
+/// ★ 축출 사유별 건수(T-61 · 10-04) — 이력이 **왜** 줄었는지 로그에 남기기 위한 값.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct EvictCounts {
+    /// 개수 상한(`store.max_items`) 초과.
+    pub cap: u32,
+    /// 총용량 예산(`store.max_total_mb`) 초과.
+    pub bytes: u32,
+    /// 보관 기한(`store.max_age_days`) 경과.
+    pub age: u32,
+    /// 총용량 예산으로 걷어낸 바이트 합.
+    pub freed_bytes: u64,
+}
+
+impl EvictCounts {
+    /// 걷어낸 항목 수 합.
+    #[must_use]
+    pub fn total(&self) -> u32 {
+        self.cap + self.bytes + self.age
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct HistoryItem {
     /// ★ 항목 id — 셸이 영속(T-16)과 짝을 맞추는 열쇠. `push`가 단조 증가로 부여하고,
@@ -193,6 +214,8 @@ pub struct History {
     next_id: u64,
     /// ★ 상한 축출로 빠진 항목 id — 셸이 [`Self::drain_evicted`]로 가져가 저장소에 반영한다.
     evicted: Vec<u64>,
+    /// ★ 축출 사유별 건수(T-61) — 셸이 [`Self::take_evict_counts`]로 가져가 로그에 남긴다.
+    evict_counts: EvictCounts,
     /// 총용량 예산(바이트 · 0 = 무제한) — 기본 500MB(사용자 확정 09-01).
     max_bytes: u64,
     /// 보관 기간(ms · 0 = 무제한 — 기본값 · 사용자 확정 09-01).
@@ -278,6 +301,7 @@ impl History {
             pending_echo: None,
             next_id: 1,
             evicted: Vec::new(),
+            evict_counts: EvictCounts::default(),
             max_bytes: 0,
             max_age_ms: 0,
         }
@@ -293,6 +317,7 @@ impl History {
             pending_echo: None,
             next_id,
             evicted: Vec::new(),
+            evict_counts: EvictCounts::default(),
             max_bytes: 0,
             max_age_ms: 0,
         };
@@ -309,6 +334,7 @@ impl History {
             };
             if let Some(it) = self.items.remove(i) {
                 self.evicted.push(it.id);
+                self.evict_counts.cap += 1;
             }
         }
     }
@@ -316,6 +342,11 @@ impl History {
     /// 상한 축출로 빠진 항목 id를 가져간다(한 번 주면 비운다).
     pub fn drain_evicted(&mut self) -> Vec<u64> {
         std::mem::take(&mut self.evicted)
+    }
+
+    /// ★ 축출 사유별 건수를 가져간다(한 번 주면 비운다 · T-61) — 조용히 지우지 않기 위한 로그 재료(DR-31).
+    pub fn take_evict_counts(&mut self) -> EvictCounts {
+        std::mem::take(&mut self.evict_counts)
     }
 
     /// ★ RAM 상주 바이트 합(09-04 · 30 §3) — O(n) 길이 합산(수백 항목 · μs).
@@ -450,6 +481,7 @@ impl History {
                 }
                 if let Some(it) = self.items.remove(i) {
                     self.evicted.push(it.id);
+                    self.evict_counts.age += 1;
                 }
             }
         }
@@ -463,6 +495,8 @@ impl History {
                 if let Some(it) = self.items.remove(i) {
                     total -= it.bytes;
                     self.evicted.push(it.id);
+                    self.evict_counts.bytes += 1;
+                    self.evict_counts.freed_bytes += it.bytes;
                 }
             }
         }
@@ -887,6 +921,9 @@ mod budget_tests {
         assert!(h.set_pinned(1, true));
         h.set_budget(1000, 0, 0); // 1200B > 1000B — 비고정 중 가장 오래된 b(id 2)가 빠진다
         assert_eq!(h.drain_evicted(), vec![2]);
+        let c = h.take_evict_counts();
+        assert_eq!((c.cap, c.bytes, c.age), (0, 1, 0), "사유 = 용량 예산");
+        assert_eq!(h.take_evict_counts().total(), 0, "한 번 주면 비운다");
         assert_eq!(h.len(), 2, "핀(a)과 최신(c)이 남는다");
     }
 
