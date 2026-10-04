@@ -2,6 +2,8 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-10-04 (12차 · win) — 트레이 메뉴 머리줄 버전 표시(사용자 · "Nexa Clip v0.1.6" · Linux는 SNI 제목·알림 제목에도) · 설치본 PID 22548(SHA 일치) · V2 ✓ · v0.1.6에는 미포함(다음 릴리스) · 진행사항 최신화(`e0d1f23` CI ✓ · winget 0.1.6 OPEN · choco 0.1.5 검수 중) → [journal](journal/2026-10-04.md)
+
 ## 2026-10-04 (11차 · win) — ★ **v0.1.6 릴리스** — release `37189464160` 10/11 ✅ · 자산 14 · brew `6b44911` · winget 0.1.4 PR 닫고 **en-US 새 PR #446464 · #446465** · ✗ **choco 잡 실패** = guard 결함(피드 API가 승인 전 0.1.5도 돌려줌 → "공개됨" 오판 → 0.1.6 push → 403 · 제출 안 됨) → ✅ guard 수정(`IsApproved=true` 판정 · 음성·양성 대조) · 교훈 = 게이트 전제를 실측 없이 믿지 않는다 → [journal](journal/2026-10-04.md)
 
 ## 2026-10-04 (10차 · win) — 진행사항 최신화 · ★ **v0.1.6 릴리스 재개**(사용자) — ⑦~⑩ + 버전 0.1.6 커밋(되돌리지 않음 — 설치본 0.1.6과 맞춤 · 태그 없으면 배포 안 됨) · 설치본 PID 35912 · V2 마지막 17:28 ✓ · 🚧 **v0.1.6 릴리스 진행(재개 · 사용자 10-04 "새 버전으로 릴리즈하고 Winget/Choco 게시도 판단해서 진행")** — 순서: main push → CI green 확인 → 태그 `v0.1.6`(개발 세션) · 채널 = brew 자동 · winget = 열린 0.1.4 PR #434300·#434302(ko-KR · 09-14 이후 무변화)를 태그 직전에 닫고 v0.1.6 **en-US** 자동 제출(`WINGET_PUBLISH=true`) · choco = **이번엔 skip**(guard 자동 · force 안 씀 — 0.1.5가 "in moderation" · Validation Passed 06:16Z · Verification·Scan Pending · 재제출 뒤 새 댓글 0 · 피드 0 · `CHOCO_PUSH=true` 그대로) · 예산 재계측 exe 1.76MB · 유휴 WS 28.5MB · ⚠️ ⑧⑨⑩ Excel 왕복은 실기 결과 없이 릴리스(사용자 지시) → [journal](journal/2026-10-04.md)

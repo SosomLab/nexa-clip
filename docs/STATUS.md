@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-10-04 (12차 · win) — 트레이 메뉴 버전 표시 · 진행사항 최신화
+
+**수정**(개발 세션): 트레이 우클릭 메뉴 머리줄 = **"Nexa Clip v0.1.6"**(`TrayContent.name` · Linux는 SNI 제목·알림 제목에도 붙음) · **v0.1.6에는 미포함**(다음 릴리스).
+**검증**(협업 세션): 설치본 PID 22548(17:59 · SHA 일치) · V2 = 18:02 = fmt ✓ · clippy `--workspace --all-targets -D warnings` ✓ · test **547 통과 / 실패 0 / 무시 4** · check-3os ✓(호스트 · x86_64-apple-darwin · x86_64-unknown-linux-gnu).
+**상태**: `e0d1f23` CI ✓ · winget 0.1.6 #446464·#446465 OPEN · choco 0.1.5 검수 중 · 0.1.6 미제출.
+**☐ 남은 것**: 사용자 실기(Excel ⑧⑨⑩ · Rich 아이콘 · 핀 · mac · 트레이 버전) · 결정 대기(V3 7일 · 서식 글 아이콘 · 그림 상한 설정화) · choco·winget 검수. → [journal](journal/2026-10-04.md)
+
+---
+
 ## 2026-10-04 (11차 · win) — ★ v0.1.6 릴리스
 
 **릴리스**: 태그 `v0.1.6`(`6b03f22`) · release `37189464160` 10/11 ✅ · 자산 14 · Windows DLL 게이트 통과 · brew 탭 `6b44911`.
