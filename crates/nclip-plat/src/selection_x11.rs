@@ -26,7 +26,7 @@ use nclip_core::RawRep;
 use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{Arc, Condvar, Mutex, OnceLock};
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 use x11rb::connection::Connection as _;
@@ -274,18 +274,32 @@ impl Reader {
     }
 }
 
-static READER: OnceLock<Option<Mutex<Reader>>> = OnceLock::new();
+/// 읽기 연결 — ★ **갈아 끼울 수 있다**(10-05 · T-41 ②). 종전에는 `OnceLock`이라 X 서버(XWayland)가
+/// 다시 뜨면 죽은 연결을 영영 쥐고 있어 읽기가 전부 조용히 실패했다. 감시 스레드가 재연결하면
+/// [`reset_connections`]로 비우고, 다음 읽기가 새 연결을 만든다. 낡은 연결은 누수시킨다
+/// (재연결은 드문 사건이고, 다른 스레드가 참조 중일 수 있어 해제하지 않는다).
+static READER: Mutex<Option<&'static Mutex<Reader>>> = Mutex::new(None);
 
 fn reader() -> Option<&'static Mutex<Reader>> {
-    READER
-        .get_or_init(|| match Reader::connect() {
-            Ok(r) => Some(Mutex::new(r)),
-            Err(e) => {
-                diag(&format!("읽기 연결 불가 — {e}"));
-                None
-            }
-        })
-        .as_ref()
+    let mut g = READER.lock().ok()?;
+    if g.is_none() {
+        match Reader::connect() {
+            Ok(r) => *g = Some(Box::leak(Box::new(Mutex::new(r)))),
+            Err(e) => diag(&format!("읽기 연결 불가 — {e}")),
+        }
+    }
+    *g
+}
+
+/// X 연결이 끊겼다 다시 붙었다 — 읽기·게시 연결을 버려 다음 호출이 새로 만들게 한다.
+fn reset_connections() {
+    if let Ok(mut g) = READER.lock() {
+        *g = None;
+    }
+    if let Ok(mut g) = SERVER.lock() {
+        *g = None;
+    }
+    OWNER_WIN.store(0, Ordering::Relaxed);
 }
 
 /// 이 환경에서 직접 구현을 쓸 수 있는가 — `DISPLAY` + 실제 연결 성공(1회 캐시).
@@ -307,8 +321,72 @@ pub(crate) fn read_target(target: &str, cap: usize) -> Option<Vec<u8>> {
 
 // ───────────────────────────── 감시
 
-/// CLIPBOARD 소유자 변경 감시 — 변화마다 `on_change`. ★ 자기 게시(서빙 창)는 원천 차단.
-pub(crate) fn watch(on_change: Box<dyn Fn() + Send>) -> Result<(), String> {
+/// ★ 지금 클립보드를 쥔 **앱 이름**(10-05 · T-41 ⑥) — 제외 앱 게이트·출처 배지의 재료.
+///
+/// 소유자 창의 `_NET_WM_PID` → `/proc/<pid>/comm`(실행 파일 이름 — Windows의 "exe 이름"과 같은 결),
+/// 없으면 `WM_CLASS`의 클래스 이름. 소유자가 숨은 도우미 창이면 부모를 몇 단 거슬러 올라가 본다.
+/// 모르면 `None` — 지어내지 않는다. Wayland 네이티브 앱의 복사는 컴포지터의 다리 창이 쥐므로
+/// (gnome-shell·Xwayland) 그 이름은 앱이 아니라서 버린다.
+pub(crate) fn owner_app() -> Option<String> {
+    let r = reader()?.lock().ok()?;
+    let conn = &r.conn;
+    let mut win = conn
+        .get_selection_owner(r.atoms.CLIPBOARD)
+        .ok()?
+        .reply()
+        .ok()?
+        .owner;
+    if win == x11rb::NONE {
+        return None;
+    }
+    let pid_atom = r.intern("_NET_WM_PID")?;
+    for _ in 0..4 {
+        if let Some(pid) = conn
+            .get_property(false, win, pid_atom, AtomEnum::CARDINAL, 0, 1)
+            .ok()
+            .and_then(|c| c.reply().ok())
+            .and_then(|p| p.value32().and_then(|mut v| v.next()))
+        {
+            if let Ok(comm) = std::fs::read_to_string(format!("/proc/{pid}/comm")) {
+                return clean_app_name(comm.trim());
+            }
+        }
+        if let Some(class) = conn
+            .get_property(false, win, AtomEnum::WM_CLASS, AtomEnum::STRING, 0, 256)
+            .ok()
+            .and_then(|c| c.reply().ok())
+            .and_then(|p| {
+                // "인스턴스\0클래스\0" — 클래스 쪽을 쓴다.
+                p.value
+                    .split(|b| *b == 0)
+                    .rfind(|s| !s.is_empty())
+                    .map(|s| String::from_utf8_lossy(s).into_owned())
+            })
+        {
+            return clean_app_name(&class);
+        }
+        let tree = conn.query_tree(win).ok()?.reply().ok()?;
+        if tree.parent == x11rb::NONE || tree.parent == tree.root {
+            return None;
+        }
+        win = tree.parent;
+    }
+    None
+}
+
+/// 컴포지터의 다리 창 이름은 앱이 아니다 — 버린다.
+fn clean_app_name(name: &str) -> Option<String> {
+    let lower = name.to_ascii_lowercase();
+    (!name.is_empty()
+        && !matches!(
+            lower.as_str(),
+            "gnome-shell" | "xwayland" | "mutter" | "kwin_wayland" | "kwin_x11" | "mutter-x11-fram"
+        ))
+    .then(|| name.to_string())
+}
+
+/// 감시 연결 한 벌 — XFIXES로 CLIPBOARD 소유자 변경을 구독한 연결과 그 atom.
+fn watch_connect() -> Result<(RustConnection, Atom), String> {
     let (conn, screen_n) =
         RustConnection::connect(None).map_err(|e| format!("X 연결 실패: {e}"))?;
     conn.xfixes_query_version(5, 0)
@@ -331,6 +409,16 @@ pub(crate) fn watch(on_change: Box<dyn Fn() + Send>) -> Result<(), String> {
     )
     .map_err(|e| format!("셀렉션 감시 등록 실패: {e}"))?;
     conn.flush().map_err(|e| format!("flush 실패: {e}"))?;
+    Ok((conn, clipboard))
+}
+
+/// CLIPBOARD 소유자 변경 감시 — 변화마다 `on_change`. ★ 자기 게시(서빙 창)는 원천 차단.
+///
+/// ★ 연결이 끊기면 **다시 붙는다**(10-05 · T-41 ②) — 종전에는 X 서버(XWayland)가 다시 뜨면 감시 스레드가
+/// 한 줄 찍고 끝나, 앱은 떠 있는데 복사가 영영 안 잡혔다(조용·영구). 1초부터 30초까지 물러나며 다시 잇고,
+/// 붙으면 읽기·게시 연결을 버리고 `on_change`를 한 번 불러 지금 내용을 다시 읽게 한다.
+pub(crate) fn watch(on_change: Box<dyn Fn(bool) + Send>) -> Result<(), String> {
+    let (mut conn, mut clipboard) = watch_connect()?;
     std::thread::Builder::new()
         .name("nclip-x11-watch".into())
         .spawn(move || loop {
@@ -340,12 +428,30 @@ pub(crate) fn watch(on_change: Box<dyn Fn() + Send>) -> Result<(), String> {
                         diag("자기 게시 에코 — 소유자 창 일치, 건너뜀");
                         continue;
                     }
-                    on_change();
+                    // 인자 = 다른 앱이 **소유권을 새로 잡았는가**(= 복사했다) — 창 소멸·클라이언트 종료는 아니다.
+                    on_change(e.subtype == xfixes::SelectionEvent::SET_SELECTION_OWNER);
                 }
                 Ok(_) => {}
                 Err(e) => {
-                    eprintln!("클립보드 감시(x11rb) 연결 종료: {e}");
-                    return;
+                    eprintln!("클립보드 감시(x11rb) 연결 끊김: {e} — 다시 잇습니다");
+                    let mut wait = Duration::from_secs(1);
+                    loop {
+                        std::thread::sleep(wait);
+                        match watch_connect() {
+                            Ok((c, a)) => {
+                                conn = c;
+                                clipboard = a;
+                                break;
+                            }
+                            Err(e) => {
+                                diag(&format!("감시 재연결 실패 — {e}"));
+                                wait = (wait * 2).min(Duration::from_secs(30));
+                            }
+                        }
+                    }
+                    reset_connections();
+                    println!("클립보드 감시(x11rb): 다시 연결됨");
+                    on_change(false);
                 }
             }
         })
@@ -379,44 +485,59 @@ struct Server {
     win: Window,
     wake: Atom,
     shared: Arc<Shared>,
+    /// 서빙 스레드가 살아 있는가 — 연결이 끊겨 끝나면 false(다음 게시가 새로 만든다).
+    alive: Arc<std::sync::atomic::AtomicBool>,
 }
 
-static SERVER: OnceLock<Result<Server, String>> = OnceLock::new();
+/// 게시 연결 — [`READER`]와 같은 이유로 갈아 끼울 수 있다(10-05).
+static SERVER: Mutex<Option<&'static Server>> = Mutex::new(None);
 
 fn server() -> Result<&'static Server, String> {
-    SERVER
-        .get_or_init(|| {
-            let (conn, screen_n) =
-                RustConnection::connect(None).map_err(|e| format!("X 연결 실패: {e}"))?;
-            let conn = Arc::new(conn);
-            let win = hidden_window(&conn, screen_n)?;
-            let atoms = Atoms::new(conn.as_ref())
-                .map_err(|e| format!("atom 인턴 실패: {e}"))?
-                .reply()
-                .map_err(|e| format!("atom 인턴 실패: {e}"))?;
-            conn.flush().map_err(|e| format!("flush 실패: {e}"))?;
-            let shared = Arc::new(Shared {
-                pending: Mutex::new(None),
-                ack: Mutex::new(None),
-                cv: Condvar::new(),
-            });
-            {
-                let conn = Arc::clone(&conn);
-                let shared = Arc::clone(&shared);
-                std::thread::Builder::new()
-                    .name("nclip-x11-serve".into())
-                    .spawn(move || serve_loop(&conn, win, &atoms, &shared))
-                    .map_err(|e| format!("서빙 스레드 생성 실패: {e}"))?;
-            }
-            Ok(Server {
-                conn,
-                win,
-                wake: atoms.NCLIP_WAKE,
-                shared,
-            })
+    let mut g = SERVER.lock().map_err(|_| "락 오염".to_string())?;
+    if let Some(srv) = *g {
+        if srv.alive.load(Ordering::Relaxed) {
+            return Ok(srv);
+        }
+    }
+    let made: Result<Server, String> = (|| {
+        let (conn, screen_n) =
+            RustConnection::connect(None).map_err(|e| format!("X 연결 실패: {e}"))?;
+        let conn = Arc::new(conn);
+        let win = hidden_window(&conn, screen_n)?;
+        let atoms = Atoms::new(conn.as_ref())
+            .map_err(|e| format!("atom 인턴 실패: {e}"))?
+            .reply()
+            .map_err(|e| format!("atom 인턴 실패: {e}"))?;
+        conn.flush().map_err(|e| format!("flush 실패: {e}"))?;
+        let shared = Arc::new(Shared {
+            pending: Mutex::new(None),
+            ack: Mutex::new(None),
+            cv: Condvar::new(),
+        });
+        let alive = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        {
+            let conn = Arc::clone(&conn);
+            let shared = Arc::clone(&shared);
+            let alive = Arc::clone(&alive);
+            std::thread::Builder::new()
+                .name("nclip-x11-serve".into())
+                .spawn(move || {
+                    serve_loop(&conn, win, &atoms, &shared);
+                    alive.store(false, Ordering::Relaxed);
+                })
+                .map_err(|e| format!("서빙 스레드 생성 실패: {e}"))?;
+        }
+        Ok(Server {
+            conn,
+            win,
+            wake: atoms.NCLIP_WAKE,
+            shared,
+            alive,
         })
-        .as_ref()
-        .map_err(Clone::clone)
+    })();
+    let srv: &'static Server = Box::leak(Box::new(made?));
+    *g = Some(srv);
+    Ok(srv)
 }
 
 /// 표현 **전부**를 게시한다(빈 바이트 제외) — 1단의 "표현 1개" 제약 해소.
@@ -496,8 +617,15 @@ fn serve_loop(conn: &Arc<RustConnection>, win: Window, atoms: &Atoms, shared: &A
                 }
             }
         };
-        // 정체 전송 수거 — 요청자가 사라졌다.
-        xfers.retain(|_, x| x.at.elapsed() < XFER_STALE);
+        // 정체 전송 수거 — 요청자가 사라졌다(구독도 함께 푼다).
+        let stale: Vec<(Window, Atom)> = xfers
+            .iter()
+            .filter(|(_, x)| x.at.elapsed() >= XFER_STALE)
+            .map(|(k, _)| *k)
+            .collect();
+        for (w, p) in stale {
+            end_xfer(conn, &mut xfers, w, p);
+        }
         match ev {
             Event::ClientMessage(m) if m.window == win && m.type_ == atoms.NCLIP_WAKE => {
                 let reps = shared.pending.lock().ok().and_then(|mut p| p.take());
@@ -789,13 +917,32 @@ fn incr_step(
         .is_ok();
     let _ = conn.flush();
     if !ok {
-        xfers.remove(&(win, prop));
+        end_xfer(conn, xfers, win, prop);
         return;
     }
     x.off += n;
     x.at = Instant::now();
     if n == 0 {
-        xfers.remove(&(win, prop)); // 빈 청크 = 끝을 보냈다.
+        end_xfer(conn, xfers, win, prop); // 빈 청크 = 끝을 보냈다.
+    }
+}
+
+/// INCR 전송 하나를 끝낸다 — 그 요청자 창에 남은 전송이 없으면 **프로퍼티 변경 구독을 푼다**
+/// (10-05 · T-41 ⑩). 종전에는 구독이 남아, 그 창이 사라질 때까지 프로퍼티가 바뀔 때마다
+/// 서빙 스레드가 깨어났다(상주 비용 — DR-9).
+fn end_xfer(
+    conn: &RustConnection,
+    xfers: &mut HashMap<(Window, Atom), Xfer>,
+    win: Window,
+    prop: Atom,
+) {
+    xfers.remove(&(win, prop));
+    if !xfers.keys().any(|(w, _)| *w == win) {
+        let _ = conn.change_window_attributes(
+            win,
+            &ChangeWindowAttributesAux::new().event_mask(EventMask::NO_EVENT),
+        );
+        let _ = conn.flush();
     }
 }
 

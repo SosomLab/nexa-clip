@@ -1759,9 +1759,7 @@ fn draw(
                             nclip_core::richtext::size_delta(em, run.scale),
                         );
                         xoff += nclip_core::richtext::em_px(em, run.indent);
-                        let col = run.color.map_or(th.text, |c| {
-                            nclip_ctl::theme::Color::from_rgb(c[0], c[1], c[2])
-                        });
+                        let col = crate::main_win::run_color(run, th.text, th.window_bg);
                         for (ti, seg) in run.text.split('\t').enumerate() {
                             if ti > 0 {
                                 xoff = (xoff / tab_w + 1) * tab_w;

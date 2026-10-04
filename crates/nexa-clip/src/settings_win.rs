@@ -1698,7 +1698,7 @@ pub(crate) fn win_name(attrs: winit::window::WindowAttributes) -> winit::window:
 /// Wayland 정식 활성화 — winit 창의 raw 핸들(wl_display·wl_surface)로
 /// `nclip_plat::wlactivate::activate`. X11·핸들 부재 = false.
 #[cfg(target_os = "linux")]
-fn wayland_activate(w: &Window, token: &str) -> bool {
+pub(crate) fn wayland_activate(w: &Window, token: &str) -> bool {
     use winit::raw_window_handle::{
         HasDisplayHandle as _, HasWindowHandle as _, RawDisplayHandle, RawWindowHandle,
     };

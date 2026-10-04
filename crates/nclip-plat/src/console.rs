@@ -23,7 +23,7 @@ pub fn attach_parent() {
 
 static HANDLER: OnceLock<Box<dyn Fn() + Send + Sync>> = OnceLock::new();
 
-/// 콘솔 종료 신호(Ctrl+C·Ctrl+Break·창 닫기·로그오프)에 `f`를 부른다.
+/// 콘솔 종료 신호(Windows: Ctrl+C·Ctrl+Break·창 닫기·로그오프 · Unix: `SIGINT`·`SIGTERM`)에 `f`를 부른다.
 /// 프로세스당 1회 — 성공 여부 반환(미지원 타깃·재호출은 `false`).
 pub fn on_console_quit<F: Fn() + Send + Sync + 'static>(f: F) -> bool {
     if HANDLER.set(Box::new(f)).is_err() {
@@ -64,9 +64,76 @@ mod imp {
     }
 }
 
-#[cfg(not(windows))]
+/// ★ Unix(Linux·mac) — `SIGINT`(Ctrl+C)·`SIGTERM`(`kill`·세션 종료·재시작 스크립트)을 정상 종료로(10-05 · T-41 ⑦).
+///
+/// 시그널 핸들러 안에서는 할 수 있는 일이 거의 없다(async-signal-safe) — 파이프에 한 바이트만 쓰고,
+/// 전용 스레드가 그것을 읽어 콜백을 부른다(self-pipe). 외부 crate 없이 libc 심볼만 쓴다(DR-8).
+#[cfg(unix)]
 mod imp {
-    /// 미이식 타깃 — 시그널 처리는 그 OS 작업에서(정직하게 false).
+    use std::sync::atomic::{AtomicI32, Ordering};
+
+    extern "C" {
+        fn pipe(fds: *mut i32) -> i32;
+        fn signal(sig: i32, handler: usize) -> usize;
+        fn write(fd: i32, buf: *const u8, n: usize) -> isize;
+        fn read(fd: i32, buf: *mut u8, n: usize) -> isize;
+    }
+    const SIGINT: i32 = 2;
+    const SIGTERM: i32 = 15;
+    /// 파이프의 쓰는 쪽 fd — 핸들러가 읽는다(원자 정수만 만진다).
+    static WR: AtomicI32 = AtomicI32::new(-1);
+
+    extern "C" fn on_signal(_sig: i32) {
+        let fd = WR.load(Ordering::Relaxed);
+        if fd >= 0 {
+            let b = 1u8;
+            // SAFETY: write(2)는 async-signal-safe다 — 유효한 fd에 1바이트.
+            unsafe {
+                write(fd, &b, 1);
+            }
+        }
+    }
+
+    pub(super) fn install() -> bool {
+        let mut fds = [0i32; 2];
+        // SAFETY: 길이 2 배열에 fd 두 개를 받는다.
+        if unsafe { pipe(fds.as_mut_ptr()) } != 0 {
+            return false;
+        }
+        let rd = fds[0];
+        WR.store(fds[1], Ordering::Relaxed);
+        let spawned = std::thread::Builder::new()
+            .name("nclip-signal".into())
+            .spawn(move || loop {
+                let mut b = 0u8;
+                // SAFETY: 유효한 fd에서 1바이트 읽기(블로킹).
+                let n = unsafe { read(rd, &mut b, 1) };
+                if n == 1 {
+                    if let Some(h) = super::HANDLER.get() {
+                        h();
+                    }
+                } else if n == 0 {
+                    return;
+                } else {
+                    // EINTR 등 — 잠깐 쉬고 다시(바쁜 루프 방지).
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                }
+            });
+        if spawned.is_err() {
+            return false;
+        }
+        // SAFETY: 핸들러는 위의 async-signal-safe 함수 하나다.
+        unsafe {
+            signal(SIGINT, on_signal as *const () as usize);
+            signal(SIGTERM, on_signal as *const () as usize);
+        }
+        true
+    }
+}
+
+#[cfg(not(any(windows, unix)))]
+mod imp {
+    /// 미이식 타깃 — 정직하게 false.
     pub(super) fn install() -> bool {
         false
     }

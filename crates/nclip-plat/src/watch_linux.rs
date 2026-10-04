@@ -44,8 +44,11 @@ mod native {
     pub(crate) fn read_target(_t: &str, _cap: usize) -> Option<Vec<u8>> {
         None
     }
-    pub(crate) fn watch(_f: Box<dyn Fn() + Send>) -> Result<(), String> {
+    pub(crate) fn watch(_f: Box<dyn Fn(bool) + Send>) -> Result<(), String> {
         Err("스텁 — 이 타깃에는 없다".into())
+    }
+    pub(crate) fn owner_app() -> Option<String> {
+        None
     }
 }
 
@@ -125,9 +128,8 @@ fn pick_backend() -> Result<Backend, UnsupportedReason> {
     }
     if wayland && !data_control && !x11 {
         // 순수 Wayland + data-control 없음 = 포커스 없이 읽을 길이 없다.
-        return Err(UnsupportedReason::MissingTool(
-            "xclip (XWayland 경유 — 컴포지터에 data-control 없음)",
-        ));
+        // ★ 전용 사유로(10-05 · T-41 ⑪) — 종전에는 "xclip 없음"으로 알려, 깔아도 안 되는 것을 깔라고 했다.
+        return Err(UnsupportedReason::WaylandNoDataControl);
     }
     Err(UnsupportedReason::MissingTool(if data_control {
         "wl-clipboard (wl-paste)"
@@ -327,6 +329,15 @@ fn fingerprint(snap: &ClipSnapshot) -> u64 {
 
 /// 지금 클립보드를 한 벌 읽는다. 도구·표시 서버가 없으면 `None`.
 #[must_use]
+/// ★ 지금 클립보드에 **글이 있는가** — 표현 목록만 본다(10-05 · T-41 ④). 우클릭 메뉴의 "붙여넣기"
+/// 활성 판정이 내용을 전부 읽어 오던 것(표현마다 변환 · 큰 그림이면 수십 MB)을 대신한다.
+pub fn has_text() -> bool {
+    pick_backend()
+        .ok()
+        .and_then(list_targets)
+        .is_some_and(|t| t.iter().any(|n| text_rank(n).is_some()))
+}
+
 pub fn read_snapshot() -> Option<ClipSnapshot> {
     let backend = pick_backend().ok()?;
     read_snapshot_with(backend)
@@ -379,8 +390,11 @@ fn read_snapshot_with(backend: Backend) -> Option<ClipSnapshot> {
 
     Some(ClipSnapshot {
         reps,
-        // 도구 파이프로는 출처 앱을 알 수 없다 — 모르는 것을 지어내지 않는다.
-        source_app: None,
+        // ★ 내재 X11 경로는 소유자 창에서 앱 이름을 읽는다(10-05 · T-41 ⑥). 도구 파이프(wl-paste·xclip)로는
+        //   알 수 없다 — 모르는 것을 지어내지 않는다.
+        source_app: (backend == Backend::X11Native)
+            .then(native::owner_app)
+            .flatten(),
         concealed,
         // Linux에는 OS 일련번호가 없다(0 = 모름 — ClipSnapshot 계약).
         seq: 0,
@@ -415,10 +429,13 @@ pub fn start(sink: Sink) -> Result<(), WatchError> {
 /// 몰린 이벤트(연속 복사)는 채널을 비워 한 번으로 합치고, [`settle`]이 부분 스냅숏을
 /// 다잡는다(08-29 결함 재발 방지 — 이벤트 직후에도 표현이 덜 올라온 순간이 있다).
 /// 지문 중복 제거는 유지한다 — 내용이 같은 소유자 교체(재게시)를 걸러 준다.
+/// 같은 내용의 재복사를 다시 넘기기까지의 최소 간격 — 한 번의 복사에 소유권을 여러 번 잡는 앱을 거른다.
+const RECOPY_GAP: std::time::Duration = std::time::Duration::from_secs(1);
+
 fn native_event_loop(sink: Sink) -> Result<(), WatchError> {
-    let (tx, rx) = std::sync::mpsc::channel::<()>();
-    native::watch(Box::new(move || {
-        let _ = tx.send(());
+    let (tx, rx) = std::sync::mpsc::channel::<bool>();
+    native::watch(Box::new(move |copied| {
+        let _ = tx.send(copied);
     }))
     .map_err(WatchError::Os)?;
     std::thread::Builder::new()
@@ -426,8 +443,14 @@ fn native_event_loop(sink: Sink) -> Result<(), WatchError> {
         .spawn(move || {
             // 시작 시점의 내용은 "새 복사"가 아니다 — 기준선.
             let mut last = read_snapshot_with(Backend::X11Native).map(|s| fingerprint(&s));
-            while rx.recv().is_ok() {
-                while rx.try_recv().is_ok() {} // 몰린 이벤트 합치기.
+            let mut delivered = std::time::Instant::now();
+            // 마지막으로 넘긴 스냅숏의 출처 앱 — 재복사 판정에 쓴다.
+            let mut last_src: Option<String> = None;
+            while let Ok(mut copied) = rx.recv() {
+                // 몰린 이벤트 합치기 — 하나라도 "다른 앱이 복사했다"면 복사다.
+                while let Ok(c) = rx.try_recv() {
+                    copied |= c;
+                }
                 let Some(snap) = read_snapshot_with(Backend::X11Native) else {
                     continue;
                 };
@@ -436,10 +459,27 @@ fn native_event_loop(sink: Sink) -> Result<(), WatchError> {
                 }
                 let fp = fingerprint(&snap);
                 if last == Some(fp) {
+                    // ★ 같은 내용을 **다시 복사**했다(10-05 · T-41 ⑤) — Windows·mac은 일련번호가 올라 이력이
+                    //   그 항목을 맨 위로 올린다(복사 수 +1). Linux는 지문이 같으면 버려서 안 올라왔다.
+                    //   다른 앱이 소유권을 새로 잡은 이벤트면 그대로 넘긴다(이력이 승격으로 처리).
+                    //   같은 복사에 소유권을 두세 번 잡는 앱이 있어 직전 전달 뒤 1초는 종전대로 버린다.
+                    //   ★ **같은 앱**이 다시 잡았을 때만이다(실기 10-05) — 복사한 앱이 끝나면 클립보드 관리자나
+                    //   가상 머신 다리가 같은 내용으로 소유권을 넘겨받는데, 그것은 재복사가 아니다(복사 수가 부푼다).
+                    if copied
+                        && delivered.elapsed() >= RECOPY_GAP
+                        && snap.source_app.is_some()
+                        && snap.source_app == last_src
+                    {
+                        delivered = std::time::Instant::now();
+                        diag("같은 내용 재복사 — 승격으로 넘김");
+                        sink(snap);
+                    }
                     continue;
                 }
                 let (snap, fp) = settle(Backend::X11Native, snap, fp);
                 last = Some(fp);
+                last_src.clone_from(&snap.source_app);
+                delivered = std::time::Instant::now();
                 diag(&format!(
                     "변화 감지(x11rb) — 표현 {}개 · 표식 {}",
                     snap.reps.len(),

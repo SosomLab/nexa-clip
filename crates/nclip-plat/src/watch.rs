@@ -124,6 +124,21 @@ impl PlatformWatch {
     }
 }
 
+impl PlatformWatch {
+    /// 지금 클립보드에 평문이 있는가 — Linux는 표현 목록만 보고 답한다(내용을 읽지 않는다 · 10-05).
+    #[must_use]
+    pub fn has_text_now(&self) -> bool {
+        #[cfg(all(unix, not(target_os = "macos")))]
+        {
+            crate::watch_linux::has_text()
+        }
+        #[cfg(not(all(unix, not(target_os = "macos"))))]
+        {
+            self.read_now().and_then(|s| s.plain_text()).is_some()
+        }
+    }
+}
+
 impl ClipboardWatch for PlatformWatch {
     fn capability(&self) -> WatchCapability {
         #[cfg(windows)]

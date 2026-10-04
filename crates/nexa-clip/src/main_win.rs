@@ -602,6 +602,12 @@ impl MainWin {
         self.view = ViewMode::from_code(opts.view_code).unwrap_or_default();
         if let Some(w) = &self.window {
             w.set_visible(true);
+            // ★ Wayland 네이티브 창은 셸이 준 활성화 토큰으로만 앞으로 온다(10-05 · T-41 ① —
+            //   설정 창에만 있던 경로를 메인창에도). X11 창은 아래 `bring_to_front`가 올린다.
+            #[cfg(target_os = "linux")]
+            if let Some(tok) = nclip_plat::tray::take_activation_token() {
+                let _ = crate::settings_win::wayland_activate(w, &tok);
+            }
             w.focus_window();
             crate::settings_win::bring_to_front(w);
             self.refresh(hist);
@@ -628,6 +634,17 @@ impl MainWin {
                 .with_position(winit::dpi::PhysicalPosition::new(x, y))
                 .with_inner_size(winit::dpi::PhysicalSize::new(w.max(200), h.max(200))),
             None => attrs,
+        };
+        // ★ 새 창도 토큰이 있으면 그것으로 활성화한다(트레이 → 열기 · 10-05 · T-41 ①).
+        #[cfg(target_os = "linux")]
+        let attrs = {
+            use winit::platform::startup_notify::WindowAttributesExtStartupNotify as _;
+            match nclip_plat::tray::take_activation_token() {
+                Some(tok) => {
+                    attrs.with_activation_token(winit::window::ActivationToken::from_raw(tok))
+                }
+                None => attrs,
+            }
         };
         let Ok(win) = el.create_window(attrs) else {
             eprintln!("메인창 생성 실패");
@@ -2330,9 +2347,7 @@ impl MainWin {
                                 nclip_core::richtext::size_delta(em, run.scale),
                             );
                             xoff += nclip_core::richtext::em_px(em, run.indent);
-                            let col = run.color.map_or(th.text, |c| {
-                                nclip_ctl::theme::Color::from_rgb(c[0], c[1], c[2])
-                            });
+                            let col = run_color(run, th.text, th.panel_bg);
                             for (ti, seg) in run.text.split('\t').enumerate() {
                                 if ti > 0 {
                                     xoff = (xoff / tab_w + 1) * tab_w;
@@ -2589,9 +2604,7 @@ impl MainWin {
                             xoff += dw;
                             continue;
                         }
-                        let col = run.color.map_or(th.text, |c| {
-                            nclip_ctl::theme::Color::from_rgb(c[0], c[1], c[2])
-                        });
+                        let col = run_color(run, th.text, th.panel_bg);
                         for (ti, seg) in run.text.split('\t').enumerate() {
                             if ti > 0 {
                                 xoff = (xoff / tab_w + 1) * tab_w;
@@ -3521,6 +3534,32 @@ pub(crate) fn decode_inline_images(
         }
     }
     out
+}
+
+/// ★ 런의 글자색을 **읽히게** 고른다(10-05 · T-63) — 문서에서 온 글자색(검정·남색)은 어두운 테마
+/// 바탕에서 안 보인다. 런에 바탕색이 따로 없고 글자색이 창 바탕과 밝기 차가 작으면 테마 글자색을 쓴다.
+/// 바탕색이 있는 런(셀 채움·형광펜)은 문서가 정한 조합이라 그대로 둔다.
+pub(crate) fn run_color(
+    run: &nclip_core::richtext::Run,
+    text: nclip_ctl::theme::Color,
+    panel: nclip_ctl::theme::Color,
+) -> nclip_ctl::theme::Color {
+    let Some(c) = run.color else {
+        return text;
+    };
+    let col = nclip_ctl::theme::Color::from_rgb(c[0], c[1], c[2]);
+    if run.bg.is_some() {
+        return col;
+    }
+    let luma = |c: nclip_ctl::theme::Color| {
+        let (r, g, b) = c.rgb();
+        (u32::from(r) * 299 + u32::from(g) * 587 + u32::from(b) * 114) / 1000
+    };
+    if luma(col).abs_diff(luma(panel)) < 60 {
+        text
+    } else {
+        col
+    }
 }
 
 /// "이미지로 복사"가 되는 종류 — 글 계열 + ★ 개체(10-04 — 그림만 든 HTML · PPT 도형처럼

@@ -17,5 +17,5 @@ pub(crate) fn get_text() -> Option<String> {
 
 /// 클립보드에 평문이 있는가 — 우클릭 편집 메뉴의 "붙여넣기" 활성 근거.
 pub(crate) fn has_text() -> bool {
-    get_text().is_some()
+    nclip_plat::watch::PlatformWatch::new().has_text_now()
 }

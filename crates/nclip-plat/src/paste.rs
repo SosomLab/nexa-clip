@@ -670,6 +670,7 @@ mod imp {
     const KEYSYM_V: u32 = 0x76;
     const KEYSYM_RETURN: u32 = 0xff0d;
     const KEYSYM_CONTROL_L: u32 = 0xffe3;
+    const KEYSYM_SHIFT_L: u32 = 0xffe1;
     /// evdev `KEY_ENTER`(포털 RemoteDesktop 키코드).
     const EVDEV_KEY_ENTER: i32 = 28;
     const KEY_PRESS: u8 = xproto::KEY_PRESS_EVENT;
@@ -730,7 +731,81 @@ mod imp {
         }
     }
 
+    /// ★ 직전 포커스 창이 **터미널**이었는가(10-05 · T-15c) — `foreground`가 팝업을 열기 전에 적어 둔다.
+    static TARGET_IS_TERMINAL: std::sync::atomic::AtomicBool =
+        std::sync::atomic::AtomicBool::new(false);
+
+    /// `Ctrl+Shift+V`로 붙여넣는 터미널들의 `WM_CLASS`(소문자 · VTE 계열과 요즘 터미널).
+    /// xterm·urxvt는 `Ctrl+Shift+V`를 안 받아(Shift+Insert = PRIMARY) 넣지 않는다 — 모르는 것은 `Ctrl+V` 그대로.
+    pub(super) fn is_terminal_class(class: &str) -> bool {
+        let c = class.to_ascii_lowercase();
+        [
+            "gnome-terminal",
+            "ptyxis",
+            "kgx",
+            "konsole",
+            "xfce4-terminal",
+            "mate-terminal",
+            "lxterminal",
+            "qterminal",
+            "tilix",
+            "terminator",
+            "guake",
+            "alacritty",
+            "kitty",
+            "wezterm",
+            "foot",
+            "terminology",
+            "deepin-terminal",
+            "tabby",
+            "ghostty",
+        ]
+        .iter()
+        .any(|t| c.contains(t))
+    }
+
+    /// X 포커스 창(자식 창일 수 있어 부모를 몇 단 거슬러 오른다)의 `WM_CLASS` 클래스 이름.
+    fn focus_class() -> Option<String> {
+        let (conn, _) = connect().ok()?;
+        let mut win = conn.get_input_focus().ok()?.reply().ok()?.focus;
+        if win <= 1 {
+            return None; // None(0)·PointerRoot(1) — Wayland 네이티브 앱이 포커스일 때 흔하다.
+        }
+        for _ in 0..5 {
+            if let Some(class) = conn
+                .get_property(
+                    false,
+                    win,
+                    xproto::AtomEnum::WM_CLASS,
+                    xproto::AtomEnum::STRING,
+                    0,
+                    256,
+                )
+                .ok()
+                .and_then(|c| c.reply().ok())
+                .and_then(|p| {
+                    p.value
+                        .split(|b| *b == 0)
+                        .rfind(|s| !s.is_empty())
+                        .map(|s| String::from_utf8_lossy(s).into_owned())
+                })
+            {
+                return Some(class);
+            }
+            let tree = conn.query_tree(win).ok()?.reply().ok()?;
+            if tree.parent == x11rb::NONE || tree.parent == tree.root {
+                return None;
+            }
+            win = tree.parent;
+        }
+        None
+    }
+
     pub(super) fn foreground() -> Option<Target> {
+        // ★ 대상이 터미널인지 적어 둔다(T-15c) — X11·XWayland 창만 알 수 있다. Wayland 네이티브 터미널은
+        //   포털이 대상 정체를 주지 않아 알 길이 없다(그때는 `Ctrl+V` 그대로 — 지어내지 않는다).
+        let terminal = has_display() && focus_class().is_some_and(|c| is_terminal_class(&c));
+        TARGET_IS_TERMINAL.store(terminal, std::sync::atomic::Ordering::Relaxed);
         if is_wayland() && crate::remote_input_linux::available() {
             return Some(Target::Wayland);
         }
@@ -803,10 +878,16 @@ mod imp {
     }
 
     pub(super) fn send_paste(_as: PasteAs) -> Result<(), PasteError> {
+        let terminal = TARGET_IS_TERMINAL.load(std::sync::atomic::Ordering::Relaxed);
         if is_wayland() && crate::remote_input_linux::available() {
-            return crate::remote_input_linux::tap_ctrl_v().map_err(PasteError::Os);
+            return if terminal {
+                crate::remote_input_linux::tap_ctrl_shift_v()
+            } else {
+                crate::remote_input_linux::tap_ctrl_v()
+            }
+            .map_err(PasteError::Os);
         }
-        xtest_tap(KEYSYM_V, true)
+        xtest_tap(KEYSYM_V, true, terminal)
     }
 
     /// ★ 줄바꿈(09-08) — Return 한 번(Ctrl 없이). 포털 세션이면 evdev 코드로, 아니면 XTest.
@@ -815,11 +896,11 @@ mod imp {
             return crate::remote_input_linux::tap_key(EVDEV_KEY_ENTER, false)
                 .map_err(PasteError::Os);
         }
-        xtest_tap(KEYSYM_RETURN, false)
+        xtest_tap(KEYSYM_RETURN, false, false)
     }
 
-    /// XTest 키 한 번 — `with_ctrl`이면 Control_L을 감싼다.
-    fn xtest_tap(sym: u32, with_ctrl: bool) -> Result<(), PasteError> {
+    /// XTest 키 한 번 — `with_ctrl`이면 Control_L을, `with_shift`면 Shift_L까지 감싼다(터미널 · T-15c).
+    fn xtest_tap(sym: u32, with_ctrl: bool, with_shift: bool) -> Result<(), PasteError> {
         if !has_display() {
             return Err(PasteError::Unsupported(if is_wayland() {
                 PasteUnsupported::WaylandNoInjection
@@ -852,11 +933,22 @@ mod imp {
                 .map_err(|e| PasteError::Os(format!("XTest 실패: {e}")))
                 .map(|_| ())
         };
+        let shift = if with_shift {
+            Some(kc(KEYSYM_SHIFT_L)?)
+        } else {
+            None
+        };
         if with_ctrl {
             fake(KEY_PRESS, ctrl)?;
         }
+        if let Some(sh) = shift {
+            fake(KEY_PRESS, sh)?;
+        }
         fake(KEY_PRESS, main)?;
         fake(KEY_RELEASE, main)?;
+        if let Some(sh) = shift {
+            fake(KEY_RELEASE, sh)?;
+        }
         if with_ctrl {
             fake(KEY_RELEASE, ctrl)?;
         }
@@ -1203,6 +1295,27 @@ mod tests {
                 assert!(!hint.is_empty(), "권한 안내가 비어 있으면 사용자가 막힌다");
             }
             PasteCapability::ClipboardOnly { .. } => {}
+        }
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod terminal_tests {
+    /// ★ T-15c — 터미널 클래스만 `Ctrl+Shift+V` 대상이다(모르는 것·xterm은 `Ctrl+V` 그대로).
+    #[test]
+    fn terminal_classes_are_recognised() {
+        for c in [
+            "Gnome-terminal",
+            "org.gnome.Ptyxis",
+            "konsole",
+            "Alacritty",
+            "kitty",
+            "org.wezfurlong.wezterm",
+        ] {
+            assert!(super::imp::is_terminal_class(c), "{c}");
+        }
+        for c in ["XTerm", "URxvt", "Code", "DesktopEditors", "firefox", ""] {
+            assert!(!super::imp::is_terminal_class(c), "{c}");
         }
     }
 }

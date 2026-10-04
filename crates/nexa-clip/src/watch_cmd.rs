@@ -87,7 +87,7 @@ impl Gate {
 /// ⚠️ 예전에는 사유와 무관하게 *"이 OS의 감시 구현이 아직 없습니다"* 한 줄이었다 —
 /// 도구만 설치하면 되는 Linux(`MissingTool`)를 **미구현으로 오인**하게 만든다(08-29).
 /// 포트가 정직하게 사유를 돌려주는데 안내가 그걸 버리면 정직함이 사용자에게 닿지 않는다.
-fn unsupported_hint(reason: &UnsupportedReason) -> String {
+pub(crate) fn unsupported_hint(reason: &UnsupportedReason) -> String {
     match reason {
         UnsupportedReason::MissingTool(tool) => format!(
             "{tool} 이(가) 없습니다(도구는 ★ **폴백** — X11/XWayland에서는 내재 구현이 우선이고, 이 안내는 그마저 닿지 않는 환경이다). 설치하세요 — Ubuntu/Debian `sudo apt install wl-clipboard xclip` · \

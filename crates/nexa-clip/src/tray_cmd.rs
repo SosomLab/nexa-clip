@@ -384,7 +384,11 @@ fn sync_autostart(conf: &mut Settings) {
         BootSync::Register => match apply(true) {
             Ok(()) => {
                 conf.set("app.autostart_reg", "on".into(), now);
-                println!("자동 시작: 등록 동기화 (로그인 시 실행 · 현재 경로)");
+                println!(
+                    "자동 시작: 등록 동기화 (로그인 시 실행 · {})",
+                    nclip_plat::autostart::target()
+                        .map_or_else(|| "경로 미상".to_string(), |p| p.display().to_string())
+                );
             }
             Err(e) => eprintln!("자동 시작 등록 실패: {e} — 다음 시작에서 재시도합니다"),
         },
@@ -2606,8 +2610,14 @@ pub(crate) fn run() {
         crate::conf::profile(),
     );
     if single_guard.is_none() {
-        nclip_plat::single::signal_open(crate::conf::profile());
-        println!("이미 실행 중 — 기존 인스턴스에 열기를 위임했습니다");
+        let sock = crate::conf::data_dir().join("instance.sock");
+        if nclip_plat::single::signal_open(crate::conf::profile(), &sock) {
+            println!("이미 실행 중 — 기존 인스턴스에 열기를 위임했습니다");
+        } else {
+            println!(
+                "이미 실행 중 — 기존 인스턴스에 알리지 못했습니다(트레이 아이콘에서 여십시오)"
+            );
+        }
         return;
     }
 
@@ -2753,7 +2763,10 @@ pub(crate) fn run() {
         }
     } else {
         if let WatchCapability::Unsupported { reason } = watch.capability() {
-            println!("클립보드 감시: 사용 불가({reason:?}) — 트레이만 동작합니다");
+            println!(
+                "클립보드 감시: 사용 불가({reason:?}) — 트레이만 동작합니다\n  {}",
+                crate::watch_cmd::unsupported_hint(&reason)
+            );
         }
     }
 
@@ -2765,11 +2778,12 @@ pub(crate) fn run() {
         });
     }
 
+    let quit_hooked;
     // ★ Ctrl+C = 정상 종료(트레이 메뉴 "종료"와 같은 경로) — 안 걸면 프로세스가
     //   STATUS_CONTROL_C_EXIT로 죽어 cargo가 오류처럼 찍는다(08-28 실기 오인).
     {
         let proxy = el.create_proxy();
-        nclip_plat::console::on_console_quit(move || {
+        quit_hooked = nclip_plat::console::on_console_quit(move || {
             let _ = proxy.send_event(ShellEvent::Quit);
         });
     }
@@ -2785,7 +2799,13 @@ pub(crate) fn run() {
             "앱 종료 (설정 '창을 닫아도 트레이에 남기'를 켜면 숨김)"
         }
     );
-    println!("종료: 트레이 메뉴 \"종료\" 또는 Ctrl+C — 둘 다 정상 종료(설정 저장 포함)");
+    if quit_hooked {
+        println!(
+            "종료: 트레이 메뉴 \"종료\" 또는 Ctrl+C·종료 신호 — 둘 다 정상 종료(설정 저장 포함)"
+        );
+    } else {
+        println!("종료: 트레이 메뉴 \"종료\" — 정상 종료(설정 저장 포함 · 이 환경은 종료 신호를 못 받습니다)");
+    }
 
     let paste_auto = conf.state.get("paste.auto") == "on";
     let gate = Gate::from_state(&conf);
@@ -2814,9 +2834,10 @@ pub(crate) fn run() {
     crate::about::spawn_hash();
 
     {
-        // ★ 둘째 실행의 "열기" 신호 → 메인창(Windows · 09-03).
+        // ★ 둘째 실행의 "열기" 신호 → 메인창(Windows 09-03 · Unix 10-05 = 데이터 폴더의 소켓).
         let proxy = el.create_proxy();
-        nclip_plat::single::watch_open_requests(crate::conf::profile(), move || {
+        let sock = crate::conf::data_dir().join("instance.sock");
+        nclip_plat::single::watch_open_requests(crate::conf::profile(), &sock, move || {
             println!("단일 인스턴스: 열기 위임 수신 — 메인창을 앞으로");
             let _ = proxy.send_event(ShellEvent::Open);
         });
