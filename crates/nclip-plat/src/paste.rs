@@ -36,6 +36,33 @@ impl PlatformPaste {
     }
 }
 
+#[cfg(target_os = "linux")]
+impl PlatformPaste {
+    /// ★ 포커스 복원 + 키 주입을 **워커에서** 한다(10-05 · T-41 ④ · DR-41 "UI 스레드는 기다리지 않는다").
+    ///
+    /// Linux의 복원은 컴포지터가 포커스를 돌려줄 때까지 150ms를 쉬고, 주입은 포털에 D-Bus 왕복을 한다 —
+    /// UI 스레드에서 하면 그동안 창·트레이·단축키가 멎는다(세션이 죽어 다시 여는 경우는 더 길다).
+    /// 결과는 `done`으로 알린다(워커 스레드에서 불린다).
+    pub fn restore_and_paste_detached<F>(&self, as_: PasteAs, done: F)
+    where
+        F: FnOnce(Result<(), PasteError>) + Send + 'static,
+    {
+        let target = self.target.clone();
+        let spawned = std::thread::Builder::new()
+            .name("nclip-paste".into())
+            .spawn(move || {
+                let r = match target {
+                    None => Err(PasteError::TargetGone),
+                    Some(t) => imp::restore(&t).and_then(|()| imp::send_paste(as_)),
+                };
+                done(r);
+            });
+        if let Err(e) = spawned {
+            eprintln!("붙여넣기: 워커 생성 실패({e})");
+        }
+    }
+}
+
 impl PasteInjector for PlatformPaste {
     fn capability(&self) -> PasteCapability {
         imp::capability()

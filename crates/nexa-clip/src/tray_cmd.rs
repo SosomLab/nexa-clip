@@ -2073,10 +2073,15 @@ impl Shell {
 
     /// 팝업이 닫힌 다음 바퀴 — 포커스 복원 + 키 주입.
     fn paste_now(&mut self, as_: PasteAs) {
-        match self.paste.restore_and_paste(as_) {
+        let report = |r: Result<(), nclip_core::PasteError>| match r {
             Ok(()) => println!("붙여넣기: 포커스 복원 + 키 주입 ok"),
             Err(e) => eprintln!("붙여넣기 실패: {e:?} — 클립보드에는 실려 있습니다(Ctrl+V)"),
-        }
+        };
+        // ★ Linux는 워커에서(10-05 · T-41 ④) — 복원 대기(150ms)와 포털 왕복이 UI 스레드를 막지 않게.
+        #[cfg(target_os = "linux")]
+        self.paste.restore_and_paste_detached(as_, report);
+        #[cfg(not(target_os = "linux"))]
+        report(self.paste.restore_and_paste(as_));
     }
 
     /// ★ 이미지로 복사(09-03) — 리치 런(색·굵기)을 흰 바탕 비트맵으로 렌더해
