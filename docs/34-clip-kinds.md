@@ -146,7 +146,13 @@
 - ⚠️ 실기 **미확인**(단위 테스트만).
 - 동사가 `cut`(잘라내기)인 파일 항목은 이력에는 남지만 **다른 기기로 전파하지 않는다**(T-53 · [DR-45](10-decision-record.md)).
 
-### ⑤ 그 밖 — 확인 안 된 것
+### ⑤ 글 없이 그림만 든 HTML은 "개체"다 (ONLYOFFICE 프레젠테이션 · 10-04 19차)
+
+- ONLYOFFICE 프레젠테이션은 슬라이드·개체 복사를 **`text/html` 하나로만** 올린다 — 안에 인라인 그림(`<img src="data:image/png;base64…">`)뿐이고 평문·그림 표현이 없다. 이름만 보는 §2에서는 ②의 **서식 글**이 된다.
+- 판정 뒤 한 번 더 본다(`tray_cmd.rs` `Shell::html_picture`): HTML에 **글이 없고 인라인 그림뿐이면** 종류를 **개체**로 바꾸고 라벨 "[이미지] W×H" · 그 그림으로 섬네일을 만든다. 개체도 "이미지로 복사"가 된다.
+- ⚠️ 개체 여러 개를 복사하면 그림이 여러 장 오는데 **원래 배치(위치)는 HTML에 없다**(추정 · `pptData` 이진에만 있는 것으로 보임 · 미확인) → 지금은 가로로 나란히 된다(T-65 결정 대기).
+
+### ⑥ 그 밖 — 확인 안 된 것
 
 - **ONLYOFFICE 시트**(10-04 18차 실측 · Linux): 표 복사 TARGETS = `STRING` · `UTF8_STRING` · `TEXT` · `text/plain` · `text/plain;charset=utf-8` · `image/png`(2,447B) · `text/html`(9,045B) · 주인 창 이름 "Chromium clipboard" → ②에서 **서식 글**(그림이 함께 있어도 ④까지 안 내려감). 수 초 뒤 VMware 클립보드 다리(`vmware-user`)가 `STRING` · `text/plain` · `UTF8_STRING` · `COMPOUND_TEXT`(31B)로 다시 쥘 수 있다(①의 경우).
 - **ONLYOFFICE 문서 편집기**의 서식 표현 이름은 아직 **미확인**이다 — `text/html`이든 다른 앱 고유 이름이든 서식 글로 판정된다(② 또는 ③).
