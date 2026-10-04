@@ -1055,6 +1055,20 @@ impl Popup {
                     }
                     _ => false,
                 };
+                // ★ 검색창에 **실제로 들어 있는 글**을 남긴다(10-05 · T-58 — 검색창이 `*`로 가득 찼던 회차의
+                //   원인 추적용 · 코드에는 `*`를 그리는 경로가 없다). 진단 모드에서만.
+                if changed && crate::keys::diag() {
+                    println!(
+                        "키진단 검색창: 글={:?} (코드점 {:?})",
+                        self.search.display_text(),
+                        self.search
+                            .display_text()
+                            .chars()
+                            .take(8)
+                            .map(|c| c as u32)
+                            .collect::<Vec<_>>()
+                    );
+                }
                 if changed {
                     self.sel = 0;
                     self.scroll = 0;
