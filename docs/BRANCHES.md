@@ -4,7 +4,8 @@
 
 | 브랜치 | 생성 | 병합 | 커밋 수 | 요약 |
 |---|---|---|---:|---|
-| `feat/tray-version-10-04` | 2026-10-04 | 2026-10-04 | — | 트레이 우클릭 메뉴 머리줄 버전 표시("Nexa Clip v0.1.6" · 사용자 요청 · Linux SNI 제목·알림 제목에도) · 설치본 PID 22548 · V2 ✓ · journal 10-04 12차(진행사항 최신화) · v0.1.6 미포함 · 병합 해시 = 병합 커밋 참조 |
+| `docs/progress-10-04c` | 2026-10-04 | 2026-10-04 | 1 | 진행사항 최신화 · 오늘 마감(문서만) — journal 10-04 맨 위 요약 1~13차 · 13차(winget 0.1.6 자동 검증 중 · choco 0.1.5 Verification 대기) · STATUS·DEVLOG·TODO T-50 · 병합 해시 = 병합 커밋 참조 |
+| `feat/tray-version-10-04` | 2026-10-04 | 2026-10-04 | 2 | 트레이 우클릭 메뉴 머리줄 버전 표시("Nexa Clip v0.1.6" · 사용자 요청 · Linux SNI 제목·알림 제목에도) · 설치본 PID 22548 · V2 ✓ · journal 10-04 12차(진행사항 최신화) · v0.1.6 미포함 · 병합 `424a548`(커밋 `464ea28` · `c5812b2`) · CI `37190907269` ✓ |
 | `docs/release-v0.1.6-10-04` | 2026-10-04 | 2026-10-04 | 2 | v0.1.6 릴리스 결과 기록(11차 · 자산 14 · brew · winget en-US 새 PR · choco 잡 실패 원인) · ★ choco guard 수정(`IsApproved=true` 판정 · 음성·양성 대조) · CLAUDE.md 현 단계 v0.1.6 · 병합 `e0d1f23`(커밋 `656782a` · `f789056`) · CI `37189967847` ✓ |
 | `fix/excel-picture-kind-icon-10-04` | 2026-10-04 | 2026-10-04 | 4 | ⑦ Rich 보기 종류 아이콘 · ⑧ Excel 범위 그림 정책(`Link`) · ⑨ 이미지로 복사 = 원본 그림 · ⑩ EMF 핸들 게시 + 셀 범위 `CF_DIB` 합성 · 버전 0.1.6(태그 없음 · 🚧 **v0.1.6 릴리스 진행(재개 · 사용자 10-04 "새 버전으로 릴리즈하고 Winget/Choco 게시도 판단해서 진행")** — 순서: main push → CI green 확인 → 태그 `v0.1.6`(개발 세션) · 채널 = brew 자동 · winget = 열린 0.1.4 PR #434300·#434302(ko-KR · 09-14 이후 무변화)를 태그 직전에 닫고 v0.1.6 **en-US** 자동 제출(`WINGET_PUBLISH=true`) · choco = **이번엔 skip**(guard 자동 · force 안 씀 — 0.1.5가 "in moderation" · Validation Passed 06:16Z · Verification·Scan Pending · 재제출 뒤 새 댓글 0 · 피드 0 · `CHOCO_PUSH=true` 그대로)) · 문서 journal 10-04 8~10차(V3 · 채널 방침 · 배포 중지 · 진행사항 최신화) · 병합 `6b03f22`(커밋 `26212fc` · `d197a52` · `580ff7a` · `753ffde`) · CI `37189357477` ✓ · 태그 `v0.1.6` |
 | `release/v0.1.6` | — | — | 0 | **만들지 않음**(10-04 · 한때 배포 중지 → 재개도 이 브랜치 없이) — 8차에 적은 릴리스 준비 내용은 `fix/excel-picture-kind-icon-10-04`로 함께 커밋 |
