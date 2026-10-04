@@ -4,6 +4,29 @@
 
 ---
 
+## 2026-10-04 (3차 · win) — ★ 스토어 제출물 전부 영어 규칙
+
+**규칙**(사용자): winget·choco 제출 틀(`packaging/winget/**` · `packaging/choco/**`)은 설명·주석·`Write-Host`·YAML 주석까지 **전부 영어 · 한국어 병기 없음** · 나머지 저장소는 한국어 그대로 · Homebrew 대상 아님 · 강제 = `render-manifests.sh` 게이트(ASCII 밖 글자 → exit 1 · BOM 예외).
+**수정**(개발 세션 · 미커밋): nuspec 2 영어만 · choco ps1 4 영어 · winget 틀 6 `ko-KR` → `en-US` + 영어 설명·라이선스 문장 · 검증 = render · `choco pack` 2 · `winget validate` 2 · 음성 3건 exit 1 · 첫 판 게이트의 BOM 실수는 양성 대조로 잡음.
+**☐ 남은 것**: 커밋·push → choco 0.1.5 재제출(둘 다 승인됨) · winget 열린 PR(0.1.4 · ko-KR) 영어 교체 = 사용자 결정 대기. → [journal](journal/2026-10-04.md)
+
+---
+
+## 2026-10-04 (2차 · win) — ★ Chocolatey 0.1.5 검수자 수정 요청 대응 · 재발 방지
+
+**사실**: choco 0.1.5(설치본·포터블) = **"Waiting for Maintainer"**(09-28부터 · **우리 차례**) — 검수자 댓글(09-28 11:47 UTC): 설명이 한국어뿐 · 비상업 제한이 영어로 안 읽힘 · `<copyright>` 없음 → 같은 버전 재제출 요청. winget 0.1.4 PR 2건 무변화(09-14).
+**수정**(개발 세션 · 미커밋): nuspec 2개 = 영어 먼저(비상업 제한 영어 문장) → 한국어(→ 3차에서 영어만) · `<copyright>` · jsdelivr 아이콘 · `render-manifests.sh` 게이트 3개(copyright · 영어 첫 줄 · 영어 License 줄 · 음성 대조 2건 확인) · 릴리스 노트 영어 라이선스 줄.
+**정정**: ★ [09-29](journal/2026-09-29.md) "Passed → 사람 모더레이터 대기"는 **오판** — 배지·피드만 보고 페이지 상태 문구·댓글을 안 읽어 6일 허비. 재발 방지 = 상태 점검은 페이지 문구 + 댓글 전문([18 §10](18-build-and-test.md) 규칙 A~D).
+**☐ 남은 것**: 커밋·push(요청 대기) → choco 0.1.5 재제출(승인 대기 · `WINGET_PUBLISH=false` → `force=true` → 복구) · ⚠️ winget 매니페스트도 `ko-KR` 단일 로캘(같은 지적 위험 · T-50 → 3차에서 틀은 `en-US`). → [journal](journal/2026-10-04.md)
+
+---
+
+## 2026-10-04 (1차 · win) — ★ 협업 세션 운영 기준 도입
+
+**문서**: [33 협업 세션 운영](33-collab-session-operation.md) — nexa-sql `docs/102` 동일 적용(Fable 개발 × Opus 협업 · 파일 소유 · 커밋 한 곳 · [P0] 빌드+Debug 재시작 최우선 · 검증 V0~V3) · §0-0 이식 절차(이미 정리돼 있으면 "이미 정리된 상태"라고 답함). → [journal](journal/2026-10-04.md)
+
+---
+
 ## 2026-09-29 (1차 · win) — 진행사항 최신화 · 새 버전 배포 검토
 
 **점검**: ★ choco 0.1.5(설치본·포터블) **Validation·Verification Passed** → 사람 모더레이터 대기 · winget 0.1.4 PR 2건 그대로(09-14 이후 무변화) · CI main ✓.

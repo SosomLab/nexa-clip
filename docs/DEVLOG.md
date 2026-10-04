@@ -2,6 +2,12 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-10-04 (3차 · win) — ★ **스토어 제출물 전부 영어** 규칙(사용자) — winget·choco 제출 틀(설명·주석·`Write-Host`·YAML 주석) 영어만 · 한국어 병기 없음 · nuspec 영어만 · choco ps1 4개 영어 · winget 틀 6개 `ko-KR` → `en-US` · 게이트 = 출력 전체 ASCII 밖 글자 0(BOM 예외) · 음성 3건·양성 확인(첫 판 BOM 처리 실수를 양성 대조로 잡음) · ☐ winget 열린 PR(0.1.4 · ko-KR) 교체 = 사용자 결정 대기 → [journal](journal/2026-10-04.md)
+
+## 2026-10-04 (2차 · win) — ★ **Chocolatey 0.1.5 검수자 수정 요청 대응** — 09-28부터 "Waiting for Maintainer"(= 우리 차례) · 검수자 댓글 = 설명이 한국어뿐 · 비상업 제한 영어 아님 · `<copyright>` 없음 → nuspec 2개 영어 먼저 + copyright(→ 3차에서 영어만) · `render-manifests.sh` 게이트 3개 · 릴리스 노트 영어 라이선스 줄 · ★ 09-29 "모더레이터 대기" 판단은 **오판**(배지만 보고 댓글 안 읽음 · 6일 허비) → 재발 방지 규칙 A~D([18 §10](18-build-and-test.md) · packaging/README) · ☐ 커밋·같은 버전 재제출(승인 대기) → [journal](journal/2026-10-04.md)
+
+## 2026-10-04 (1차 · win) — ★ **협업 세션 운영 기준** [33](33-collab-session-operation.md) 신설 — nexa-sql `docs/102`를 동일 적용(Fable 개발 × Opus 협업 · 파일 소유 · 커밋 한 곳 · [P0] 빌드+Debug 재시작 최우선 · 검증 V0~V3) · 경로·검증 명령만 nexa-clip 것(check-3os · E2E · dev-restart · beep 연락 점검) → [journal](journal/2026-10-04.md)
+
 ## 2026-09-29 (1차 · win) — 진행사항 최신화 · ★ **새 버전 배포 불필요** 판단(v0.1.5 이후 코드 변경 0 · 문서만) · ★ choco 0.1.5 **자동 검사 통과**(Validation·Verification Passed 둘 다 · 사람 모더레이터 대기) · winget 0.1.4 15일째 무변화 → [journal](journal/2026-09-29.md)
 
 ## 2026-09-28 (3차 · win) — ★ **Chocolatey 첫 제출**(v0.1.5 · 설치본·포터블) — force 수동 실행(run `36364532264`) 동안만 winget 끔 → push 성공 · 모더레이션 큐(Validation/Verification Pending) · 변수 복구 → [journal](journal/2026-09-28.md)
