@@ -148,5 +148,6 @@
 
 ### ⑤ 그 밖 — 확인 안 된 것
 
-- ONLYOFFICE 서식 글이 정확히 **어떤 이름의 서식 표현**(`text/html`인지 다른 앱 고유 이름인지)으로 오는지는 **미확인**이다 — 두 경우 모두 서식 글로 판정된다(② 또는 ③).
+- **ONLYOFFICE 시트**(10-04 18차 실측 · Linux): 표 복사 TARGETS = `STRING` · `UTF8_STRING` · `TEXT` · `text/plain` · `text/plain;charset=utf-8` · `image/png`(2,447B) · `text/html`(9,045B) · 주인 창 이름 "Chromium clipboard" → ②에서 **서식 글**(그림이 함께 있어도 ④까지 안 내려감). 수 초 뒤 VMware 클립보드 다리(`vmware-user`)가 `STRING` · `text/plain` · `UTF8_STRING` · `COMPOUND_TEXT`(31B)로 다시 쥘 수 있다(①의 경우).
+- **ONLYOFFICE 문서 편집기**의 서식 표현 이름은 아직 **미확인**이다 — `text/html`이든 다른 앱 고유 이름이든 서식 글로 판정된다(② 또는 ③).
 - 브라우저 입력창·Word에서 맨 글을 복사했는데 서식 글로 보이면, 처음 보는 곁다리 이름이 붙었을 가능성이 크다(§2-3). 그 항목의 표현 이름 목록이 원인 확인의 출발점이다.
