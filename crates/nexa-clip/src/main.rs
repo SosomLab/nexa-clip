@@ -21,6 +21,7 @@ mod demo;
 mod devices;
 mod icon;
 mod keys;
+mod kind_icon;
 mod lan;
 mod main_win;
 mod mode_drop;

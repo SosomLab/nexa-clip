@@ -271,6 +271,27 @@ pub fn is_metafile_format(fmt: &str) -> bool {
     )
 }
 
+/// 스프레드시트 **셀 범위** 복사의 표식 — Excel이 범위를 복사할 때만 올리는 표현들.
+#[must_use]
+pub fn is_cell_range_format(fmt: &str) -> bool {
+    matches!(fmt, "Biff12" | "Biff8" | "Biff5" | "XML Spreadsheet")
+}
+
+/// ★ **이 표현은 원본 앱에 렌더링을 청하지 않는다** — 셀 범위 복사의 그림 표현(10-04 사용자 실기).
+///
+/// Excel은 지연 렌더링이라 **누가 달라고 할 때** 표현을 만든다. 행·열 전체를 복사한 뒤
+/// 그림 표현(`CF_ENHMETAFILE`·`CF_DIB`…)을 청하면 Excel이 범위 전체를 그림으로 그리려다
+/// **"그림이 너무 커서 잘립니다"** 대화상자를 사용자에게 띄운다 — 감시가 전부 읽는 한
+/// 복사할 때마다 뜬다. 셀 범위는 글·서식 표현(평문 · HTML · Biff)이 본체이고 그림은
+/// 곁가지이므로, 셀 범위 표식이 있으면 그림 표현은 **읽지도 담지도 않는다**.
+///
+/// `names` = 지금 클립보드에 있는 표현 이름 전부, `fmt` = 판정할 표현.
+#[must_use]
+pub fn skip_render<S: AsRef<str>>(names: &[S], fmt: &str) -> bool {
+    (is_bitmap_format(fmt) || is_metafile_format(fmt))
+        && names.iter().any(|n| is_cell_range_format(n.as_ref()))
+}
+
 /// ★ **앱 고유 포맷인가** — 아는 표준도 곁다리도 아니면 벤더다([§2](#2--벤더-포맷을-목록으로-알아보지-않는다)).
 #[must_use]
 pub fn is_vendor_format(fmt: &str) -> bool {
@@ -1887,6 +1908,42 @@ mod tests {
             capture(&reps, Some("수요계획"), None, None, &[], P).kind,
             ClipKind::RichText
         );
+    }
+
+    /// ★ 셀 범위의 그림 표현은 청하지 않는다 — Excel 행·열 전체 복사에서
+    /// "그림이 너무 커서 잘립니다"가 뜨던 원인(10-04 실기).
+    #[test]
+    fn cell_range_skips_picture_render() {
+        let excel = [
+            "CF_ENHMETAFILE",
+            "CF_METAFILEPICT",
+            "CF_BITMAP",
+            "Biff12",
+            "Biff8",
+            "XML Spreadsheet",
+            "HTML Format",
+            "CF_UNICODETEXT",
+            "CF_DIB",
+        ];
+        for f in [
+            "CF_ENHMETAFILE",
+            "CF_METAFILEPICT",
+            "CF_BITMAP",
+            "CF_DIB",
+            "CF_DIBV5",
+            "PNG",
+        ] {
+            assert!(skip_render(&excel, f), "{f}는 청하지 않는다");
+        }
+        // 글·서식 표현은 그대로 읽는다 — 셀 범위의 본체다.
+        for f in ["Biff12", "XML Spreadsheet", "HTML Format", "CF_UNICODETEXT"] {
+            assert!(!skip_render(&excel, f), "{f}는 읽는다");
+        }
+        // ⚠️ 셀 범위가 아니면 그림은 그대로 읽는다 — PPT 도형·스크린샷이 미리보기를 잃으면 안 된다.
+        let ppt = ["Art::GVML ClipFormat", "PNG", "CF_ENHMETAFILE", "CF_DIB"];
+        for f in ["PNG", "CF_ENHMETAFILE", "CF_DIB"] {
+            assert!(!skip_render(&ppt, f), "PPT의 {f}는 읽는다");
+        }
     }
 
     /// ★ **내용 표현이 없으면 항목이 아니다** — 실기의 [14](Excel 0개)·[9](rdpclip).

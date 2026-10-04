@@ -488,6 +488,52 @@ fn cached_reps(local: &[String], as_: PasteAs) -> Vec<RawRep> {
     reps
 }
 
+/// ★ 원격 항목의 클립보드 게시 — **전용 스레드에서, 마지막 것만**(10-04 · DR-41).
+///
+/// 게시가 줄을 서면(잠금 대기·열기 경합) 그 사이 더 새 항목이 올 수 있다 — 낡은 게시는
+/// 버린다(큐가 아니라 세대). 세대 확인과 게시를 한 잠금 안에서 해, 늦게 깬 낡은 게시가
+/// 새 내용을 덮어쓰지 못하게 한다.
+fn publish_remote(reps: Vec<RawRep>) {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static GEN: AtomicU64 = AtomicU64::new(0);
+    static ORDER: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    let mine = GEN.fetch_add(1, Ordering::SeqCst) + 1;
+    let spawned = std::thread::Builder::new()
+        .name("nclip-publish".into())
+        .spawn(move || {
+            // ★ 클립보드 열기 경합(09-04 실기 — 다른 앱/인스턴스가 쥔 순간) — 짧게 몇 번 다시 시도.
+            let mut last = Err(String::new());
+            for attempt in 0..5 {
+                {
+                    let _order = ORDER
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    if GEN.load(Ordering::SeqCst) != mine {
+                        println!("동기화: 클립보드 게시 생략 — 더 새 항목이 왔습니다");
+                        return;
+                    }
+                    last = nclip_plat::clipboard::set_reps(&reps);
+                }
+                if last.is_ok() {
+                    break;
+                }
+                if attempt < 4 {
+                    std::thread::sleep(Duration::from_millis(25));
+                }
+            }
+            match last {
+                Ok(n) => {
+                    println!("동기화: 클립보드 게시 — 표현 {n}개(이 PC에서 바로 붙여넣기 가능)");
+                }
+                Err(e) => eprintln!("동기화: 클립보드 게시 실패({e}) — 이력에는 들어갔습니다"),
+            }
+        });
+    if let Err(e) = spawned {
+        eprintln!("동기화: 게시 스레드 생성 실패({e}) — 이력에는 들어갔습니다");
+    }
+}
+
 impl Shell {
     /// 이력이 변했다 — 트레이 메뉴·툴팁을 새 내용으로.
     fn refresh_tray(&self) {
@@ -1039,6 +1085,19 @@ impl Shell {
     /// ★ 표현만 받는 **순수 함수**다(09-13) — 항목 전체가 아니라 `reps`만 보므로
     /// 테스트가 `HistoryItem` 조립 없이 3-OS 표현을 그대로 넣어 볼 수 있다.
     fn reps_for_mode(reps: &[RawRep], as_: PasteAs) -> Vec<RawRep> {
+        // ★ 파일 항목의 평문·경로만 = **항상 전체 경로**(10-04 사용자 요청 — "파일은 Shift+Enter로
+        //   경로가 붙어야 한다"). 함께 온 평문 표현을 그대로 쓰면 OS마다 내용이 다르다 —
+        //   mac Finder는 평문에 **파일 이름만** 싣는다. 경로 목록에서 직접 만든다.
+        if as_.is_text_only()
+            && reps
+                .iter()
+                .any(|r| nclip_core::capture::is_files_format(&r.format))
+        {
+            let paths = nclip_core::capture::paths_of(reps);
+            if !paths.is_empty() {
+                return nclip_plat::clipboard::plain_text_reps(&paths.join("\r\n"));
+            }
+        }
         let filtered = as_.filter_reps(reps);
         if !filtered.is_empty() {
             return filtered;
@@ -1436,24 +1495,14 @@ impl Shell {
             println!("동기화: 파일 약속 등재 — 목록에서 고르면 {from}에서 받아 붙여넣습니다");
             return;
         }
-        // ★ 클립보드 열기 경합(09-04 실기 — 다른 앱/인스턴스가 쥔 순간) — 짧게 몇 번 다시 시도.
-        let mut last = Err(String::new());
-        for attempt in 0..5 {
-            last = nclip_plat::clipboard::set_reps(&reps);
-            if last.is_ok() {
-                break;
-            }
-            if attempt < 4 {
-                std::thread::sleep(std::time::Duration::from_millis(25));
-            }
-        }
-        match last {
-            Ok(n) => {
-                println!("동기화: 클립보드 게시 — 표현 {n}개(이 PC에서 바로 붙여넣기 가능)");
-                self.history.expect_echo(0);
-            }
-            Err(e) => eprintln!("동기화: 클립보드 게시 실패({e}) — 이력에는 들어갔습니다"),
-        }
+        // ★ 게시는 **UI 스레드 밖에서**(10-04 사용자 실기 — "Windows에서 복사한 글을 mac에서 붙여넣을 때
+        //   mac 판이 멈춘 듯 대기" · DR-41 "UI 스레드는 기다리지 않는다"). mac의 `set_reps`는 감시 읽기와
+        //   같은 잠금(`clip_serial`)을 쓰는데, 감시는 그 잠금을 쥔 채 **다른 앱이 지연 제공하는 표현**을
+        //   기다릴 수 있다(`dataForType:` — 응답이 늦은 앱·가상 머신 클립보드 다리). 그동안 여기서
+        //   잠금을 기다리면 창·트레이·단축키가 통째로 멎는다. 에코 기대는 게시 전에 걸어 둔다(지문 대조라
+        //   게시가 실패해도 다른 복사를 삼키지 않는다).
+        self.history.expect_echo(0);
+        publish_remote(reps);
     }
 
     /// ★ 팝업 선택 — 재적재 후 **기억해 둔 창으로 복원 + `Ctrl+V` 주입**(K-1 실물 경로).
@@ -2621,13 +2670,24 @@ mod tests {
         }
     }
 
-    /// 평문 표현이 이미 있으면 합성하지 않고 그것을 쓴다(종전 동작 유지).
+    /// ★ 10-04 — 파일 항목의 평문·경로만은 **함께 온 평문 표현이 아니라 전체 경로**다.
+    /// (mac Finder는 평문에 파일 이름만 싣는다 — 그대로 쓰면 mac에서만 이름이 붙는다.)
     #[test]
-    fn existing_plain_rep_wins_over_synthesis() {
+    fn file_item_text_modes_always_give_full_paths() {
         let reps = [
-            rep("x-special/gnome-copied-files", b"copy\nfile:///tmp/a.txt"),
-            rep("text/plain", b"eeny meeny"),
+            rep("public.file-url", b"file:///Users/k/docs/a.txt"),
+            rep("public.utf8-plain-text", b"a.txt"),
         ];
+        for as_ in [PasteAs::Plain, PasteAs::PathOnly] {
+            let out = Shell::reps_for_mode(&reps, as_);
+            assert_eq!(text_of(&out), "/Users/k/docs/a.txt", "{as_:?}");
+        }
+    }
+
+    /// 파일 항목이 아니면 함께 온 평문 표현을 그대로 쓴다(종전 동작 유지).
+    #[test]
+    fn non_file_item_plain_uses_existing_plain_rep() {
+        let reps = [rep("text/html", b"<b>x</b>"), rep("text/plain", b"x")];
         let out = Shell::reps_for_mode(&reps, PasteAs::Plain);
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].format, "text/plain");

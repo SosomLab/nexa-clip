@@ -4,7 +4,8 @@
 
 | 브랜치 | 생성 | 병합 | 커밋 수 | 요약 |
 |---|---|---|---:|---|
-| `docs/progress-10-04b` | 2026-10-04 | 2026-10-04 | 1 | 진행사항 최신화 · 오늘 마감 — journal 10-04 맨 위 요약(확정 · 대기 · 결정) + 6차(choco 0.1.5 재검사 Pending · winget 무변화 · CI ✓) · ★ 5차 V3 시점 개정(33 §5-7) · STATUS·DEVLOG·TODO T-50·MILESTONES · 병합 해시 = 병합 커밋 참조 |
+| `fix/excel-pin-kind-icon-10-04` | 2026-10-04 | 2026-10-04 | — | ★ **사용자 실기 신고 수정 6건** — Excel 셀 범위 그림 표현 미요청(`capture::skip_render`) · mac 멈춤 추정 수정(원격 게시 전용 스레드) · 핀 대표 유지(dedup) · 파일 항목 평문·경로만 = 전체 경로 · 종류 아이콘 도형(`kind_icon.rs`) · 핀 구분선 조건 · V2 test 546 ✓ · check-3os ✓ · journal 10-04 7차 · T-60·T-61 · 병합 해시 = 병합 커밋 참조 |
+| `docs/progress-10-04b` | 2026-10-04 | 2026-10-04 | 1 | 진행사항 최신화 · 오늘 마감 — journal 10-04 맨 위 요약(확정 · 대기 · 결정) + 6차(choco 0.1.5 재검사 Pending · winget 무변화 · CI ✓) · ★ 5차 V3 시점 개정(33 §5-7) · STATUS·DEVLOG·TODO T-50·MILESTONES · 병합 `1457bab`(커밋 `5ffb4f7` · CLAUDE.md 현 단계 v0.1.5 포함) · CI `37180974756` ✓ |
 | `docs/progress-10-04` | 2026-10-04 | 2026-10-04 | 1 | 10-04 4차 진행사항 — push·CI ✓ · choco 0.1.5 같은 버전 재제출 완료(run `37180572461` · 페이지 "Updated") · journal·DEVLOG·STATUS·TODO T-50·MILESTONES·BRANCHES · 병합 `74ca850`(커밋 `4320a01`) · CI `37180718536` ✓ |
 | `fix/store-metadata-english-10-04` | 2026-10-04 | 2026-10-04 | 2 | ★ **Chocolatey 0.1.5 검수자 수정 요청 대응 + 스토어 제출물 전부 영어**(사용자 10-04) — nuspec 2 영어만 + `<copyright>` · choco ps1 4 영어 · winget 틀 6 `ko-KR` → `en-US` · `render-manifests.sh` 게이트(copyright · 영어 License 줄 · ASCII 밖 글자 0) · 릴리스 노트 영어 라이선스 줄 · 09-29 "모더레이터 대기" 오판 정정 · 재발 방지 규칙 A~D(18 §10 · packaging/README) · ★ 협업 세션 운영 기준 [33](33-collab-session-operation.md) · 병합 `702053f`(`--no-ff` · 그 아래 `ec47755` = origin/main 병합 + 충돌 해소) · CI `37180571155` ✓ |
 | `docs/progress-10-03` | 2026-10-03 | 2026-10-03 | 1 | 진행사항 최신화(linux) — 11 ff·v0.1.5 분석 · ★ Linux 설치본 0.1.5 교체(로컬 .deb · pkexec · 전 파일 · SHA 일치) · ★ 트레이 연결 배지 미표시 원인 = 09-04 ① 릴레이 기준 + `relay=none` · LAN 세션 0 · 주석 2곳 모순 → T-59 · STATUS·DEVLOG·journal 10-03 |
