@@ -2332,11 +2332,37 @@ impl MainWin {
                     let tab_w = dc.text_width("    ").max(8);
                     // ★ 2단: em(전각 폭) — 들여쓰기·배율의 자.
                     let em = dc.text_width("한").max(8);
-                    for (k, line) in rich.iter().take(5).enumerate() {
+                    // ★ 표(10-05 · T-63) — 보이는 줄들로 열 폭을 맞춘다(칸 채움 · 테두리 · 런 자리).
+                    let shown = &rich[..rich.len().min(5)];
+                    let table = crate::rich_table::layout(shown, em, px(6.0), |_, _, run| {
+                        dc.select_font_sized(
+                            if run.mono {
+                                FontSlot::Mono
+                            } else {
+                                FontSlot::Base
+                            },
+                            run.bold,
+                            nclip_core::richtext::size_delta(em, run.scale),
+                        );
+                        dc.text_width(&run.text)
+                    });
+                    for (k, line) in shown.iter().enumerate() {
                         #[allow(clippy::cast_precision_loss)]
                         let ly = y + px(6.0 + 22.0 * k as f32);
+                        let trow = table.get(k).and_then(Option::as_ref);
+                        if let Some(t) = trow {
+                            crate::rich_table::paint_frame(
+                                dc,
+                                t,
+                                (cx0, ly),
+                                px(22.0),
+                                content_clip,
+                                th.border,
+                                px(1.0).max(1),
+                            );
+                        }
                         let mut xoff = 0i32;
-                        for run in line {
+                        for (ri, run) in line.iter().enumerate() {
                             dc.select_font_sized(
                                 if run.mono {
                                     FontSlot::Mono
@@ -2346,7 +2372,10 @@ impl MainWin {
                                 run.bold,
                                 nclip_core::richtext::size_delta(em, run.scale),
                             );
-                            xoff += nclip_core::richtext::em_px(em, run.indent);
+                            xoff = trow.map_or_else(
+                                || xoff + nclip_core::richtext::em_px(em, run.indent),
+                                |t| t.run_x[ri],
+                            );
                             let col = run_color(run, th.text, th.panel_bg);
                             for (ti, seg) in run.text.split('\t').enumerate() {
                                 if ti > 0 {
@@ -2577,21 +2606,57 @@ impl MainWin {
                     offs.push(offs.last().copied().unwrap_or(0) + lh);
                 }
                 let content_h = offs.last().copied().unwrap_or(0);
+                // ★ 표(10-05 · T-63) — 전문의 줄들로 열 폭을 맞춘다. 칸 안 그림은 패널 폭 기준으로 잰다.
+                let table = crate::rich_table::layout(rich, em, px(6.0), |li, ri, run| {
+                    if let Some(im) = img_at(li, ri) {
+                        return fit(im, inner.w).0;
+                    }
+                    dc.select_font_sized(
+                        FontSlot::Base,
+                        run.bold,
+                        nclip_core::richtext::size_delta(em, run.scale),
+                    );
+                    dc.text_width(&run.text)
+                });
+                let border_w = px(1.0).max(1);
                 let mut max_w = 0i32;
                 for (li, line) in rich.iter().enumerate() {
                     let mut xoff = 0i32;
                     let top = offs[li] - self.preview_scroll;
                     let in_view = offs[li + 1] - self.preview_scroll > 0 && top < inner.h;
                     let ly = inner.y + top;
+                    let trow = table.get(li).and_then(Option::as_ref);
+                    if let Some(t) = trow {
+                        if in_view {
+                            crate::rich_table::paint_frame(
+                                dc,
+                                t,
+                                (inner.x - self.preview_hs, ly),
+                                offs[li + 1] - offs[li],
+                                inner,
+                                th.border,
+                                border_w,
+                            );
+                        }
+                        max_w = max_w.max(t.x + t.w + border_w);
+                    }
                     for (ri, run) in line.iter().enumerate() {
                         dc.select_font_sized(
                             FontSlot::Base,
                             run.bold,
                             nclip_core::richtext::size_delta(em, run.scale),
                         );
-                        xoff += nclip_core::richtext::em_px(em, run.indent);
+                        xoff = trow.map_or_else(
+                            || xoff + nclip_core::richtext::em_px(em, run.indent),
+                            |t| t.run_x[ri],
+                        );
                         if let Some(im) = img_at(li, ri) {
-                            let (dw, dh) = fit(im, inner.w - xoff);
+                            let avail = if trow.is_some() {
+                                inner.w
+                            } else {
+                                inner.w - xoff
+                            };
+                            let (dw, dh) = fit(im, avail);
                             if in_view {
                                 let dst = Rect::new(
                                     inner.x - self.preview_hs + xoff,
@@ -3544,17 +3609,28 @@ pub(crate) fn run_color(
     text: nclip_ctl::theme::Color,
     panel: nclip_ctl::theme::Color,
 ) -> nclip_ctl::theme::Color {
+    let luma = |c: nclip_ctl::theme::Color| {
+        let (r, g, b) = c.rgb();
+        (u32::from(r) * 299 + u32::from(g) * 587 + u32::from(b) * 114) / 1000
+    };
     let Some(c) = run.color else {
+        // ★ 바탕색만 있는 런(표 칸 채움 · T-63) — 테마 글자색이 그 바탕에서 안 읽히면 검정/흰색 중 읽히는 쪽.
+        if let Some(b) = run.bg {
+            let bg = luma(nclip_ctl::theme::Color::from_rgb(b[0], b[1], b[2]));
+            if luma(text).abs_diff(bg) < 60 {
+                return if bg >= 128 {
+                    nclip_ctl::theme::Color::from_rgb(20, 20, 20)
+                } else {
+                    nclip_ctl::theme::Color::from_rgb(240, 240, 240)
+                };
+            }
+        }
         return text;
     };
     let col = nclip_ctl::theme::Color::from_rgb(c[0], c[1], c[2]);
     if run.bg.is_some() {
         return col;
     }
-    let luma = |c: nclip_ctl::theme::Color| {
-        let (r, g, b) = c.rgb();
-        (u32::from(r) * 299 + u32::from(g) * 587 + u32::from(b) * 114) / 1000
-    };
     if luma(col).abs_diff(luma(panel)) < 60 {
         text
     } else {
