@@ -1,6 +1,6 @@
 PackageIdentifier: SosomLab.NexaClip
 PackageVersion: "@VERSION@"
-PackageLocale: ko-KR
+PackageLocale: en-US
 Publisher: SosomLab
 PublisherUrl: https://github.com/SosomLab
 PublisherSupportUrl: https://github.com/SosomLab/nexa-clip/issues
@@ -9,12 +9,18 @@ PackageName: Nexa Clip
 PackageUrl: https://github.com/SosomLab/nexa-clip
 License: PolyForm Noncommercial 1.0.0
 LicenseUrl: https://github.com/SosomLab/nexa-clip/blob/main/LICENSE.md
-ShortDescription: 3-OS 동일 화면 클립보드 매니저
+ShortDescription: Clipboard manager that looks identical on Windows, macOS and Linux
 Description: |-
-  3-OS(Windows · macOS · Linux)에서 똑같이 생긴 화면으로 동작하는 클립보드 매니저입니다.
-  전부 Rust로 만든 단일 실행 파일이며, 자체 래스터라이저로 그려 Qt·WebView·Electron을 쓰지 않습니다.
-  이력은 로컬에 암호화 저장되고(기본 켜짐), 기기 사이 동기화는 승인한 기기와만 E2E로 이루어집니다
-  (같은 네트워크 직결 또는 릴레이 경유). 런타임 의존이 없습니다.
+  A clipboard manager that looks and behaves the same on Windows, macOS and Linux.
+  It is a single executable written entirely in Rust and draws its own UI with a
+  built-in CPU rasterizer - no Qt, WebView or Electron.
+
+  History is stored locally and encrypted by default. Sync between devices is
+  end-to-end encrypted and happens only with devices you have approved, either
+  directly over the local network or through a relay. No runtime dependencies.
+
+  License: PolyForm Noncommercial 1.0.0 - free for noncommercial use only;
+  commercial use is not permitted under this license.
 Moniker: nexa-clip
 Tags:
   - clipboard

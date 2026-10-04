@@ -61,6 +61,21 @@ Actions → publish-windows-packages → *Run workflow* · `force=true`. 첫 제
 
 변수가 꺼져 있거나 판정에 걸려도 매니페스트는 **항상 만들어** 아티팩트·릴리스 자산으로 올린다 — 손으로 제출할 수 있게.
 
+### 🔴 사람 검수 — 점검법과 메타데이터 규칙 (10-04)
+
+자동 검사(Chocolatey validator·verifier · winget 파이프라인)를 **통과한 뒤에도 사람 검수자가 돌려보낼 수 있다.** 0.1.5 choco는
+Validation·Verification Passed 뒤 검수자가 *"설명이 한국어뿐 · 비상업 제한이 영어로 안 읽힘 · `<copyright>` 없음 — 고쳐서 같은 버전으로
+다시 내라"*(09-28)고 댓글을 달았는데, 배지만 보고 "모더레이터 대기"로 오판해 6일을 허비했다([journal 10-04](../docs/journal/2026-10-04.md)).
+
+| 규칙 | 내용 |
+| --- | --- |
+| **A. 점검** | choco = 패키지 페이지 `https://community.chocolatey.org/packages/<pkg>/<ver>`의 **상태 문구 + 댓글 전문**(피드 API는 미승인 패키지를 숨긴다 · 배지는 자동 검사 결과뿐). ★ **"Waiting for Maintainer" = 우리 차례.** winget = 라벨 + **PR 댓글**. |
+| **B. 전부 영어** | 🔴 **winget·Chocolatey 제출 틀(`winget/**` · `choco/**`)은 전부 영어**(사용자 10-04) — 설명·요약 · 스크립트 주석 · `Write-Host` 문구 · YAML 주석까지 · **한국어 병기 없음** · 기본 로캘 `en-US` · 비상업 제한은 영어 문장(`License: … noncommercial use …`) · `<copyright>` 필수. 이 디렉터리의 다른 파일(이 README · `homebrew/` — 우리 탭 저장소)은 대상 아님. 강제 = `render-manifests.sh` 게이트 — ① `<copyright>` ② 영어 License 줄 ③ winget·choco 출력 전체 ASCII 밖 글자 0(ps1 머리 BOM만 예외) · 어기면 `exit 1`. 게이트를 고치면 음성·양성 대조를 둘 다 돌린다. |
+| **C. 본보기** | 새 채널·새 패키지 메타데이터는 **beep 것을 먼저 대조**한다(이미 통과한 본보기). |
+| **D. 재제출** | 반려 뒤에는 **같은 버전**으로. 제출 워크플로는 **기본 브랜치의 `packaging/`** 을 쓰므로(자산만 태그에서) 수정을 main에 push한 **뒤** `publish-windows-packages` `tag=vX.Y.Z force=true` · 그 실행 동안 `WINGET_PUBLISH=false`(force가 winget guard도 무시) → 끝나면 복구. |
+
+⚠️ winget 틀은 10-04에 `en-US`로 바꿨지만, 이미 열린 PR #434300·#434302(0.1.4)는 `ko-KR`·한국어 그대로다 — 교체 여부는 사용자 결정 대기([TODO T-50](../docs/TODO.md)).
+
 ## ⚠️ Windows — 정적 CRT (09-14)
 
 Rust `*-pc-windows-msvc`의 기본값은 **CRT 동적 링크**라 산출물이 `VCRUNTIME140.dll`을 요구한다. 이 DLL은 Windows 구성요소가

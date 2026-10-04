@@ -1,6 +1,6 @@
 ﻿$ErrorActionPreference = 'Stop'
 
-# 설치본이 남긴 제거 정보를 그대로 쓴다(HKCU — 사용자 단위 설치라 여기 있다).
+# Use the uninstall entry written by the installer (HKCU - it is a per-user install).
 $key = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\NexaClip'
 if (Test-Path $key) {
   $uninst = (Get-ItemProperty $key).UninstallString -replace '"', ''
@@ -9,5 +9,5 @@ if (Test-Path $key) {
       -SilentArgs '/S' -File $uninst -ValidExitCodes @(0)
   }
 } else {
-  Write-Host 'Nexa Clip 설치 정보를 찾지 못했습니다 — 이미 제거된 것으로 봅니다.'
+  Write-Host 'Nexa Clip uninstall entry not found - assuming it is already removed.'
 }

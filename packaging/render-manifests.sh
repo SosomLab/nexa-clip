@@ -65,7 +65,7 @@ for ch in installer portable; do
   dir="$OUT/winget/manifests/s/$(echo "$id" | tr '.' '/')/$V"
   mkdir -p "$dir"
   fill "$here/winget/$ch/version.yaml"   "$dir/$id.yaml"
-  fill "$here/winget/$ch/locale.yaml"    "$dir/$id.locale.ko-KR.yaml"
+  fill "$here/winget/$ch/locale.yaml"    "$dir/$id.locale.en-US.yaml"
   fill "$here/winget/$ch/installer.yaml" "$dir/$id.installer.yaml"
 done
 
@@ -77,7 +77,32 @@ for ch in installer portable; do
   fill "$here/choco/$ch/$pkg.nuspec"                     "$dir/$pkg.nuspec"
   fill "$here/choco/$ch/tools/chocolateyinstall.ps1"     "$dir/tools/chocolateyinstall.ps1"
   fill "$here/choco/$ch/tools/chocolateyuninstall.ps1"   "$dir/tools/chocolateyuninstall.ps1"
+
+  # ★ Chocolatey 사람 검수 요구(0.1.5가 여기서 멈췄다 · 2026-09-28 — 자동 검사는 전부 통과했는데
+  #   검수자가 "설명이 한국어뿐 · 비상업 제한이 영어로 안 읽힘 · <copyright> 없음"으로 돌려보냈다).
+  #   자동 검사가 못 잡는 종류라 **여기서 멈춘다** — 제출 뒤에 알면 같은 버전을 다시 내야 한다.
+  nus="$dir/$pkg.nuspec"
+  grep -q '<copyright>[^<]\{1,\}</copyright>' "$nus" \
+    || { echo "::error::$pkg.nuspec: <copyright>가 없다(Chocolatey 검수 요구)" >&2; exit 1; }
+  grep -qi '^License: .*noncommercial use' "$nus" \
+    || { echo "::error::$pkg.nuspec: 영어 라이선스 줄(License: … noncommercial use …)이 없다" >&2; exit 1; }
 done
+
+# 🔴 규칙(사용자 2026-10-04): **winget · Chocolatey에 제출하는 내용은 전부 영어로 쓴다** —
+#   설명·요약뿐 아니라 스크립트 주석·출력 문구·YAML 주석까지(검수자와 스토어 사용자가 읽는다).
+#   틀(packaging/winget · packaging/choco)에 영어가 아닌 글자가 들어가면 여기서 멈춘다.
+#   판정 = ASCII 밖 바이트(파일 머리 BOM만 예외 — PowerShell 스크립트). 이 저장소 주석은 한국어지만
+#   **제출되는 파일은 예외**다. Homebrew 탭은 우리 저장소라 대상이 아니다.
+bad=0
+while IFS= read -r f; do
+  if hit=$(sed $'1s/^\xEF\xBB\xBF//' "$f" | LC_ALL=C grep -n $'[\x80-\xFF]'); then
+    echo "$f:"; echo "$hit"; bad=1
+  fi
+done < <(find "$OUT/winget" "$OUT/choco" -type f \( -name '*.yaml' -o -name '*.nuspec' -o -name '*.ps1' \))
+if [ "$bad" = 1 ]; then
+  echo "::error::winget·choco 제출 파일에 영어가 아닌 글자가 있다(위 줄) — 전부 영어로 쓴다" >&2
+  exit 1
+fi
 
 # ── Homebrew(탭 저장소 배치 그대로: Casks/ · Formula/) ──
 mkdir -p "$OUT/homebrew/Casks" "$OUT/homebrew/Formula"

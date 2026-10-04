@@ -497,6 +497,11 @@ git tag v0.1.0 && git push origin v0.1.0
   ⚠️ choco guard는 **직전 태그 버전이 피드에 있는가**로 판정하므로 clip처럼 이전 릴리스를 제출한 적이 없으면 스위치를 켜도 건너뛴다 — 첫 제출은 `publish-windows-packages` 수동 실행 `force=true`로.
 - ★ **직전 제출이 검수 대기 중이면 그 채널은 자동으로 건너뛴다**(guard 잡 — winget 열린 PR · choco 피드 부재). 릴리스·brew·다른 채널은 그대로.
   사람이 확인한 뒤 강제하려면 `publish-windows-packages` 수동 실행 `force=true`.
+- 🔴 **스토어 검수 점검·메타데이터 규칙(10-04 · choco 0.1.5가 검수자 수정 요청으로 6일 멈춤 · [journal 10-04](journal/2026-10-04.md))**
+  - **A. 상태 점검 = 페이지 상태 문구 + 댓글 전문.** choco는 피드 API(미승인 패키지는 안 보임)·Passed 배지로 끝내지 않고 `https://community.chocolatey.org/packages/<pkg>/<ver>`의 **상태 문구와 댓글 전문**을 읽는다. ★ **"Waiting for Maintainer" = 우리 차례**(검수자가 수정을 요청했다). winget도 라벨만 보지 않고 PR 댓글을 읽는다.
+  - **B. 🔴 **winget · Chocolatey에 제출하는 내용은 전부 영어로 쓴다**(사용자 10-04) — 설명·요약뿐 아니라 스크립트 주석·출력 문구(`Write-Host`)·YAML 주석까지 · 대상 = `packaging/winget/**` · `packaging/choco/**`(제출되는 틀) · **한국어 병기도 하지 않는다** · 저장소의 다른 주석·문서는 한국어 그대로(제출 파일만 예외) · Homebrew 탭은 우리 저장소라 대상 아님 · 강제 = `packaging/render-manifests.sh` 게이트(ASCII 밖 글자가 있으면 `exit 1` · ps1 머리 BOM만 예외). 비상업 제한은 영어 문장(`License: … noncommercial use …`) · `<copyright>` 필수 — 게이트가 함께 강제(어기면 릴리스·제출 둘 다 멈춤). 게이트를 고치면 음성(막을 입력)과 양성(통과할 입력)을 둘 다 돌려 본다.**
+  - **C. 새 채널·새 패키지 메타데이터는 beep 것을 먼저 대조**(통과한 본보기 · 재발명 금지).
+  - **D. 반려 뒤 재제출 = 같은 버전.** `publish-windows-packages`는 기본 브랜치의 `packaging/`을 쓴다(자산만 태그에서) → 수정을 main에 push한 **뒤** `tag=vX.Y.Z force=true` · 그 실행 동안 `WINGET_PUBLISH=false`(force가 winget guard도 무시) → 끝나면 `true` 복구.
 - 태그 없이 산출물만 보려면 Actions → release → *Run workflow*(초안).
 - Linux 산출물은 **zig 링커로 glibc 2.17 기준** 링크(배포판 비종속 · 09-04) — 심볼 게이트가 2.17 초과·시스템 라이브러리 링크를 막는다([packaging/README §Linux](../packaging/README.md#linux--배포판-비종속09-04)).
 

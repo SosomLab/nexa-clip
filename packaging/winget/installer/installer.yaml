@@ -2,7 +2,7 @@ PackageIdentifier: SosomLab.NexaClip
 PackageVersion: "@VERSION@"
 MinimumOSVersion: 10.0.0.0
 InstallerType: nullsoft
-# 사용자 단위 설치 — 권한 상승이 필요 없다(T0 원칙을 설치에도 적용 · installer.nsi).
+# Per-user install - no elevation required.
 Scope: user
 InstallModes:
   - interactive

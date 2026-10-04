@@ -1,7 +1,7 @@
 ﻿$ErrorActionPreference = 'Stop'
 
-# 포터블 — zip을 패키지 폴더에 풀고 shim만 만든다(DR-4: 설치 흔적 없음).
-# 아키텍처별 zip을 각각 주면 choco가 OS에 맞는 것을 고른다.
+# Portable - unzip into the package folder and create a shim only (no install footprint).
+# Chocolatey picks the archive that matches the OS architecture.
 $toolsDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
 
 Install-ChocolateyZipPackage `
@@ -12,7 +12,7 @@ Install-ChocolateyZipPackage `
   -Checksum64  '@SHA_WIN_X64_PORTABLE@' -ChecksumType64 'sha256' `
   -UnzipLocation $toolsDir
 
-# nclip-imgdec(이미지 격리 디코드 워커)는 본체가 형제 경로에서 부르는 보조 실행 파일 — shim을 만들지 않는다.
+# nclip-imgdec (isolated image decode worker) is a helper the main executable launches from its own folder - no shim.
 Get-ChildItem $toolsDir -Recurse -Filter 'nclip-imgdec.exe' | ForEach-Object {
   New-Item -ItemType File -Path "$($_.FullName).ignore" -Force | Out-Null
 }
