@@ -695,6 +695,7 @@ impl MainWin {
             .map(|r| crate::dedup::Entry {
                 key: r.key,
                 remote: r.remote,
+                pinned: r.pinned,
                 origin: r.origins.first().cloned(),
                 copies: r.copies,
             })
@@ -2195,8 +2196,14 @@ impl MainWin {
             if vi != self.sel && g > 0.0 {
                 dc.fill_rect_alpha(clip, th.text, 0.06 * g);
             }
-            // 핀 구획 경계 — 첫 비고정 행 위에 한 줄.
-            if !pin_divider_done && !row.pinned && vi > 0 {
+            // 핀 구획 경계 — **윗 행이 고정이고 이 행이 비고정일 때만** 한 줄.
+            //   ⚠️ 10-04 실기: 종전 조건(`vi > 0`)은 고정 행이 하나도 없어도 둘째 행 위에 선을 그어
+            //   첫 행이 고정 구획처럼 보였다(스크롤하면 맨 위 보이는 행 위에도 그어졌다).
+            if !pin_divider_done
+                && !row.pinned
+                && vi > 0
+                && self.rows.get(vi - 1).is_some_and(|p| p.pinned)
+            {
                 // ★ 부분 행이면 경계선은 화면 밖 — 옮겨 그리지 않는다(09-02 실기).
                 if y >= list.y {
                     dc.fill_rect(Rect::new(list.x, y, list.w, 1), th.accent);
@@ -2367,13 +2374,13 @@ impl MainWin {
                     let dst = Rect::new(tx + (box_side - dw) / 2, y + (row_h - dh) / 2, dw, dh);
                     dc.image_scaled(dst, img, clip);
                 } else {
-                    dc.text(
-                        tx,
-                        y + (row_h - px(16.0)) / 2,
-                        clip,
-                        crate::popup_win::kind_glyph(row.kind),
-                        th.accent,
-                    );
+                    // ★ 종류 아이콘(10-04) — 섬네일 자리(24px 상자) 가운데에 도형으로.
+                    //   도형은 자르기가 없어, 부분 행(목록 경계에 걸친 행)에서는 그리지 않는다.
+                    let side = px(16.0);
+                    let iy = y + (row_h - side) / 2;
+                    if iy >= clip.y && iy + side <= clip.y + clip.h {
+                        crate::kind_icon::draw(dc, tx + px(4.0), iy, side, row.kind, th.accent);
+                    }
                 }
             }
             // 핀 표식 — 라벨 앞 작은 점.

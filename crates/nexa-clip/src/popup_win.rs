@@ -246,18 +246,6 @@ fn clamp_to_monitor(el: &ActiveEventLoop, x: i32, y: i32, pref: Option<(u32, u32
     (x.min(max_x).max(ax + margin), y.min(max_y).max(ay + margin))
 }
 
-/// 종류 배지 글리프 — ⚠️ 전부 KS X 1001(맑은 고딕 커버) — 이모지는 두부가 된다(08-27).
-pub(crate) fn kind_glyph(kind: ClipKind) -> &'static str {
-    match kind {
-        ClipKind::Text => "▤",
-        ClipKind::RichText => "▧",
-        ClipKind::Image => "▣",
-        ClipKind::Files => "▦",
-        ClipKind::Color => "◆",
-        ClipKind::Object => "◇",
-    }
-}
-
 impl Popup {
     /// ★ 고정폭 글꼴 주입(09-04).
     pub(crate) fn set_mono_font(&mut self, font: Option<Font>) {
@@ -792,6 +780,7 @@ impl Popup {
                 .map(|r| crate::dedup::Entry {
                     key: r.key,
                     remote: r.remote,
+                    pinned: r.pinned,
                     origin: r.origin.clone(),
                     copies: r.copies,
                 })
@@ -1500,7 +1489,9 @@ fn draw(
             dc.fill_rect_alpha(clip, th.text, 0.06 * g);
         }
         // 핀 구획 경계 — 첫 비고정 행 위 한 줄(메인과 동일 · 부분 행이면 생략).
-        if !pin_divider_done && !row.pinned && vi > 0 {
+        //   ⚠️ 10-04 — 윗 행이 고정일 때만(고정 행이 없으면 선도 없다 · 메인창과 같은 수정).
+        if !pin_divider_done && !row.pinned && vi > 0 && rows.get(vi - 1).is_some_and(|p| p.pinned)
+        {
             if y >= list_top {
                 dc.fill_rect(Rect::new(0, y, w, 1), th.accent);
             }
@@ -1687,7 +1678,12 @@ fn draw(
                 let dst = Rect::new(pad + (box_side - dw) / 2, y + (rh - dh) / 2, dw, dh);
                 dc.image_scaled(dst, img, clip);
             } else {
-                dc.text(pad, text_y, clip, kind_glyph(row.kind), th.accent);
+                // ★ 종류 아이콘(10-04) — 메인창과 같은 도형. 부분 행에서는 그리지 않는다(자르기 없음).
+                let side = px(16.0);
+                let iy = y + (rh - side) / 2;
+                if iy >= clip.y && iy + side <= clip.y + clip.h {
+                    crate::kind_icon::draw(dc, pad + px(4.0), iy, side, row.kind, th.accent);
+                }
             }
             pad + px(30.0)
         };
