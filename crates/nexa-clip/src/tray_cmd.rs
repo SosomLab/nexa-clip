@@ -286,7 +286,9 @@ fn content(held: usize, recent: Vec<String>, sync_on: bool) -> TrayContent {
         rgba,
         side: ICON_SIDE,
         tooltip: tip,
-        name: tr(lang, Msg::AppName).to_string(),
+        // ★ 메뉴 머리줄에 버전(10-04 사용자 — "프로그램 이름 옆에 버전") — 설치본을 교체한 뒤
+        //   지금 도는 것이 어느 버전인지 트레이에서 바로 보인다.
+        name: format!("{} v{}", tr(lang, Msg::AppName), env!("CARGO_PKG_VERSION")),
         open_label: tr(lang, Msg::TrayOpen).to_string(),
         quit_label: tr(lang, Msg::TrayQuit).to_string(),
         settings_label: tr(lang, Msg::TraySettings).to_string(),
