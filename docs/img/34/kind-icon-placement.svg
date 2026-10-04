@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="250" viewBox="0 0 640 250" font-family="sans-serif">
+<!-- 종류 아이콘 위치 개념도 — main_win.rs·popup_win.rs의 kind_icon::draw 호출부 기준. 크기는 화소(px) 배율 1 기준 · 배치는 개념도(실제 화면과 근사치). -->
+<rect width="640" height="250" fill="#14161A"/>
+<text x="16" y="26" font-size="13" fill="#C9D1DB" font-weight="600">간략(Compact) 보기 — 섬네일 자리(24px 상자) 가운데 16px · accent 색 · 섬네일이 없을 때만</text>
+<rect x="16" y="38" width="608" height="36" rx="4" fill="#1E2228"/>
+<rect x="24" y="44" width="24" height="24" fill="none" stroke="#3A4250" stroke-dasharray="2 2"/>
+<g transform="translate(28,48) scale(1.0)" fill="#3D8BFF" shape-rendering="crispEdges"><rect x="2" y="3" width="12" height="2"/><rect x="2" y="7" width="12" height="2"/><rect x="2" y="11" width="8" height="2"/></g>
+<text x="60" y="61" font-size="13" fill="#E6EAF0">cargo run --release</text>
+<rect x="16" y="80" width="608" height="36" rx="4" fill="#1E2228"/>
+<rect x="24" y="86" width="24" height="24" fill="#5B7A99"/><text x="36" y="102" font-size="9" fill="#fff" text-anchor="middle">img</text>
+<text x="60" y="103" font-size="13" fill="#E6EAF0">[이미지] 564×447   ← 섬네일이 있으면 아이콘 대신 그림</text>
+<text x="16" y="150" font-size="13" fill="#C9D1DB" font-weight="600">Rich(일반) 보기 — 행 우측 끝 14px · text_dim 색 · 위에서 6px</text>
+<rect x="16" y="162" width="608" height="70" rx="4" fill="#1E2228"/>
+<text x="28" y="184" font-size="15" fill="#E6EAF0" font-weight="700">NCLIP-T2 plain BOLD</text>
+<text x="28" y="206" font-size="13" fill="#B8C0CC" font-style="italic">under ital end</text>
+<text x="560" y="182" font-size="12" fill="#8A93A0" text-anchor="end">×3</text>
+<g transform="translate(596,168) scale(0.875)" fill="#8A93A0" shape-rendering="crispEdges"><rect x="2" y="2" width="12" height="4"/><rect x="2" y="9" width="12" height="1"/><rect x="2" y="12" width="8" height="1"/></g>
+<text x="600" y="228" font-size="10" fill="#8A93A0" text-anchor="end">↑ 아이콘 · 8px 띄고 그 왼쪽에 ×n·배지</text>
+</svg>
