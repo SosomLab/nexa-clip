@@ -206,6 +206,37 @@ pub(crate) const REGISTRY: &[Entry] = &[
         SettingKind::Toggle,
         "cap.native_formats",
     ),
+    // ★ Excel 셀 범위 그림 상한(10-04 사용자 — "설정으로 추가") — 기본 200행 · 50열 · 5,000셀.
+    e(
+        Msg::CatCapture,
+        Msg::SetCellPicRows,
+        Msg::SetCellPicRowsDesc,
+        SettingKind::Number {
+            presets: &["100", "200", "500", "1000"],
+            suffix: "",
+        },
+        "cap.cell_pic_rows",
+    ),
+    e(
+        Msg::CatCapture,
+        Msg::SetCellPicCols,
+        Msg::SetCellPicColsDesc,
+        SettingKind::Number {
+            presets: &["20", "50", "100", "200"],
+            suffix: "",
+        },
+        "cap.cell_pic_cols",
+    ),
+    e(
+        Msg::CatCapture,
+        Msg::SetCellPicCells,
+        Msg::SetCellPicCellsDesc,
+        SettingKind::Number {
+            presets: &["2000", "5000", "20000", "50000"],
+            suffix: "",
+        },
+        "cap.cell_pic_cells",
+    ),
     // ── 보관 ────────────────────────────────────────────────
     e(
         Msg::CatStorage,

@@ -309,6 +309,13 @@ pub enum Msg {
     SetCapNative,
     /// 원본 포맷 설명.
     SetCapNativeDesc,
+    /// Excel 셀 범위 그림 상한(10-04) — 행 · 열 · 셀.
+    SetCellPicRows,
+    SetCellPicRowsDesc,
+    SetCellPicCols,
+    SetCellPicColsDesc,
+    SetCellPicCells,
+    SetCellPicCellsDesc,
     /// 최대 항목 수.
     SetMaxItems,
     /// 항목 수 설명.
@@ -917,6 +924,42 @@ impl Msg {
                 "Word·PPT 개체를 개체 그대로 붙여넣을 수 있게 합니다",
                 "让 Word/PPT 对象仍可作为对象粘贴",
                 "Word/PPT のオブジェクトをそのまま貼り付けられます",
+            ],
+            Msg::SetCellPicRows => [
+                "Excel range picture: max rows",
+                "Excel 범위 그림: 최대 행",
+                "Excel 区域图片：最大行数",
+                "Excel 範囲の図：最大行数",
+            ],
+            Msg::SetCellPicRowsDesc => [
+                "Copied cell ranges keep their picture only up to this many rows; larger ranges keep text and formatting only",
+                "복사한 셀 범위가 이 행 수 이하일 때만 그림을 함께 보관합니다 · 넘으면 글·서식만",
+                "复制的单元格区域不超过此行数时才保留图片；超出仅保留文字和格式",
+                "コピーしたセル範囲がこの行数以下のときだけ図を保持します。超えると文字と書式のみ",
+            ],
+            Msg::SetCellPicCols => [
+                "Excel range picture: max columns",
+                "Excel 범위 그림: 최대 열",
+                "Excel 区域图片：最大列数",
+                "Excel 範囲の図：最大列数",
+            ],
+            Msg::SetCellPicColsDesc => [
+                "Column limit for keeping the picture of a copied cell range",
+                "셀 범위 그림을 보관하는 열 수 상한",
+                "保留单元格区域图片的列数上限",
+                "セル範囲の図を保持する列数の上限",
+            ],
+            Msg::SetCellPicCells => [
+                "Excel range picture: max cells",
+                "Excel 범위 그림: 최대 셀 수",
+                "Excel 区域图片：最大单元格数",
+                "Excel 範囲の図：最大セル数",
+            ],
+            Msg::SetCellPicCellsDesc => [
+                "Rows × columns limit. Whole rows or columns never keep a picture (Excel shows an error)",
+                "행 × 열 상한 · 행·열 전체 복사는 언제나 그림 없이 받습니다(Excel이 오류를 띄움)",
+                "行 × 列上限。整行或整列复制始终不保留图片（Excel 会报错）",
+                "行 × 列の上限。行・列全体のコピーは常に図なし（Excel がエラーを表示）",
             ],
             Msg::SetMaxItems => ["Maximum items", "최대 항목 수", "最大条目数", "最大項目数"],
             Msg::SetMaxItemsDesc => [
@@ -1629,7 +1672,7 @@ mod tests {
     use super::*;
 
     /// 카탈로그 전수 — 새 `Msg`를 더하면 여기도 더한다(빈칸 검사가 그걸 강제한다).
-    const ALL_MSG: [Msg; 309] = [
+    const ALL_MSG: [Msg; 315] = [
         Msg::AppName,
         Msg::SearchPlaceholder,
         Msg::EmptyHistory,
@@ -1749,6 +1792,12 @@ mod tests {
         Msg::SetCapRich,
         Msg::SetCapNative,
         Msg::SetCapNativeDesc,
+        Msg::SetCellPicRows,
+        Msg::SetCellPicRowsDesc,
+        Msg::SetCellPicCols,
+        Msg::SetCellPicColsDesc,
+        Msg::SetCellPicCells,
+        Msg::SetCellPicCellsDesc,
         Msg::SetMaxItems,
         Msg::SetMaxItemsDesc,
         Msg::SetSortBy,

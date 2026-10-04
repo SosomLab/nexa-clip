@@ -57,8 +57,11 @@ pub struct TrayContent {
     pub side: u32,
     /// 툴팁(127자 초과는 절단).
     pub tooltip: String,
-    /// 메뉴 헤더(비활성 — 표시 이름).
+    /// 메뉴 헤더(비활성 — 표시 이름 · 호스트가 버전을 붙여 넘긴다).
     pub name: String,
+    /// ★ 버전 없는 앱 이름(10-04 사용자 — "알림에는 버전 제외") — Linux 알림의 앱 이름·
+    ///   단축키 대화창 설명에 쓴다. 비면 [`Self::name`]으로 물러난다.
+    pub plain_name: String,
     /// "열기" 라벨(i18n — 호스트 주입).
     pub open_label: String,
     /// "종료" 라벨(i18n — 호스트 주입).
@@ -253,6 +256,15 @@ mod sni {
     fn emit(ev: TrayEvent) {
         if let Some(cb) = ON_EVENT.get() {
             cb(ev);
+        }
+    }
+
+    /// 버전 없는 앱 이름 — 호스트가 안 줬으면 메뉴 헤더 이름으로.
+    fn plain_title(c: &TrayContent) -> String {
+        if c.plain_name.is_empty() {
+            c.name.clone()
+        } else {
+            c.plain_name.clone()
         }
     }
 
@@ -521,7 +533,7 @@ mod sni {
         let _ = CONN.set(conn);
         // ★ 전역 단축키(T-15 Linux) — Windows `RegisterHotKey`와 같은 자리. 결과는 한 번 알린다.
         // ★ 목록(09-04) — 동작 id별 포털 단축키(설명은 셸 대화창에 보인다). 런타임 변경은 다음 시작에.
-        let name = state().name;
+        let name = plain_title(&state());
         let binds: Vec<(String, String, String)> = super::hotkeys()
             .into_iter()
             .map(|(id, hk)| {
@@ -595,7 +607,7 @@ mod sni {
                 Some("org.freedesktop.Notifications"),
                 "Notify",
                 &(
-                    state().name,
+                    plain_title(&state()),
                     0u32,
                     "",
                     title,

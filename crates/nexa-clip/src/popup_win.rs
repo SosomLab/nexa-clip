@@ -781,6 +781,7 @@ impl Popup {
                     key: r.key,
                     remote: r.remote,
                     pinned: r.pinned,
+                    rich: r.kind == ClipKind::RichText,
                     origin: r.origin.clone(),
                     copies: r.copies,
                 })

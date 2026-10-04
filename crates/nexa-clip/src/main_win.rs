@@ -696,6 +696,7 @@ impl MainWin {
                 key: r.key,
                 remote: r.remote,
                 pinned: r.pinned,
+                rich: r.kind == ClipKind::RichText,
                 origin: r.origins.first().cloned(),
                 copies: r.copies,
             })

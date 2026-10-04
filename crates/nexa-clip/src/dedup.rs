@@ -1,7 +1,7 @@
 //! ★ 중복 제외 보기(09-04 사용자) — 메인창·팝업이 **같은 규칙**으로 같은 내용을 한 행으로 합친다.
 //!
 //! - 내용 열쇠: 텍스트 = 평문(CR 제거 · 끝 공백 제거) · 이미지/개체 = PNG 바이트(없으면 DIB) · 그 외 = 이력 지문.
-//! - 대표 행: ★ **핀이 있으면 핀**(10-04) → 로컬 출처가 있으면 로컬(가장 최근) → 가장 최근 수신. 순서는 입력(최신순) 유지.
+//! - 대표 행: ★ **핀이 있으면 핀**(10-04) → ★ **서식 있는 글**(10-04) → 로컬 출처가 있으면 로컬(가장 최근) → 가장 최근 수신. 순서는 입력(최신순) 유지.
 //! - 메타: 출처 합집합(로컬 앞 · `⇄ 기기` 뒤) · 복사 수 합 · 로컬 출처가 하나라도 있으면 "내 것"(수신 점 없음).
 
 use nclip_core::history::{History, HistoryItem};
@@ -14,6 +14,8 @@ pub(crate) struct Entry {
     pub remote: bool,
     /// ★ 고정 항목인가 — 대표 선택에서 **가장 먼저** 본다(10-04).
     pub pinned: bool,
+    /// ★ 서식 있는 글인가(`ClipKind::RichText`) — 같은 글의 평문 항목보다 대표로 먼저 선다(10-04).
+    pub rich: bool,
     pub origin: Option<String>,
     pub copies: u32,
 }
@@ -64,23 +66,51 @@ pub(crate) fn content_key_of(item: &HistoryItem, plain: Option<&str>) -> u64 {
     h.finish()
 }
 
+/// ★ 받은 항목이 **지금 맨 앞 항목의 평문판**인가(10-04) — 그렇다면 클립보드에 게시하지 않는다.
+///
+/// 이 PC에서 서식 글을 복사하면 상대 기기(또는 가상 머신 클립보드 다리를 거친 상대)가 같은 글을
+/// **평문만으로** 되돌려 보낼 수 있다. 그것을 게시하면 클립보드의 서식이 평문으로 덮인다.
+/// 이력에는 그대로 들어간다(중복 제외 보기가 서식 항목을 대표로 합친다).
+pub(crate) fn is_plain_downgrade(
+    front_kind: ClipKind,
+    front_plain: Option<&str>,
+    received_kind: ClipKind,
+    received_plain: Option<&str>,
+) -> bool {
+    let norm = |t: &str| t.replace('\r', "").trim_end().to_string();
+    front_kind == ClipKind::RichText
+        && received_kind == ClipKind::Text
+        && matches!(
+            (front_plain, received_plain),
+            (Some(a), Some(b)) if !a.trim().is_empty() && norm(a) == norm(b)
+        )
+}
+
+/// 대표 순위 — 핀 > 서식 > 로컬(큰 쪽이 대표).
+type Rank = (bool, bool, bool);
+/// 합치는 중인 한 무리 — (대표 인덱스, 로컬 있음, 출처들, 복사 수 합, 대표의 순위).
+type Group = (usize, bool, Vec<String>, u32, Rank);
+
 /// 같은 열쇠끼리 합친다 — 남는 행(입력 순서)과 그 메타.
 pub(crate) fn merge(entries: &[Entry]) -> Vec<Kept> {
-    // key → (대표 인덱스, 로컬 있음, 출처들, 복사 수 합, 대표가 핀)
-    let mut groups: HashMap<u64, (usize, bool, Vec<String>, u32, bool)> = HashMap::new();
+    // key → (대표 인덱스, 로컬 있음, 출처들, 복사 수 합, 대표의 순위)
+    let mut groups: HashMap<u64, Group> = HashMap::new();
     for (i, e) in entries.iter().enumerate() {
         let local = !e.remote;
-        let g = groups
-            .entry(e.key)
-            .or_insert_with(|| (i, local, Vec::new(), 0, e.pinned));
-        // ★ 핀이 대표를 지킨다(10-04 사용자 실기 — "고정한 항목이 고정 구획에서 사라진다").
+        // 대표 순위 — 핀 > 서식 > 로컬. 같으면 먼저 온 것(= 더 최근).
+        //   ★ 핀이 대표를 지킨다(10-04 사용자 실기 — "고정한 항목이 고정 구획에서 사라진다").
         //   종전에는 "수신보다 로컬"만 봐서, **받은 항목을 고정**해 둔 뒤 같은 내용을 이 PC에서
         //   복사하면 대표가 핀 없는 로컬 행으로 넘어가 고정 행이 숨었다.
-        if e.pinned && !g.4 {
+        //   ★ 서식이 평문을 이긴다(10-04 사용자 실기 — "서식 글을 복사했는데 팝업에서 고르면 평문") —
+        //   가상 머신 클립보드 다리(VMware `vmware-user`)는 복사 직후 클립보드를 **평문만으로** 다시
+        //   쥔다. 같은 글의 평문 항목이 더 최근 것으로 생겨 대표가 되면 서식 항목이 숨는다.
+        let rank = (e.pinned, e.rich, local);
+        let g = groups
+            .entry(e.key)
+            .or_insert_with(|| (i, local, Vec::new(), 0, rank));
+        if rank > g.4 {
             g.0 = i;
-            g.4 = true;
-        } else if local && !g.1 && !g.4 {
-            g.0 = i; // 먼저 온 게 수신이고 이건 로컬 — 로컬이 대표
+            g.4 = rank;
         }
         g.1 |= local;
         if let Some(o) = &e.origin {
@@ -125,9 +155,66 @@ mod tests {
             key,
             remote,
             pinned: false,
+            rich: false,
             origin: Some(origin.to_string()),
             copies,
         }
+    }
+
+    /// ★ 같은 글의 **서식 항목**과 평문 항목 — 평문이 더 최근이어도 대표는 서식 항목이다(10-04 실기:
+    /// VMware 클립보드 다리가 복사 직후 평문판을 새로 만들어, 팝업에서 고르면 평문이 붙었다).
+    #[test]
+    fn rich_row_is_representative_over_newer_plain_duplicate() {
+        let mut rich = e(3, false, "ONLYOFFICE", 1);
+        rich.rich = true;
+        // 입력 0 = 더 최근의 평문(로컬), 입력 1 = 서식.
+        let k = merge(&[e(3, false, "vmware-user", 1), rich]);
+        assert_eq!(k.len(), 1);
+        assert_eq!(k[0].keep, 1, "서식 행이 대표");
+        assert_eq!(k[0].copies, 2);
+
+        // 수신한 서식 항목도 로컬 평문보다 먼저다 — 단 "내 것" 표시는 로컬 출처가 있으면 유지.
+        let mut rich = e(4, true, "⇄ mac", 1);
+        rich.rich = true;
+        let k = merge(&[e(4, false, "Term", 1), rich]);
+        assert_eq!(k[0].keep, 1);
+        assert!(!k[0].remote);
+
+        // 핀은 서식보다 먼저다.
+        let mut pin = e(5, false, "Term", 1);
+        pin.pinned = true;
+        let mut rich = e(5, false, "ONLYOFFICE", 1);
+        rich.rich = true;
+        let k = merge(&[rich, pin]);
+        assert_eq!(k[0].keep, 1, "핀 행이 대표");
+    }
+
+    /// ★ 받은 평문이 맨 앞 서식 항목과 같은 글이면 게시하지 않는다 — 끝 공백·CR 차이는 같은 글.
+    #[test]
+    fn plain_downgrade_is_detected_only_for_same_text() {
+        use ClipKind::{RichText, Text};
+        assert!(is_plain_downgrade(
+            RichText,
+            Some("a b\r\n"),
+            Text,
+            Some("a b\n")
+        ));
+        assert!(!is_plain_downgrade(
+            RichText,
+            Some("a b"),
+            Text,
+            Some("a c")
+        ));
+        assert!(
+            !is_plain_downgrade(Text, Some("a b"), Text, Some("a b")),
+            "맨 앞이 평문"
+        );
+        assert!(
+            !is_plain_downgrade(RichText, Some("a b"), RichText, Some("a b")),
+            "받은 것도 서식"
+        );
+        assert!(!is_plain_downgrade(RichText, None, Text, Some("a")));
+        assert!(!is_plain_downgrade(RichText, Some("  "), Text, Some("")));
     }
 
     /// ★ 고정한 **수신** 항목 + 같은 내용의 로컬 항목 — 대표는 핀 행이어야 한다(10-04 실기:
