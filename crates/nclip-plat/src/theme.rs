@@ -77,8 +77,31 @@ mod imp {
         }
     }
 
+    /// 마지막으로 안 OS 선호 — 0 = 아직 모름 · 1 = 밝게 · 2 = 어둡게 · 3 = 선호 없음.
+    static CACHE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
+    fn remember(v: Option<bool>) {
+        let code = match v {
+            Some(false) => 1,
+            Some(true) => 2,
+            None => 3,
+        };
+        CACHE.store(code, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// ★ 한 번 알아낸 뒤로는 묻지 않는다(10-05 · T-41 ④) — 종전에는 테마가 바뀔 때마다 UI 스레드가 새 D-Bus
+    ///   연결로 포털에 되물었다(감시 스레드가 이미 새 값을 받았는데도). 감시가 값을 갱신한다([`watch`]).
     pub(super) fn prefers_dark() -> Option<bool> {
-        portal_read().or_else(gsettings_read)
+        match CACHE.load(std::sync::atomic::Ordering::Relaxed) {
+            1 => Some(false),
+            2 => Some(true),
+            3 => None,
+            _ => {
+                let v = portal_read().or_else(gsettings_read);
+                remember(v);
+                v
+            }
+        }
     }
 
     pub(super) fn watch<F: Fn(Option<bool>) + Send + 'static>(cb: F) {
@@ -102,7 +125,9 @@ mod imp {
                         continue;
                     };
                     if ns == "org.freedesktop.appearance" && key == "color-scheme" {
-                        cb(unwrap_u32(&val).and_then(from_scheme));
+                        let v = unwrap_u32(&val).and_then(from_scheme);
+                        remember(v);
+                        cb(v);
                     }
                 }
             })
