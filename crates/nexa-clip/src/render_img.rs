@@ -166,6 +166,99 @@ pub(crate) fn render_runs(
     Some((w as u32, h as u32, rgba))
 }
 
+/// 96dpi 기준 EMU/px — ONLYOFFICE 도형 자리(EMU)를 화소로 옮길 때 쓴다.
+const EMU_PER_PX: f32 = 9525.0;
+
+/// ★ 개체 그림들을 **원본 자리대로** 놓을 좌상단 좌표(px)를 구한다(10-04) — 못 믿겠으면 `None`.
+///
+/// `sizes` = 그림 크기(px · HTML 순서), `rects` = 도형 자리(EMU · [`nclip_core::richtext::onlyoffice_shape_rects`]).
+/// 앞에서부터 그림 수만큼의 기록을 쓴다. 그림은 선 굵기·그림자만큼 도형보다 조금 크므로 **중심을 맞춘다**.
+/// 그림/도형 크기 비(배율)가 서로 어긋나면(기록이 그 그림의 것이 아니다) 위치를 쓰지 않는다.
+pub(crate) fn place_shapes(sizes: &[(u32, u32)], rects: &[[i32; 4]]) -> Option<Vec<(i32, i32)>> {
+    if sizes.len() < 2 || rects.len() < sizes.len() {
+        return None;
+    }
+    #[allow(clippy::cast_precision_loss)]
+    let zooms: Vec<f32> = sizes
+        .iter()
+        .zip(rects)
+        .map(|((w, _), r)| *w as f32 / (r[2] as f32 / EMU_PER_PX))
+        .collect();
+    let mut sorted = zooms.clone();
+    sorted.sort_by(f32::total_cmp);
+    let zoom = sorted[sorted.len() / 2];
+    if !(0.25..=8.0).contains(&zoom) || zooms.iter().any(|z| !(zoom * 0.6..=zoom * 1.7).contains(z))
+    {
+        return None;
+    }
+    #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
+    let tl: Vec<(i32, i32)> = sizes
+        .iter()
+        .zip(rects)
+        .map(|((w, h), r)| {
+            let cx = (r[0] as f32 + r[2] as f32 / 2.0) / EMU_PER_PX * zoom;
+            let cy = (r[1] as f32 + r[3] as f32 / 2.0) / EMU_PER_PX * zoom;
+            (
+                (cx - *w as f32 / 2.0).round() as i32,
+                (cy - *h as f32 / 2.0).round() as i32,
+            )
+        })
+        .collect();
+    let (min_x, min_y) = tl.iter().fold((i32::MAX, i32::MAX), |(mx, my), (x, y)| {
+        (mx.min(*x), my.min(*y))
+    });
+    Some(
+        tl.into_iter()
+            .map(|(x, y)| (x - min_x + PAD, y - min_y + PAD))
+            .collect(),
+    )
+}
+
+/// 그림들을 주어진 좌상단 자리에 **순서대로 겹쳐** 흰 바탕 RGBA 한 장으로(뒤의 것이 위).
+pub(crate) fn compose_at(items: &[((i32, i32), &IconImage)]) -> Option<(u32, u32, Vec<u8>)> {
+    #[allow(clippy::cast_possible_wrap)]
+    let (w, h) = items.iter().fold((0i32, 0i32), |(w, h), ((x, y), im)| {
+        (w.max(x + im.w as i32 + PAD), h.max(y + im.h as i32 + PAD))
+    });
+    if w <= 0 || h <= 0 || w > SIDE_MAX || h > SIDE_MAX || i64::from(w) * i64::from(h) > 16_000_000
+    {
+        return None;
+    }
+    #[allow(clippy::cast_sign_loss)]
+    let (uw, uh) = (w as usize, h as usize);
+    let mut out = vec![0xFFu8; uw * uh * 4];
+    for ((x0, y0), im) in items {
+        for sy in 0..im.h as usize {
+            #[allow(clippy::cast_possible_wrap)]
+            let dy = *y0 + sy as i32;
+            if dy < 0 || dy >= h {
+                continue;
+            }
+            for sx in 0..im.w as usize {
+                #[allow(clippy::cast_possible_wrap)]
+                let dx = *x0 + sx as i32;
+                if dx < 0 || dx >= w {
+                    continue;
+                }
+                let s = (sy * im.w as usize + sx) * 4;
+                #[allow(clippy::cast_sign_loss)]
+                let d = (dy as usize * uw + dx as usize) * 4;
+                let a = u32::from(im.rgba[s + 3]);
+                for c in 0..3 {
+                    let v =
+                        (u32::from(im.rgba[s + c]) * a + u32::from(out[d + c]) * (255 - a)) / 255;
+                    #[allow(clippy::cast_possible_truncation)]
+                    {
+                        out[d + c] = v as u8;
+                    }
+                }
+            }
+        }
+    }
+    #[allow(clippy::cast_sign_loss)]
+    Some((w as u32, h as u32, out))
+}
+
 /// RGBA → `CF_DIBV5`가 아닌 **`CF_DIB`(BITMAPINFOHEADER · 32bpp · 바텀업 BGRA)** —
 /// PPT·Word가 가장 널리 받는 레거시 형태.
 #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
@@ -202,5 +295,35 @@ mod tests {
         assert_eq!(dib.len(), 40 + 16);
         assert_eq!(&dib[..4], &40u32.to_le_bytes());
         assert_eq!(&dib[14..16], &32u16.to_le_bytes());
+    }
+    /// ★ 개체 자리 — 도형 중심에 그림 중심을 맞추고, 배율이 어긋나면 쓰지 않는다(10-04).
+    #[test]
+    fn shapes_are_placed_by_their_centers() {
+        // 실측(ONLYOFFICE 1p): 별 · 점선 사각형 · 글상자.
+        let rects = [
+            [1_469_385, 968_114, 2_389_057, 1_311_639],
+            [2_929_191, 2_479_275, 2_857_500, 2_638_893],
+            [4_014_590, 1_186_721, 4_175_124, 1_859_639],
+        ];
+        let sizes = [(251, 138), (306, 283), (438, 195)];
+        let p = place_shapes(&sizes, &rects).expect("배율이 맞는다");
+        // 별이 왼쪽 위, 사각형이 그 아래 오른쪽, 글상자가 사각형보다 위·오른쪽.
+        assert!(p[0].0 < p[1].0 && p[0].1 < p[1].1, "{p:?}");
+        assert!(p[2].1 < p[1].1 && p[2].0 > p[1].0, "{p:?}");
+        assert!(p.iter().all(|(x, y)| *x >= PAD && *y >= PAD));
+        // 그림 하나 · 기록 부족 · 배율 불일치는 None(가로 배치로 물러난다).
+        assert!(place_shapes(&sizes[..1], &rects).is_none());
+        assert!(place_shapes(&sizes, &rects[..2]).is_none());
+        assert!(place_shapes(&[(251, 138), (3000, 283), (438, 195)], &rects).is_none());
+    }
+
+    #[test]
+    fn compose_blends_on_white() {
+        let red = IconImage::from_rgba(2, 2, [255u8, 0, 0, 255].repeat(4));
+        let (w, h, px) = compose_at(&[((PAD, PAD), &red)]).expect("합성");
+        assert_eq!((w, h), ((PAD * 2 + 2) as u32, (PAD * 2 + 2) as u32));
+        assert_eq!(&px[..4], &[255, 255, 255, 255], "바탕은 흰색");
+        let d = ((PAD as usize) * w as usize + PAD as usize) * 4;
+        assert_eq!(&px[d..d + 4], &[255, 0, 0, 255]);
     }
 }
