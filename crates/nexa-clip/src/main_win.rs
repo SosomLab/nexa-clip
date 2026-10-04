@@ -1055,7 +1055,7 @@ impl MainWin {
     }
 
     /// ★ 툴바 버튼 활성 규칙(09-04 사용자 — 우클릭 메뉴와 같은 규칙): 토글은 항상 · 복사/고정/삭제는 선택이 있을 때 ·
-    ///   **평문 복사** = 서식 있는 글(`PasteAs::applicable`에 Plain) · **이미지로 복사** = 텍스트 계열(Text·RichText).
+    ///   **평문 복사** = 서식 있는 글(`PasteAs::applicable`에 Plain) · **이미지로 복사** = [`can_copy_as_image`].
     fn tool_enabled(&self, t: Tool) -> bool {
         match t {
             Tool::Preview
@@ -1071,7 +1071,7 @@ impl MainWin {
             Tool::CopyImage => self
                 .rows
                 .get(self.sel)
-                .is_some_and(|r| matches!(r.kind, ClipKind::Text | ClipKind::RichText)),
+                .is_some_and(|r| can_copy_as_image(r.kind)),
             Tool::Pin | Tool::Delete | Tool::Copy => !self.rows.is_empty(),
         }
     }
@@ -3254,7 +3254,7 @@ impl MainWin {
         items.push(CtxItem::maybe(
             "image",
             tr(lang, Msg::MenuCopyImage),
-            editable,
+            can_copy_as_image(row.kind),
         ));
         items.push(CtxItem::item("delete", tr(lang, Msg::MenuDelete)));
         self.menu.set_scale(self.scale);
@@ -3521,6 +3521,12 @@ pub(crate) fn decode_inline_images(
         }
     }
     out
+}
+
+/// "이미지로 복사"가 되는 종류 — 글 계열 + ★ 개체(10-04 — 그림만 든 HTML · PPT 도형처럼
+/// 클립보드에 그림 표현 없이 올라온 것을 그림으로 바꿔 다른 앱에 붙일 수 있게). 이미지는 이미 이미지다.
+pub(crate) fn can_copy_as_image(kind: ClipKind) -> bool {
+    matches!(kind, ClipKind::Text | ClipKind::RichText | ClipKind::Object)
 }
 
 pub(crate) fn plain_of(reps: &[nclip_core::RawRep]) -> Option<String> {
