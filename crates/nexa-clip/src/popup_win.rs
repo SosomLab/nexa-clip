@@ -1531,6 +1531,17 @@ fn draw(
         }
         // 우측 ×n — 모든 모드 공통.
         let mut right = w - pad;
+        // ★ 종류 아이콘(10-04) — Rich 보기는 왼쪽에 자리가 없어 우측 끝에(메인창과 동일 ·
+        //   다른 보기는 섬네일 자리에 이미 있다).
+        if view == ViewMode::Rich {
+            let side = px(14.0);
+            let iy = y + px(6.0);
+            right -= side;
+            if iy >= clip.y && iy + side <= clip.y + clip.h {
+                crate::kind_icon::draw(dc, right, iy, side, row.kind, th.text_dim);
+            }
+            right -= px(8.0);
+        }
         // ★ 번호 단축키 배지(09-07) — 1~9번째 행 우측 끝(Maccy 화법 · 배지 = 누르면 이 행). 스택 순번이
         //   같은 자리를 쓰는 행은 스택 표시가 우선 · 설정에서 지웠으면(빈 표기) 안 그린다(09-08).
         let tag = km.number_badge(vi + 1);
