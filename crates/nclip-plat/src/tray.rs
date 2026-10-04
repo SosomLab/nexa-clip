@@ -532,6 +532,47 @@ mod sni {
         Some(TrayHandle { _priv: () })
     }
 
+    /// ★ 포털에 넘기는 단축키 id — **조합이 기본값이 아니면 조합을 id에 넣는다**(10-05 사용자 실기 · T-38).
+    ///
+    /// GNOME은 (앱, 단축키 id)마다 사용자가 승인한 조합을 **기억**하고, 같은 id로 다시 등록하면
+    /// `preferred_trigger`가 달라도 기억해 둔 옛 조합을 그대로 쓴다(승인 창도 안 뜬다) — 설정에서
+    /// `Shift+Alt+C`를 `Shift+Alt+V`로 바꿔도 계속 C만 먹던 이유다(지웠다 다시 넣으면 id가 새로 생겨 됐다).
+    /// 조합이 바뀌면 id도 바뀌게 해 새 단축키로 승인받는다. 기본 조합은 종전 id(`a1`)를 그대로 써서
+    /// 기존 사용자가 업그레이드 뒤 다시 승인하지 않게 한다.
+    fn portal_shortcut_id(action: u32, spec: &str) -> String {
+        let default_spec = nclip_core::hotkey::ACTIONS
+            .iter()
+            .find(|a| a.1 == action)
+            .and_then(|a| nclip_core::hotkey::Hotkey::parse(a.2))
+            .map(|h| h.portal_spec());
+        if default_spec.as_deref() == Some(spec) {
+            return format!("a{action}");
+        }
+        let tail: String = spec
+            .chars()
+            .map(|c| {
+                if c.is_ascii_alphanumeric() {
+                    c.to_ascii_lowercase()
+                } else {
+                    '_'
+                }
+            })
+            .collect();
+        format!("a{action}_{tail}")
+    }
+
+    /// 포털 단축키 id → 동작 번호(`a3_shift_alt_v` → 3). 못 읽으면 1(퀵 팝업).
+    fn action_of(id: &str) -> u32 {
+        id.strip_prefix('a')
+            .map(|x| {
+                x.chars()
+                    .take_while(char::is_ascii_digit)
+                    .collect::<String>()
+            })
+            .and_then(|d| d.parse::<u32>().ok())
+            .unwrap_or(1)
+    }
+
     /// ★ 포털 단축키 등록(09-04 목록 · 10-05 런타임 재등록 T-38) — 동작 id별(설명은 셸 대화창에 보인다).
     fn bind_hotkeys() {
         let name = plain_title(&state());
@@ -543,10 +584,11 @@ mod sni {
                     nclip_core::hotkey::ID_OPEN_ALT => "퀵 팝업(보조)",
                     _ => "퀵 팝업",
                 };
+                let spec = hk.portal_spec();
                 (
-                    format!("a{id}"),
+                    portal_shortcut_id(id, &spec),
                     format!("{name} — {what}"),
-                    hk.portal_spec(),
+                    spec,
                 )
             })
             .collect();
@@ -554,13 +596,7 @@ mod sni {
             binds,
             Box::new(|ev| match ev {
                 HotkeyEvent::Bound { ok, .. } => emit(TrayEvent::HotkeyStatus(ok)),
-                HotkeyEvent::Activated(id) => {
-                    let n = id
-                        .strip_prefix('a')
-                        .and_then(|x| x.parse::<u32>().ok())
-                        .unwrap_or(1);
-                    emit(TrayEvent::Hotkey(n));
-                }
+                HotkeyEvent::Activated(id) => emit(TrayEvent::Hotkey(action_of(&id))),
             }),
         );
     }
@@ -695,6 +731,28 @@ mod sni {
     #[cfg(test)]
     mod tests {
         use super::*;
+
+        /// ★ T-38 — 기본 조합은 종전 id, 바꾼 조합은 조합이 든 id(GNOME이 새 단축키로 승인받게).
+        #[test]
+        fn portal_id_carries_non_default_trigger() {
+            assert_eq!(
+                portal_shortcut_id(1, "SHIFT+ALT+c"),
+                portal_shortcut_id(1, "SHIFT+ALT+c")
+            );
+            let default = nclip_core::hotkey::Hotkey::parse("Shift+Alt+C")
+                .expect("기본 조합")
+                .portal_spec();
+            assert_eq!(portal_shortcut_id(1, &default), "a1");
+            let changed = nclip_core::hotkey::Hotkey::parse("Shift+Alt+V")
+                .expect("조합")
+                .portal_spec();
+            let id = portal_shortcut_id(1, &changed);
+            assert!(id.starts_with("a1_") && id != "a1", "{id}");
+            assert_eq!(action_of(&id), 1);
+            assert_eq!(action_of("a3"), 3);
+            assert_eq!(action_of("a3_shift_alt_y"), 3);
+            assert_eq!(action_of("garbage"), 1);
+        }
 
         /// 최근 항목이 없으면 구분선 5가 없고, 있으면 헤더 아래에 100+i가 깔린다.
         #[test]
