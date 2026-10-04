@@ -1,7 +1,7 @@
 PackageIdentifier: SosomLab.NexaClip.Portable
 PackageVersion: "@VERSION@"
 MinimumOSVersion: 10.0.0.0
-# zip 안에 실행 파일 하나 — winget이 풀어서 shim만 만든다(설치 흔적 없음 · DR-4 포터블).
+# A single executable inside a zip - winget extracts it and creates a shim only (no install footprint).
 InstallerType: zip
 NestedInstallerType: portable
 Commands:
