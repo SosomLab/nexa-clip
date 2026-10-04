@@ -494,7 +494,13 @@ XKB 오토리피트는 raw 이벤트가 **없고** `xev -id`로도 창의 KeyPre
 - 새 옵션: `KEYPROBE_CLOSE=toggle`(Esc 대신 단축키로 팝업 닫기) · `KEYPROBE_PRE=<evdev 목록>`(단축키 전에 키 주입).
 - 절차: 준비 1회(`mods-first` · `KEYPROBE_TYPE=122` · `KEYPROBE_CLOSE=toggle` — 팝업 안에서 한/영 키로 한글 켜기) → 그 뒤 `c-first`를 `KEYPROBE_CLOSE=toggle`로 반복.
 - ⚠️ 팝업 **밖** 창에서 `xdotool key Hangul` · `KEYPROBE_PRE=122`로는 팝업의 한글 상태가 바뀌지 않았다(원인 미확인).
-- 팝업이 늦게 떠 하네스가 단축키를 오래 쥐면 열기/닫기 토글이 반복된다(T-57) — 그 회차는 무효.
+- 팝업이 늦게 떠 하네스가 단축키를 오래 쥐면 열기/닫기 토글이 반복된다(T-57) — 그 회차는 무효(10-05 수정 뒤로는 반복이 걸러진다).
+
+**단축키 길게 쥐기 = 토글 반복(T-57) 실측·판정(10-05)**: `dbus-monitor --session "interface='org.freedesktop.portal.GlobalShortcuts'"`로 보면
+단축키를 쥐는 동안 mutter가 `Activated`를 **첫 신호 뒤 500ms(= `org.gnome.desktop.peripherals.keyboard delay`)에 둘째, 이후 약 30ms 간격으로 계속** 보내고
+**`Deactivated`는 0건**이다(1.8초 유지에 70여 건). 판정 = 하네스로 단축키를 2초 이상 유지(`mods-first`)한 뒤 앱 로그에서 "팝업: 열기"가 **1회만**이고
+"열기/닫기(토글)"이 연속으로 찍히지 않는지 · 뗀 뒤 다시 누르면 "팝업: 닫기(토글)"이 찍히는지(토글 유지)를 본다. 앱은 포털 시각으로 [키 반복 지연 + 120ms] 안의
+둘째 신호부터 반복으로 보고 200ms 안에 이어지는 동안 버린다(`hotkey_linux.rs` `RepeatFilter`).
 
 ---
 
