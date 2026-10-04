@@ -161,16 +161,103 @@ fn run(
     }
 
     // ④ 눌림 대기 — 세션이 살아 있는 동안.
+    //   ★ 쥐고 있는 동안의 반복은 버린다(10-04 사용자 — "떼기 전에는 1회만") — [`RepeatFilter`].
+    let first_gap = key_repeat_delay_ms() + REPEAT_SLACK_MS;
+    let mut filters: HashMap<String, RepeatFilter> = HashMap::new();
+    let started = std::time::Instant::now();
     for msg in activated {
-        let Ok((_s, id, _ts, _o)) = msg
+        let Ok((_s, id, ts, _o)) = msg
             .body()
             .deserialize::<(OwnedObjectPath, String, u64, Results)>()
         else {
             continue;
         };
-        on_event(HotkeyEvent::Activated(id));
+        // 포털 시각(ms)이 없으면(0) 받은 시각으로 대신한다.
+        #[allow(clippy::cast_possible_truncation)]
+        let ts = if ts == 0 {
+            started.elapsed().as_millis() as u64
+        } else {
+            ts
+        };
+        let f = filters
+            .entry(id.clone())
+            .or_insert_with(|| RepeatFilter::new(first_gap));
+        if f.admit(ts) {
+            on_event(HotkeyEvent::Activated(id));
+        }
     }
     Ok(())
+}
+
+/// 반복 판정 여유(ms) — 컴포지터 타이머·D-Bus 전달의 흔들림.
+const REPEAT_SLACK_MS: u64 = 120;
+/// 반복이 시작된 뒤의 간격 상한(ms) — GNOME 기본 반복 간격 30ms의 넉넉한 배수.
+const REPEAT_CHAIN_MS: u64 = 200;
+
+/// ★ 단축키 **쥐고 있는 동안의 반복**을 걸러낸다(10-04 사용자 — "계속 누르고 있어도 떼기 전에는 1회만" · T-57).
+///
+/// GNOME(mutter)은 전역 단축키를 쥐고 있으면 `Activated`를 **키 반복처럼 다시 보낸다** — 실측(mutter 50):
+/// 첫 신호 뒤 500ms(키 반복 지연)에 둘째, 그 뒤 약 30ms 간격으로 계속 · `Deactivated`는 오지 않는다.
+/// 그대로 받으면 팝업이 열렸다 닫혔다를 되풀이한다. Windows는 `MOD_NOREPEAT`, mac(Carbon)은 한 번만 준다.
+///
+/// 떼었다는 신호가 없으므로 **간격**으로 가른다(포털 시각 기준):
+/// - 직전 신호 뒤 `first_gap`(반복 지연 + 여유) 안에 온 것 = 반복의 시작 → 버린다.
+/// - 반복이 시작된 뒤에는 [`REPEAT_CHAIN_MS`] 안에 이어지는 한 계속 반복 → 버린다.
+/// - 그보다 뜸을 두고 온 것 = 사용자가 뗐다가 **다시 누른 것** → 받는다(팝업 토글은 그대로 된다).
+///
+/// 알려진 한계: 팝업을 띄운 뒤 `first_gap` 안에 다시 누르는 아주 빠른 두 번 누름은 한 번으로 친다.
+struct RepeatFilter {
+    last: Option<u64>,
+    repeating: bool,
+    first_gap: u64,
+}
+
+impl RepeatFilter {
+    fn new(first_gap: u64) -> Self {
+        Self {
+            last: None,
+            repeating: false,
+            first_gap,
+        }
+    }
+
+    /// 이 신호를 **새 누름**으로 받아도 되는가. `ts` = 포털 시각(ms).
+    fn admit(&mut self, ts: u64) -> bool {
+        let Some(last) = self.last else {
+            self.last = Some(ts);
+            return true;
+        };
+        // 신호 순서가 살짝 뒤바뀌어 올 수 있다(실측) — 차이는 절댓값으로, 기준은 더 늦은 쪽으로.
+        let gap = ts.abs_diff(last);
+        self.last = Some(last.max(ts));
+        let limit = if self.repeating {
+            REPEAT_CHAIN_MS
+        } else {
+            self.first_gap
+        };
+        if gap <= limit {
+            self.repeating = true;
+            return false;
+        }
+        self.repeating = false;
+        true
+    }
+}
+
+/// GNOME 키 반복 지연(ms) — 못 읽으면 기본 500.
+fn key_repeat_delay_ms() -> u64 {
+    std::process::Command::new("gsettings")
+        .args(["get", "org.gnome.desktop.peripherals.keyboard", "delay"])
+        .output()
+        .ok()
+        .and_then(|o| {
+            String::from_utf8_lossy(&o.stdout)
+                .split_whitespace()
+                .last()
+                .and_then(|v| v.parse::<u64>().ok())
+        })
+        .filter(|v| (100..=2000).contains(v))
+        .unwrap_or(500)
 }
 
 /// `BindShortcuts` 결과의 `shortcuts` a(sa{sv})에서 우리 id의 `trigger_description`.
@@ -209,5 +296,30 @@ mod tests {
     #[test]
     fn trigger_description_missing_is_empty() {
         assert_eq!(trigger_description(&Results::new()), "");
+    }
+    /// ★ 쥐고 있는 동안의 반복은 버리고, 뗐다가 다시 누른 것은 받는다(10-04 실측 간격 — 500ms 뒤 30ms씩).
+    #[test]
+    fn held_shortcut_fires_once_and_repress_is_admitted() {
+        let mut f = RepeatFilter::new(500 + REPEAT_SLACK_MS);
+        let t0 = 169_603_696u64;
+        assert!(f.admit(t0), "첫 누름");
+        assert!(!f.admit(t0 + 500), "반복의 시작");
+        let mut t = t0 + 500;
+        for _ in 0..60 {
+            t += 30;
+            assert!(!f.admit(t), "쥐고 있는 동안의 반복");
+        }
+        // 순서가 뒤바뀐 신호도 반복이다.
+        assert!(!f.admit(t - 30));
+        // 뗐다가 0.4초 뒤 다시 누름 = 새 누름(토글).
+        assert!(f.admit(t + 400), "다시 누름");
+        // 그 누름도 쥐고 있으면 한 번만.
+        assert!(!f.admit(t + 400 + 500));
+        // 팝업을 띄우고 한참 뒤 다시 누름.
+        let mut g = RepeatFilter::new(620);
+        assert!(g.admit(1_000));
+        assert!(g.admit(3_000), "뜸을 두고 다시 누름");
+        // 짧게 눌렀다 뗀 뒤 0.7초 뒤 다시 누름 — 반복이 없었어도 받는다.
+        assert!(g.admit(3_700));
     }
 }
