@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-10-04 (4차 · win) — ★ push · CI ✓ · Chocolatey 0.1.5 재제출 완료
+
+**push**: main `f58ed64..702053f`(4커밋 · 10-03 원격 병합 + 문서 충돌 해소 포함) · CI `37180571155` ✅ ubuntu·windows·macos.
+**재제출**: `WINGET_PUBLISH=false` → `publish-windows-packages` `tag=v0.1.5 force=true`(run `37180572461` ✅) → 복구 — choco 2개 페이지 상태 "Waiting for Maintainer" → **"Updated"** · 영어 설명 · Copyright 확인 · winget은 의도대로 PR 없음(열린 0.1.4 PR 그대로).
+**☐ 남은 것**: ⏳ choco 자동 검사 → 검수자 재검토(점검 = 페이지 문구 + 댓글 전문) · winget 열린 PR(0.1.4 · ko-KR) 교체 = 사용자 결정 · 로컬 브랜치 삭제. → [journal](journal/2026-10-04.md)
+
+---
+
 ## 2026-10-04 (3차 · win) — ★ 스토어 제출물 전부 영어 규칙
 
 **규칙**(사용자): winget·choco 제출 틀(`packaging/winget/**` · `packaging/choco/**`)은 설명·주석·`Write-Host`·YAML 주석까지 **전부 영어 · 한국어 병기 없음** · 나머지 저장소는 한국어 그대로 · Homebrew 대상 아님 · 강제 = `render-manifests.sh` 게이트(ASCII 밖 글자 → exit 1 · BOM 예외).
