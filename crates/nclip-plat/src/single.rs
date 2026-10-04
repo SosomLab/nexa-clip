@@ -5,8 +5,8 @@
 //!
 //! - Windows: 이름 있는 뮤텍스로 판정 + 이름 있는 이벤트로 "열기" 신호
 //!   (첫 인스턴스는 대기 스레드가 이벤트를 받아 콜백을 부른다).
-//! - Unix: `data/` 아래 잠금 파일 `flock`(비블로킹) — 위임 신호는 후속
-//!   (지금은 안내 후 종료 · 잠금 자체가 2중 상주를 막는다).
+//! - Unix: `data/` 아래 잠금 파일 `flock`(비블로킹) + ★ 같은 폴더의 **Unix 소켓**으로 "열기" 위임
+//!   (10-05 · T-41 ⑧ — 첫 인스턴스가 듣고, 둘째 실행이 접속해 한 줄 쓴다 · std만 쓴다).
 
 /// 살아 있는 동안 인스턴스 소유권을 지키는 가드 — 프로세스 수명만큼 들고 있어야 한다.
 #[derive(Debug)]
@@ -14,7 +14,7 @@ pub struct InstanceGuard {
     #[cfg(windows)]
     _mutex: isize,
     #[cfg(unix)]
-    _file: std::fs::File,
+    _file: Option<std::fs::File>,
 }
 
 #[cfg(windows)]
@@ -91,18 +91,22 @@ pub fn acquire(lock_path: &std::path::Path, tag: Option<&str>) -> Option<Instanc
         if let Some(dir) = lock_path.parent() {
             let _ = std::fs::create_dir_all(dir);
         }
-        let file = std::fs::OpenOptions::new()
+        // 잠금 파일조차 못 열면 가드 없이 진행한다(안 뜨는 것보다 낫다 · DR-31 — Windows 가지와 같은 결).
+        //   종전에는 `None`("이미 실행 중")으로 돌려 앱이 뜨지 않았다(10-05).
+        let Ok(file) = std::fs::OpenOptions::new()
             .create(true)
             .write(true)
             .truncate(false)
             .open(lock_path)
-            .ok()?;
+        else {
+            return Some(InstanceGuard { _file: None });
+        };
         // SAFETY: 유효한 fd에 대한 비블로킹 flock — 실패 = 이미 잠김.
         let rc = unsafe { libc_flock(file.as_raw_fd(), 2 | 4) }; // LOCK_EX | LOCK_NB
         if rc != 0 {
             return None;
         }
-        Some(InstanceGuard { _file: file })
+        Some(InstanceGuard { _file: Some(file) })
     }
 }
 
@@ -112,32 +116,55 @@ extern "C" {
     fn libc_flock(fd: i32, op: i32) -> i32;
 }
 
-/// 둘째 실행 — 기존 인스턴스에 "열기"를 알린다(Windows · Unix는 후속).
-pub fn signal_open(tag: Option<&str>) {
-    #[cfg(not(windows))]
-    let _ = tag;
+/// 둘째 실행 — 기존 인스턴스에 "열기"를 알린다. 반환 = 알림이 **전달됐는가**(거짓말하지 않는다 · DR-31).
+///
+/// `sock`은 Unix 소켓 경로(잠금 파일과 같은 폴더 · Windows에선 무시 — 이름 있는 이벤트를 쓴다).
+#[must_use]
+pub fn signal_open(tag: Option<&str>, sock: &std::path::Path) -> bool {
     #[cfg(windows)]
-    // SAFETY: 이름으로 열기 실패 = 0 → SetEvent가 그냥 실패한다.
-    unsafe {
-        let h = win::CreateEventW(
-            core::ptr::null(),
-            0,
-            0,
-            win::wide(&open_event_name(tag)).as_ptr(),
-        );
-        if h != 0 {
-            win::SetEvent(h);
+    {
+        let _ = sock;
+        // SAFETY: 이름으로 열기 실패 = 0 → 알림 실패.
+        unsafe {
+            let h = win::CreateEventW(
+                core::ptr::null(),
+                0,
+                0,
+                win::wide(&open_event_name(tag)).as_ptr(),
+            );
+            if h == 0 {
+                return false;
+            }
+            let ok = win::SetEvent(h) != 0;
             win::CloseHandle(h);
+            ok
         }
+    }
+    #[cfg(unix)]
+    {
+        use std::io::Write as _;
+        let _ = tag;
+        std::os::unix::net::UnixStream::connect(sock)
+            .and_then(|mut s| s.write_all(b"open\n"))
+            .is_ok()
+    }
+    #[cfg(not(any(windows, unix)))]
+    {
+        let _ = (tag, sock);
+        false
     }
 }
 
 /// 첫 인스턴스 — "열기" 신호를 기다렸다가 `on_open`을 부른다(백그라운드 스레드).
-pub fn watch_open_requests(tag: Option<&str>, on_open: impl Fn() + Send + 'static) {
-    #[cfg(not(windows))]
-    let _ = tag;
+/// `sock` = Unix 소켓 경로([`signal_open`]과 같은 값 · Windows에선 무시).
+pub fn watch_open_requests(
+    tag: Option<&str>,
+    sock: &std::path::Path,
+    on_open: impl Fn() + Send + 'static,
+) {
     #[cfg(windows)]
     {
+        let _ = sock;
         let name = open_event_name(tag);
         std::thread::Builder::new()
             .name("nclip-single".into())
@@ -158,8 +185,27 @@ pub fn watch_open_requests(tag: Option<&str>, on_open: impl Fn() + Send + 'stati
             })
             .ok();
     }
-    #[cfg(not(windows))]
+    #[cfg(unix)]
     {
-        let _ = on_open;
+        let _ = tag;
+        // 잠금을 쥔 쪽만 여기 온다 — 남아 있는 소켓 파일은 죽은 인스턴스의 것이라 지우고 새로 연다.
+        let _ = std::fs::remove_file(sock);
+        let Ok(listener) = std::os::unix::net::UnixListener::bind(sock) else {
+            return; // 경로가 너무 길거나 쓸 수 없는 자리 — 위임 없이 간다(둘째 실행이 정직하게 알린다).
+        };
+        std::thread::Builder::new()
+            .name("nclip-single".into())
+            .spawn(move || {
+                for conn in listener.incoming() {
+                    if conn.is_ok() {
+                        on_open();
+                    }
+                }
+            })
+            .ok();
+    }
+    #[cfg(not(any(windows, unix)))]
+    {
+        let _ = (tag, sock, on_open);
     }
 }

@@ -37,6 +37,17 @@ pub fn apply(enabled: bool) -> io::Result<()> {
     }
 }
 
+/// 자동 실행이 **가리키는 실행 파일**(로그·안내용 · 10-05 · T-64) — Linux는 패키지 설치본이 있으면 그쪽,
+/// 아니면(다른 OS 포함) 지금 실행 파일. 종전 로그는 늘 "현재 경로"라고 해서 개발 빌드에서 틀렸다.
+#[must_use]
+pub fn target() -> Option<std::path::PathBuf> {
+    #[cfg(all(unix, not(target_os = "macos")))]
+    if let Some((_, bin)) = packaged_install() {
+        return Some(bin);
+    }
+    std::env::current_exe().ok()
+}
+
 /// 자동 실행 등록이 OS에 **실재하는지** 관측한다(설정값과 무관) — 사용자는
 /// 레지스트리 편집기·정리 도구로 앱 밖에서 등록을 지울 수 있고, 그 의사는
 /// 존중해야 한다(무조건 재등록 = 사용자와 앱의 줄다리기). 미지 타깃은 false.
@@ -385,10 +396,15 @@ fn desktop_content(exe: &str) -> String {
 
 #[cfg(any(all(unix, not(target_os = "macos")), test))]
 fn exec_quote(exe: &str) -> String {
+    // Desktop Entry 규격 — ① 따옴표 안에서 `"`·`` ` ``·`$`·`\`는 역슬래시로 ② `%`는 필드 코드라 `%%`로
+    // (10-05 · T-41 ⑫ — 경로에 `%f` 같은 글자가 들면 런처가 파일 인자로 바꿔 버린다)
+    // ③ 그 전체가 "문자열" 값이라 역슬래시는 한 번 더 겹쳐 쓴다(규격의 문자열 이스케이프가 먼저 풀린다).
     let escaped: String = exe
         .chars()
         .map(|c| match c {
-            '"' | '\\' | '$' | '`' => format!("\\{c}"),
+            '"' | '$' | '`' => format!("\\\\{c}"),
+            '\\' => "\\\\\\\\".to_string(),
+            '%' => "%%".to_string(),
             _ => c.to_string(),
         })
         .collect();
@@ -503,7 +519,7 @@ mod tests {
     #[test]
     fn desktop_quotes_exec_with_spaces_and_reserved() {
         let d = desktop_content(r#"/opt/my apps/nexa"clip"#);
-        assert!(d.contains("Exec=\"/opt/my apps/nexa\\\"clip\"\n"), "{d}");
+        assert!(d.contains("Exec=\"/opt/my apps/nexa\\\\\"clip\"\n"), "{d}");
         assert!(d.starts_with("[Desktop Entry]\n"));
         assert!(d.contains("X-GNOME-Autostart-enabled=true"));
     }
@@ -513,7 +529,7 @@ mod tests {
     #[test]
     fn launcher_has_no_args_and_wm_class() {
         let l = launcher_content(r#"/opt/my apps/nexa"clip"#);
-        assert!(l.contains("Exec=\"/opt/my apps/nexa\\\"clip\"\n"), "{l}");
+        assert!(l.contains("Exec=\"/opt/my apps/nexa\\\\\"clip\"\n"), "{l}");
         assert!(l.contains("StartupWMClass=nexa-clip"));
         assert!(l.contains("Icon=nexa-clip"));
     }
@@ -529,7 +545,12 @@ mod tests {
 
     #[test]
     fn exec_quote_escapes_shell_reserved() {
-        assert_eq!(exec_quote(r"/a/$b`c\d"), "\"/a/\\$b\\`c\\\\d\"");
+        // 파일에 쓰이는 글자 그대로 견준다(raw) — 예약 문자는 역슬래시 둘, 역슬래시는 넷, `%`는 둘.
+        assert_eq!(exec_quote(r"/a/$b`c\d"), r#""/a/\\$b\\`c\\\\d""#);
+        assert_eq!(
+            exec_quote("/opt/50%f/nexa-clip"),
+            r#""/opt/50%%f/nexa-clip""#
+        );
     }
 
     #[test]

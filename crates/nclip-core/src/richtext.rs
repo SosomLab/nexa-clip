@@ -20,7 +20,7 @@
 //! - ★ 터미널 복사(09-04 사용자 — Windows Terminal "복사할 텍스트 형식 = HTML"): 블록 `white-space:pre` 존중 ·
 //!   `font-family`가 고정폭이면 [`Run::mono`](Mono 슬롯) · `background-color` → [`Run::bg`] · 기울임.
 //! - ★ ANSI SGR([`ansi_runs_of`]): 평문에 `ESC[…m`이 살아 있으면(원시 로그) 색·굵게·기울임을 런으로.
-//! - 표 구조는 아직 밖.
+//! - ★ 표(10-05): 행 = 줄 · 칸 사이 = 탭 · 칸의 글자색·바탕색. 열 폭 맞춤·병합·테두리는 아직 밖.
 
 /// 스타일 런 — 같은 스타일이 이어지는 텍스트 조각.
 #[derive(Clone, PartialEq, Debug)]
@@ -186,6 +186,8 @@ fn parse(frag: &str, max_lines: usize) -> (Vec<Vec<Run>>, bool) {
     let mut blocks: Vec<Block> = Vec::new();
     // 구조 사건 수(불릿·들여쓰기·심볼 치환·이미지) — 0이면 평문과 같다.
     let mut marks = 0u32;
+    // 지금 표 행에서 몇 번째 칸인가(칸 사이 탭 삽입용).
+    let mut cell = 0u32;
     let mut text = String::new();
     let bytes = frag.as_bytes();
     let mut i = 0usize;
@@ -274,11 +276,40 @@ fn parse(frag: &str, max_lines: usize) -> (Vec<Vec<Run>>, bool) {
                     marks += 1;
                     last_ws = true;
                 }
-                // 표 행 = 줄 바꿈(표 구조는 아직 밖).
+                // 표 행 = 줄 바꿈.
                 (_, "tr") => {
                     flush!();
                     new_line!();
                     last_ws = true;
+                    cell = 0;
+                }
+                // ★ 표 칸(10-05 · T-63) — 칸 사이에 탭을 넣어 그리는 쪽의 탭 스톱이 칸을 가르게 한다
+                //   (종전에는 칸 태그를 몰라 "1234"처럼 붙었다). 칸의 글자색·바탕색(`style`·`bgcolor`)도 받는다.
+                (false, "td" | "th") => {
+                    flush!();
+                    if cell > 0 {
+                        text.push('\t');
+                        flush!();
+                    }
+                    cell += 1;
+                    marks += 1;
+                    stack.push(cur);
+                    apply_attrs(tag, &mut cur);
+                    if let Some(c) = attr_value(&tag.to_ascii_lowercase(), tag, "bgcolor")
+                        .and_then(|v| parse_color(v.trim()))
+                    {
+                        cur.bg = Some(c);
+                    }
+                    if name == "th" {
+                        cur.bold = true;
+                    }
+                    last_ws = true;
+                }
+                (true, "td" | "th") => {
+                    flush!();
+                    if let Some(prev) = stack.pop() {
+                        cur = prev;
+                    }
                 }
                 // ★ 2단: 블록 = 줄 바꿈 + 들여쓰기·배율 스택. 목록(ul/ol)은 줄을 바꾸지 않고 깊이만 더한다.
                 (false, "div" | "p" | "li" | "h1" | "h2" | "h3" | "ul" | "ol") => {
@@ -1476,5 +1507,31 @@ mod ppt_mac_tests {
             data: b"<p>hello</p>".to_vec(),
         }];
         assert!(onlyoffice_shape_rects(&plain).is_empty());
+    }
+    /// ★ T-63 — 표 칸은 탭으로 갈리고 칸의 바탕색·글자색을 받는다.
+    #[test]
+    fn table_cells_are_tab_separated_with_cell_colors() {
+        let html = "<table><tr><th>1</th><th>2</th></tr>\
+                    <tr><td>3</td><td bgcolor=\"#ff0000\" style=\"color:#ffffff\">4</td></tr></table>";
+        let reps = [crate::RawRep {
+            format: "text/html".into(),
+            data: html.as_bytes().to_vec(),
+        }];
+        let lines = html_runs_of(&reps, 10).expect("표는 서식 경로");
+        let text = |l: &Vec<Run>| l.iter().map(|r| r.text.as_str()).collect::<String>();
+        assert_eq!(text(&lines[0]), "1\t2");
+        assert_eq!(text(&lines[1]), "3\t4");
+        assert!(
+            lines[0].iter().filter(|r| r.text != "\t").all(|r| r.bold),
+            "머리 칸은 굵게"
+        );
+        let last = lines[1].last().expect("칸");
+        assert_eq!(last.bg, Some([255, 0, 0]));
+        assert_eq!(last.color, Some([255, 255, 255]));
+        // 탭 조각에는 칸 바탕색이 묻지 않는다.
+        assert!(lines[1]
+            .iter()
+            .filter(|r| r.text == "\t")
+            .all(|r| r.bg.is_none()));
     }
 }

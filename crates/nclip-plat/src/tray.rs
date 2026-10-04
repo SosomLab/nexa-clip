@@ -522,15 +522,9 @@ mod sni {
         conn.object_server().at(MENU_PATH, Menu).ok()?;
         let unique = conn.unique_name()?.to_string();
         // 워처 등록 — 이게 없으면 트레이를 그릴 호스트가 없다(fail-soft: None).
-        conn.call_method(
-            Some("org.kde.StatusNotifierWatcher"),
-            "/StatusNotifierWatcher",
-            Some("org.kde.StatusNotifierWatcher"),
-            "RegisterStatusNotifierItem",
-            &unique,
-        )
-        .ok()?;
+        register_item(&conn, &unique).ok()?;
         let _ = CONN.set(conn);
+        watch_watcher(unique);
         // ★ 전역 단축키(T-15 Linux) — Windows `RegisterHotKey`와 같은 자리. 결과는 한 번 알린다.
         // ★ 목록(09-04) — 동작 id별 포털 단축키(설명은 셸 대화창에 보인다). 런타임 변경은 다음 시작에.
         let name = plain_title(&state());
@@ -563,6 +557,63 @@ mod sni {
             }),
         );
         Some(TrayHandle { _priv: () })
+    }
+
+    const WATCHER: &str = "org.kde.StatusNotifierWatcher";
+
+    /// 워처에 우리 항목을 등록한다.
+    fn register_item(conn: &Connection, unique: &str) -> zbus::Result<()> {
+        conn.call_method(
+            Some(WATCHER),
+            "/StatusNotifierWatcher",
+            Some(WATCHER),
+            "RegisterStatusNotifierItem",
+            &unique,
+        )
+        .map(|_| ())
+    }
+
+    /// ★ 워처가 **다시 나타나면 다시 등록한다**(10-05 · T-41 ⑨) — 셸(gnome-shell)이나 AppIndicator 확장이
+    ///   다시 뜨면 새 워처는 우리 항목을 모른다 → 종전에는 아이콘이 사라진 채 앱만 돌았다.
+    ///   세션 버스의 `NameOwnerChanged`에서 워처 이름의 새 주인이 생길 때마다 등록을 되풀이한다.
+    fn watch_watcher(unique: String) {
+        std::thread::Builder::new()
+            .name("nclip-sni-watch".into())
+            .spawn(move || {
+                let Ok(conn) = Connection::session() else {
+                    return;
+                };
+                let Ok(bus) = zbus::blocking::Proxy::new(
+                    &conn,
+                    "org.freedesktop.DBus",
+                    "/org/freedesktop/DBus",
+                    "org.freedesktop.DBus",
+                ) else {
+                    return;
+                };
+                let Ok(sigs) = bus.receive_signal("NameOwnerChanged") else {
+                    return;
+                };
+                for msg in sigs {
+                    let body = msg.body();
+                    let Ok((name, _old, new)) = body.deserialize::<(String, String, String)>()
+                    else {
+                        continue;
+                    };
+                    if name != WATCHER || new.is_empty() {
+                        continue;
+                    }
+                    // 등록은 **항목을 내놓은 연결**로 해야 한다(워처가 보낸 쪽 이름을 항목으로 적는다).
+                    let ok = CONN
+                        .get()
+                        .is_some_and(|c| register_item(c, &unique).is_ok());
+                    println!(
+                        "트레이: 워처가 다시 떴습니다 — 다시 등록 {}",
+                        if ok { "ok" } else { "실패" }
+                    );
+                }
+            })
+            .ok();
     }
 
     impl TrayHandle {
@@ -598,25 +649,32 @@ mod sni {
         /// 알림 — `org.freedesktop.Notifications.Notify`(데스크톱 표준). `target`은 미배선
         /// (클릭 → 열기는 `ActionInvoked` 구독이 필요 — 후속) · `silent` = 소리 억제 힌트.
         pub fn notify(&self, title: &str, body: &str, silent: bool, _target: &str) {
-            let Some(conn) = CONN.get() else { return };
-            let mut hints: HashMap<&str, Value<'_>> = HashMap::new();
-            hints.insert("suppress-sound", Value::from(silent));
-            let _ = conn.call_method(
-                Some("org.freedesktop.Notifications"),
-                "/org/freedesktop/Notifications",
-                Some("org.freedesktop.Notifications"),
-                "Notify",
-                &(
-                    plain_title(&state()),
-                    0u32,
-                    "",
-                    title,
-                    body,
-                    Vec::<&str>::new(),
-                    hints,
-                    -1i32,
-                ),
-            );
+            // ★ UI 스레드는 기다리지 않는다(10-05 · T-41 ④ · DR-41) — 알림 데몬이 굼뜨면 `Notify` 회신을
+            //   버스 기본 시한(약 25초)까지 기다리며 창·트레이가 통째로 멎었다. 워커에서 보낸다.
+            let (app, title, body) = (plain_title(&state()), title.to_string(), body.to_string());
+            let _ = std::thread::Builder::new()
+                .name("nclip-notify".into())
+                .spawn(move || {
+                    let Some(conn) = CONN.get() else { return };
+                    let mut hints: HashMap<&str, Value<'_>> = HashMap::new();
+                    hints.insert("suppress-sound", Value::from(silent));
+                    let _ = conn.call_method(
+                        Some("org.freedesktop.Notifications"),
+                        "/org/freedesktop/Notifications",
+                        Some("org.freedesktop.Notifications"),
+                        "Notify",
+                        &(
+                            app,
+                            0u32,
+                            "",
+                            title.as_str(),
+                            body.as_str(),
+                            Vec::<&str>::new(),
+                            hints,
+                            -1i32,
+                        ),
+                    );
+                });
         }
     }
 

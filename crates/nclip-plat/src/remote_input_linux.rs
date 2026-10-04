@@ -51,12 +51,23 @@ pub fn configure_token_path(p: PathBuf) {
 /// 포털 `RemoteDesktop`이 세션 버스에 있는가(대화창 없음).
 #[must_use]
 pub fn available() -> bool {
+    // ★ 한 번 "있다"고 확인되면 다시 묻지 않는다(10-05 · T-41 ④) — 종전에는 부를 때마다 새 D-Bus 연결
+    //   (접속·인증·왕복)을 열었고, 붙여넣기 한 번에 UI 스레드에서 서너 번 불렸다. "없다"는 캐시하지
+    //   않는다(포털이 늦게 뜨는 로그인 직후).
+    static YES: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if YES.load(std::sync::atomic::Ordering::Relaxed) {
+        return true;
+    }
     let Ok(conn) = Connection::session() else {
         return false;
     };
-    Proxy::new(&conn, PORTAL_DEST, PORTAL_PATH, IFACE)
+    let ok = Proxy::new(&conn, PORTAL_DEST, PORTAL_PATH, IFACE)
         .and_then(|p| p.get_property::<u32>("version"))
-        .is_ok()
+        .is_ok();
+    if ok {
+        YES.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+    ok
 }
 
 fn load_token() -> Option<String> {
@@ -181,6 +192,17 @@ fn drop_session() {
 /// 키 시퀀스를 세션에 보낸다 — 실패하면 세션을 버리고 **한 번** 다시 열어 재시도(★ 09-05 자가 복구).
 fn with_session_retry(seq: &dyn Fn(&Session) -> zbus::Result<()>) -> Result<(), String> {
     let once = || -> Result<zbus::Result<()>, String> {
+        // ★ 다른 스레드가 세션을 여는 중(= 권한 대화창 응답 대기)이면 기다리지 않는다(10-05 · T-41 ④) —
+        //   종전에는 그 잠금을 기다리며 UI 스레드가 사용자가 대화창에 답할 때까지 멎었다.
+        match SESSION.try_lock() {
+            Ok(_) => {}
+            Err(std::sync::TryLockError::WouldBlock) => {
+                return Err("포털 세션을 여는 중입니다(권한 대화창에 답해 주세요)".to_string());
+            }
+            Err(std::sync::TryLockError::Poisoned(_)) => {
+                return Err("세션 잠금 오염".to_string());
+            }
+        }
         ensure_session()?;
         let g = SESSION.lock().map_err(|_| "세션 잠금 오염".to_string())?;
         let s = g.as_ref().ok_or_else(|| "세션 없음".to_string())?;
@@ -208,6 +230,22 @@ pub fn tap_ctrl_v() -> Result<(), String> {
         key(s, KEY_LEFTCTRL, true)?;
         key(s, KEY_V, true)?;
         key(s, KEY_V, false)?;
+        key(s, KEY_LEFTCTRL, false)
+    })
+}
+
+/// ★ `Ctrl+Shift+V` 한 번(10-05 · T-15c) — 터미널(VTE 계열)의 붙여넣기 관례.
+///
+/// # Errors
+/// 세션 실패 · 전송 실패(재시도 후).
+pub fn tap_ctrl_shift_v() -> Result<(), String> {
+    const KEY_LEFTSHIFT: i32 = 42;
+    with_session_retry(&|s| {
+        key(s, KEY_LEFTCTRL, true)?;
+        key(s, KEY_LEFTSHIFT, true)?;
+        key(s, KEY_V, true)?;
+        key(s, KEY_V, false)?;
+        key(s, KEY_LEFTSHIFT, false)?;
         key(s, KEY_LEFTCTRL, false)
     })
 }
