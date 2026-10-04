@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-10-04 (11차 · win) — ★ v0.1.6 릴리스
+
+**릴리스**: 태그 `v0.1.6`(`6b03f22`) · release `37189464160` 10/11 ✅ · 자산 14 · Windows DLL 게이트 통과 · brew 탭 `6b44911`.
+**winget**: 0.1.4 PR #434300·#434302 닫음 → **0.1.6 en-US** 새 PR [#446464](https://github.com/microsoft/winget-pkgs/pull/446464) · [#446465](https://github.com/microsoft/winget-pkgs/pull/446465)(OPEN · 검수 대기).
+**choco**: ✗ 잡 실패 — guard 결함: guard는 `api/v2/Packages()?$filter=Id eq <pkg> and Version eq <직전>` 응답에 `<entry>`가 있으면 "공개됨"으로 보는데, 이 API는 **승인 전 패키지도 돌려준다** — 10-04 확인: `nexa-clip`·`nexa-clip-portable` 0.1.5 둘 다 entry 1 · `IsApproved=false` · `PackageStatus=Submitted`. → guard가 0.1.5를 공개된 것으로 오판해 0.1.6 push를 시도 → Chocolatey가 **403 (Forbidden)** 으로 거부(0.1.5 검수 중이라 새 버전 거부로 추정 · 응답 본문은 로그에 없음). 0.1.6은 제출되지 않음 · run은 빨강으로 둠. → ✅ **guard 수정**(`IsApproved=true` 판정 · 음성 clip 0.1.5 skip / 양성 beep 0.2.2 go).
+**☐ 남은 것**: choco 0.1.5 검수 → 승인 뒤 0.1.6 · winget 0.1.6 검수 · 사용자 실기(⑧⑨⑩ 등 · 결과 없이 릴리스). → [journal](journal/2026-10-04.md)
+
+---
+
 ## 2026-10-04 (10차 · win) — 진행사항 최신화 · ★ v0.1.6 릴리스 재개
 
 **커밋 범위**: ⑦ Rich 보기 종류 아이콘 · ⑧ Excel 범위 그림 정책(`Link`) · ⑨ 이미지로 복사 = 원본 그림 · ⑩ EMF 핸들 게시 + 셀 범위 `CF_DIB` 합성 · 버전 0.1.6(되돌리지 않음 — 설치본과 맞춤 · 릴리스는 태그가 일으킴).
