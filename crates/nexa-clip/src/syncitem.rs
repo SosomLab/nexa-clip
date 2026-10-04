@@ -320,7 +320,7 @@ pub(crate) fn has_promise(reps: &[RawRep]) -> bool {
 }
 
 /// PNG → OS 이미지 표현. Windows는 `PNG` + `CF_DIB`(대부분의 앱이 DIB만 읽는다 — "이미지로 복사"와 동일).
-fn png_reps(png: &[u8]) -> Vec<RawRep> {
+pub(crate) fn png_reps(png: &[u8]) -> Vec<RawRep> {
     #[cfg(target_os = "windows")]
     {
         let mut v = vec![RawRep {

@@ -2044,23 +2044,53 @@ impl Shell {
             eprintln!("이미지 렌더 실패 — 내용이 비었거나 너무 큽니다");
             return;
         };
-        let mut reps = vec![nclip_core::RawRep {
-            format: "CF_DIB".to_string(),
-            data: crate::render_img::dib_from_rgba(w, h, &rgba),
-        }];
-        if let Some(png) = nclip_plat::imgdec::encode_raw_isolated(w, h, &rgba) {
-            reps.insert(
-                0,
-                nclip_core::RawRep {
-                    format: "PNG".to_string(),
-                    data: png,
-                },
-            );
-        }
+        // ★ 게시 표현은 **그 OS의 이름**으로(10-04 사용자 실기 — Linux에서 "이미지로 복사가 동작하지 않음"):
+        //   종전에는 어느 OS든 Windows 이름(`PNG`·`CF_DIB`)으로 올려, Linux·mac에서는 다른 앱이
+        //   그림으로 알아보지 못했다. Windows = `PNG` + `CF_DIB`(대부분의 앱이 DIB만 읽는다) ·
+        //   mac = `public.png` · Linux = `image/png`(동기화 수신 게시와 같은 표현).
+        let png = nclip_plat::imgdec::encode_raw_isolated(w, h, &rgba);
+        #[cfg(target_os = "windows")]
+        let reps = {
+            let mut reps = vec![nclip_core::RawRep {
+                format: "CF_DIB".to_string(),
+                data: crate::render_img::dib_from_rgba(w, h, &rgba),
+            }];
+            if let Some(png) = png {
+                reps.insert(
+                    0,
+                    nclip_core::RawRep {
+                        format: "PNG".to_string(),
+                        data: png,
+                    },
+                );
+            }
+            reps
+        };
+        #[cfg(not(target_os = "windows"))]
+        let reps = {
+            let Some(png) = png else {
+                eprintln!("이미지로 복사 실패: PNG 인코드 실패");
+                self.release_body(id);
+                return;
+            };
+            crate::syncitem::png_reps(&png)
+        };
         match nclip_plat::clipboard::set_reps(&reps) {
             Ok(n) => {
                 println!("이미지로 복사: {w}×{h} — 표현 {n}개 게시");
                 self.own_image = Some(((w, h), Instant::now()));
+                // ★ Linux(X11 직접 게시)는 자기 게시를 감시가 되읽지 않는다(소유자 창 비교로 차단) —
+                //   Windows·mac처럼 그림 항목이 생기도록 여기서 직접 넣는다(되읽히는 경로면 같은 지문이라 승격).
+                #[cfg(target_os = "linux")]
+                self.on_captured(
+                    Box::new(ClipSnapshot {
+                        reps,
+                        source_app: None,
+                        concealed: false,
+                        seq: 0,
+                    }),
+                    None,
+                );
             }
             Err(e) => eprintln!("이미지로 복사 실패: {e}"),
         }
