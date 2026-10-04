@@ -2,6 +2,8 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-10-05 (12차 · linux) — ★ **v0.1.7 릴리스** — release `37224752162` ✅ · 자산 14 · brew 0.1.7 · winget·choco = guard skip(직전 검수 대기 · 수정한 choco guard "마지막 제출 버전 0.1.5" 동작 확인) → [journal](journal/2026-10-05.md)
+
 ## 2026-10-05 (11차 · linux) — ★ v0.1.7 릴리스 준비 — 게시 상태(winget 0.1.6 모더레이터 대기 · choco 0.1.5 검수 중 · brew 0.1.6) · choco guard 결함(직전 태그 기준 → 영구 skip) → "마지막 제출 버전" 기준 수정 · 배포 전 V3 ✓(rustc 1.99 · test 574 · 4.6MB · 렌더 게이트 · E2E 생략) → [journal](journal/2026-10-05.md)
 
 ## 2026-10-05 (10차 · linux) — 진행사항 최신화(문서만) — 1~9차 정리표 · 설치본 PID 589231 · rustc 1.99 · v0.1.7 후보 누적(V3 필요) · 남은 것 = 21 §14 실기 · Windows·mac 전부 · T-67 · 검수 재점검 안 함 → [journal](journal/2026-10-05.md)

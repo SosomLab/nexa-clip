@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-10-05 (12차 · linux) — ★ v0.1.7 릴리스
+
+**릴리스**: 태그 `v0.1.7`(`a623d45`) · release `37224752162` ✅(잡 전부 · 약 4분) · 자산 14 · 노트 영어 라이선스 줄 ✓ · brew 탭 0.1.7 ✓.
+**스토어**: winget = guard skip(0.1.6 PR #446464·#446465 모더레이터 대기 · 새 PR 없음) · choco = guard skip("마지막 제출 버전 0.1.5 미승인" — 10-05 수정 guard 동작 확인 · 0.1.7 피드 항목 0).
+**☐ 남은 것**: winget 0.1.6 병합 → 0.1.7 · choco 0.1.5 승인 → 다음 릴리스 자동 · Windows·mac 0.1.7 실기 · Linux 21 §14 · Linux 설치본을 0.1.7로 맞출지 · Actions Node.js 20 경고. → [journal](journal/2026-10-05.md)
+
+---
+
 ## 2026-10-05 (11차 · linux) — ★ v0.1.7 릴리스 준비 · 배포 전 V3 ✓
 
 **게시 상태**(03:10 KST): winget 0.1.6 #446464·#446465 = OPEN · Validation-Completed · 모더레이터 대기(사람 댓글 0) · choco 0.1.5 = in moderation · Validation Passed · Verification·Scan Pending · 검수자 새 요구 0 · brew = 0.1.6.
