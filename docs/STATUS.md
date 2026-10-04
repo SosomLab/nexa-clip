@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-10-04 (13차 · win) — 진행사항 최신화 · 오늘 마감
+
+**상태**(18:08): `424a548` CI ✓ · 설치본 PID 22548(같은 소스) · v0.1.6 공개(brew ✓).
+**☐ 남은 것** — 검수 대기: winget 0.1.6 #446464·#446465 = OPEN · `REVIEW_REQUIRED` · 라벨 New-Package뿐(Validation-Completed 아직 없음) · 자동 검증 진행 중 · choco 0.1.5 = in moderation · Validation Passed(06:16Z · "No required changes") · Verification·Scan Pending · 사람 댓글 0 · 0.1.6 미제출 · 사용자 실기: ① Excel 일반 범위 복사 → 이력에서 골라 그림판 붙여넣기(⑩ · 17:23 이후 새로 복사한 항목) ② "이미지로 복사" 모양(⑧⑨) ③ 행/열 전체 복사 → 오류 없음 ④ Rich 보기 종류 아이콘(⑦) ⑤ Linux/mac 핀 ⑥ mac 멈춤 · Finder 파일 평문 경로 ⑦ 트레이 메뉴 버전 표시 · 결정 대기: V3 주기 "7일" · 서식 글 아이콘 다듬기 · 그림 상한(200·50·5,000) 설정 항목화 · **Linux 알림 제목에 버전이 붙는 것을 둘지** · 기존 T-53 · T-59 · T-48. → [journal](journal/2026-10-04.md)
+
+---
+
 ## 2026-10-04 (12차 · win) — 트레이 메뉴 버전 표시 · 진행사항 최신화
 
 **수정**(개발 세션): 트레이 우클릭 메뉴 머리줄 = **"Nexa Clip v0.1.6"**(`TrayContent.name` · Linux는 SNI 제목·알림 제목에도 붙음) · **v0.1.6에는 미포함**(다음 릴리스).

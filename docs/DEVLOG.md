@@ -2,6 +2,8 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-10-04 (13차 · win) — 진행사항 최신화 · 오늘 마감(문서만) — `424a548` CI ✓ · winget 0.1.6 PR 2건 자동 검증 중(New-Package · 사람 댓글 0) · choco 0.1.5 Validation Passed · Verification·Scan Pending · 결정 대기에 "Linux 알림 제목의 버전" 추가 → [journal](journal/2026-10-04.md)
+
 ## 2026-10-04 (12차 · win) — 트레이 메뉴 머리줄 버전 표시(사용자 · "Nexa Clip v0.1.6" · Linux는 SNI 제목·알림 제목에도) · 설치본 PID 22548(SHA 일치) · V2 ✓ · v0.1.6에는 미포함(다음 릴리스) · 진행사항 최신화(`e0d1f23` CI ✓ · winget 0.1.6 OPEN · choco 0.1.5 검수 중) → [journal](journal/2026-10-04.md)
 
 ## 2026-10-04 (11차 · win) — ★ **v0.1.6 릴리스** — release `37189464160` 10/11 ✅ · 자산 14 · brew `6b44911` · winget 0.1.4 PR 닫고 **en-US 새 PR #446464 · #446465** · ✗ **choco 잡 실패** = guard 결함(피드 API가 승인 전 0.1.5도 돌려줌 → "공개됨" 오판 → 0.1.6 push → 403 · 제출 안 됨) → ✅ guard 수정(`IsApproved=true` 판정 · 음성·양성 대조) · 교훈 = 게이트 전제를 실측 없이 믿지 않는다 → [journal](journal/2026-10-04.md)
