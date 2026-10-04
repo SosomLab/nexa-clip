@@ -4,6 +4,7 @@
 //! 플랫폼 중립 — 창·입력을 모른다(그건 `nclip-plat`).
 #![forbid(unsafe_op_in_unsafe_fn)]
 
+mod bitmap_glyph;
 pub mod surface;
 pub mod text;
 

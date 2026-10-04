@@ -20,7 +20,9 @@
 //! - ★ 터미널 복사(09-04 사용자 — Windows Terminal "복사할 텍스트 형식 = HTML"): 블록 `white-space:pre` 존중 ·
 //!   `font-family`가 고정폭이면 [`Run::mono`](Mono 슬롯) · `background-color` → [`Run::bg`] · 기울임.
 //! - ★ ANSI SGR([`ansi_runs_of`]): 평문에 `ESC[…m`이 살아 있으면(원시 로그) 색·굵게·기울임을 런으로.
-//! - ★ 표(10-05): 행 = 줄 · 칸 사이 = 탭 · 칸의 글자색·바탕색. 열 폭 맞춤·병합·테두리는 아직 밖.
+//! - ★ 표(10-05 · T-63): 행 = 줄 · 런마다 **표 번호·열 번호**([`Run::table`]·[`Run::cell`]) · 칸의 글자색·
+//!   바탕색·오른쪽 맞춤. 열 폭 맞춤·칸 채움·테두리는 그리는 쪽이 이 번호로 한다. 병합(`colspan`/`rowspan`)은
+//!   밖 — 병합 칸도 열 하나로 친다. 칸 안에서 줄이 바뀌면(여러 문단) 이어진 줄은 표 밖 줄(번호 0)로 나온다.
 
 /// 스타일 런 — 같은 스타일이 이어지는 텍스트 조각.
 #[derive(Clone, PartialEq, Debug)]
@@ -45,6 +47,13 @@ pub struct Run {
     pub mono: bool,
     /// ★ 런 배경색(09-04 — 터미널 검정 바탕 · 형광펜).
     pub bg: Option<[u8; 3]>,
+    /// ★ 표의 열 번호(10-05 · T-63) — 0 = 표 밖 · n = 그 행의 n번째 칸(1부터). 병합 칸도 열 하나로 센다.
+    pub cell: u16,
+    /// ★ 표 번호 — 0 = 표 밖 · n = 이 문서의 n번째 표. 같은 번호의 줄들이 열 폭을 같이 쓴다
+    /// (붙어 있는 두 표를 가르는 용도). `cell > 0`일 때만 뜻이 있다.
+    pub table: u16,
+    /// ★ 칸 안 오른쪽 맞춤(`align=right` · `text-align:right` — 스프레드시트의 숫자 칸). `cell > 0`일 때만.
+    pub right: bool,
 }
 
 impl Default for Run {
@@ -59,6 +68,9 @@ impl Default for Run {
             image: None,
             mono: false,
             bg: None,
+            cell: 0,
+            table: 0,
+            right: false,
         }
     }
 }
@@ -186,8 +198,19 @@ fn parse(frag: &str, max_lines: usize) -> (Vec<Vec<Run>>, bool) {
     let mut blocks: Vec<Block> = Vec::new();
     // 구조 사건 수(불릿·들여쓰기·심볼 치환·이미지) — 0이면 평문과 같다.
     let mut marks = 0u32;
-    // 지금 표 행에서 몇 번째 칸인가(칸 사이 탭 삽입용).
+    // ★ 표(T-63) — 지금 표 행에서 몇 번째 칸인가 · 표 번호(없으면 0) · 중첩 표 복원 스택.
+    //   `row_line` = 이 행이 놓인 줄 — 칸 안에서 줄이 바뀌면 그 뒤 런은 표 밖(번호 0)으로 나간다.
     let mut cell = 0u32;
+    let mut cur_table = 0u16;
+    let mut next_table = 0u16;
+    let mut table_stack: Vec<(u16, u32)> = Vec::new();
+    let mut row_line = 0usize;
+    let mut cell_right = false;
+    // 칸 안 블록(`<td><p>…</p></td>` — Word) — 줄 바꿈을 **다음 글자가 올 때까지 미룬다**. 칸마다 문단이
+    // 하나뿐인 흔한 표가 한 줄(한 행)로 남는다. 칸 밖에서는 종전대로 즉시 줄을 바꾼다.
+    let mut in_cell = false;
+    let mut cell_started = false;
+    let mut pending_break = false;
     let mut text = String::new();
     let bytes = frag.as_bytes();
     let mut i = 0usize;
@@ -197,6 +220,18 @@ fn parse(frag: &str, max_lines: usize) -> (Vec<Vec<Run>>, bool) {
     macro_rules! flush {
         () => {
             if !text.is_empty() {
+                // (매크로가 펼쳐지는 자리에 따라 바로 뒤에서 다시 덮이는 대입이 있다 — 뜻은 맞다.)
+                #[allow(unused_assignments)]
+                {
+                    if pending_break {
+                        pending_break = false;
+                        if !lines.last().is_none_or(Vec::is_empty) {
+                            lines.push(Vec::new());
+                        }
+                    }
+                    cell_started = in_cell;
+                }
+                let on_row = in_cell && lines.len() - 1 == row_line;
                 let line = lines.last_mut().unwrap_or_else(|| unreachable!());
                 let indent = if line.is_empty() {
                     block_indent(&blocks)
@@ -222,6 +257,13 @@ fn parse(frag: &str, max_lines: usize) -> (Vec<Vec<Run>>, bool) {
                     image: None,
                     mono: cur.mono || blk.is_some_and(|b| b.mono),
                     bg: cur.bg.or(blk.and_then(|b| b.bg)),
+                    cell: if on_row {
+                        u16::try_from(cell).unwrap_or(u16::MAX)
+                    } else {
+                        0
+                    },
+                    table: if on_row { cur_table } else { 0 },
+                    right: on_row && cell_right,
                 });
             }
         };
@@ -276,30 +318,65 @@ fn parse(frag: &str, max_lines: usize) -> (Vec<Vec<Run>>, bool) {
                     marks += 1;
                     last_ws = true;
                 }
+                // ★ 표(T-63) — 표 번호를 새로 딴다(중첩이면 바깥 것을 쌓아 둔다). Excel 조각은 `<table>`이
+                //   조각 밖이라 태그 없이 `<tr>`부터 온다 — 그때는 첫 칸에서 번호를 딴다.
+                (false, "table") => {
+                    flush!();
+                    table_stack.push((cur_table, cell));
+                    next_table = next_table.saturating_add(1);
+                    cur_table = next_table;
+                    cell = 0;
+                    in_cell = false;
+                    pending_break = false;
+                }
+                (true, "table") => {
+                    flush!();
+                    new_line!();
+                    let (t, c) = table_stack.pop().unwrap_or((0, 0));
+                    cur_table = t;
+                    cell = c;
+                    in_cell = false;
+                    pending_break = false;
+                    last_ws = true;
+                }
                 // 표 행 = 줄 바꿈.
                 (_, "tr") => {
                     flush!();
                     new_line!();
                     last_ws = true;
                     cell = 0;
+                    in_cell = false;
+                    pending_break = false;
                 }
-                // ★ 표 칸(10-05 · T-63) — 칸 사이에 탭을 넣어 그리는 쪽의 탭 스톱이 칸을 가르게 한다
-                //   (종전에는 칸 태그를 몰라 "1234"처럼 붙었다). 칸의 글자색·바탕색(`style`·`bgcolor`)도 받는다.
+                // ★ 표 칸(10-05 · T-63) — 런에 열 번호를 실어 그리는 쪽이 열을 맞추게 한다(칸 사이 탭은 없다).
+                //   칸의 글자색·바탕색(`style`·`bgcolor`)·오른쪽 맞춤도 받는다. `colspan`은 보지 않는다(열 하나).
                 (false, "td" | "th") => {
                     flush!();
-                    if cell > 0 {
+                    if cur_table == 0 {
+                        next_table = next_table.saturating_add(1);
+                        cur_table = next_table;
+                    }
+                    if cell == 0 {
+                        row_line = lines.len() - 1;
+                    } else if lines.len() - 1 != row_line {
+                        // 앞 칸에서 줄이 바뀌었다 — 이 칸은 행 줄에 못 놓는다(표 밖 줄). 종전처럼 탭으로 가른다.
                         text.push('\t');
                         flush!();
                     }
                     cell += 1;
                     marks += 1;
+                    in_cell = true;
+                    cell_started = false;
+                    pending_break = false;
                     stack.push(cur);
                     apply_attrs(tag, &mut cur);
-                    if let Some(c) = attr_value(&tag.to_ascii_lowercase(), tag, "bgcolor")
-                        .and_then(|v| parse_color(v.trim()))
+                    let low = tag.to_ascii_lowercase();
+                    if let Some(c) =
+                        attr_value(&low, tag, "bgcolor").and_then(|v| parse_color(v.trim()))
                     {
                         cur.bg = Some(c);
                     }
+                    cell_right = cell_align_right(&low, tag);
                     if name == "th" {
                         cur.bold = true;
                     }
@@ -307,6 +384,8 @@ fn parse(frag: &str, max_lines: usize) -> (Vec<Vec<Run>>, bool) {
                 }
                 (true, "td" | "th") => {
                     flush!();
+                    in_cell = false;
+                    pending_break = false;
                     if let Some(prev) = stack.pop() {
                         cur = prev;
                     }
@@ -316,7 +395,11 @@ fn parse(frag: &str, max_lines: usize) -> (Vec<Vec<Run>>, bool) {
                     flush!();
                     let is_list = matches!(name.as_str(), "ul" | "ol");
                     if !is_list {
-                        new_line!();
+                        if in_cell {
+                            pending_break = cell_started;
+                        } else {
+                            new_line!();
+                        }
                     }
                     let ba = block_attrs(tag);
                     let parent = blocks.last();
@@ -346,7 +429,11 @@ fn parse(frag: &str, max_lines: usize) -> (Vec<Vec<Run>>, bool) {
                         blocks.truncate(pos);
                     }
                     if !matches!(name.as_str(), "ul" | "ol") {
-                        new_line!();
+                        if in_cell {
+                            pending_break = cell_started;
+                        } else {
+                            new_line!();
+                        }
                     }
                     last_ws = true;
                 }
@@ -1019,6 +1106,21 @@ fn apply_attrs(tag: &str, st: &mut Style) {
     }
 }
 
+/// 표 칸이 오른쪽 맞춤인가 — `align=right` 또는 `style`의 `text-align: right`.
+fn cell_align_right(low: &str, tag: &str) -> bool {
+    if attr_value(low, tag, "align").is_some_and(|v| v.trim().eq_ignore_ascii_case("right")) {
+        return true;
+    }
+    attr_value(low, tag, "style").is_some_and(|v| {
+        v.split(';').any(|d| {
+            d.split_once(':').is_some_and(|(k, val)| {
+                k.trim().eq_ignore_ascii_case("text-align")
+                    && val.trim().eq_ignore_ascii_case("right")
+            })
+        })
+    })
+}
+
 /// 소문자 사본에서 위치를 찾아 **원본**에서 따옴표 값을 뽑는다(값의 대소문자 보존).
 fn attr_value<'a>(low: &str, orig: &'a str, name: &str) -> Option<&'a str> {
     let pat = format!("{name}=");
@@ -1508,30 +1610,80 @@ mod ppt_mac_tests {
         }];
         assert!(onlyoffice_shape_rects(&plain).is_empty());
     }
-    /// ★ T-63 — 표 칸은 탭으로 갈리고 칸의 바탕색·글자색을 받는다.
-    #[test]
-    fn table_cells_are_tab_separated_with_cell_colors() {
-        let html = "<table><tr><th>1</th><th>2</th></tr>\
-                    <tr><td>3</td><td bgcolor=\"#ff0000\" style=\"color:#ffffff\">4</td></tr></table>";
-        let reps = [crate::RawRep {
+    fn html_rep(html: &str) -> [crate::RawRep; 1] {
+        [crate::RawRep {
             format: "text/html".into(),
             data: html.as_bytes().to_vec(),
-        }];
-        let lines = html_runs_of(&reps, 10).expect("표는 서식 경로");
-        let text = |l: &Vec<Run>| l.iter().map(|r| r.text.as_str()).collect::<String>();
-        assert_eq!(text(&lines[0]), "1\t2");
-        assert_eq!(text(&lines[1]), "3\t4");
-        assert!(
-            lines[0].iter().filter(|r| r.text != "\t").all(|r| r.bold),
-            "머리 칸은 굵게"
-        );
+        }]
+    }
+    fn line_text(l: &[Run]) -> String {
+        l.iter().map(|r| r.text.as_str()).collect()
+    }
+
+    /// ★ T-63 — 표 칸은 열 번호로 갈리고(탭 없음) 칸의 바탕색·글자색을 받는다.
+    #[test]
+    fn table_cells_carry_column_index_and_cell_colors() {
+        let html = "<table><tr><th>1</th><th>2</th></tr>\
+                    <tr><td>3</td><td bgcolor=\"#ff0000\" style=\"color:#ffffff\">4</td></tr></table>";
+        let lines = html_runs_of(&html_rep(html), 10).expect("표는 서식 경로");
+        assert_eq!(line_text(&lines[0]), "12");
+        assert_eq!(line_text(&lines[1]), "34");
+        let cells = |l: &[Run]| l.iter().map(|r| r.cell).collect::<Vec<_>>();
+        assert_eq!(cells(&lines[0]), [1, 2]);
+        assert_eq!(cells(&lines[1]), [1, 2]);
+        assert!(lines[0].iter().all(|r| r.bold), "머리 칸은 굵게");
         let last = lines[1].last().expect("칸");
         assert_eq!(last.bg, Some([255, 0, 0]));
         assert_eq!(last.color, Some([255, 255, 255]));
-        // 탭 조각에는 칸 바탕색이 묻지 않는다.
-        assert!(lines[1]
+        // 칸 바탕색은 옆 칸에 묻지 않는다.
+        assert!(lines[1][0].bg.is_none());
+    }
+
+    /// ★ T-63 — 2행×3열 표의 열 번호 · 표 뒤 문단은 0 · 붙은 두 표는 번호가 다르다 · 오른쪽 맞춤.
+    #[test]
+    fn table_runs_have_column_and_table_ids() {
+        let html = "<table><tr><td>a</td><td><b>b</b>x</td><td align=right>1</td></tr>\
+                    <tr><td>d</td><td></td><td style=\"text-align: right\">22</td></tr></table>\
+                    <p>after</p>\
+                    <table><tr><td>p</td><td>q</td></tr></table>";
+        let lines = html_runs_of(&html_rep(html), 10).expect("표");
+        assert_eq!(lines.len(), 4);
+        let cells = |l: &[Run]| l.iter().map(|r| r.cell).collect::<Vec<_>>();
+        // 칸 안의 굵은 조각도 같은 열.
+        assert_eq!(cells(&lines[0]), [1, 2, 2, 3]);
+        // 빈 칸은 런이 없다 — 다음 칸의 번호는 건너뛴다.
+        assert_eq!(cells(&lines[1]), [1, 3]);
+        assert!(lines[0].iter().chain(&lines[1]).all(|r| r.table == 1));
+        assert!(lines[0][3].right && lines[1][1].right && !lines[0][0].right);
+        // 표 뒤 문단 = 표 밖.
+        assert_eq!(line_text(&lines[2]), "after");
+        assert!(lines[2]
             .iter()
-            .filter(|r| r.text == "\t")
-            .all(|r| r.bg.is_none()));
+            .all(|r| r.cell == 0 && r.table == 0 && !r.right));
+        // 두 번째 표.
+        assert_eq!(cells(&lines[3]), [1, 2]);
+        assert!(lines[3].iter().all(|r| r.table == 2));
+    }
+
+    /// ★ T-63 — Excel 조각(`<table>` 없이 `<tr>`부터) · Word 칸(`<td><p>…</p></td>`)도 한 행 = 한 줄.
+    #[test]
+    fn table_without_table_tag_and_paragraph_cells() {
+        let excel = "<tr><td>a</td><td>b</td></tr><tr><td>c</td><td>d</td></tr>";
+        let lines = html_runs_of(&html_rep(excel), 10).expect("표");
+        assert_eq!(lines.len(), 2);
+        assert!(lines.iter().flatten().all(|r| r.table == 1 && r.cell > 0));
+
+        let word = "<table><tr><td><p>a</p></td><td><p>b</p></td></tr>\
+                    <tr><td><p>c</p><p>more</p></td><td><p>d</p></td></tr></table><p>tail</p>";
+        let lines = html_runs_of(&html_rep(word), 10).expect("표");
+        assert_eq!(line_text(&lines[0]), "ab");
+        assert_eq!(lines[0].iter().map(|r| r.cell).collect::<Vec<_>>(), [1, 2]);
+        // 칸 안에서 줄이 바뀌면 이어진 줄은 표 밖(번호 0 · 칸 사이는 탭) — 행은 첫 줄만.
+        assert_eq!(line_text(&lines[1]), "c");
+        assert_eq!(lines[1][0].cell, 1);
+        assert_eq!(line_text(&lines[2]), "more\td");
+        assert!(lines[2].iter().all(|r| r.cell == 0));
+        assert_eq!(line_text(lines.last().expect("끝 줄")), "tail");
+        assert_eq!(lines.last().expect("끝 줄")[0].cell, 0);
     }
 }

@@ -47,6 +47,7 @@
 | 24 | [참조 설정 화면 연구](24-reference-settings-study.md) | **CopyQ 10장 + Maccy + Paste** 심층 비교 → 우리 설정 화면 방향 |
 | 23 | [알파 렌더링](23-alpha-rendering.md) | **반투명** — 앱 안 알파 합성(구현) vs 창 자체 투명(플랫폼 작업·미구현) |
 | 22 | 🔴 [beep 전달 원장](22-upstream-beep-liaison.md) | **서버·와이어 변경 연락 창구** — 모든 변경에서 점검하는 체크리스트 + 미전달 항목 |
+| 35 | 📐 [Linux 배포 채널](35-linux-distribution-channels.md) | **조사**(10-05 · 결정 대기 T-67) — winget·choco 같은 Linux 한 줄 설치·자동 갱신 채널 비교: 자체 APT/RPM 저장소 · 설치 스크립트 · AUR · Homebrew(이미 Linux formula) · AppImage · Snap · Flathub · Nix · PPA · COPR · OBS · cargo — 비자유(PolyForm NC) 수용 여부 · 샌드박스 영향 · 권장 조합 3안 |
 | 34 | ★ [항목 종류](34-clip-kinds.md) | **일반 글 · 서식 글 · 이미지 · 파일 · 색 · 개체** 판정 규칙(순서도 · OS별 표현 이름 · 곁다리) + 종류 아이콘 모양 일람(SVG)·화면 위치 + 자주 헷갈리는 경우(10-04 · 사용자 요청) |
 | 33 | ★ [협업 세션 운영](33-collab-session-operation.md) | **Fable 개발 × Opus 협업**(10-04 · nexa-sql 102 차용) — 시작 절차 · 역할 표 · 파일 소유 · 메시지 본보기 · [P0] 빌드+재시작 최우선 · 검증 V0~V3 · git · 동시 빌드 금지 · 사례 원장 |
 | 32 | 🔴 [beep 전달문](32-beep-handover.md) | ★ **beep에 그대로 건네는 문서**(09-05) — 공용 `nexa-conf` 결함 2건(설정 파일 0600 · 미지 키 중복) + 공유 규약 3건(도메인/prologue · glare · relay 결합) + 서버 변경 대기 3건. 항목마다 *무엇 · 왜 · beep 어디 · 정할 것* |

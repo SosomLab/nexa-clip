@@ -38,6 +38,14 @@ impl PlatformPaste {
 
 #[cfg(target_os = "linux")]
 impl PlatformPaste {
+    /// 같은 대상을 가리키는 사본 — 워커 스레드가 순차 붙여넣기를 돌릴 때 쓴다(10-05 · T-41 ④).
+    #[must_use]
+    pub fn detached(&self) -> Self {
+        Self {
+            target: self.target.clone(),
+        }
+    }
+
     /// ★ 포커스 복원 + 키 주입을 **워커에서** 한다(10-05 · T-41 ④ · DR-41 "UI 스레드는 기다리지 않는다").
     ///
     /// Linux의 복원은 컴포지터가 포커스를 돌려줄 때까지 150ms를 쉬고, 주입은 포털에 D-Bus 왕복을 한다 —

@@ -327,10 +327,9 @@ fn fingerprint(snap: &ClipSnapshot) -> u64 {
 
 // ───────────────────────────── 읽기
 
-/// 지금 클립보드를 한 벌 읽는다. 도구·표시 서버가 없으면 `None`.
-#[must_use]
 /// ★ 지금 클립보드에 **글이 있는가** — 표현 목록만 본다(10-05 · T-41 ④). 우클릭 메뉴의 "붙여넣기"
 /// 활성 판정이 내용을 전부 읽어 오던 것(표현마다 변환 · 큰 그림이면 수십 MB)을 대신한다.
+#[must_use]
 pub fn has_text() -> bool {
     pick_backend()
         .ok()
@@ -338,6 +337,8 @@ pub fn has_text() -> bool {
         .is_some_and(|t| t.iter().any(|n| text_rank(n).is_some()))
 }
 
+/// 지금 클립보드를 한 벌 읽는다. 도구·표시 서버가 없으면 `None`.
+#[must_use]
 pub fn read_snapshot() -> Option<ClipSnapshot> {
     let backend = pick_backend().ok()?;
     read_snapshot_with(backend)
@@ -492,14 +493,58 @@ fn native_event_loop(sink: Sink) -> Result<(), WatchError> {
     Ok(())
 }
 
+/// ★ 가벼운 변화 탐지에 쓸 **대표 타깃 하나**(10-05 · T-54) — 글이 있으면 가장 믿을 만한 글 타깃,
+/// 없으면 곁다리가 아닌 첫 타깃. 타깃이 하나도 없으면 `None`.
+fn probe_target(targets: &[String]) -> Option<&String> {
+    targets
+        .iter()
+        .filter_map(|t| text_rank(t).map(|k| (k, t)))
+        .min_by_key(|(k, _)| *k)
+        .map(|(_, t)| t)
+        .or_else(|| {
+            targets
+                .iter()
+                .find(|t| !is_meta_target(t) && t.as_str() != KDE_PW_HINT)
+        })
+}
+
+/// ★ 가벼운 지문(10-05 · T-54) — **타깃 목록 + 대표 타깃 하나의 내용**만으로 만든다(도구 실행 2회).
+///
+/// 도구 파이프 폴링은 종전에 매 틱 타깃 목록 1회 + **표현마다 1회**씩 도구를 띄웠다(Office·그림 복사는
+/// 표현이 5~18개 → 틱당 6~19회 · 하루 수십만 회). 보안 프로그램(EDR)에는 수상한 반복 실행이고 전력도 쓴다.
+/// 변화가 없는 대부분의 틱은 이 지문이 같으므로 거기서 끝내고, 달라졌을 때만 전부 읽는다.
+/// 한계: 타깃 목록과 대표 타깃이 그대로인 채 **다른 표현만** 바뀐 복사는 다음 변화까지 못 본다(드물다).
+fn quick_fingerprint(backend: Backend) -> Option<u64> {
+    let targets = list_targets(backend)?;
+    let mut h = fnv1a(0, &[]);
+    for t in &targets {
+        h = fnv1a(h, t.as_bytes());
+        h = fnv1a(h, &[0]);
+    }
+    if let Some(t) = probe_target(&targets) {
+        let data = read_target(backend, t).unwrap_or_default();
+        h = fnv1a(h, &(data.len() as u64).to_le_bytes());
+        h = fnv1a(h, &data);
+    }
+    Some(h)
+}
+
 fn poll_loop(backend: Backend, sink: &Sink) {
     // 시작 시점의 내용은 "새 복사"가 아니다 — 지금 지문을 기준선으로 삼는다.
     let mut last = read_snapshot_with(backend).map(|s| fingerprint(&s));
+    let mut last_quick = quick_fingerprint(backend);
     let mut idle_ticks: u32 = 0;
     // 읽기 실패가 이어질 때 진단을 도배하지 않기 위한 상태(전이에서만 찍는다).
     let mut was_unreadable = false;
     loop {
         std::thread::sleep(std::time::Duration::from_millis(interval_ms(idle_ticks)));
+        // ★ 가벼운 지문이 그대로면 전부 읽지 않는다(T-54) — 변화 없는 틱의 도구 실행을 1+N회에서 2회로.
+        let quick = quick_fingerprint(backend);
+        if quick.is_some() && quick == last_quick {
+            idle_ticks = next_idle_ticks(idle_ticks, false);
+            continue;
+        }
+        last_quick = quick;
         let Some(snap) = read_snapshot_with(backend) else {
             // 도구가 순간 실패했다(셀렉션 주인 교체 중) **또는 클립보드가 비었다**
             // — `wl-paste --list-types`는 빈 클립보드에서 비정상 종료한다.
@@ -740,5 +785,18 @@ mod tests {
         assert!(interval_ms(IDLE_AFTER_TICKS) > ACTIVE_MS);
         assert_eq!(interval_ms(10_000), IDLE_MAX_MS);
         assert_eq!(interval_ms(u32::MAX), IDLE_MAX_MS);
+    }
+    /// ★ T-54 — 가벼운 변화 탐지의 대표 타깃: 글이 있으면 가장 믿을 만한 글, 없으면 첫 실타깃.
+    #[test]
+    fn probe_target_prefers_text_then_first_real_target() {
+        let t = |v: &[&str]| v.iter().map(|s| (*s).to_string()).collect::<Vec<_>>();
+        let with_text = t(&["TARGETS", "text/html", "STRING", "UTF8_STRING", "image/png"]);
+        assert_eq!(
+            probe_target(&with_text).map(String::as_str),
+            Some("UTF8_STRING")
+        );
+        let image = t(&["TARGETS", "TIMESTAMP", "image/png", "image/bmp"]);
+        assert_eq!(probe_target(&image).map(String::as_str), Some("image/png"));
+        assert_eq!(probe_target(&t(&["TARGETS", "MULTIPLE"])), None);
     }
 }

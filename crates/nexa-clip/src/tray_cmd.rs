@@ -545,6 +545,41 @@ fn apply_cell_picture_limits(conf: &Settings) {
 /// 클립보드 다리가 복사 뒤 클립보드를 다시 쥐는 시간 창(10-04 실측 — VMware `vmware-user` 2~3초).
 const BRIDGE_ECHO_WINDOW: Duration = Duration::from_secs(5);
 
+/// 순차 붙여넣기의 실행부 — 항목마다 게시 → 주입(→ 줄바꿈) → 쉼. 어느 스레드에서 돌려도 된다.
+fn run_stack(paste: &mut PlatformPaste, jobs: &[(u64, Vec<RawRep>)], as_: PasteAs, newline: bool) {
+    let n = jobs.len();
+    let mut done = 0usize;
+    for (k, (id, reps)) in jobs.iter().enumerate() {
+        if let Err(e) = nclip_plat::clipboard::set_reps(reps) {
+            eprintln!("스택 게시 실패({id}): {e}");
+            continue;
+        }
+        std::thread::sleep(Duration::from_millis(60));
+        if let Err(e) = paste.restore_and_paste(as_) {
+            eprintln!("스택 주입 실패({id}): {e:?}");
+            continue;
+        }
+        done += 1;
+        if k + 1 < n {
+            if newline {
+                std::thread::sleep(Duration::from_millis(60));
+                if let Err(e) = paste.send_newline() {
+                    eprintln!("스택 줄바꿈 실패({id}): {e:?}");
+                }
+            }
+            std::thread::sleep(Duration::from_millis(160));
+        }
+    }
+    println!(
+        "순차 붙여넣기: {done}/{n}개 · {} · 줄바꿈 {}",
+        match as_ {
+            PasteAs::Plain => "평문",
+            _ => "원본",
+        },
+        if newline { "있음" } else { "없음" }
+    );
+}
+
 /// ★ 축출 로그(T-61 · 10-04) — 이력이 줄면 **몇 건을 왜 지웠는지** 한 줄(조용히 지우지 않는다 · DR-31).
 fn log_evictions(c: nclip_core::history::EvictCounts, left: usize) {
     if c.total() == 0 {
@@ -766,17 +801,27 @@ impl Shell {
                 return;
             }
         }
-        match self.paste.restore_and_paste(PasteAs::Plain) {
-            Ok(()) => println!("평문 붙여넣기: 주입 ok — 0.3초 뒤 원본 복원"),
-            Err(e) => {
-                eprintln!("평문 붙여넣기: 주입 실패 {e:?} — 클립보드에는 평문이 실려 있습니다")
-            }
-        }
         let proxy = self.proxy.clone();
-        std::thread::spawn(move || {
+        // 주입 결과를 알리고 0.3초 뒤 원본을 되돌린다 — 복원은 **주입 뒤**여야 한다.
+        let finish = move |r: Result<(), nclip_core::PasteError>| {
+            match r {
+                Ok(()) => println!("평문 붙여넣기: 주입 ok — 0.3초 뒤 원본 복원"),
+                Err(e) => {
+                    eprintln!("평문 붙여넣기: 주입 실패 {e:?} — 클립보드에는 평문이 실려 있습니다");
+                }
+            }
             std::thread::sleep(Duration::from_millis(300));
             let _ = proxy.send_event(ShellEvent::RestoreClipboard(id));
-        });
+        };
+        // ★ Linux는 주입까지 워커에서(10-05 · T-41 ④ · DR-41) — 다른 OS는 주입은 그 자리에서, 복원 대기만 워커.
+        #[cfg(target_os = "linux")]
+        self.paste
+            .restore_and_paste_detached(PasteAs::Plain, finish);
+        #[cfg(not(target_os = "linux"))]
+        {
+            let r = self.paste.restore_and_paste(PasteAs::Plain);
+            std::thread::spawn(move || finish(r));
+        }
     }
 
     /// 원본 복원 — 그 항목의 표현 전부를 다시 게시(에코는 승격으로 흡수).
@@ -1789,9 +1834,9 @@ impl Shell {
             eprintln!("순차 붙여넣기는 자동 붙여넣기(paste.auto)가 켜져 있어야 합니다");
             return;
         }
-        let n = ids.len();
-        let mut done = 0usize;
-        for (k, id) in ids.iter().enumerate() {
+        // 게시할 표현을 먼저 다 만든다(이력 접근은 UI 스레드에서만).
+        let mut jobs: Vec<(u64, Vec<RawRep>)> = Vec::with_capacity(ids.len());
+        for id in ids {
             let _ = self.ensure_loaded(*id); // 본문 지연 로드(09-03).
             let Some(item) = (0..self.history.len())
                 .filter_map(|i| self.history.get(i))
@@ -1823,34 +1868,22 @@ impl Shell {
             if reps.is_empty() {
                 reps = item.reps.clone(); // 평문이 없는 항목은 원본으로.
             }
-            if let Err(e) = nclip_plat::clipboard::set_reps(&reps) {
-                eprintln!("스택 게시 실패({id}): {e}");
-                continue;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(60));
-            if let Err(e) = self.paste.restore_and_paste(as_) {
-                eprintln!("스택 주입 실패({id}): {e:?}");
-                continue;
-            }
-            done += 1;
-            if k + 1 < n {
-                if newline {
-                    std::thread::sleep(std::time::Duration::from_millis(60));
-                    if let Err(e) = self.paste.send_newline() {
-                        eprintln!("스택 줄바꿈 실패({id}): {e:?}");
-                    }
-                }
-                std::thread::sleep(std::time::Duration::from_millis(160));
+            jobs.push((*id, reps));
+        }
+        // ★ 게시 → 주입 → 쉼의 반복은 항목마다 수백 ms다 — Linux는 통째로 워커에서 돌린다(10-05 · T-41 ④).
+        //   다른 OS는 포그라운드 창 API가 UI 스레드를 요구할 수 있어 종전대로 그 자리에서.
+        #[cfg(target_os = "linux")]
+        {
+            let mut paste = self.paste.detached();
+            let spawned = std::thread::Builder::new()
+                .name("nclip-paste-stack".into())
+                .spawn(move || run_stack(&mut paste, &jobs, as_, newline));
+            if let Err(e) = spawned {
+                eprintln!("순차 붙여넣기: 워커 생성 실패({e})");
             }
         }
-        println!(
-            "순차 붙여넣기: {done}/{n}개 · {} · 줄바꿈 {}",
-            match as_ {
-                PasteAs::Plain => "평문",
-                _ => "원본",
-            },
-            if newline { "있음" } else { "없음" }
-        );
+        #[cfg(not(target_os = "linux"))]
+        run_stack(&mut self.paste, &jobs, as_, newline);
     }
 
     /// ★ 원격 파일 항목(DR-30 약속)의 붙여넣기 해석 — 항목에 약속이 없으면 `None`(보통 경로).
@@ -2008,9 +2041,24 @@ impl Shell {
             let as_ = pending.map_or(PasteAs::Original, |(a, _)| a);
             if self.publish_cached(item_id, as_) {
                 // ★ 붙여넣기가 기다렸고 금방 끝났으면 주입 — 늦었으면 알림만(사용자는 이미 딴 데 있다).
-                let injected = matches!(pending, Some((_, dt)) if dt <= crate::xfer::PASTE_INJECT_WINDOW)
-                    && self.paste_auto
-                    && self.paste.restore_and_paste(as_).is_ok();
+                let wanted = matches!(pending, Some((_, dt)) if dt <= crate::xfer::PASTE_INJECT_WINDOW)
+                    && self.paste_auto;
+                // ★ Linux는 주입을 워커에서(10-05 · T-41 ④) — 결과를 기다리지 않으므로 실패는 로그로만 남는다.
+                #[cfg(target_os = "linux")]
+                let injected = {
+                    if wanted {
+                        self.paste.restore_and_paste_detached(as_, |r| {
+                            if let Err(e) = r {
+                                eprintln!(
+                                    "파일 공유: 받은 뒤 붙여넣기 실패 {e:?} — 클립보드에는 실려 있습니다"
+                                );
+                            }
+                        });
+                    }
+                    wanted
+                };
+                #[cfg(not(target_os = "linux"))]
+                let injected = wanted && self.paste.restore_and_paste(as_).is_ok();
                 if !injected {
                     self.tray.notify(
                         tr(lang, Msg::XferPanel),
