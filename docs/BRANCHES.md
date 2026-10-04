@@ -4,6 +4,7 @@
 
 | 브랜치 | 생성 | 병합 | 커밋 수 | 요약 |
 |---|---|---|---:|---|
+| `fix/hotkey-hold-once-10-05` | 2026-10-05 | 2026-10-05 | 2 | ★ **팝업 단축키를 쥐고 있는 동안 한 번만**(T-57 · 사용자 지시) — GNOME 포털 `Activated` 반복(500ms 뒤 약 30ms 간격 · `Deactivated` 0) 거름(`RepeatFilter` · 토글 유지) · 하네스 ✓ · V2 ✓(test 562) · journal 10-05 1~2차(진행사항 최신화) · 병합 `606be27`(커밋 `b24289c` · `e3f868c`) · push `26bfff3..606be27` · CI `37211805083` ✅ |
 | `fix/popup-stuck-key-ime-10-04` | 2026-10-04 | 2026-10-04 | 2 | ★ **팝업 단축키 글자 고착 재발**(T-66 · 사용자 재신고) — 잔향 중 IME Preedit/Commit 버림 · 고착이 보이면 포털 누름+뗌 주입으로 풀기 · IME를 버렸으면 BackSpace로 조합 정리 · 하네스 `c-first` ✓ · 한글 시작 상태 4회 ✓ · V2 ✓(test 561) · journal 10-04 22차(+ 21차 CI ✓) · 병합 `cd3d614`(커밋 `554aa54` · `7b24c74`) · push 안 함 |
 | `fix/onlyoffice-shape-layout-10-04` | 2026-10-04 | 2026-10-04 | 2 | ★ **ONLYOFFICE 개체 여러 개의 원래 배치 복원**(T-65 · 사용자 신고) — HTML `pptData` 이진의 도형 변환 기록(EMU)으로 자리를 읽어 합성(`onlyoffice_shape_rects` · `place_shapes` · `compose_at`) · 배율 안 맞으면 가로 배치로 물러남(휴리스틱) · V2 ✓(test 560) · ✅ 사용자 실기("슬라이드는 정상 동작!") · journal 10-04 20차 · 병합 `d0eb320`(커밋 `4bd8b2c` · `dcacfb3`) · push 안 함 |
 | `fix/html-picture-10-04` | 2026-10-04 | 2026-10-04 | 2 | 글 없이 인라인 그림뿐인 HTML(ONLYOFFICE 프레젠테이션) = **개체** — 그 그림으로 섬네일 · 라벨 "[이미지] W×H" · 개체도 이미지로 복사 · V2 ✓(test 557) · journal 10-04 19차 · 병합 `9d3f498`(커밋 `385dbc4` · `087e50f`) · push 안 함 |
