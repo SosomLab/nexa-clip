@@ -1151,6 +1151,7 @@ name = "nclip-gfx"
 version = "0.1.6"
 dependencies = [
  "ab_glyph",
+ "png",
 ]
 
 [[package]]
