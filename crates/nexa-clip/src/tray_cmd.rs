@@ -238,11 +238,20 @@ fn tooltip(held: usize) -> String {
     }
 }
 
-/// 귀퉁이 점 하나를 아이콘 위에 얹는다 — 테두리(짙은 색) + 본체(밝은 색)라 어두운 배경에서도 또렷하다.
-/// ★ 09-03 실기: 아이콘을 가리지 않게 작게(5/32) · 귀퉁이 밀착(중심 = 반지름).
+/// 귀퉁이 점의 테두리색 — 아이콘 바탕(청록)·어두운 상단 막대 어디서든 점이 떠 보이게 흰색.
+const DOT_RIM: (u8, u8, u8) = (255, 255, 255);
+
+/// 귀퉁이 점 하나를 아이콘 위에 얹는다 — 테두리(흰색) + 본체(상태색).
+/// ★ 10-05 사용자 실기("좌측 하단 표시가 안 보인다"): 상단 막대에서는 아이콘이 16~22px로 줄어 5/32 점이
+///   3px 남짓이었고, 파랑 점은 청록 바탕과 비슷해 묻혔다 → 7/32의 90%로 키우고 테두리를 **흰색**으로([`DOT_RIM`]) · LAN 점은 `0x0000FF`(청록 바탕과 구분).
 fn overlay_dot(rgba: &mut [u8], side: u32, at: Corner, rim: (u8, u8, u8), body: (u8, u8, u8)) {
     let s = side as i32;
-    let r = (s * 5 / 32).max(3);
+    // 반지름 = 변의 7/32의 90%(10-05 사용자 조정) — 32px에서 6.3px. 정수 격자라 제곱 거리로 견준다.
+    #[allow(clippy::cast_precision_loss)]
+    let rf = (side as f32 * 7.0 / 32.0 * 0.9).max(3.6);
+    #[allow(clippy::cast_possible_truncation)]
+    let r = rf.round() as i32;
+    let (r2, inner2) = (rf * rf, (rf - 2.0) * (rf - 2.0));
     let (cx, cy) = match at {
         Corner::TopLeft => (r, r),
         Corner::BottomLeft => (r, s - 1 - r),
@@ -251,12 +260,13 @@ fn overlay_dot(rgba: &mut [u8], side: u32, at: Corner, rim: (u8, u8, u8), body: 
     for y in 0..s {
         for x in 0..s {
             let (dx, dy) = (x - cx, y - cy);
-            let d2 = dx * dx + dy * dy;
-            if d2 > r * r {
+            #[allow(clippy::cast_precision_loss)]
+            let d2 = (dx * dx + dy * dy) as f32;
+            if d2 > r2 {
                 continue;
             }
             let i = ((y * s + x) * 4) as usize;
-            let (cr, cg, cb) = if d2 > (r - 2) * (r - 2) { rim } else { body };
+            let (cr, cg, cb) = if d2 > inner2 { rim } else { body };
             rgba[i] = cr;
             rgba[i + 1] = cg;
             rgba[i + 2] = cb;
@@ -291,7 +301,7 @@ fn content(held: usize, recent: Vec<String>, sync_on: bool, lan_on: bool) -> Tra
             &mut rgba,
             ICON_SIDE,
             Corner::TopLeft,
-            (16, 96, 40),
+            DOT_RIM,
             (46, 204, 64),
         );
     }
@@ -300,8 +310,8 @@ fn content(held: usize, recent: Vec<String>, sync_on: bool, lan_on: bool) -> Tra
             &mut rgba,
             ICON_SIDE,
             Corner::BottomLeft,
-            (20, 60, 140),
-            (52, 120, 246),
+            DOT_RIM,
+            (0, 0, 255),
         );
     }
     // ★ 파일 전송 중(09-12) — 우하단 주황 점 + 툴팁에 "N개 받는 중 · P%".
@@ -311,7 +321,7 @@ fn content(held: usize, recent: Vec<String>, sync_on: bool, lan_on: bool) -> Tra
             &mut rgba,
             ICON_SIDE,
             Corner::BottomRight,
-            (150, 80, 0),
+            DOT_RIM,
             (255, 160, 20),
         );
         let line = tr(lang, Msg::TrayXfer)
