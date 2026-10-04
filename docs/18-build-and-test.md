@@ -488,6 +488,14 @@ XKB 오토리피트는 raw 이벤트가 **없고** `xev -id`로도 창의 KeyPre
 팝업이 어느 상태로 시작하는지는 ibus-hangul `initial-input-mode`가 정한다 — 이 VM은 `latin`(팝업이 영문으로 시작) · `gsettings`로 `hangul`로 바꿔도
 **실행 중 엔진에는 반영되지 않았다**(10-04 실측 · 엔진 재시작 필요 추정 · 바꿨으면 `latin`으로 되돌릴 것).
 
+**한글 상태로 시작하는 팝업을 반복 재현하기(10-04 22차 · 사용자가 한글로 바꿔 둔 상태에서 4회 ✓)**:
+- ⚠️ ibus-hangul은 **Esc를 "한글 끄기"**(`off-keys` = `Escape`)로 쓴다 → 하네스 끝의 Esc가 한글 상태를 꺼서 다음 회차가 영문으로 시작한다.
+- 한글 상태는 **창을 넘어 이어진다** — 팝업은 직전 상태로 시작한다.
+- 새 옵션: `KEYPROBE_CLOSE=toggle`(Esc 대신 단축키로 팝업 닫기) · `KEYPROBE_PRE=<evdev 목록>`(단축키 전에 키 주입).
+- 절차: 준비 1회(`mods-first` · `KEYPROBE_TYPE=122` · `KEYPROBE_CLOSE=toggle` — 팝업 안에서 한/영 키로 한글 켜기) → 그 뒤 `c-first`를 `KEYPROBE_CLOSE=toggle`로 반복.
+- ⚠️ 팝업 **밖** 창에서 `xdotool key Hangul` · `KEYPROBE_PRE=122`로는 팝업의 한글 상태가 바뀌지 않았다(원인 미확인).
+- 팝업이 늦게 떠 하네스가 단축키를 오래 쥐면 열기/닫기 토글이 반복된다(T-57) — 그 회차는 무효.
+
 ---
 
 ## 10. 배포 — `release.yml` · brew · winget · Chocolatey (09-04)

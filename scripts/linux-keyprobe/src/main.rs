@@ -20,6 +20,9 @@
 //! `300 mods-first 60` = 정상 · `80 …`(포커스 전 전부 해제) = 정상. 환경 변수:
 //! - `KEYPROBE_UNSTICK=press-release|release|none` — 고착 해소 방식(기본 press-release · `release`는 안 풀리는 것을 실증)
 //! - `KEYPROBE_ESC_FIRST=1` — 고착 확인 전에 팝업을 먼저 닫아 본다(닫히면 XWayland가 전부 해제하는지)
+//! - `KEYPROBE_PRE=122` — 단축키를 누르기 **전에** evdev 키를 차례로 누름/뗌(10-04 — 지금 포커스 창에서 한/영 전환:
+//!   ibus-hangul의 한글 상태는 창을 넘어 이어지고 팝업의 Esc가 그것을 끈다 → 한글 상태 고착을 반복 재현하려면 매 회차 다시 켠다)
+//! - `KEYPROBE_CLOSE=toggle` — 끝에 Esc 대신 단축키를 다시 눌러 팝업을 닫는다(Esc가 ibus-hangul의 한글 상태를 끄지 않게)
 //! - `KEYPROBE_TYPE=30,46,46` — 관찰 뒤·스크린샷 전에 evdev 키를 차례로 누름/뗌(고착 중에도 검색이 되는지 · `c` 첫 글자 손실)
 //! 사용: linux-keyprobe <hold_ms> <order> <gap_ms> [observe_ms]
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -150,6 +153,16 @@ fn main() {
     );
 
     // ── 주입 ──
+    if let Ok(codes) = std::env::var("KEYPROBE_PRE") {
+        let steps: Vec<(i32, bool, u64)> = codes
+            .split(',')
+            .filter_map(|c| c.trim().parse::<i32>().ok())
+            .flat_map(|c| [(c, true, 30), (c, false, 30)])
+            .collect();
+        key_seq(&steps).expect("pre");
+        std::thread::sleep(Duration::from_millis(400));
+        println!("[{:>5}ms] 사전 키 주입({codes})", t0.elapsed().as_millis());
+    }
     println!(
         "[{:>5}ms] 주입: Shift↓ Alt↓ C↓ (hold {hold_ms}ms · order {order} · gap {gap_ms}ms)",
         ms()
@@ -243,7 +256,21 @@ fn main() {
     let esc_first = std::env::var("KEYPROBE_ESC_FIRST").is_ok();
     let esc = |label: &str| {
         if popup_wid().is_some() {
-            key_seq(&[(KEY_ESC, true, 30), (KEY_ESC, false, 0)]).expect("esc");
+            // ★ `KEYPROBE_CLOSE=toggle`(10-04) — Esc 대신 단축키를 다시 눌러 닫는다(수식키 먼저 떼는 정상 순서).
+            //   ibus-hangul은 Esc를 "한글 끄기"로 써서(off-keys) 다음 회차가 영문 상태로 시작한다 — 한글 상태 반복 재현용.
+            if std::env::var("KEYPROBE_CLOSE").as_deref() == Ok("toggle") {
+                key_seq(&[
+                    (KEY_LEFTSHIFT, true, 20),
+                    (KEY_LEFTALT, true, 20),
+                    (KEY_C, true, 120),
+                    (KEY_LEFTSHIFT, false, 20),
+                    (KEY_LEFTALT, false, 20),
+                    (KEY_C, false, 0),
+                ])
+                .expect("toggle-close");
+            } else {
+                key_seq(&[(KEY_ESC, true, 30), (KEY_ESC, false, 0)]).expect("esc");
+            }
             std::thread::sleep(Duration::from_millis(400));
             println!(
                 "[{:>5}ms] {label}: Esc 뒤 팝업 {:?} · 눌린 키 {:?}",
