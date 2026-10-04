@@ -1312,6 +1312,19 @@ impl Shell {
         if imgs.is_empty() {
             return None;
         }
+        // ★ 원본 배치(10-04) — ONLYOFFICE가 실어 준 도형 자리가 그림들과 맞으면 그 자리에 놓는다.
+        //   못 읽거나 안 맞으면 종전대로 HTML 순서대로 나란히.
+        if imgs.len() == pictures {
+            let sizes: Vec<(u32, u32)> = imgs.iter().map(|(_, im)| (im.w, im.h)).collect();
+            let rects = nclip_core::richtext::onlyoffice_shape_rects(reps);
+            if let Some(at) = crate::render_img::place_shapes(&sizes, &rects) {
+                let items: Vec<((i32, i32), &nclip_ctl::theme::IconImage)> =
+                    at.into_iter().zip(imgs.iter().map(|(_, im)| im)).collect();
+                if let Some(out) = crate::render_img::compose_at(&items) {
+                    return Some(out);
+                }
+            }
+        }
         crate::render_img::render_runs(&self.font, &lines, &imgs)
     }
 
@@ -2067,16 +2080,19 @@ impl Shell {
         //   종전에는 그것을 두고도 HTML 런을 우리가 다시 그려 모양이 달랐다(표 선·셀 색·병합이 사라짐).
         //   그림이 없는 항목(웹 글 등)만 종전대로 직접 그린다.
         const SIDE_MAX: u32 = 4096;
-        let rendered = decode_image(&item.reps, SIDE_MAX).or_else(|| {
-            let lines = nclip_core::richtext::html_runs_of(&item.reps, 500).unwrap_or_else(|| {
-                let text = crate::main_win::plain_of(&item.reps)
-                    .or_else(|| nclip_core::capture::svg_text(&item.reps))
-                    .unwrap_or_else(|| item.label.clone());
-                crate::render_img::plain_runs(&text)
+        let rendered = decode_image(&item.reps, SIDE_MAX)
+            .or_else(|| self.html_picture(&item.reps))
+            .or_else(|| {
+                let lines =
+                    nclip_core::richtext::html_runs_of(&item.reps, 500).unwrap_or_else(|| {
+                        let text = crate::main_win::plain_of(&item.reps)
+                            .or_else(|| nclip_core::capture::svg_text(&item.reps))
+                            .unwrap_or_else(|| item.label.clone());
+                        crate::render_img::plain_runs(&text)
+                    });
+                let imgs = crate::main_win::decode_inline_images(&lines);
+                crate::render_img::render_runs(&self.font, &lines, &imgs)
             });
-            let imgs = crate::main_win::decode_inline_images(&lines);
-            crate::render_img::render_runs(&self.font, &lines, &imgs)
-        });
         let Some((w, h, rgba)) = rendered else {
             eprintln!("이미지 렌더 실패 — 내용이 비었거나 너무 큽니다");
             return;

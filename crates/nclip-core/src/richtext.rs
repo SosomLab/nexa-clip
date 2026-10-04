@@ -424,6 +424,61 @@ fn data_image_bytes(src: &str) -> Option<Vec<u8>> {
     (!bytes.is_empty()).then_some(bytes)
 }
 
+/// ★ ONLYOFFICE 프레젠테이션 복사에 실린 **개체 자리**(10-04 사용자 실기 — "이미지로 복사하면 도형이 가로로 놓인다").
+///
+/// ONLYOFFICE는 개체를 `text/html`로 올리며 `<img>`(개체마다 그림 하나)에는 위치가 없다. 위치는
+/// `class="pptData;<길이>;<base64>"`에 실린 자체 이진 안에만 있다. 그 이진에서 도형 변환(xfrm) 기록 —
+/// 속성 묶음 `FA 00 <offX> 01 <offY> 02 <extX> 03 <extY>`(각 i32 LE · EMU) — 을 **순서대로** 찾아
+/// `[offX, offY, extX, extY]`로 돌려준다. 전부 0인 기록(묶음 틀)과 크기가 없는 기록은 건너뛴다.
+///
+/// ⚠️ 문서화된 형식이 아니다 — 기록 수·크기가 그림과 맞는지는 쓰는 쪽이 확인하고, 안 맞으면
+/// 위치를 쓰지 않는다(지어내지 않는다).
+#[must_use]
+pub fn onlyoffice_shape_rects(reps: &[crate::RawRep]) -> Vec<[i32; 4]> {
+    const MAX: usize = 64;
+    let Some(html) = reps
+        .iter()
+        .find(|r| crate::capture::is_html_format(&r.format))
+        .and_then(|r| core::str::from_utf8(&r.data).ok())
+    else {
+        return Vec::new();
+    };
+    let Some(at) = html.find("pptData;") else {
+        return Vec::new();
+    };
+    let rest = &html[at + "pptData;".len()..];
+    let Some((_len, rest)) = rest.split_once(';') else {
+        return Vec::new();
+    };
+    let payload = rest.split(['"', '\'', ' ', '>']).next().unwrap_or("");
+    if payload.len() > 11 << 20 {
+        return Vec::new();
+    }
+    let Some(bin) = base64_decode(payload) else {
+        return Vec::new();
+    };
+    let int = |i: usize| i32::from_le_bytes([bin[i], bin[i + 1], bin[i + 2], bin[i + 3]]);
+    let mut out = Vec::new();
+    let mut i = 0usize;
+    while i + 21 <= bin.len() && out.len() < MAX {
+        if bin[i] == 0xFA
+            && bin[i + 1] == 0
+            && bin[i + 6] == 1
+            && bin[i + 11] == 2
+            && bin[i + 16] == 3
+        {
+            let r = [int(i + 2), int(i + 7), int(i + 12), int(i + 17)];
+            if r[2] > 0 && r[3] > 0 {
+                out.push(r);
+            }
+            i += 21;
+        } else {
+            i += 1;
+        }
+    }
+    out
+}
+
 /// 표준 base64(+ URL-safe 두 글자) 해제 — 공백·개행 무시 · 패딩 관대. 외부 crate 없이(DR-8).
 fn base64_decode(s: &str) -> Option<Vec<u8>> {
     let mut out = Vec::with_capacity(s.len() * 3 / 4);
@@ -1362,5 +1417,64 @@ mod ppt_mac_tests {
                 .any(|r| r.text.contains("ABC") && r.color == Some([0x21, 0x5F, 0x9A])),
             "hex 색이 살아야 한다: {flat:?}"
         );
+    }
+    /// ★ ONLYOFFICE `pptData` 이진에서 도형 자리(xfrm)를 순서대로 읽는다 — 0 기록·크기 없는 기록은 건너뛴다.
+    #[test]
+    fn onlyoffice_shape_rects_are_read_in_order() {
+        let rec = |v: [i32; 4]| {
+            let mut b = vec![0xFAu8];
+            for (k, x) in v.iter().enumerate() {
+                b.push(k as u8);
+                b.extend_from_slice(&x.to_le_bytes());
+            }
+            b.push(0xFB);
+            b
+        };
+        let mut bin = b"head".to_vec();
+        bin.extend(rec([0, 0, 0, 0]));
+        bin.extend(rec([1_469_385, 968_114, 2_389_057, 1_311_639]));
+        bin.extend(b"\x01\x02junk");
+        bin.extend(rec([2_929_191, 2_479_275, 2_857_500, 2_638_893]));
+        // base64(표준) 인코드 — 테스트용 최소 구현.
+        const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        let mut b64 = String::new();
+        for c in bin.chunks(3) {
+            let n = (u32::from(c[0]) << 16)
+                | (u32::from(*c.get(1).unwrap_or(&0)) << 8)
+                | u32::from(*c.get(2).unwrap_or(&0));
+            b64.push(T[(n >> 18) as usize & 63] as char);
+            b64.push(T[(n >> 12) as usize & 63] as char);
+            b64.push(if c.len() > 1 {
+                T[(n >> 6) as usize & 63] as char
+            } else {
+                '='
+            });
+            b64.push(if c.len() > 2 {
+                T[n as usize & 63] as char
+            } else {
+                '='
+            });
+        }
+        let html = format!(
+            "<img width=\"10\" height=\"10\" src=\"data:image/png;base64,AAAA\" class=\"pptData;{};{b64}\">",
+            bin.len()
+        );
+        let reps = [crate::RawRep {
+            format: "text/html".into(),
+            data: html.into_bytes(),
+        }];
+        assert_eq!(
+            onlyoffice_shape_rects(&reps),
+            vec![
+                [1_469_385, 968_114, 2_389_057, 1_311_639],
+                [2_929_191, 2_479_275, 2_857_500, 2_638_893]
+            ]
+        );
+        // pptData가 없으면 빈 목록.
+        let plain = [crate::RawRep {
+            format: "text/html".into(),
+            data: b"<p>hello</p>".to_vec(),
+        }];
+        assert!(onlyoffice_shape_rects(&plain).is_empty());
     }
 }
