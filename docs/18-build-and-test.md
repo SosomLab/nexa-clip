@@ -199,6 +199,7 @@ status          : Local only
 | clippy `this assertion has a constant value` | 상수 비교 `assert!` | `const { assert!(..) }` 또는 `const _: () = assert!(..)` |
 | `failed to remove file nexa-clip.exe` | ★ **실행 중인 바이너리를 덮어쓰려 함** | 그 창을 닫고 다시 빌드 |
 | Linux에서 창 관련 링크 오류 | X11/Wayland 개발 패키지 부재 | [§4-2](#4-2-크레이트만-골라-검사)로 코어만 검사 |
+| ★ CI만 clippy 빨강(로컬 통과) · 새 린트 이름 | **로컬 stable이 CI보다 낡음** — CI는 `rust-toolchain.toml` `channel = "stable"`(버전 고정 없음)이라 최신 stable로 돈다(10-05: 로컬 1.98 ↔ CI 1.99 `suspicious_runtime_symbol_definitions`) | V2 전에 `rustup update stable` · `rustc -V`를 회신에 적는다 · 재현만 하려면 `rustup toolchain install <버전>` 후 `cargo +<버전> clippy …`(⚠️ 설치가 기본 도구 체인을 바꿀 수 있다 → `rustup default stable`로 확인) |
 | 한글이 네모로 | 시스템 UI 폰트 후보 미스 | 실행 시 콘솔의 `폰트:` 줄 확인 → [`nclip-plat/src/font.rs`](../crates/nclip-plat/src/font.rs) 후보 |
 
 ---

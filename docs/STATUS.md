@@ -9,9 +9,9 @@
 **사용자 결정 5건**: 컬러 이모지 = 시스템 글꼴 PNG 해석 예외([DR-46](10-decision-record.md)) · T-54 = 실행 횟수만 줄이기 · T-58 = 진단 추가 · 표 = 열 폭 + 테두리 · 마무리 = push + 설치본 교체.
 **수정**(개발 세션 · `fix/linux-leftovers-10-05`): Linux 컬러 이모지(CBDT) · 서식 보기 표 격자·열 폭·채움색 · Wayland 폴링 도구 실행 1+N → 2 · 검색창 글자 진단 · 남은 붙여넣기 3종 워커화.
 **검증**: Debug PID 585003(글꼴 진단 🎉=true) · 실기 ✓ 이모지(🎉·🚀 컬러 · 👍 흑백 = 한계) · 표 · V2 ✓(check-3os · test 574 · Release 4.9MB) · ☐ 붙여넣기 3종 · KDE·Sway.
-**병합·push**: main `aa383cd` · push `1e41bf6..aa383cd`(19커밋) · ✗ **CI `37219040880` 빨강**(ubuntu·macos clippy 실패 · windows ✓ · 로컬 1.98 통과 ↔ CI stable 1.99 추정 · 원문 미확인).
+**병합·push**: main `aa383cd` · push `1e41bf6..aa383cd`(19커밋) · ✗ CI `37219040880`(1.99 린트 `suspicious_runtime_symbol_definitions` · `console.rs` read/write 서명) → 수정 `d2d3dbd` push → ✅ **CI `37219898252`** · 재발 방지 = V2 앞 `rustup update stable`(로컬 1.99.0).
 **설치본**: PID 589231 · SHA `164d3dd3…` = `target/release`(V2 산출물과 SHA 다름 = 재컴파일 · 원인 미확인) · 252개 복원 · 🎉=true · 단축키 ok · 키 주입 ok · LAN 직결.
-**☐ 남은 것**: ★ CI 수습 · 설치본 앱 ID에서 단축키 조합 변경 재확인 · 재로그인 뒤 SNI·자동 시작 · 21 §14 ☐ · T-67 · v0.1.7. → [journal](journal/2026-10-05.md)
+**☐ 남은 것**: 설치본 앱 ID에서 단축키 조합 변경 재확인 · 재로그인 뒤 SNI·자동 시작 · 21 §14 ☐ · T-67 · v0.1.7. → [journal](journal/2026-10-05.md)
 
 ---
 
