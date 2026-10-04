@@ -75,8 +75,10 @@ mod imp {
     extern "C" {
         fn pipe(fds: *mut i32) -> i32;
         fn signal(sig: i32, handler: usize) -> usize;
-        fn write(fd: i32, buf: *const u8, n: usize) -> isize;
-        fn read(fd: i32, buf: *mut u8, n: usize) -> isize;
+        // ★ libc 서명 그대로(버퍼는 `c_void`) — rustc 1.99의 `suspicious_runtime_symbol_definitions`가
+        //   표준 라이브러리가 쓰는 런타임 심볼(`read`·`write`)을 다른 서명으로 선언하면 막는다(10-05 CI).
+        fn write(fd: i32, buf: *const std::ffi::c_void, n: usize) -> isize;
+        fn read(fd: i32, buf: *mut std::ffi::c_void, n: usize) -> isize;
     }
     const SIGINT: i32 = 2;
     const SIGTERM: i32 = 15;
@@ -89,7 +91,7 @@ mod imp {
             let b = 1u8;
             // SAFETY: write(2)는 async-signal-safe다 — 유효한 fd에 1바이트.
             unsafe {
-                write(fd, &b, 1);
+                write(fd, (&raw const b).cast(), 1);
             }
         }
     }
@@ -107,7 +109,7 @@ mod imp {
             .spawn(move || loop {
                 let mut b = 0u8;
                 // SAFETY: 유효한 fd에서 1바이트 읽기(블로킹).
-                let n = unsafe { read(rd, &mut b, 1) };
+                let n = unsafe { read(rd, (&raw mut b).cast(), 1) };
                 if n == 1 {
                     if let Some(h) = super::HANDLER.get() {
                         h();
