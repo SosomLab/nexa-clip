@@ -481,6 +481,11 @@ XKB 오토리피트는 raw 이벤트가 **없고** `xev -id`로도 창의 KeyPre
 - `xdotool type` 전에 ibus를 `xkb:us::eng`로 바꾸고 끝나면 `hangul`로 되돌린다 — 안 바꾸면 한글 자모로 들어간다.
 - 팝업이 뜬 뒤의 키(검색어 · Enter)는 xdotool로도 들어간다(팝업 = XWayland 창).
 
+**⚠️ 설치본과 Debug를 오가면 키 주입 승인이 다시 뜬다(10-05)**: 포털 RemoteDesktop 복원 토큰(`~/.config/nexa-clip/portal-remotedesktop.token`)은 **앱 ID에 묶인다** —
+설치본(`dev-install-linux.sh` = systemd-run `app-nexa\x2dclip` 스코프)이 토큰을 새로 받아 덮어쓰면, VS Code 스코프로 뜬 Debug(`dev-restart.sh`)는 그 토큰으로 복원하지 못하고
+**승인 창을 띄운 채 기다린다**(로그에 "키 주입 권한" 줄이 ok도 실패도 안 찍힘 · `busctl --user tree org.freedesktop.portal.Desktop`에 `…/request/…/nclip_rd_start0`이 남음).
+화면의 승인 창에 답하면 "키 주입 권한: ok". 반대 방향(Debug → 설치본)도 같다.
+
 **앱이 고착을 스스로 푸는지 보기(10-04 22차 · T-66)**: 앱이 이제 포커스 뒤 5초 안에 고착을 보면 포털로 그 키의 누름+뗌을 주입해 푼다
 (로그 "팝업: 단축키 글자 키 고착 — 풀기 주입(키 N개)"). 하네스가 대신 풀면 앱 동작을 가리므로 `KEYPROBE_UNSTICK=none`으로 돌려
 **하네스는 풀지 않고** `서버 눌린 키`가 `[]`로 돌아오는지만 본다. ⚠️ **입력기 상태에 따라 새는 길이 다르다** — 영문 상태면 고착 글자의 오토리피트가

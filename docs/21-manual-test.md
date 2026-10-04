@@ -722,3 +722,17 @@ Keynote/Pages/Numbers · Word/Excel/PPT(mac) · Safari/Chrome(주소창·본문�
 | AX1 | 권한이 켜진 상태에서 `brew upgrade --cask nexa-clip`(새 릴리스) → 앱 실행 | 권한 대화상자 → [시스템 설정 열기] → Nexa Clip **켜기만으로**(− 삭제 없이) 붙여넣기 동작 · `nexa-clip status` = `paste inject: ok` | ☐ |
 | AX2 | `.dmg`로 앱을 직접 교체(brew 아님) → 앱 실행 | 앱 자체 리셋 경로 — AX1과 같은 결과 · 터미널 로그에 `낡은 권한 항목 정리함(io.github.sosomlab.nexa-clip)` | ☐ |
 | AX3 | 권한이 이미 켜져 정상인 상태에서 앱 재시작 | 리셋·대화상자 **없음**(허용 상태는 건드리지 않는다) | ☐ |
+
+## 14. ★ Linux 플랫폼 결함 묶음 (10-05 · T-41 · T-15c)
+
+> 개발 세션 실기 = Linux VM(GNOME Wayland · XWayland) · Debug. 다른 Linux 환경(KDE·Sway·X11 세션)과 실사용은 사용자 몫.
+
+| # | 절차 | 기대 | Linux |
+| --- | --- | --- | :--: |
+| L1 | 앱이 떠 있는 채 `nexa-clip`(또는 앱 아이콘)을 한 번 더 실행 | 둘째 실행 = "이미 실행 중 — 기존 인스턴스에 열기를 위임했습니다" · 첫 인스턴스가 메인창을 앞으로 | ✅ 10-05 |
+| L2 | `kill -TERM <pid>` 또는 터미널 Ctrl+C | 로그 끝 "종료합니다 — 이번 상주에서 N개 보관." · 설정 저장 · 다음 기동에 같은 개수 복원 | ✅ 10-05 |
+| L3 | 앱 A에서 C 복사 → D 복사 → 다시 C 복사 | C·D New → C **Promoted**(맨 위로 · ×증가) · 같은 앱 연속 복사는 Replaced · 복사한 앱이 끝나며 클립보드 관리자가 넘겨받아도 승격 안 됨 | ✅ 10-05 |
+| L4 | 아무 앱에서 복사 → `nexa-clip peek` | "출처 : <앱 이름>" · 제외 앱 목록에 그 이름을 넣으면 캡처 안 됨 | 🔶 출처 ✓ · 제외 ☐ |
+| L5 | XWayland/X11 터미널(GNOME Terminal 등)에 포커스 → 팝업에서 글 선택 Enter | Ctrl+Shift+V로 주입돼 붙음(Wayland 네이티브 터미널은 감지 불가 → Ctrl+V) | ☐ |
+| L6 | 앱이 떠 있는 채 셸 재시작(X11 `Alt+F2 r` · Wayland는 재로그인) | 트레이 아이콘이 다시 나타남(SNI 재등록) | ☐ |
+| L7 | XWayland 재시작(가능한 환경) 뒤 복사 | 1~30초 안에 감시 재연결 · 복사가 다시 잡힘 | ☐ |
