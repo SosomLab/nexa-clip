@@ -1291,6 +1291,30 @@ impl Shell {
         }
     }
 
+    /// ★ **그림만 든 HTML**을 한 장 그림으로(10-04) — 글이 한 글자라도 있으면 `None`(서식 글이다).
+    ///
+    /// ONLYOFFICE 프레젠테이션은 개체를 그림 표현 없이 `text/html` 하나로 올리고, 그 안에는 개체마다
+    /// `<img src="data:image/png…">` 하나씩만 있다(위치 정보 없음 — 그림은 HTML 순서대로 나란히 놓인다).
+    fn html_picture(&self, reps: &[RawRep]) -> Option<(u32, u32, Vec<u8>)> {
+        let lines = nclip_core::richtext::html_runs_of(reps, 500)?;
+        let mut pictures = 0usize;
+        for run in lines.iter().flatten() {
+            if run.image.is_some() {
+                pictures += 1;
+            } else if !run.text.trim().is_empty() {
+                return None;
+            }
+        }
+        if pictures == 0 {
+            return None;
+        }
+        let imgs = crate::main_win::decode_inline_images(&lines);
+        if imgs.is_empty() {
+            return None;
+        }
+        crate::render_img::render_runs(&self.font, &lines, &imgs)
+    }
+
     /// ★ 이 로컬 캡처가 **직전 항목의 열화판**(클립보드 다리의 되쓰기)인가 — 그렇다면 사유.
     ///
     /// - 글: 맨 앞이 방금([`BRIDGE_ECHO_WINDOW`]) 잡은 로컬 서식 글이고, 이번 것이 같은 글의 평문뿐.
@@ -1413,14 +1437,27 @@ impl Shell {
         if self.gate.blocks(&snap).is_some() {
             return;
         }
-        let (kind, line) = summarize(&snap);
-        let label = clip_text(&line, MENU_LABEL_CHARS);
+        let (mut kind, line) = summarize(&snap);
+        let mut label = clip_text(&line, MENU_LABEL_CHARS);
+        // ★ 그림만 든 HTML(10-04 사용자 실기 — ONLYOFFICE 슬라이드 개체가 목록에 "[image][image][image]"로 보임) —
+        //   글 없이 인라인 그림뿐인 HTML은 **개체**로 보고 그 그림으로 미리보기를 만든다.
+        //   표현(HTML)은 그대로라 원래 앱에 붙이면 개체로 붙는다.
+        let html_pic = (kind == nclip_core::ClipKind::RichText)
+            .then(|| self.html_picture(&snap.reps))
+            .flatten();
+        if let Some((w, h, _)) = &html_pic {
+            kind = nclip_core::ClipKind::Object;
+            label = format!("[이미지] {w}×{h}");
+        }
         // ★ 이미지 썸네일(08-28 사용자 요청) — 설정이 켜졌을 때만 만든다.
         let thumb = (matches!(
             kind,
             nclip_core::ClipKind::Image | nclip_core::ClipKind::Object
         ) && self.app.conf.state.get("ui.image_preview") == "on")
-            .then(|| make_thumb(&snap.reps))
+            .then(|| match html_pic {
+                Some((w, h, rgba)) => nclip_core::img::downscale_rgba(w, h, &rgba, THUMB_SIDE),
+                None => make_thumb(&snap.reps),
+            })
             .flatten();
         // ★ 캐시 에코(09-12 · 2PC 연쇄 차단): 원격 파일 약속을 캐시에서 게시하면 감시가 그 `CF_HDROP`을
         //   되읽는다. 표현이 약속(매니페스트)과 달라 지문·부분집합 규칙으로는 못 알아보고 **새 로컬 파일
