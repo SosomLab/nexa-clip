@@ -736,3 +736,4 @@ Keynote/Pages/Numbers · Word/Excel/PPT(mac) · Safari/Chrome(주소창·본문�
 | L5 | XWayland/X11 터미널(GNOME Terminal 등)에 포커스 → 팝업에서 글 선택 Enter | Ctrl+Shift+V로 주입돼 붙음(Wayland 네이티브 터미널은 감지 불가 → Ctrl+V) | ☐ |
 | L6 | 앱이 떠 있는 채 셸 재시작(X11 `Alt+F2 r` · Wayland는 재로그인) | 트레이 아이콘이 다시 나타남(SNI 재등록) | ☐ |
 | L7 | XWayland 재시작(가능한 환경) 뒤 복사 | 1~30초 안에 감시 재연결 · 복사가 다시 잡힘 | ☐ |
+| L8 | 설정 → 단축키에서 팝업 단축키를 다른 조합으로 바꾸고 저장 → 새 조합 누름 · 옛 조합 누름 | 새 조합으로 **바로** 팝업이 뜸(재시작 없이) · 옛 조합은 반응 없음 · GNOME 승인 창이 다시 뜨면 기록(T-38 · 10-05) | ☐ |
