@@ -174,6 +174,8 @@ pub(crate) struct Popup {
     unstick_until: Option<std::time::Instant>,
     /// 이번 열림에서 고착 풀기를 이미 시도했는가.
     unstick_done: bool,
+    /// 고착 모양(수식키는 떼어졌는데 글자 키만 남음)이 처음 보인 시각 — [`STUCK_CONFIRM`] 동안 이어져야 푼다.
+    stuck_since: Option<std::time::Instant>,
     /// ★ 잔향 때문에 IME 이벤트를 버린 적이 있는가(10-04) — 잔향이 풀리면 입력기 조합 상태를 비운다.
     ime_gated: bool,
     /// 이번 열림에서 잔향에 글자 키가 있었는가 — 풀리는 순간을 알아채기 위한 표식.
@@ -199,6 +201,9 @@ const TYPE_GRACE: std::time::Duration = std::time::Duration::from_millis(150);
 /// ★ 잔향 프로브 창(09-27) — 포커스 뒤 이 동안 X 서버 키 상태를 되묻는다. 컴포지터가 단축키 키를 서버에 올리는
 /// 시점(실측 포커스 +50~300ms)과 오토리피트 지연(GNOME 최소 100ms · 기본 500ms) 사이를 넉넉히 덮는다.
 const PROBE_WINDOW: std::time::Duration = std::time::Duration::from_millis(800);
+
+/// 고착으로 확정하기까지 그 모양이 이어져야 하는 시간(10-05) — 사람이 수식키와 글자 키를 떼는 시차보다 길게.
+const STUCK_CONFIRM: std::time::Duration = std::time::Duration::from_millis(200);
 
 /// 잔향이 풀린 뒤 IME 이벤트를 더 버리는 유예(10-04) — 입력기는 비동기라 주입한 누름의 조합이 해제보다 늦게 온다.
 const IME_GRACE: std::time::Duration = std::time::Duration::from_millis(150);
@@ -360,6 +365,7 @@ impl Popup {
             probe_last: None,
             unstick_until: None,
             unstick_done: false,
+            stuck_since: None,
             ime_gated: false,
             had_letters: false,
             ime_grace_until: None,
@@ -608,7 +614,11 @@ impl Popup {
         }
         if !self.unstick_done {
             let stuck = self.residue.stuck_letters_x11();
-            if !stuck.is_empty() {
+            if stuck.is_empty() {
+                self.stuck_since = None;
+            } else if self.stuck_since.get_or_insert(now).elapsed() >= STUCK_CONFIRM {
+                // ★ 잠깐 본 것으로는 풀지 않는다(10-05) — 수식키를 먼저 떼고 글자 키를 곧이어 떼는
+                //   정상 순서에서도 한순간 같은 모양이 보인다. 그 모양이 이어질 때만 고착이다.
                 self.unstick_done = true;
                 println!(
                     "팝업: 단축키 글자 키 고착 — 풀기 주입(키 {}개)",
@@ -778,6 +788,7 @@ impl Popup {
         self.probe_last = None;
         self.unstick_until = None;
         self.unstick_done = false;
+        self.stuck_since = None;
         self.ime_gated = false;
         self.had_letters = false;
         self.ime_grace_until = None;

@@ -109,7 +109,7 @@ static HOTKEYS: std::sync::Mutex<Vec<(u32, nclip_core::hotkey::Hotkey)>> =
 static HOTKEY_LABEL: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
 
 /// ★ 단축키 목록 지정(09-04). 트레이 기동 전에 부르면 기동 때 등록되고, 기동 뒤에 부르면 **Windows·mac은 즉시 재등록**
-/// (Windows = 트레이 스레드 메시지 · mac = 메인 스레드 Carbon 재등록 09-04) · Linux는 다음 시작에 반영된다(설명문에 명시).
+/// (Windows = 트레이 스레드 메시지 · mac = 메인 스레드 Carbon 재등록 09-04) · Linux = 포털 세션을 닫고 새로 등록(10-05 · T-38).
 pub fn set_hotkeys(list: Vec<(u32, nclip_core::hotkey::Hotkey)>, label: String) {
     if let Ok(mut g) = HOTKEYS.lock() {
         *g = list;
@@ -121,6 +121,8 @@ pub fn set_hotkeys(list: Vec<(u32, nclip_core::hotkey::Hotkey)>, label: String) 
     win::rebind_hotkeys();
     #[cfg(target_os = "macos")]
     mac::rebind_hotkeys();
+    #[cfg(target_os = "linux")]
+    sni::rebind_hotkeys();
 }
 
 /// 지금 목록(플랫폼 등록 코드가 읽는다).
@@ -526,7 +528,12 @@ mod sni {
         let _ = CONN.set(conn);
         watch_watcher(unique);
         // ★ 전역 단축키(T-15 Linux) — Windows `RegisterHotKey`와 같은 자리. 결과는 한 번 알린다.
-        // ★ 목록(09-04) — 동작 id별 포털 단축키(설명은 셸 대화창에 보인다). 런타임 변경은 다음 시작에.
+        bind_hotkeys();
+        Some(TrayHandle { _priv: () })
+    }
+
+    /// ★ 포털 단축키 등록(09-04 목록 · 10-05 런타임 재등록 T-38) — 동작 id별(설명은 셸 대화창에 보인다).
+    fn bind_hotkeys() {
         let name = plain_title(&state());
         let binds: Vec<(String, String, String)> = super::hotkeys()
             .into_iter()
@@ -556,7 +563,14 @@ mod sni {
                 }
             }),
         );
-        Some(TrayHandle { _priv: () })
+    }
+
+    /// 설정에서 단축키가 바뀌었다 — 트레이가 떠 있으면 새 목록으로 다시 등록한다(기동 전 호출은 무동작:
+    /// 기동 때 [`spawn`]이 등록한다).
+    pub(super) fn rebind_hotkeys() {
+        if CONN.get().is_some() {
+            bind_hotkeys();
+        }
     }
 
     const WATCHER: &str = "org.kde.StatusNotifierWatcher";
