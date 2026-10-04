@@ -54,12 +54,12 @@ winget·Chocolatey는 중앙 검수를 거치며, **직전 제출이 검수 통�
 | 채널 | 대기로 보는 조건 | 판정 근거 |
 | --- | --- | --- |
 | winget | microsoft/winget-pkgs에 토큰 주인이 낸 **열린 PR**이 `SosomLab.NexaClip`를 달고 있다 | `gh pr list --state open --author <me> --search SosomLab.NexaClip` |
-| Chocolatey | **직전 정식 태그 버전이 아직 승인되지 않았다**(10-04 수정 — 단계 이름 "직전 버전이 승인됐는가") | `api/v2/Packages()?$filter=Id eq '<pkg>' and Version eq '<prev>'` 응답에 `<d:IsApproved m:type="Edm.Boolean">true`가 있는가 — ⚠️ 이 Id+Version 조회는 **검수 중(미승인) 패키지도 항목을 돌려준다**(`IsApproved=false` · `PackageStatus=Submitted`) · Id만으로 조회하면 미승인은 안 나온다 |
+| Chocolatey | **choco에 마지막으로 낸 버전이 아직 승인되지 않았다**(10-05 수정 — 단계 이름 "마지막 제출 버전이 승인됐는가") | 태그를 최신부터 훑어 `api/v2/Packages()?$filter=Id eq '<pkg>' and Version eq '<v>'`에 `<entry>`가 처음 나오는 버전을 찾고, 그 응답에 `<d:IsApproved m:type="Edm.Boolean">true`가 있는가 — ⚠️ 이 Id+Version 조회는 **검수 중(미승인) 패키지도 항목을 돌려준다**(`IsApproved=false` · `PackageStatus=Submitted`) · Id만으로 조회하면 미승인은 안 나온다(그래서 버전을 하나씩 묻는다). 종전(10-04)의 "직전 git 태그 버전" 기준은 그 버전을 choco에 못 낸 경우(0.1.6 — 403) 항목이 없어 **이후 계속 건너뛰는** 결함이 있었다 · 조회 실패 = 건너뜀 |
 
 > ⚠️ **10-04 결함과 수정** — 종전 판정은 `<entry>` 유무("모더레이션 중 패키지는 피드에 숨는다"는 전제)였는데, 그 전제가 **틀렸다**: Id+Version 조회는 검수 중 0.1.5도 돌려줘 guard가 "공개됨"으로 오판 → v0.1.6 push → Chocolatey **403** → chocolatey 잡 빨강(0.1.6은 제출 안 됨). 수정 = `IsApproved=true`로 판정 · 대조: clip 0.1.5 두 패키지 = 미승인(skip) · nexa-beep 0.2.2 = 승인(go · 양성). **교훈 — 게이트의 전제를 실측 없이 믿지 않는다 · 가드도 음성·양성 대조를 돌린다.**
 
 대기면 그 채널만 건너뛰고(**릴리스·brew·다른 채널은 그대로 나간다**) 경고로 이유를 남긴다. 사람이 확인한 뒤 강제로 내려면
-Actions → publish-windows-packages → *Run workflow* · `force=true`. 첫 제출(직전 태그 없음)은 판정 없이 나간다.
+Actions → publish-windows-packages → *Run workflow* · `force=true`. 첫 제출(어느 태그 버전도 피드에 없음)은 판정 없이 나간다.
 
 변수가 꺼져 있거나 판정에 걸려도 매니페스트는 **항상 만들어** 아티팩트·릴리스 자산으로 올린다 — 손으로 제출할 수 있게.
 

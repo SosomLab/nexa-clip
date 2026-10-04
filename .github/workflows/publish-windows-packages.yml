@@ -83,7 +83,7 @@ jobs:
           echo "winget 제출: $go"
 
       - id: choco
-        name: Chocolatey 대기 판정(직전 버전이 승인됐는가)
+        name: Chocolatey 대기 판정(마지막 제출 버전이 승인됐는가)
         shell: bash
         run: |
           set -euo pipefail
@@ -92,24 +92,41 @@ jobs:
             go=true
             if [ "${{ inputs.force }}" != "true" ]; then
               cur="${{ inputs.tag }}"
-              # 직전 정식 태그(사전 배포 제외) — 없으면 첫 제출이라 대기 판정 없음.
-              prev=$(git tag -l 'v*' --sort=-v:refname | grep -v -- '-' | grep -vx "$cur" | head -1 || true)
-              if [ -n "$prev" ]; then
-                pv="${prev#v}"
-                for pkg in nexa-clip nexa-clip-portable; do
+              # ★ 판정 기준 = **choco에 마지막으로 낸 버전**이 승인됐는가(10-05 · v0.1.7 준비 중 발견).
+              #   종전에는 "직전 git 태그 버전"을 봤는데, 그 버전을 choco에 못 낸 경우(0.1.6 — 403)에는
+              #   피드에 항목이 없어 **앞으로 계속 skip**됐다(0.1.5가 승인돼도). 피드는 버전을 지정하지 않으면
+              #   검수 중인 항목을 숨기므로(실측), 태그를 최신부터 훑어 **처음 항목이 나오는 버전**을 찾는다.
+              #   - 그 버전이 승인됨(IsApproved=true) → 제출 · 아니면(검수 중) → 건너뜀
+              #   - 어느 태그 버전도 피드에 없음 → 첫 제출
+              #   - 조회 실패 → 건너뜀(모르는 상태에서 밀지 않는다)
+              tags=$(git tag -l 'v*' --sort=-v:refname | grep -v -- '-' | grep -vx "$cur" || true)
+              for pkg in nexa-clip nexa-clip-portable; do
+                found=false
+                for t in $tags; do
+                  pv="${t#v}"
                   url="https://community.chocolatey.org/api/v2/Packages()?\$filter=Id%20eq%20'$pkg'%20and%20Version%20eq%20'$pv'"
-                  # ★ 판정 = **승인됨(IsApproved=true)** — 항목이 있느냐가 아니다(10-04 · v0.1.6 실측):
-                  #   Id+Version으로 물으면 **검수 중인 패키지도 항목이 돌아온다**(IsApproved=false ·
-                  #   PackageStatus=Submitted). 종전에는 `<entry>` 유무만 봐서 "공개됨"으로 오판했고,
-                  #   push가 403으로 거부돼 잡이 빨갛게 끝났다.
-                  if ! curl -fsS "$url" | grep -q '<d:IsApproved m:type="Edm.Boolean">true'; then
-                    echo "::warning::choco: $pkg $pv 이(가) 아직 승인되지 않았다(모더레이션 대기) — 이번 릴리스는 제출을 건너뛴다."
+                  if ! body=$(curl -fsS "$url"); then
+                    echo "::warning::choco: $pkg $pv 조회 실패 — 이번 릴리스는 제출을 건너뛴다."
                     go=false
+                    found=true
+                    break
+                  fi
+                  if echo "$body" | grep -q '<entry>'; then
+                    found=true
+                    # Id+Version으로 물으면 검수 중인 패키지도 항목이 돌아온다(IsApproved=false · 10-04 실측).
+                    if ! echo "$body" | grep -q '<d:IsApproved m:type="Edm.Boolean">true'; then
+                      echo "::warning::choco: $pkg 의 마지막 제출 버전 $pv 이(가) 아직 승인되지 않았다(모더레이션 대기) — 이번 릴리스는 제출을 건너뛴다."
+                      go=false
+                    else
+                      echo "choco: $pkg 마지막 제출 버전 $pv 승인됨."
+                    fi
+                    break
                   fi
                 done
-              else
-                echo "직전 정식 태그 없음 — 첫 제출."
-              fi
+                if [ "$found" = false ]; then
+                  echo "choco: $pkg 피드에 제출 이력 없음 — 첫 제출."
+                fi
+              done
             fi
           fi
           echo "go=$go" >> "$GITHUB_OUTPUT"
