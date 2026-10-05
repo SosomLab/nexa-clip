@@ -6,7 +6,8 @@
 # 릴리스 노트에 우회 방법을 숨기지 않고 적는다.
 #
 # 트리거 정책
-# - `v*` 태그 push = 산출물 생성 + 릴리스 **바로 공개** + brew 탭 반영 + (스위치 켜져 있으면) winget·choco 제출.
+# - `v*` 태그 push = 산출물 생성 + 릴리스 **바로 공개** + brew 탭 반영 + (스위치 켜져 있으면) winget·choco 제출
+#   + Linux 패키지 저장소(pkg.sosomlab.com) 갱신 신호(정식 버전만).
 # - workflow_dispatch = 초안(publish=true면 공개).
 # - ★ 패키지 관리자 제출은 **직전 제출이 검수 대기 중이면 자동으로 건너뛴다**(09-04 사용자 요청 ·
 #   beep 08-24 규칙 "검수 통과 전 새 버전 제출 금지"를 워크플로가 스스로 판정) —
@@ -421,3 +422,25 @@ jobs:
     with:
       tag: ${{ needs.meta.outputs.tag }}
     secrets: inherit
+
+  # ── Linux 패키지 저장소(pkg.sosomlab.com) 갱신 신호 ────────────────
+  # `SosomLab/linux-repo`의 publish 워크플로가 이 신호(repository_dispatch · app-released)를 받아
+  # 방금 공개된 릴리스의 `.deb`로 서명된 APT 색인을 다시 만든다(linux-repo `docs/ADDING-AN-APP.md` §4).
+  # 신호를 놓쳐도 그쪽의 하루 한 번 정기 실행이 최신 릴리스를 잡으므로, 토큰이 없으면 알림만 남기고 넘어간다.
+  # ⚠️ 스텝 `if:`에서는 `secrets`를 읽을 수 없다 — 토큰 유무는 셸에서 본다.
+  linux-repo:
+    needs: [meta, publish]
+    if: github.ref_type == 'tag' && needs.meta.outputs.prerelease != 'true'
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: pkg.sosomlab.com 갱신 신호
+        env:
+          TOKEN: ${{ secrets.LINUX_REPO_DISPATCH_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "$TOKEN" ]; then echo "::notice::LINUX_REPO_DISPATCH_TOKEN 없음 — linux-repo 정기 실행이 반영"; exit 0; fi
+          curl -fsS -X POST https://api.github.com/repos/SosomLab/linux-repo/dispatches \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -d '{"event_type":"app-released","client_payload":{"app":"nexa-clip"}}'

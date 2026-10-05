@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-10-05 (17차 · linux) — ★ Linux 서명 APT 저장소 `pkg.sosomlab.com` 가동 · Clip 발행 신호
+
+**가동(사용자 지시 · T-67 1단계)**: `pkg.sosomlab.com`(Cloudflare Pages `linux-repo` · 소스 [`SosomLab/linux-repo`](https://github.com/SosomLab/linux-repo)) — 색인·서명만 Pages, `.deb`는 GitHub Release 302 · 키 RSA 4096 `…8FD6`(만료 2028-10-04) · 앱 등록 = `apps/<패키지>.toml`(다른 앱도 같은 방식) · 이 VM 설치본 = 저장소의 **0.1.7**(apt 출처 확인).
+**설치(사용자 안내)**: 키링 → `/usr/share/keyrings/` · `sosomlab.sources` → `/etc/apt/sources.list.d/` · `sudo apt install nexa-clip` · 이후 `apt upgrade`로 갱신.
+**Clip 연동(개발 세션 · `ci/linux-repo-dispatch` · 미커밋)**: `release.yml`에 `linux-repo` 잡 — 릴리스 공개 뒤 `app-released` dispatch(토큰 등록됨) · 실동작은 다음 정식 태그에서 확인.
+**☐ 남은 것**: 발행 신호 실동작 · RPM · AUR · 설치 스크립트 · 다른 앱 등록 · 위키·홈페이지 apt 안내. → [journal](journal/2026-10-05.md) · [35 §0-1](35-linux-distribution-channels.md)
+
+---
+
 ## 2026-10-05 (13~16차 · mac) — 협업 운영 규칙 · Linux 배포 채널 보충 · 진행사항 최신화(문서만)
 
 **문의**: "우측 아래 노란 동그라미" = 트레이 아이콘 **우하단 주황 점 = 파일 받는 중**(DR-44) · 메인창 상태줄 점에는 노란색 없음.
