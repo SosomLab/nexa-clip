@@ -15,7 +15,7 @@
 | `windows-arm64` | NSIS `.exe` (+`.zip`) | `.zip` |
 | `macos-arm64` | `.dmg` | `.tar.gz` |
 | `macos-x64` | `.dmg` | `.tar.gz` |
-| `linux-x64` | `.deb` | `.tar.gz` |
+| `linux-x64` | `.deb` · `.rpm` | `.tar.gz` |
 
 압축 형식은 플랫폼 관례(Windows zip · mac/Linux tar.gz = 실행 권한 보존). `setup.exe`는 zip 사본을 하나 더 올린다
 (실행 파일 확장자를 막는 브라우저·사내 프록시). `SHA256SUMS.txt`를 함께 올린다 — 서명이 없는 배포에서 유일한 검증 수단.
@@ -123,3 +123,4 @@ beep 서버는 musl 정적이지만 GUI 앱은 winit·xkbcommon·Wayland를 **�
 - Cargo features `wayland-dlopen`(winit·softbuffer) + `wayland-backend/dlopen`(nclip-plat) — 시스템 라이브러리를 **빌드 시 링크하지 않는다**.
 - 워크플로 **심볼 게이트**: `NEEDED`에 glibc 계열 외 라이브러리가 있거나 `GLIBC_` 최고 버전이 2.17을 넘으면 배포를 멈춘다.
 - `.deb` Depends = `libc6 (>= 2.17)`. 런타임 필요 라이브러리(libxkbcommon · libX11/libwayland 중 쓰는 쪽)는 없으면 그 경로만 빠진다.
+- `.rpm`(10-05)은 `.deb`와 같은 내용물을 `packaging/linux/nexa-clip.spec`으로 포장만 달리한다(러너의 `rpmbuild`). 의존은 rpmbuild가 실행 파일에서 뽑은 것(glibc 계열)이고, 패키지 서명은 없다 — `SosomLab/linux-repo`가 이 자산으로 pkg.sosomlab.com의 dnf 저장소를 만들며 무결성은 저장소 메타데이터 서명이 지킨다.
