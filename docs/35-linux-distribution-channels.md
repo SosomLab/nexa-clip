@@ -204,7 +204,7 @@ winget-pkgs처럼 **중앙 목록 저장소에 PR 한 번** 넣으면 사용자�
 1. 채널 조합(1안·2안·3안 또는 다른 조합).
 2. 서명 키 — 새로 만들지 · 보관 위치(GitHub Secret) · 만료 주기.
 3. 저장소 호스팅 — `sosomlab.github.io` Pages 별도 저장소 vs 이 저장소 `gh-pages` vs **Cloudflare Pages 별도 프로젝트 + 하위 도메인**(§3-14 · 홈페이지와 같은 계정) · 패키지 파일을 Pages에 직접 둘지 · Release로 리다이렉트할지(apt 리다이렉트 실기가 먼저).
-7. 중앙 목록 후보(deb-get · AM/AppMan · Pacstall)를 조사할지(§3-15).
 4. Linux 채널 메타데이터 언어(영어 전용 규칙 확장 여부).
 5. 샌드박스 채널을 갈 경우 코드 변경 범위(자동 시작 포털 분기 · 출처 앱 저하 수용).
 6. nexa-beep과 같은 채널을 함께 쓸지(같은 서명 키·저장소 공유 여부 — 다른 저장소라 [22 전달 원장](22-upstream-beep-liaison.md) 대상 여부도).
+7. 중앙 목록 후보(deb-get · AM/AppMan · Pacstall)를 조사할지(§3-15).
