@@ -4,6 +4,14 @@
 > **표기**: **[확인]** = 1차 출처(공식 문서·정책)를 직접 읽음 · **[미확인]** = 기억 기반 · 출처 미확인 · **[저장소]** = 이 저장소·`nexa-beep`에서 직접 확인.
 > **조사**: 2026-10-05 · 협업 세션(웹 조사는 하위 에이전트 · 링크는 그 시점 기준).
 
+## 0-1. ★ 진행 결과(10-05 · 1단계 가동)
+
+- **결정·가동(사용자 10-05)**: **자체 서명 APT 저장소 `pkg.sosomlab.com`** — Cloudflare Pages 별도 프로젝트 `linux-repo` + 하위 도메인 · 소스 저장소 [`SosomLab/linux-repo`](https://github.com/SosomLab/linux-repo)(공개) · 패키지 파일은 **GitHub Release로 302 리다이렉트**(색인·서명·공개 키만 Pages) · 앱 등록 = `apps/<패키지>.toml` 하나(다른 SosomLab 앱도 같은 방식).
+- 서명 키: RSA 4096 · 서명 전용 · 지문 `2522614046FAEE116F4A2FD706236F6AA8EB8FD6` · 만료 2028-10-04 · 개인 키 = GitHub 시크릿(서명은 Actions에서만) — 위치·백업·이전 = linux-repo `docs/KEYS.md`.
+- 사용자 설치: `sosomlab-archive-keyring.gpg` → `/usr/share/keyrings/` · `apt/sosomlab.sources` → `/etc/apt/sources.list.d/` · `apt install nexa-clip`(안내 = https://pkg.sosomlab.com/).
+- 실측: apt 3.2가 GitHub 2단 리다이렉트를 끝까지 따라감 · 서명 검증 통과 · 변조 색인 거부 · 이 VM에 0.1.7 설치(출처 = pkg.sosomlab.com).
+- 남음: Clip 릴리스 → 발행 신호(17차 · 실동작은 다음 정식 태그) · RPM(앱 릴리스에 `.rpm` 필요) · AUR · 설치 스크립트 · 다른 앱 등록. 상세 = [journal 10-05 17차](journal/2026-10-05.md).
+
 ## 0. 결론 먼저
 
 1. **라이선스 식별자는 표준이 있다** — SPDX에 `PolyForm-Noncommercial-1.0.0`이 정식 ID로 올라 있다 **[확인]**([spdx.org](https://spdx.org/licenses/PolyForm-Noncommercial-1.0.0.json)). `LicenseRef-`를 쓸 필요가 없다.
@@ -201,10 +209,10 @@ winget-pkgs처럼 **중앙 목록 저장소에 PR 한 번** 넣으면 사용자�
 
 ## 5. 결정할 것(→ TODO T-67)
 
-1. 채널 조합(1안·2안·3안 또는 다른 조합).
-2. 서명 키 — 새로 만들지 · 보관 위치(GitHub Secret) · 만료 주기.
-3. 저장소 호스팅 — `sosomlab.github.io` Pages 별도 저장소 vs 이 저장소 `gh-pages` vs **Cloudflare Pages 별도 프로젝트 + 하위 도메인**(§3-14 · 홈페이지와 같은 계정) · 패키지 파일을 Pages에 직접 둘지 · Release로 리다이렉트할지(apt 리다이렉트 실기가 먼저).
+1. 채널 조합(1안·2안·3안 또는 다른 조합). → 🔶 **1단계 가동(10-05)**: 서명 APT 저장소 + 기존 Homebrew 탭 · RPM·AUR·설치 스크립트는 미정.
+2. 서명 키 — 새로 만들지 · 보관 위치(GitHub Secret) · 만료 주기. → ✅ **결정(10-05)**: 새 RSA 4096 키 · 개인 키 = linux-repo GitHub 시크릿 · 만료 2년(§0-1).
+3. 저장소 호스팅 — `sosomlab.github.io` Pages 별도 저장소 vs 이 저장소 `gh-pages` vs **Cloudflare Pages 별도 프로젝트 + 하위 도메인**(§3-14 · 홈페이지와 같은 계정) · 패키지 파일을 Pages에 직접 둘지 · Release로 리다이렉트할지(apt 리다이렉트 실기가 먼저). → ✅ **결정(10-05)**: Cloudflare Pages 별도 프로젝트 `linux-repo` + `pkg.sosomlab.com` · 패키지 = GitHub Release 302(실기 통과) · 소스 저장소 `SosomLab/linux-repo`.
 4. Linux 채널 메타데이터 언어(영어 전용 규칙 확장 여부).
 5. 샌드박스 채널을 갈 경우 코드 변경 범위(자동 시작 포털 분기 · 출처 앱 저하 수용).
-6. nexa-beep과 같은 채널을 함께 쓸지(같은 서명 키·저장소 공유 여부 — 다른 저장소라 [22 전달 원장](22-upstream-beep-liaison.md) 대상 여부도).
+6. nexa-beep과 같은 채널을 함께 쓸지(같은 서명 키·저장소 공유 여부 — 다른 저장소라 [22 전달 원장](22-upstream-beep-liaison.md) 대상 여부도). → 🔶 **구조는 공유 전제(10-05)**: `pkg.sosomlab.com` 하나 · 한 키 · 앱마다 `apps/<패키지>.toml`(사용자 "다른 프로그램도 동일 방법으로") — beep 등록 시점은 미정.
 7. 중앙 목록 후보(deb-get · AM/AppMan · Pacstall)를 조사할지(§3-15).

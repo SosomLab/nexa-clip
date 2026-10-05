@@ -2,6 +2,10 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-10-05 (18차 · linux) — 진행사항 최신화 — 7단계 `5da60d5` · 트레이 아이콘 미표시 조사(apt 원인 아님 · 원인 미확정 · T-68) · 로그에 항목 미리보기 → 비밀 문자열 노출 관찰(T-69 결정 대기) · pkg.sosomlab.com 운영 방식 정리 → [journal](journal/2026-10-05.md)
+
+## 2026-10-05 (17차 · linux) — ★ Linux 서명 APT 저장소 `pkg.sosomlab.com` 가동(T-67 1단계 · 사용자 지시) — Cloudflare Pages `linux-repo` + 소스 `SosomLab/linux-repo` · `.deb`는 GitHub Release 302(apt 3.2 실측) · 키 RSA 4096 `…8FD6` · 앱 등록 = `apps/<패키지>.toml` · 이 VM 0.1.7 apt 설치 · Clip `release.yml` 발행 신호 잡(`ci/linux-repo-dispatch` · 실동작은 다음 태그) → [journal](journal/2026-10-05.md)
+
 ## 2026-10-05 (15~16차 · mac) — 진행사항 최신화(문서만) — 13·14차 push `0ac1789..42d2980` · ✅ CI `37252733397` 3잡 · mac Homebrew cargo PATH 함정(check-3os E0463 → 18 문제 해결) · 35 §5 순서 정리 · 남은 것 = T-67 결정 · winget 0.1.6 모더레이터 · choco 0.1.5 · 0.1.7 실기 · Node 20 경고 → [journal](journal/2026-10-05.md)
 
 ## 2026-10-05 (14차 · mac) — Linux 배포 채널 보충(문서만 · T-67) — Cloudflare Pages로 APT·RPM 호스팅 검토(한도·캐시 규칙 금지·Release 302 연계 · apt 리다이렉트 실기 선행 · 35 §3-14) · 중앙 목록 후보 deb-get·AM(35 §3-15 · 미확인) → [journal](journal/2026-10-05.md)
