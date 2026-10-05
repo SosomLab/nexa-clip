@@ -4,6 +4,7 @@
 
 | 브랜치 | 생성 | 병합 | 커밋 수 | 요약 |
 |---|---|---|---:|---|
+| `docs/progress-10-05c` | 2026-10-05 | 2026-10-05 | 1 | 진행사항 최신화(문서만 · mac) — journal 10-05 15~16차(13~15차 정리표 · 남은 것 · 33 §11 점검) · STATUS · DEVLOG · 18 문제 해결(mac Homebrew cargo PATH → check-3os E0463) · 35 §5 순서 정리 · 앞서 main 직접 `42d2980`(13·14차 — 33 §9-0 수신 규칙 · 35 §3-14·§3-15) push `0ac1789..42d2980` · ✅ CI `37252733397` · 병합 해시·push 범위·CI = push 뒤 보충 |
 | `chore/release-0.1.7` | 2026-10-05 | 2026-10-05 | 3 | ★ **v0.1.7 릴리스** — 버전 0.1.6→0.1.7 · ★ choco guard = "choco에 마지막으로 낸 버전" 기준(직전 태그 미제출 시 영구 skip 결함 수정 · 음성·양성·이력 없음 대조) · 배포 전 V3 ✓(test 574 · 4.6MB) · journal 10-05 11~12차 · 병합 `a623d45`(커밋 `517e8f8` · `e276618` · `5fd996a`) · CI `37224524932` ✅ · 태그 `v0.1.7` · release `37224752162` ✅ |
 | `docs/progress-10-05b` | 2026-10-05 | 2026-10-05 | 1 | 진행사항 최신화(문서만) — journal 10-05 10차(1~9차 정리표 · 남은 것 · 33 §11 점검) · STATUS · DEVLOG · MILESTONES v0.1.7 후보 · 병합 `3cc703d`(커밋 `03f03fc` · 앞서 `068da5d` CI 수습 문서) · push `d2d3dbd..3cc703d` · ✅ CI `37221297704` |
 | `fix/ci-runtime-symbol-10-05` | 2026-10-05 | 2026-10-05 | 2 | CI 빨강 수정 — rustc 1.99 린트 `suspicious_runtime_symbol_definitions`(`console.rs` read·write extern을 libc `c_void` 서명으로) · 재현 = 협업 세션(1.99) · 재발 방지 = V2 앞 `rustup update stable` · journal 10-05 9차 ⑤ · 병합 `d2d3dbd`(커밋 `8cc7ae6` · 문서 `fd39d0e`) · push `aa383cd..d2d3dbd` · ✅ CI `37219898252` |
