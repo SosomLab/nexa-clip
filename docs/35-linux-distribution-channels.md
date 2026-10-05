@@ -163,6 +163,30 @@
 - **Pacstall**(Ubuntu용 "AUR 비슷한" 저장소): `-bin` pacscript PR · 비자유 허용 여부 [미확인].
 - **eget · ubi 등 GitHub Release 설치기**: 자산 이름 규칙만 맞으면 추가 작업 없이 동작 · 갱신은 재실행 [미확인].
 
+### 3-14. Cloudflare Pages로 APT·RPM 저장소 호스팅 (사용자 질문 10-05 · 개발 세션 검토)
+
+> 사용자는 홈페이지를 이미 **Cloudflare Pages**로 운영 중이다 → §3-1·§3-2의 호스팅(GitHub Pages 가정)을 Cloudflare Pages로 바꿀 수 있는지 검토했다. 아래 **[확인]** 은 개발 세션이 Cloudflare 공식 문서를 직접 읽은 것이다.
+
+- **한도 [확인]**([Pages limits](https://developers.cloudflare.com/pages/platform/limits/)): 파일당 **25 MiB** · 파일 수 무료 **20,000** / 유료 100,000 · 빌드 무료 월 **500회** · `_redirects` 정적 **2,000** + 동적 **100**줄 · 줄당 1,000자 · 정적 자산 **대역폭 한도는 문서에 명시 없음**.
+- **우리 산출물 크기 [저장소]**: v0.1.7 `.deb` 1,935,670 B · `tar.gz` 2,498,138 B → 25 MiB 한도에 넉넉하다.
+- **갱신 반영 [확인]**([Serving Pages](https://developers.cloudflare.com/pages/configuration/serving-pages/)): 기본 헤더 `Cache-Control: public, max-age=0, must-revalidate` → 배포 즉시 반영. 단 *"adding caching to your custom domain may lead to stale assets being served after a deployment"* → ⚠️ **저장소 경로에는 zone 캐시 규칙을 걸지 않는다**(옛 색인과 새 색인이 섞이면 apt가 해시 불일치로 실패).
+- **`_redirects` [확인]**: destination = *"A file path or external link"* · 상태 301/302/303/307/308(기본 302) · 스플랫·플레이스홀더 지원.
+- **연계안 — 색인·서명·공개 키만 Pages, 패키지 파일은 GitHub Release**:
+  - **APT**: `Packages`의 `Filename`은 저장소 기준 상대 경로만 쓸 수 있다 → `_redirects`로 `/apt/pool/<파일>` → `https://github.com/SosomLab/nexa-clip/releases/download/v<ver>/<파일>` **302**(CI가 버전마다 한 줄 생성).
+  - **RPM**: `createrepo_c`의 기준 주소 옵션(`xml:base`)으로 Release 주소를 직접 적거나 [미확인 — 옵션 이름], APT와 같은 리다이렉트를 쓴다.
+  - 무결성은 **서명된 색인의 해시·크기**가 지킨다 → 한 번 발행한 Release 자산은 **삭제·재업로드 금지**(해시가 바뀌면 그 버전 설치가 깨진다).
+- **[미확인 · 착수 전 실기 필요]**: apt가 리다이렉트를 끝까지 따라가는지 — 특히 GitHub의 2단(release 주소 → objects 호스트). Ubuntu·Debian 실기로 확인한다. **안 되면 `.deb`를 Pages에 직접** 싣는다(크기는 한도 안).
+- **권장 구성(개발 세션)**: 홈페이지와 **별도 Pages 프로젝트 + 하위 도메인**(예 `packages.sosomlab.com` — 주소는 가정). Pages 배포는 **사이트 전체 교체**라 CI가 매번 저장소 트리 전체를 생성해야 한다 → **최신 버전만 싣는** 구성이 단순하다.
+- GitHub Packages는 apt/rpm 형식을 지원하지 않는다 [미확인].
+
+### 3-15. winget식 "중앙 목록 등록" 후보 (개발 세션 검토 10-05 · 전부 [미확인])
+
+winget-pkgs처럼 **중앙 목록 저장소에 PR 한 번** 넣으면 사용자가 그 도구로 설치·갱신하는 방식. 둘 다 **등록 조건·비자유(PolyForm NC) 수용 여부를 아직 조사하지 않았다**.
+
+- **deb-get**: GitHub Release의 `.deb`를 가리키는 정의를 PR로 등록 · Ubuntu 계열 대상 [미확인].
+- **AM / AppMan**: AppImage 설치 스크립트 목록에 PR로 등록 → §3-6 AppImage가 있어야 의미가 있다 [미확인].
+- (같은 계열: §3-13 Pacstall.)
+
 ## 4. 권장 조합(결정은 사용자)
 
 | 안 | 구성 | 작업량 | 도달 범위 | 위험 |
@@ -179,7 +203,8 @@
 
 1. 채널 조합(1안·2안·3안 또는 다른 조합).
 2. 서명 키 — 새로 만들지 · 보관 위치(GitHub Secret) · 만료 주기.
-3. 저장소 호스팅 — `sosomlab.github.io` Pages 별도 저장소 vs 이 저장소 `gh-pages`.
+3. 저장소 호스팅 — `sosomlab.github.io` Pages 별도 저장소 vs 이 저장소 `gh-pages` vs **Cloudflare Pages 별도 프로젝트 + 하위 도메인**(§3-14 · 홈페이지와 같은 계정) · 패키지 파일을 Pages에 직접 둘지 · Release로 리다이렉트할지(apt 리다이렉트 실기가 먼저).
+7. 중앙 목록 후보(deb-get · AM/AppMan · Pacstall)를 조사할지(§3-15).
 4. Linux 채널 메타데이터 언어(영어 전용 규칙 확장 여부).
 5. 샌드박스 채널을 갈 경우 코드 변경 범위(자동 시작 포털 분기 · 출처 앱 저하 수용).
 6. nexa-beep과 같은 채널을 함께 쓸지(같은 서명 키·저장소 공유 여부 — 다른 저장소라 [22 전달 원장](22-upstream-beep-liaison.md) 대상 여부도).

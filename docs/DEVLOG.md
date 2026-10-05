@@ -2,6 +2,10 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-10-05 (14차 · mac) — Linux 배포 채널 보충(문서만 · T-67) — Cloudflare Pages로 APT·RPM 호스팅 검토(한도·캐시 규칙 금지·Release 302 연계 · apt 리다이렉트 실기 선행 · 35 §3-14) · 중앙 목록 후보 deb-get·AM(35 §3-15 · 미확인) → [journal](journal/2026-10-05.md)
+
+## 2026-10-05 (13차 · mac) — 협업 운영 규칙 신설(사용자) — ★ 두 세션 모두 수신을 늘 열어 둔다(33 §9-0 · CLAUDE.md §4) · 계기 = 노란 점 문의(트레이 우하단 주황 = 파일 받는 중 · DR-44)를 뒤처진 트리로 답했다가 정정 → [journal](journal/2026-10-05.md)
+
 ## 2026-10-05 (12차 · linux) — ★ **v0.1.7 릴리스** — release `37224752162` ✅ · 자산 14 · brew 0.1.7 · winget·choco = guard skip(직전 검수 대기 · 수정한 choco guard "마지막 제출 버전 0.1.5" 동작 확인) → [journal](journal/2026-10-05.md)
 
 ## 2026-10-05 (11차 · linux) — ★ v0.1.7 릴리스 준비 — 게시 상태(winget 0.1.6 모더레이터 대기 · choco 0.1.5 검수 중 · brew 0.1.6) · choco guard 결함(직전 태그 기준 → 영구 skip) → "마지막 제출 버전" 기준 수정 · 배포 전 V3 ✓(rustc 1.99 · test 574 · 4.6MB · 렌더 게이트 · E2E 생략) → [journal](journal/2026-10-05.md)
