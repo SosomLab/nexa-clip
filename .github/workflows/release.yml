@@ -283,6 +283,30 @@ jobs:
           sed -e "s/@VERSION@/$VERSION/g" -e "s/@SIZE@/$size_kb/g" packaging/linux/control > "$pkg/DEBIAN/control"
           dpkg-deb --build --root-owner-group "$pkg" "out/nexa-clip-${VERSION}-${SLUG}.deb" >/dev/null
 
+      # ★ RPM(10-05 · Fedora·RHEL 계열 · openSUSE) — .deb와 **같은 내용물**을 포장만 달리한다.
+      # `SosomLab/linux-repo`가 이 자산(`nexa-clip-{version}-linux-x64.rpm`)으로 pkg.sosomlab.com의 dnf 저장소를 만든다
+      # (그쪽 `apps/nexa-clip.toml` `[rpm]`). 패키지 서명은 없다 — 저장소 메타데이터 서명(repo_gpgcheck)이 무결성을 지킨다.
+      # RPM 버전에는 `-`를 쓸 수 없어 사전 배포 꼬리는 `~`로 바꾼다(자산 이름은 그대로).
+      - name: Linux 설치본(.rpm)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -q && sudo apt-get install -y -q rpm
+          stage="build/rpm/stage"
+          mkdir -p "$stage"
+          cp -a build/deb/usr "$stage/"
+          sed "s/@VERSION@/${VERSION//-/\~}/g" packaging/linux/nexa-clip.spec > build/rpm/nexa-clip.spec
+          rpmbuild -bb --target x86_64 \
+            --define "_topdir $PWD/build/rpm/top" \
+            --define "stage $PWD/$stage" \
+            build/rpm/nexa-clip.spec
+          rpm=$(find build/rpm/top/RPMS -name '*.rpm')
+          [ "$(echo "$rpm" | wc -l)" = 1 ] || { echo "::error::RPM 산출물이 하나가 아니다: $rpm"; exit 1; }
+          rpm -qp --queryformat '%{NAME} %{VERSION}-%{RELEASE} %{ARCH}\n' "$rpm"
+          rpm -qpl "$rpm"
+          cp "$rpm" "out/nexa-clip-${VERSION}-${SLUG}.rpm"
+
       - name: 산출물 목록
         shell: bash
         run: ls -lh out
@@ -349,7 +373,7 @@ jobs:
           | Windows ARM64 | \`...windows-arm64-setup.exe\`(+\`.zip\`) | \`...windows-arm64-portable.zip\` |
           | macOS (Apple Silicon) | \`...macos-arm64.dmg\` | \`...macos-arm64-portable.tar.gz\` |
           | macOS (Intel) | \`...macos-x64.dmg\` | \`...macos-x64-portable.tar.gz\` |
-          | Linux x86_64 | \`...linux-x64.deb\` | \`...linux-x64-portable.tar.gz\` |
+          | Linux x86_64 | \`...linux-x64.deb\` · \`...linux-x64.rpm\` | \`...linux-x64-portable.tar.gz\` |
 
           ## 패키지 관리자
 
