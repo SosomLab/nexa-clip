@@ -300,6 +300,61 @@ fn read_order(targets: &[String]) -> Vec<&String> {
     text.into_iter().chain(others).collect()
 }
 
+/// 가상 머신 클립보드 다리가 **지연 전송 파일**에 붙이는 임시 경로의 표식(10-05 · T-70).
+/// VMware Tools(`vmtoolsd -n vmusr`) — `/var/run/vmblock-fuse/blockdir/<임시>/…`(FUSE) ·
+/// `/proc/fs/vmblock/mountPoint/<임시>/…`(구형 커널 모듈).
+const VM_STAGING_MARKS: [&[u8]; 2] = [b"/vmblock-fuse/blockdir/", b"/vmblock/mountPoint/"];
+
+/// Nautilus 레거시 표식 — 평문 **내용**의 첫 줄([`nclip_core::capture::promote_nautilus_text`]와 같은 이름).
+const NAUTILUS_TEXT_MARK: &str = "x-special/nautilus-clipboard";
+
+/// 이 표현이 **파일 목록**인가 — 파일 계열 이름이거나, 첫 줄이 Nautilus 표식인 평문(VMware 다리의 변종).
+/// `format`은 정규화한 이름([`normalize_target`]).
+fn is_file_listing(format: &str, data: &[u8]) -> bool {
+    nclip_core::capture::is_files_format(format)
+        || (format == "text/plain"
+            && data
+                .split(|b| *b == b'\n')
+                .next()
+                .is_some_and(|l| l.trim_ascii() == NAUTILUS_TEXT_MARK.as_bytes()))
+}
+
+/// 내용에 가상 머신 다리의 임시 경로가 들어 있는가([`VM_STAGING_MARKS`]).
+fn is_vm_staging(data: &[u8]) -> bool {
+    VM_STAGING_MARKS
+        .iter()
+        .any(|m| data.windows(m.len()).any(|w| w == *m))
+}
+
+/// 클립보드 소유자가 가상 머신 다리인가 — VMware는 프로세스 이름 `vmtoolsd` · 창 클래스 `Vmware-user`.
+fn is_vm_bridge_owner(app: &str) -> bool {
+    let lower = app.to_ascii_lowercase();
+    lower == "vmtoolsd" || lower.contains("vmware")
+}
+
+/// 타깃 목록이 스냅숏에 남길 **표현 이름**(정규화 · 곁다리 제외 · 겹침 제거 · 정렬) —
+/// 내용을 읽지 않고 "표현 구성이 그대로인가"를 견주는 데 쓴다([`settle`]).
+fn rep_names(targets: &[String]) -> Vec<String> {
+    let mut names: Vec<String> = targets
+        .iter()
+        .filter(|t| !is_meta_target(t) && t.as_str() != KDE_PW_HINT)
+        .map(|t| normalize_target(t))
+        .collect();
+    names.sort();
+    names.dedup();
+    names
+}
+
+/// 타깃 이름만의 지문 — 내용은 읽지 않는다.
+fn names_hash(targets: &[String]) -> u64 {
+    let mut h = fnv1a(0, &[]);
+    for t in targets {
+        h = fnv1a(h, t.as_bytes());
+        h = fnv1a(h, &[0]);
+    }
+    h
+}
+
 /// FNV-1a — 내용 지문(변화 감지 전용 · 보안 아님).
 fn fnv1a(seed: u64, bytes: &[u8]) -> u64 {
     let mut h = if seed == 0 {
@@ -345,8 +400,46 @@ pub fn read_snapshot() -> Option<ClipSnapshot> {
 }
 
 fn read_snapshot_with(backend: Backend) -> Option<ClipSnapshot> {
-    let targets = list_targets(backend)?;
+    match read_full(backend) {
+        Read::Snap(s) => Some(s),
+        Read::VmLazy | Read::Unreadable => None,
+    }
+}
+
+/// 한 벌 읽기의 결과.
+enum Read {
+    Snap(ClipSnapshot),
+    /// ★ 가상 머신 다리의 **지연 전송 파일**(10-05 · T-70) — 항목이 아니다. 더 읽지 않는다.
+    VmLazy,
+    /// 도구·소유자가 답하지 않았거나 클립보드가 비었다.
+    Unreadable,
+}
+
+/// ★ 가상 머신 다리의 파일은 **요청할 때마다 실제 전송이 시작된다**(10-05 · T-70 · 사용자 실기) —
+/// VMware 다리는 파일 타깃을 요청받으면 그때마다 새 임시 폴더를 만들어 호스트에서 파일을 끌어오고
+/// (게스트에 복사 창이 뜬다) 그 임시 경로를 돌려준다. 종전에는 한 번의 복사에 표현 전부 ×
+/// 자리 잡기 재읽기로 20번쯤 요청해 같은 파일이 20벌 넘게 전송됐다(경로가 매번 달라 지문도 안 맞았다).
+/// 그 경로는 전송용 임시 자리라 이력에 남길 것도 아니다 → 다리의 파일은 **읽지 않고 버린다**:
+/// 소유자가 다리이고 파일 타깃이 보이면 요청 0회, 소유자를 모르면 첫 파일 목록에서 임시 경로를 보고 멈춘다.
+fn read_full(backend: Backend) -> Read {
+    let Some(targets) = list_targets(backend) else {
+        return Read::Unreadable;
+    };
     diag(&format!("TARGETS(원시 순서): {targets:?}"));
+
+    // ★ 내재 X11 경로는 소유자 창에서 앱 이름을 읽는다(10-05 · T-41 ⑥). 도구 파이프(wl-paste·xclip)로는
+    //   알 수 없다 — 모르는 것을 지어내지 않는다.
+    let source_app = (backend == Backend::X11Native)
+        .then(native::owner_app)
+        .flatten();
+    if source_app.as_deref().is_some_and(is_vm_bridge_owner)
+        && targets
+            .iter()
+            .any(|t| nclip_core::capture::is_files_format(&normalize_target(t)))
+    {
+        diag("가상 머신 다리의 파일 타깃 — 읽지 않는다(요청하면 전송이 시작된다)");
+        return Read::VmLazy;
+    }
 
     // ★ 민감 표식 먼저 — 표식이 서면 내용은 읽지 않는다(fail-closed).
     let concealed = targets.iter().any(|t| t == KDE_PW_HINT)
@@ -385,17 +478,17 @@ fn read_snapshot_with(backend: Backend) -> Option<ClipSnapshot> {
                 None => Vec::new(),
             }
         };
+        if is_file_listing(&name, &data) && is_vm_staging(&data) {
+            diag("가상 머신 다리의 임시 경로 — 나머지 타깃을 읽지 않고 버린다");
+            return Read::VmLazy;
+        }
         seen.push(name.clone());
         reps.push(RawRep { format: name, data });
     }
 
-    Some(ClipSnapshot {
+    Read::Snap(ClipSnapshot {
         reps,
-        // ★ 내재 X11 경로는 소유자 창에서 앱 이름을 읽는다(10-05 · T-41 ⑥). 도구 파이프(wl-paste·xclip)로는
-        //   알 수 없다 — 모르는 것을 지어내지 않는다.
-        source_app: (backend == Backend::X11Native)
-            .then(native::owner_app)
-            .flatten(),
+        source_app,
         concealed,
         // Linux에는 OS 일련번호가 없다(0 = 모름 — ClipSnapshot 계약).
         seq: 0,
@@ -514,38 +607,70 @@ fn probe_target(targets: &[String]) -> Option<&String> {
 /// 표현이 5~18개 → 틱당 6~19회 · 하루 수십만 회). 보안 프로그램(EDR)에는 수상한 반복 실행이고 전력도 쓴다.
 /// 변화가 없는 대부분의 틱은 이 지문이 같으므로 거기서 끝내고, 달라졌을 때만 전부 읽는다.
 /// 한계: 타깃 목록과 대표 타깃이 그대로인 채 **다른 표현만** 바뀐 복사는 다음 변화까지 못 본다(드물다).
-fn quick_fingerprint(backend: Backend) -> Option<u64> {
-    let targets = list_targets(backend)?;
-    let mut h = fnv1a(0, &[]);
-    for t in &targets {
-        h = fnv1a(h, t.as_bytes());
-        h = fnv1a(h, &[0]);
-    }
-    if let Some(t) = probe_target(&targets) {
+///
+/// 둘째 값 = 대표 타깃이 **가상 머신 다리의 임시 경로 파일 목록**이었다(T-70) — 호출자는 타깃 목록이
+/// 바뀔 때까지 내용을 다시 읽지 않는다(읽을 때마다 전송이 시작된다).
+fn quick_fingerprint(backend: Backend, targets: &[String]) -> (u64, bool) {
+    let mut h = names_hash(targets);
+    let mut vm_lazy = false;
+    if let Some(t) = probe_target(targets) {
         let data = read_target(backend, t).unwrap_or_default();
+        vm_lazy = is_file_listing(&normalize_target(t), &data) && is_vm_staging(&data);
         h = fnv1a(h, &(data.len() as u64).to_le_bytes());
         h = fnv1a(h, &data);
     }
-    Some(h)
+    (h, vm_lazy)
 }
 
 fn poll_loop(backend: Backend, sink: &Sink) {
     // 시작 시점의 내용은 "새 복사"가 아니다 — 지금 지문을 기준선으로 삼는다.
     let mut last = read_snapshot_with(backend).map(|s| fingerprint(&s));
-    let mut last_quick = quick_fingerprint(backend);
+    let mut last_quick: Option<u64> = None;
+    // ★ 가상 머신 다리의 지연 전송 파일이 올라와 있는 동안의 타깃 이름 지문(T-70) — 같은 동안은 내용을
+    //   읽지 않는다(읽을 때마다 호스트에서 파일 전송이 시작된다).
+    let mut vm_lazy: Option<u64> = None;
+    if let Some(t) = list_targets(backend) {
+        let (q, lazy) = quick_fingerprint(backend, &t);
+        last_quick = Some(q);
+        vm_lazy = lazy.then(|| names_hash(&t));
+    }
     let mut idle_ticks: u32 = 0;
     // 읽기 실패가 이어질 때 진단을 도배하지 않기 위한 상태(전이에서만 찍는다).
     let mut was_unreadable = false;
     loop {
         std::thread::sleep(std::time::Duration::from_millis(interval_ms(idle_ticks)));
         // ★ 가벼운 지문이 그대로면 전부 읽지 않는다(T-54) — 변화 없는 틱의 도구 실행을 1+N회에서 2회로.
-        let quick = quick_fingerprint(backend);
+        let targets = list_targets(backend);
+        let names = targets.as_deref().map(names_hash);
+        if vm_lazy.is_some() && vm_lazy == names {
+            idle_ticks = next_idle_ticks(idle_ticks, false);
+            continue;
+        }
+        vm_lazy = None;
+        let quick = targets.as_deref().map(|t| quick_fingerprint(backend, t));
+        if let Some((_, true)) = quick {
+            diag("가상 머신 다리의 임시 경로 — 타깃이 바뀔 때까지 읽지 않는다");
+            vm_lazy = names;
+            last_quick = quick.map(|(q, _)| q);
+            idle_ticks = next_idle_ticks(idle_ticks, false);
+            continue;
+        }
+        let quick = quick.map(|(q, _)| q);
         if quick.is_some() && quick == last_quick {
             idle_ticks = next_idle_ticks(idle_ticks, false);
             continue;
         }
         last_quick = quick;
-        let Some(snap) = read_snapshot_with(backend) else {
+        let snap = match read_full(backend) {
+            Read::Snap(s) => Some(s),
+            Read::VmLazy => {
+                vm_lazy = names;
+                idle_ticks = next_idle_ticks(idle_ticks, false);
+                continue;
+            }
+            Read::Unreadable => None,
+        };
+        let Some(snap) = snap else {
             // 도구가 순간 실패했다(셀렉션 주인 교체 중) **또는 클립보드가 비었다**
             // — `wl-paste --list-types`는 빈 클립보드에서 비정상 종료한다.
             //
@@ -614,6 +739,25 @@ fn settle(backend: Backend, snap: ClipSnapshot, fp: u64) -> (ClipSnapshot, u64) 
     let mut cur = (snap, fp);
     for _ in 0..SETTLE_MAX {
         std::thread::sleep(std::time::Duration::from_millis(SETTLE_MS));
+        // ★ 파일 목록은 **다시 요청하지 않는다**(10-05 · T-70) — 지연 제공 소유자(가상 머신 다리 ·
+        //   원격 데스크톱)는 요청마다 전송을 시작하거나 다른 임시 경로를 돌려줘, 내용을 견주면 끝내
+        //   자리 잡지 못한다. 표현 구성(이름)이 그대로면 자리 잡은 것으로 본다 — 08-29에 본 전이
+        //   (`{text/plain, gnome-copied-files}` → `{gnome-copied-files}`)는 이름으로 드러난다.
+        if cur
+            .0
+            .reps
+            .iter()
+            .any(|r| is_file_listing(&r.format, &r.data))
+        {
+            let Some(targets) = list_targets(backend) else {
+                break;
+            };
+            let mut have: Vec<String> = cur.0.reps.iter().map(|r| r.format.clone()).collect();
+            have.sort();
+            if rep_names(&targets) == have {
+                return cur;
+            }
+        }
         let Some(next) = read_snapshot_with(backend) else {
             break;
         };
@@ -656,6 +800,57 @@ fn interval_ms(idle_ticks: u32) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// ★ 가상 머신 다리의 임시 경로를 알아본다(10-05 · T-70) — 파일 목록일 때만 버릴 근거가 된다.
+    #[test]
+    fn vm_staging_paths_are_recognized_only_in_file_listings() {
+        let fuse = b"copy\nfile:///var/run/vmblock-fuse/blockdir/AbC123/key.zip";
+        let legacy = b"file:///proc/fs/vmblock/mountPoint/AbC123/a.txt\r\n";
+        assert!(is_vm_staging(fuse) && is_vm_staging(legacy));
+        assert!(!is_vm_staging(b"file:///home/u/a.txt\r\n"));
+
+        assert!(is_file_listing("x-special/gnome-copied-files", fuse));
+        assert!(is_file_listing("text/uri-list", legacy));
+        // VMware 다리의 변종 — 평문 내용의 첫 줄이 Nautilus 표식.
+        let carrier =
+            b"x-special/nautilus-clipboard\ncopy\nfile:///var/run/vmblock-fuse/blockdir/x/a";
+        assert!(is_file_listing("text/plain", carrier));
+        // 그 경로를 **글로** 복사한 것(대화·문서)은 파일 목록이 아니다 — 버리지 않는다.
+        let prose = b"/var/run/vmblock-fuse/blockdir/AbC123/key.zip";
+        assert!(is_vm_staging(prose) && !is_file_listing("text/plain", prose));
+    }
+
+    #[test]
+    fn vm_bridge_owner_names() {
+        for a in ["vmtoolsd", "Vmware-user", "vmware-user"] {
+            assert!(is_vm_bridge_owner(a), "{a}");
+        }
+        for a in ["nautilus", "code", "vmplayer-like"] {
+            assert!(!is_vm_bridge_owner(a), "{a}");
+        }
+    }
+
+    /// 자리 잡기는 파일 목록을 다시 읽지 않고 **표현 이름 구성**만 견준다.
+    #[test]
+    fn rep_names_match_snapshot_formats() {
+        let t = |v: &[&str]| v.iter().map(|s| (*s).to_string()).collect::<Vec<_>>();
+        assert_eq!(
+            rep_names(&t(&[
+                "TIMESTAMP",
+                "TARGETS",
+                "x-special/gnome-copied-files",
+                "text/uri-list",
+                "UTF8_STRING",
+                "text/plain;charset=utf-8",
+            ])),
+            t(&[
+                "text/plain",
+                "text/uri-list",
+                "x-special/gnome-copied-files"
+            ])
+        );
+        assert_ne!(names_hash(&t(&["a", "b"])), names_hash(&t(&["ab"])));
+    }
 
     /// X11 텍스트 atom들이 판정 어휘 하나(`text/plain`)로 모인다(docs/12).
     #[test]
