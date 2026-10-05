@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-10-05 (26차 · linux) — ★ v0.1.9 릴리스 · .rpm · pkg.sosomlab.com dnf 저장소 첫 발행 ✓
+
+**릴리스**: 태그 `v0.1.9`(`274273f`) · release `37264209908` ✅ · 자산 15(`.rpm` 추가 · `nexa-clip 0.1.9-1 x86_64` · 의존 glibc 계열) · brew 0.1.9 ✓.
+**pkg.sosomlab.com**: linux-repo `37264409796`("외부 요청 · nexa-clip v0.1.9") → APT·**RPM** 둘 다 0.1.9 · `rpm/sosomlab.repo` · repomd 서명 검증 Good · `.rpm` 302 → GitHub.
+**스토어**: winget·choco = guard skip(예측대로).
+**☐ 남은 것**: Fedora/Rocky `dnf install` 실기(사용자 환경) · dnf5 `repo_gpgcheck` 확인 · 404.html · 이 VM 설치본 0.1.9 · winget·choco 검수 · Windows·mac 실기. → [journal](journal/2026-10-05.md)
+
+---
+
 ## 2026-10-05 (25차 · linux) — ★ .rpm 산출물 추가 · v0.1.9 준비
 
 **변경**(개발 세션): `packaging/linux/nexa-clip.spec` + `release.yml` "Linux 설치본(.rpm)" 스텝(러너 rpmbuild · 자산 `nexa-clip-{version}-linux-x64.rpm`) · 버전 0.1.9 · 새 버전 이유 = v0.1.8에 `.rpm`만 얹으면 `.deb` 재업로드로 해시가 바뀌어 저장소 전제를 깸.

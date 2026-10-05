@@ -4,7 +4,7 @@
 
 | 브랜치 | 생성 | 병합 | 커밋 수 | 요약 |
 |---|---|---|---:|---|
-| `chore/release-0.1.9` | 2026-10-05 | — | — | ★ v0.1.9 릴리스 — 버전 0.1.8→0.1.9(`73525c9`) · .rpm 첫 포함 · V3 생략(로컬 빌드 금지 · Rust 소스 = V3 통과분) · journal 10-05 25차 · 병합 해시 = 병합 뒤 채움 |
+| `chore/release-0.1.9` | 2026-10-05 | 2026-10-05 | 2 | ★ v0.1.9 릴리스 — 버전 0.1.8→0.1.9(`73525c9`) + 24·25차 문서 + CLAUDE.md 현 단계 · .rpm 첫 포함 · V3 생략(로컬 빌드 금지 · Rust 소스 = V3 통과분) · journal 10-05 25~26차 · 병합 `274273f` · push `98ab8f0..274273f` · CI `37263990461` ✅ · 태그 `v0.1.9` · release `37264209908` ✅ · pkg dnf 저장소 첫 발행 |
 | `feat/release-rpm` | 2026-10-05 | 2026-10-05 | 1 | ★ `.rpm` 산출물 — `packaging/linux/nexa-clip.spec` · `release.yml` "Linux 설치본(.rpm)" 스텝(러너 `rpmbuild` · 사전 배포 `-`→`~`) · 릴리스 노트 표 · packaging/README · journal 10-05 25차 · 병합 `5e62933`(커밋 `c9c3d8b`) |
 | `chore/release-0.1.8` | 2026-10-05 | 2026-10-05 | 2 | ★ v0.1.8 릴리스 — 버전 0.1.7→0.1.8(`4bd5ee5`) + 23차 문서 · 배포 전 V3 ✓(test 578) · journal 10-05 23~24차 · 병합 `98ab8f0` · push `0ec5066..98ab8f0` · CI `37263300576` ✅ · 태그 `v0.1.8` · release `37263475999` ✅ · pkg 자동 갱신 첫 실동작 |
 | `fix/log-no-preview` | 2026-10-05 | 2026-10-05 | 1 | ★ T-69 — 앱 로그 항목 표기 = 종류만 · 미리보기는 `NEXA_CLIP_DIAG`에서만(`tray_cmd.rs` `log_item`) · `fix/vm-bridge-file-recopy`(`e185598`) 위 · journal 10-05 22차 · 병합 `be66c47`(커밋 `4d7cb5a`) |
