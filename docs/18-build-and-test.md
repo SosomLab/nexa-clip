@@ -423,6 +423,8 @@ Windows(`GetClipboardSequenceNumber`)·macOS(`changeCount`)와 달리 **Linux에
 ```bash
 cargo run -p nexa-clip -- peek     # 지금 클립보드 한 번 — 백엔드 이름이 찍힌다
 cargo run -p nexa-clip -- watch    # 계속 감시. NEXA_CLIP_DIAG=1 로 진단 켬
+# ★ (10-05 · T-69) 트레이 앱 로그의 항목 표기는 기본 = 종류만(`<글>` · `<서식 글>` · `<이미지>` · `<개체>` · `<파일>` · `<색>`) —
+#   내용 미리보기("…")는 NEXA_CLIP_DIAG가 켜졌을 때만 남는다(복사한 비밀 문자열이 시스템 로그에 들어가지 않게).
 ```
 
 `watch`가 거부하면 **사유마다 조치가 함께 찍힌다**(`MissingTool`이면 배포판별 설치 명령).

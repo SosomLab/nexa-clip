@@ -4,6 +4,7 @@
 
 | 브랜치 | 생성 | 병합 | 커밋 수 | 요약 |
 |---|---|---|---:|---|
+| `fix/log-no-preview` | 2026-10-05 | — | — | ★ T-69 — 앱 로그 항목 표기 = 종류만 · 미리보기는 `NEXA_CLIP_DIAG`에서만(`tray_cmd.rs` `log_item`) · `fix/vm-bridge-file-recopy`(`e185598`) 위 · journal 10-05 22차 · 병합 해시 = 병합 뒤 채움 |
 | `fix/vm-bridge-file-recopy` | 2026-10-05 | — | — | ★ T-70 — VMware 호스트→게스트 파일 복사 되풀이 차단(`watch_linux.rs` · 다리 파일 타깃 요청 0회 · settle 표현 이름 비교 · 폴링 지문) · journal 10-05 21차 · 병합 해시 = 병합 뒤 채움 |
 | `ci/linux-repo-dispatch-payload` | 2026-10-05 | 2026-10-05 | 1 | 발행 신호 `client_payload` = `app · tag · repo · run_url`(linux-repo `389fa3c` 요청·진행 기록에 맞춤) · journal 10-05 19차 · 병합 `9bcda57`(커밋 `f73ce89`) |
 | `ci/linux-repo-dispatch` | 2026-10-05 | 2026-10-05 | 2 | ★ Clip 릴리스 → `pkg.sosomlab.com` 발행 신호 — `release.yml` `linux-repo` 잡(`needs: [meta, publish]` · 정식 태그만 · `LINUX_REPO_DISPATCH_TOKEN` · `app-released` dispatch · 토큰 없으면 notice) · T-67 · journal 10-05 17차 · 병합 `1108a41`(커밋 `5da60d5` · `903130d` 18차 문서 + CLAUDE.md 현 단계) · 실동작은 다음 정식 태그 |

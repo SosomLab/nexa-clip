@@ -363,6 +363,35 @@ pub(crate) fn xfer_policy(conf: &Settings) -> crate::xfer::Policy {
 }
 
 /// 이 OS의 붙여넣기 키 표기(알림 문구).
+/// ★ 로그에 적는 항목 표기(10-05 · T-69) — 기본은 **종류만**, 내용 미리보기는 진단 모드
+/// (`NEXA_CLIP_DIAG`)에서만 적는다.
+///
+/// 종전에는 캡처·재적재 로그에 미리보기(앞 약 30자)가 그대로 찍혀, 자동 시작으로 뜬 앱의 stdout을
+/// 받는 시스템 로그(journal)에 복사한 토큰·암호 앞부분이 평문으로 남았다 — 이력은 암호화해 두면서
+/// (DR-38) 로그로 새는 꼴이다. 비밀인지는 내용으로 가릴 수 없으므로 항목을 가리지 않고 뺀다.
+fn log_item(kind: nclip_core::ClipKind, label: &str) -> String {
+    static DIAG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    let diag =
+        *DIAG.get_or_init(|| std::env::var_os("NEXA_CLIP_DIAG").is_some_and(|v| !v.is_empty()));
+    log_item_as(kind, label, diag)
+}
+
+fn log_item_as(kind: nclip_core::ClipKind, label: &str, diag: bool) -> String {
+    use nclip_core::ClipKind as K;
+    if diag {
+        return format!("\"{label}\"");
+    }
+    let name = match kind {
+        K::Text => "글",
+        K::RichText => "서식 글",
+        K::Image => "이미지",
+        K::Object => "개체",
+        K::Files => "파일",
+        K::Color => "색",
+    };
+    format!("<{name}>")
+}
+
 fn paste_key_label() -> &'static str {
     if cfg!(target_os = "macos") {
         "⌘V"
@@ -1262,7 +1291,7 @@ impl Shell {
         let Some(item) = self.history.get(pos) else {
             return;
         };
-        let (item_reps, label) = (item.reps.clone(), item.label.clone());
+        let (item_reps, label, kind) = (item.reps.clone(), item.label.clone(), item.kind);
         let by_mode = Self::reps_for_mode(&item.reps, as_);
         let reps: Vec<RawRep> = match self.resolve_remote_files(id, &item_reps, as_) {
             Some(Resolved::Ready(r) | Resolved::Text(r)) => r,
@@ -1275,7 +1304,7 @@ impl Shell {
         }
         match nclip_plat::clipboard::set_reps(&reps) {
             Ok(n) => {
-                println!("복사(메인창): \"{label}\" — 표현 {n}개");
+                println!("복사(메인창): {} — 표현 {n}개", log_item(kind, &label));
                 self.history.expect_echo(pos);
             }
             Err(e) => eprintln!("복사 실패: {e}"),
@@ -1288,7 +1317,8 @@ impl Shell {
         let Some(item) = self.history.get(i) else {
             return;
         };
-        let (id, item_reps, label) = (item.id, item.reps.clone(), item.label.clone());
+        let (id, item_reps, label, kind) =
+            (item.id, item.reps.clone(), item.label.clone(), item.kind);
         let reps = match self.resolve_remote_files(id, &item_reps, PasteAs::Original) {
             Some(Resolved::Ready(r) | Resolved::Text(r)) => r,
             Some(Resolved::Fetching) => return,
@@ -1296,7 +1326,7 @@ impl Shell {
         };
         match nclip_plat::clipboard::set_reps(&reps) {
             Ok(n) => {
-                println!("재적재: \"{label}\" — 표현 {n}개 게시");
+                println!("재적재: {} — 표현 {n}개 게시", log_item(kind, &label));
                 self.own_image = crate::main_win::parse_dims(&label).map(|d| (d, Instant::now()));
                 // ★ 부분 게시의 에코는 원본 승격으로(08-30 Linux 실기 "같은 항목 둘").
                 self.history.expect_echo(i);
@@ -1594,9 +1624,9 @@ impl Shell {
         //   승격(Promoted)으로 흡수됐는지 새 항목(New)으로 늘었는지 로그로 판정한다.
         if let Some(front) = self.history.get(0) {
             println!(
-                "이력: {:?} — \"{}\" (표현 {}개)",
+                "이력: {:?} — {} (표현 {}개)",
                 pushed,
-                front.label,
+                log_item(front.kind, &front.label),
                 snap.reps.len()
             );
         }
@@ -1788,7 +1818,8 @@ impl Shell {
         let Some(item) = self.history.get(index) else {
             return;
         };
-        let (item_id, item_reps, label) = (item.id, item.reps.clone(), item.label.clone());
+        let (item_id, item_reps, label, kind) =
+            (item.id, item.reps.clone(), item.label.clone(), item.kind);
         let by_mode = Self::reps_for_mode(&item.reps, as_);
         // ★ 원격 파일 약속(09-12 · DR-30) — 붙여넣을 때 받는다. 받는 중이면 팝업만 닫고 완료를 기다린다.
         let reps: Vec<RawRep> = match self.resolve_remote_files(item_id, &item_reps, as_) {
@@ -1807,7 +1838,7 @@ impl Shell {
         self.close_popup();
         match nclip_plat::clipboard::set_reps(&reps) {
             Ok(n) => {
-                println!("재적재: \"{label}\" — 표현 {n}개 게시");
+                println!("재적재: {} — 표현 {n}개 게시", log_item(kind, &label));
                 self.own_image = crate::main_win::parse_dims(&label).map(|d| (d, Instant::now()));
                 // ★ 부분 게시(평문만 · Linux 1단 한 표현)의 에코 = 원본 승격.
                 self.history.expect_echo(index);
@@ -2959,6 +2990,23 @@ pub(crate) fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// ★ 로그에는 내용 미리보기를 남기지 않는다(10-05 · T-69) — 진단 모드에서만.
+    #[test]
+    fn log_item_hides_preview_unless_diag() {
+        let secret = "ghp_example_token_value";
+        let plain = log_item_as(nclip_core::ClipKind::Text, secret, false);
+        assert_eq!(plain, "<글>");
+        assert!(!plain.contains("ghp_"));
+        assert_eq!(
+            log_item_as(nclip_core::ClipKind::Files, "key.zip", false),
+            "<파일>"
+        );
+        assert_eq!(
+            log_item_as(nclip_core::ClipKind::Text, secret, true),
+            format!("\"{secret}\"")
+        );
+    }
 
     fn rep(format: &str, data: &[u8]) -> RawRep {
         RawRep {
