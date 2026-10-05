@@ -2,6 +2,8 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-10-05 (19차 · linux) — 발행 신호 `client_payload` = `app · tag · repo · run_url`(linux-repo `389fa3c` 요청·진행 기록 Summary에 맞춤 · `ci/linux-repo-dispatch-payload`) · check-3os 생략(Rust 무변경) · linux-repo SETUP §7 = linux-repo 세션 몫 → [journal](journal/2026-10-05.md)
+
 ## 2026-10-05 (18차 · linux) — 진행사항 최신화 — 7단계 `5da60d5` · 트레이 아이콘 미표시 조사(apt 원인 아님 · 원인 미확정 · T-68) · 로그에 항목 미리보기 → 비밀 문자열 노출 관찰(T-69 결정 대기) · pkg.sosomlab.com 운영 방식 정리 → [journal](journal/2026-10-05.md)
 
 ## 2026-10-05 (17차 · linux) — ★ Linux 서명 APT 저장소 `pkg.sosomlab.com` 가동(T-67 1단계 · 사용자 지시) — Cloudflare Pages `linux-repo` + 소스 `SosomLab/linux-repo` · `.deb`는 GitHub Release 302(apt 3.2 실측) · 키 RSA 4096 `…8FD6` · 앱 등록 = `apps/<패키지>.toml` · 이 VM 0.1.7 apt 설치 · Clip `release.yml` 발행 신호 잡(`ci/linux-repo-dispatch` · 실동작은 다음 태그) → [journal](journal/2026-10-05.md)

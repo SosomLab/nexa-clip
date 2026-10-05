@@ -427,6 +427,7 @@ jobs:
   # `SosomLab/linux-repo`의 publish 워크플로가 이 신호(repository_dispatch · app-released)를 받아
   # 방금 공개된 릴리스의 `.deb`로 서명된 APT 색인을 다시 만든다(linux-repo `docs/ADDING-AN-APP.md` §4).
   # 신호를 놓쳐도 그쪽의 하루 한 번 정기 실행이 최신 릴리스를 잡으므로, 토큰이 없으면 알림만 남기고 넘어간다.
+  # `client_payload`(app · tag · repo · run_url)는 그쪽 publish 실행의 요청 기록(Summary)과 실행 이름에 남는다.
   # ⚠️ 스텝 `if:`에서는 `secrets`를 읽을 수 없다 — 토큰 유무는 셸에서 본다.
   linux-repo:
     needs: [meta, publish]
@@ -443,4 +444,4 @@ jobs:
           curl -fsS -X POST https://api.github.com/repos/SosomLab/linux-repo/dispatches \
             -H "Authorization: Bearer $TOKEN" \
             -H "Accept: application/vnd.github+json" \
-            -d '{"event_type":"app-released","client_payload":{"app":"nexa-clip"}}'
+            -d "{\"event_type\":\"app-released\",\"client_payload\":{\"app\":\"nexa-clip\",\"tag\":\"$GITHUB_REF_NAME\",\"repo\":\"$GITHUB_REPOSITORY\",\"run_url\":\"$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID\"}}"

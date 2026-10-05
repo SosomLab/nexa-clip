@@ -4,13 +4,21 @@
 
 ---
 
+## 2026-10-05 (19차 · linux) — 발행 신호에 요청 정보 싣기
+
+**변경**: linux-repo(별도 세션 `linux-repo-b7` · `389fa3c`)가 publish 실행에 요청 기록·진행 기록 Summary를 남기게 됨 → nexa-clip `release.yml` `linux-repo` 잡의 `client_payload`를 `app · tag · repo · run_url`로(개발 세션 · `ci/linux-repo-dispatch-payload`). 확인 = YAML 파싱 + 모의 실행 · check-3os 생략(Rust 무변경 · 1.99 통과분 유효) · 실동작은 다음 정식 태그.
+**☐ 남은 것**: 병합·push·CI · linux-repo SETUP §7(linux-repo 세션 몫) · T-68 · T-69. → [journal](journal/2026-10-05.md)
+
+---
+
 ## 2026-10-05 (18차 · linux) — 진행사항 최신화 · 트레이 아이콘 미표시 조사 · 로그 미리보기 관찰
 
 **7단계**: `5da60d5`(`ci/linux-repo-dispatch` · `release.yml` `linux-repo` 잡 + 17차 문서) · push 전 rustc 1.99 · check-3os ✓ · 실동작은 다음 정식 태그.
 **트레이 아이콘 미표시**(사용자 문의): apt 직접 원인 아님(파일 교체만) · 재로그인 뒤 등록·아이콘·메뉴 모두 정상인데 안 보임 · 원인 미확정(로그인 직후 등록 경합 추정 · [T-68](TODO.md)).
 **관찰**: 앱 로그가 항목 미리보기(앞 약 30자)를 시스템 journal에 남겨 복사한 비밀 문자열 일부가 들어감 → 가림/축소 결정 대기([T-69](TODO.md)).
 **pkg.sosomlab.com**: 배포마다 최신 릴리스로 전체 재생성 · 안내 화면 패키지 표도 생성 때 자동 채움 · 손댈 것 = 새 앱 toml · 안내 문구.
-**☐ 남은 것**: 병합·push·CI · T-68(Beep 아이콘 여부 · 재시작 복귀 여부) · T-69 결정 · 발행 신호 실동작. → [journal](journal/2026-10-05.md)
+**push**: `be76985..756f0b6`(병합 `1108a41`) · ✅ CI `37259467475`.
+**☐ 남은 것**: linux-repo SETUP §7 · T-68(Beep 아이콘 여부 · 재시작 복귀 여부) · T-69 결정 · 발행 신호 실동작. → [journal](journal/2026-10-05.md)
 
 ---
 
