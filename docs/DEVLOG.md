@@ -2,6 +2,8 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-10-05 (23차 · linux) — ★ v0.1.8 릴리스 준비 — T-70 · T-69 · pkg 발행 신호(첫 실동작) · 게시 상태(winget·choco 검수자 차례 → skip 예측 · brew·pkg 0.1.7) · 배포 전 V3 → [journal](journal/2026-10-05.md)
+
 ## 2026-10-05 (22차 · linux) — ★ T-69 로그 항목 미리보기 제거(종류만 · `NEXA_CLIP_DIAG`에서만 미리보기 · `fix/log-no-preview`) · 실기 ✓ · VMware 캐시의 서명 키 사본 21벌 삭제(휴지통 원본·과거 로그는 사용자 결정) → [journal](journal/2026-10-05.md)
 
 ## 2026-10-05 (21차 · linux) — ★ T-70 수정(VMware 다리 파일 타깃 되풀이 요청 차단 · `read_full` VmLazy · settle 표현 이름 비교 · 폴링 지문) · Debug 7490 진단 모드 · "이름+해시 동일성" 검토 = 단독 부족 → [journal](journal/2026-10-05.md)

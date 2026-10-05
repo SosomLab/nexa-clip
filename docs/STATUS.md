@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-10-05 (23차 · linux) — ★ v0.1.8 릴리스 준비
+
+**포함**: T-70 VMware 파일 복사 되풀이 수정 · T-69 로그 미리보기 제거 · pkg.sosomlab.com 발행 신호(v0.1.8이 첫 실동작) · 버전 0.1.8(`chore/release-0.1.8` = `4bd5ee5`).
+**게시 상태**(13:19 KST): winget 0.1.6 PR 2건 OPEN · Validation-Completed · 모더레이터 대기 · choco 0.1.5 in moderation(Verification·Scan Pending · 새 댓글 0) · brew 0.1.7 · pkg 0.1.7.
+**v0.1.8 판정**: winget·choco = guard skip(검수자 차례 · 사용자 조치 없음) · brew·Release·pkg = 자동.
+**V3**: ✓(rustc 1.99 · check-3os · test 578 · Release 4.6 MB ≤ 10 MB · Debug 유휴 15 MB ≤ 40 MB · 렌더 게이트 · E2E 생략) · ⚠️ Debug 최고 메모리 208 MB 관찰(Release 대표값 아님).
+**☐ 다음**: 커밋 → 병합 → push → CI → 태그 v0.1.8 → release·brew·pkg 확인. → [journal](journal/2026-10-05.md)
+
+---
+
 ## 2026-10-05 (22차 · linux) — ★ T-69: 로그에서 항목 미리보기 제거 · 서명 키 사본 삭제
 
 **수정**(개발 세션 · `fix/log-no-preview`): 앱 로그의 항목 표기 = 종류만(`<글>` 등) · 미리보기는 `NEXA_CLIP_DIAG`에서만.

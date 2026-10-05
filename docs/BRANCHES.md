@@ -4,8 +4,9 @@
 
 | 브랜치 | 생성 | 병합 | 커밋 수 | 요약 |
 |---|---|---|---:|---|
-| `fix/log-no-preview` | 2026-10-05 | — | — | ★ T-69 — 앱 로그 항목 표기 = 종류만 · 미리보기는 `NEXA_CLIP_DIAG`에서만(`tray_cmd.rs` `log_item`) · `fix/vm-bridge-file-recopy`(`e185598`) 위 · journal 10-05 22차 · 병합 해시 = 병합 뒤 채움 |
-| `fix/vm-bridge-file-recopy` | 2026-10-05 | — | — | ★ T-70 — VMware 호스트→게스트 파일 복사 되풀이 차단(`watch_linux.rs` · 다리 파일 타깃 요청 0회 · settle 표현 이름 비교 · 폴링 지문) · journal 10-05 21차 · 병합 해시 = 병합 뒤 채움 |
+| `chore/release-0.1.8` | 2026-10-05 | — | — | ★ v0.1.8 릴리스 — 버전 0.1.7→0.1.8(`4bd5ee5`) · 배포 전 V3 · journal 10-05 23차 · 병합 해시 = 병합 뒤 채움 |
+| `fix/log-no-preview` | 2026-10-05 | 2026-10-05 | 1 | ★ T-69 — 앱 로그 항목 표기 = 종류만 · 미리보기는 `NEXA_CLIP_DIAG`에서만(`tray_cmd.rs` `log_item`) · `fix/vm-bridge-file-recopy`(`e185598`) 위 · journal 10-05 22차 · 병합 `be66c47`(커밋 `4d7cb5a`) |
+| `fix/vm-bridge-file-recopy` | 2026-10-05 | 2026-10-05 | 1 | ★ T-70 — VMware 호스트→게스트 파일 복사 되풀이 차단(`watch_linux.rs` · 다리 파일 타깃 요청 0회 · settle 표현 이름 비교 · 폴링 지문) · journal 10-05 21차 · 병합 `9dff72f`(커밋 `e185598`) |
 | `ci/linux-repo-dispatch-payload` | 2026-10-05 | 2026-10-05 | 1 | 발행 신호 `client_payload` = `app · tag · repo · run_url`(linux-repo `389fa3c` 요청·진행 기록에 맞춤) · journal 10-05 19차 · 병합 `9bcda57`(커밋 `f73ce89`) |
 | `ci/linux-repo-dispatch` | 2026-10-05 | 2026-10-05 | 2 | ★ Clip 릴리스 → `pkg.sosomlab.com` 발행 신호 — `release.yml` `linux-repo` 잡(`needs: [meta, publish]` · 정식 태그만 · `LINUX_REPO_DISPATCH_TOKEN` · `app-released` dispatch · 토큰 없으면 notice) · T-67 · journal 10-05 17차 · 병합 `1108a41`(커밋 `5da60d5` · `903130d` 18차 문서 + CLAUDE.md 현 단계) · 실동작은 다음 정식 태그 |
 | `docs/progress-10-05c` | 2026-10-05 | 2026-10-05 | 1 | 진행사항 최신화(문서만 · mac) — journal 10-05 15~16차(13~15차 정리표 · 남은 것 · 33 §11 점검) · STATUS · DEVLOG · 18 문제 해결(mac Homebrew cargo PATH → check-3os E0463) · 35 §5 순서 정리 · 앞서 main 직접 `42d2980`(13·14차 — 33 §9-0 수신 규칙 · 35 §3-14·§3-15) push `0ac1789..42d2980` · ✅ CI `37252733397` · 병합 해시·push 범위·CI = push 뒤 보충 |
