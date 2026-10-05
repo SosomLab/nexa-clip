@@ -4,6 +4,24 @@
 
 ---
 
+## 2026-10-05 (25차 · linux) — ★ .rpm 산출물 추가 · v0.1.9 준비
+
+**변경**(개발 세션): `packaging/linux/nexa-clip.spec` + `release.yml` "Linux 설치본(.rpm)" 스텝(러너 rpmbuild · 자산 `nexa-clip-{version}-linux-x64.rpm`) · 버전 0.1.9 · 새 버전 이유 = v0.1.8에 `.rpm`만 얹으면 `.deb` 재업로드로 해시가 바뀌어 저장소 전제를 깸.
+**검증 방침**: 로컬 빌드 금지(사용자) → V3·check-3os 생략(Rust 소스 = V3 통과분 · 바뀐 것 = 버전·워크플로·포장) · CI·release run으로 판정.
+**linux-repo**: `[rpm]` 수신 준비 끝(자산 없으면 경고만 · 사이트 dnf 안내는 RPM 저장소가 생길 때만) · v0.1.9가 RPM 첫 실동작 · ⚠️ dnf5 `repo_gpgcheck` 지원 미확인.
+**☐ 남은 것**: push → CI → 태그 v0.1.9 → release·linux-repo·`rpm/sosomlab.repo` 확인 · Fedora/Rocky `dnf install` 실기(사용자 환경). → [journal](journal/2026-10-05.md)
+
+---
+
+## 2026-10-05 (24차 · linux) — ★ v0.1.8 릴리스 · pkg 자동 갱신 첫 실동작 ✓
+
+**릴리스**: 태그 `v0.1.8`(`98ab8f0`) · release `37263475999` ✅(잡 전부) · 자산 14 · brew 0.1.8 ✓ · ★ `linux-repo` 잡 → linux-repo publish `37263714314`("외부 요청 · nexa-clip v0.1.8") → **pkg.sosomlab.com 0.1.8**(공개 약 10초 뒤 갱신 시작).
+**스토어**: winget·choco = guard skip(예측대로 · 직전 검수 대기).
+**관찰**: pkg.sosomlab.com은 없는 경로도 200 HTML(최상위 `404.html` 없음) → linux-repo 세션 전달 거리.
+**☐ 남은 것**: 이 VM 설치본을 저장소 0.1.8로(사용자 sudo) · winget·choco 검수 · Windows·mac 실기 · RPM · T-68 · T-71. → [journal](journal/2026-10-05.md)
+
+---
+
 ## 2026-10-05 (23차 · linux) — ★ v0.1.8 릴리스 준비
 
 **포함**: T-70 VMware 파일 복사 되풀이 수정 · T-69 로그 미리보기 제거 · pkg.sosomlab.com 발행 신호(v0.1.8이 첫 실동작) · 버전 0.1.8(`chore/release-0.1.8` = `4bd5ee5`).

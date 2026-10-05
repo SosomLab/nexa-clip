@@ -2,6 +2,10 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-10-05 (25차 · linux) — ★ .rpm 산출물 추가(spec · release.yml rpmbuild 스텝) · v0.1.9 준비(v0.1.8에 얹으면 .deb 해시가 바뀌어 새 태그) · 로컬 빌드 금지(사용자) → V3 생략 · linux-repo `[rpm]` 수신 준비(RPM 첫 실동작 예정) → [journal](journal/2026-10-05.md)
+
+## 2026-10-05 (24차 · linux) — ★ **v0.1.8 릴리스** — release `37263475999` ✅ · 자산 14 · brew 0.1.8 · ★ pkg.sosomlab.com 자동 갱신 첫 실동작(linux-repo `37263714314` · repo.json 0.1.8) · winget·choco guard skip · 관찰 = 없는 경로 200 HTML → [journal](journal/2026-10-05.md)
+
 ## 2026-10-05 (23차 · linux) — ★ v0.1.8 릴리스 준비 — T-70 · T-69 · pkg 발행 신호(첫 실동작) · 게시 상태(winget·choco 검수자 차례 → skip 예측 · brew·pkg 0.1.7) · 배포 전 V3 → [journal](journal/2026-10-05.md)
 
 ## 2026-10-05 (22차 · linux) — ★ T-69 로그 항목 미리보기 제거(종류만 · `NEXA_CLIP_DIAG`에서만 미리보기 · `fix/log-no-preview`) · 실기 ✓ · VMware 캐시의 서명 키 사본 21벌 삭제(휴지통 원본·과거 로그는 사용자 결정) → [journal](journal/2026-10-05.md)

@@ -10,7 +10,7 @@
 
 - 조직: **SosomLab** · 개발자: Sangyong Bae · kiros33@gmail.com
 - 저장소: <https://github.com/SosomLab/nexa-clip> · 라이선스: **PolyForm Noncommercial 1.0.0**
-- 현 단계: ★ **M2 진행 중 · v0.1.7 배포됨**(10-05 · brew ✓ · winget 0.1.6 en-US PR #446464·#446465 모더레이터 대기 → 0.1.7 미제출(guard skip) · choco 0.1.5 검수 중 → 0.1.6·0.1.7 미제출) — M1(감시·캡처·암호화 영속·팝업·메인창·설정·트레이·주입 3-OS) 완료 · 동기화(릴레이+LAN 직결·기기 승인·전파) · 리치 렌더 2단(표 격자 · 컬러 이모지 Linux) · 검색(색인·정규식) · 메모리 상주 계층(DR-42) · 배포 파이프라인(brew · winget · choco). ★ Linux 서명 APT 저장소 **pkg.sosomlab.com** 가동(10-05 · `SosomLab/linux-repo` · 릴리스 공개 뒤 `app-released` 발행 신호). 핵심 결정은 **DR-46**(시스템 글꼴 PNG 글리프 예외 · 10-05)까지 확정.
+- 현 단계: ★ **M2 진행 중 · v0.1.8 배포됨**(10-05 · brew ✓ · pkg.sosomlab.com ✓(릴리스 공개 → APT 색인 자동 갱신) · winget 0.1.6 en-US PR #446464·#446465 모더레이터 대기 → 0.1.7·0.1.8 미제출(guard skip) · choco 0.1.5 검수 중 → 0.1.6~0.1.8 미제출) — M1(감시·캡처·암호화 영속·팝업·메인창·설정·트레이·주입 3-OS) 완료 · 동기화(릴레이+LAN 직결·기기 승인·전파) · 리치 렌더 2단(표 격자 · 컬러 이모지 Linux) · 검색(색인·정규식) · 메모리 상주 계층(DR-42) · 배포 파이프라인(brew · winget · choco). ★ Linux 서명 APT 저장소 **pkg.sosomlab.com** 가동(10-05 · `SosomLab/linux-repo` · 릴리스 공개 뒤 `app-released` 발행 신호). 핵심 결정은 **DR-46**(시스템 글꼴 PNG 글리프 예외 · 10-05)까지 확정.
 
 ### 참조 원천 (재발명 금지 — 설계 전 반드시 확인)
 
