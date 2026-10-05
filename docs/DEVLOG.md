@@ -2,6 +2,8 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-10-05 (20차 · linux) — T-68 트레이 아이콘 = 리부팅 뒤 보임(재로그인만 문제 · 원인 미확정) · ★ T-70 VMware 호스트→게스트 파일 복사 되풀이(같은 파일 약 20번 전송 · 감시 settle 재읽기마다 파일 타깃 요청 추정 · 수정 방향 사용자 확인 대기 · 캐시에 키 zip 사본) → [journal](journal/2026-10-05.md)
+
 ## 2026-10-05 (19차 · linux) — 발행 신호 `client_payload` = `app · tag · repo · run_url`(linux-repo `389fa3c` 요청·진행 기록 Summary에 맞춤 · `ci/linux-repo-dispatch-payload`) · check-3os 생략(Rust 무변경) · linux-repo SETUP §7 = linux-repo 세션 몫 → [journal](journal/2026-10-05.md)
 
 ## 2026-10-05 (18차 · linux) — 진행사항 최신화 — 7단계 `5da60d5` · 트레이 아이콘 미표시 조사(apt 원인 아님 · 원인 미확정 · T-68) · 로그에 항목 미리보기 → 비밀 문자열 노출 관찰(T-69 결정 대기) · pkg.sosomlab.com 운영 방식 정리 → [journal](journal/2026-10-05.md)

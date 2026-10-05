@@ -4,10 +4,19 @@
 
 ---
 
+## 2026-10-05 (20차 · linux) — 트레이 아이콘 재부팅 뒤 보임 · ★ VMware 파일 복사 되풀이(T-70)
+
+**T-68**: 리부팅하니 보임(재로그인 때만 안 보였음) · 로그인 직후 등록 경합 추정 · 원인 미확정.
+**★ T-70(새 문제 · P1)**: 호스트→게스트 파일 복사 한 번에 VMware가 같은 파일을 약 20번 전송(캐시에 같은 zip 21벌 · 10-04에도 265벌 · 캐시 237 MB) — 추정 원인 = 우리 감시가 한 복사에 스냅숏을 최대 5번 읽으며 매번 파일 타깃까지 요청 → VMware가 요청마다 새 전송. 수정 방향(파일 타깃 1회 · settle 재읽기 제외 · vmblock 임시 경로 제외) = 사용자 확인 대기. 🔴 캐시에 서명 키 zip 사본 남음(정리 = 사용자).
+→ [journal](journal/2026-10-05.md)
+
+---
+
 ## 2026-10-05 (19차 · linux) — 발행 신호에 요청 정보 싣기
 
 **변경**: linux-repo(별도 세션 `linux-repo-b7` · `389fa3c`)가 publish 실행에 요청 기록·진행 기록 Summary를 남기게 됨 → nexa-clip `release.yml` `linux-repo` 잡의 `client_payload`를 `app · tag · repo · run_url`로(개발 세션 · `ci/linux-repo-dispatch-payload`). 확인 = YAML 파싱 + 모의 실행 · check-3os 생략(Rust 무변경 · 1.99 통과분 유효) · 실동작은 다음 정식 태그.
-**☐ 남은 것**: 병합·push·CI · linux-repo SETUP §7(linux-repo 세션 몫) · T-68 · T-69. → [journal](journal/2026-10-05.md)
+**push**: `756f0b6..0ec5066`(병합 `9bcda57`) · ✅ CI `37260345888`.
+**☐ 남은 것**: linux-repo SETUP §7(linux-repo 세션 몫) · T-68 · T-69. → [journal](journal/2026-10-05.md)
 
 ---
 
