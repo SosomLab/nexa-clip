@@ -325,8 +325,8 @@ mod tests {
 /// `ui.theme` → 실제 테마(08-30 사용자 요청 "시스템 항목 · 직접 고르지 않으면 시스템 기본").
 /// `system`(기본)은 OS 선호를 따르고, OS가 무선호/판정 불가면 **다크**(우리 기본 룩).
 /// `dark`/`light`는 명시값 존중.
-pub(crate) fn resolve_theme(setting: &str, system_dark: Option<bool>) -> nclip_ctl::theme::Theme {
-    use nclip_ctl::theme::Theme;
+pub(crate) fn resolve_theme(setting: &str, system_dark: Option<bool>) -> nexa_ctl::theme::Theme {
+    use nexa_ctl::theme::Theme;
     match setting {
         "light" => Theme::light(),
         "dark" => Theme::dark(),
@@ -341,7 +341,7 @@ pub(crate) fn resolve_theme(setting: &str, system_dark: Option<bool>) -> nclip_c
 }
 
 /// 지금 OS 선호로 `ui.theme`을 푼다.
-pub(crate) fn current_theme(setting: &str) -> nclip_ctl::theme::Theme {
+pub(crate) fn current_theme(setting: &str) -> nexa_ctl::theme::Theme {
     resolve_theme(setting, nclip_plat::theme::system_prefers_dark())
 }
 
@@ -368,14 +368,14 @@ mod theme_tests {
 /// 된 폰트를 돌려준다 — ★ **시스템 기본이 항상 폴백으로 붙는다**(09-01 "두부 예방,
 /// 설정과 무관하게"). JetBrains Mono처럼 한글이 없는 글꼴을 지정해도 한글은
 /// 시스템 본이 받아 UI가 깨지지 않는다(글자 단위 폴백 — nclip-gfx).
-pub(crate) fn load_ui_font(conf: &Settings) -> Option<nclip_gfx::Font> {
-    use nclip_gfx::Font;
-    let sys = nclip_plat::font::system_ui_font();
+pub(crate) fn load_ui_font(conf: &Settings) -> Option<nexa_gfx::Font> {
+    use nexa_gfx::Font;
+    let sys = nexa_font::system_ui_font().map(|f| (f.data, f.index));
     let fam = conf.state.get("ui.font_family").trim().to_string();
     // ① 주 글꼴(+ 사용자 지정이면 시스템 본을 첫 폴백으로).
     let mut font = if fam.is_empty() {
         Font::from_static(sys?.0, sys?.1).ok()?
-    } else if let Some((d, i)) = nclip_plat::font::find_font_by_family(&fam) {
+    } else if let Some((d, i)) = nexa_font::find_font_by_family(&fam) {
         println!("UI 글꼴: {fam} (+시스템 폴백)");
         let mut f = Font::from_static(d, i).ok()?;
         if let Some((sd, si)) = sys {
@@ -389,7 +389,12 @@ pub(crate) fn load_ui_font(conf: &Settings) -> Option<nclip_gfx::Font> {
     // ② ★ OS별 기호·이모지 폴백 체인(09-04 사용자 "두부 제거") — 설정과 무관하게 항상 붙는다.
     //   글자 단위 폴백이라 기준선·줄 높이는 주 글꼴이 계속 정한다.
     let mut names = Vec::new();
-    for (data, idx, name) in nclip_plat::font::symbol_fallback_fonts() {
+    for nexa_font::Found {
+        data,
+        index: idx,
+        name,
+    } in nexa_font::symbol_fallback_fonts()
+    {
         if font.push_fallback(data, idx).is_ok() {
             names.push(name.to_string());
         }
@@ -419,7 +424,7 @@ pub(crate) fn load_ui_font(conf: &Settings) -> Option<nclip_gfx::Font> {
 fn mono_family(conf: &Settings) -> Option<(&'static [u8], u32, String)> {
     let want = conf.state.get("ui.font_mono").trim().to_string();
     if !want.is_empty() {
-        return match nclip_plat::font::find_font_by_family(&want) {
+        return match nexa_font::find_font_by_family(&want) {
             Some((d, i)) => Some((d, i, want)),
             None => {
                 eprintln!("⚠️ 고정폭 글꼴 '{want}'을(를) 못 찾았습니다 — 기본 후보로 대신합니다");
@@ -444,15 +449,15 @@ fn mono_default() -> Option<(&'static [u8], u32, String)> {
         "DejaVu Sans Mono",
         "Noto Sans Mono",
     ];
-    CANDIDATES.iter().find_map(|n| {
-        nclip_plat::font::find_font_by_family(n).map(|(d, i)| (d, i, (*n).to_string()))
-    })
+    CANDIDATES
+        .iter()
+        .find_map(|n| nexa_font::find_font_by_family(n).map(|(d, i)| (d, i, (*n).to_string())))
 }
 
 /// ★ 고정폭 글꼴 슬롯(09-04) — 주 글꼴을 폴백으로 붙여 한글·기호는 주 글꼴이 받는다. 없으면 None(= 주 글꼴).
-pub(crate) fn load_mono_font(conf: &Settings, ui: &nclip_gfx::Font) -> Option<nclip_gfx::Font> {
+pub(crate) fn load_mono_font(conf: &Settings, ui: &nexa_gfx::Font) -> Option<nexa_gfx::Font> {
     let (d, i, name) = mono_family(conf)?;
-    let mut f = nclip_gfx::Font::from_static(d, i).ok()?;
+    let mut f = nexa_gfx::Font::from_static(d, i).ok()?;
     f.push_fallback_font(ui);
     println!("고정폭 글꼴: {name} (+주 글꼴 폴백)");
     Some(f)

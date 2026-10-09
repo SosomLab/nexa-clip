@@ -1140,21 +1140,6 @@ name = "nclip-core"
 version = "0.1.9"
 
 [[package]]
-name = "nclip-ctl"
-version = "0.1.9"
-dependencies = [
- "nclip-gfx",
-]
-
-[[package]]
-name = "nclip-gfx"
-version = "0.1.9"
-dependencies = [
- "ab_glyph",
- "png",
-]
-
-[[package]]
 name = "nclip-imgdec"
 version = "0.1.9"
 dependencies = [
@@ -1167,7 +1152,6 @@ dependencies = [
 name = "nclip-plat"
 version = "0.1.9"
 dependencies = [
- "memmap2",
  "nclip-core",
  "objc2 0.5.2",
  "objc2-app-kit",
@@ -1203,8 +1187,8 @@ name = "nclip-ui"
 version = "0.1.9"
 dependencies = [
  "nclip-core",
- "nclip-ctl",
- "nclip-gfx",
+ "nexa-ctl",
+ "nexa-gfx",
 ]
 
 [[package]]
@@ -1242,13 +1226,14 @@ name = "nexa-clip"
 version = "0.1.9"
 dependencies = [
  "nclip-core",
- "nclip-ctl",
- "nclip-gfx",
  "nclip-plat",
  "nclip-store",
  "nclip-sync",
  "nclip-ui",
  "nexa-conf",
+ "nexa-ctl",
+ "nexa-font",
+ "nexa-gfx",
  "sha2",
  "softbuffer",
  "winit",
@@ -1256,7 +1241,29 @@ dependencies = [
 
 [[package]]
 name = "nexa-conf"
-version = "0.1.9"
+version = "0.1.0"
+
+[[package]]
+name = "nexa-ctl"
+version = "0.1.0"
+dependencies = [
+ "nexa-gfx",
+]
+
+[[package]]
+name = "nexa-font"
+version = "0.1.0"
+dependencies = [
+ "memmap2",
+ "nexa-gfx",
+]
+
+[[package]]
+name = "nexa-gfx"
+version = "0.1.0"
+dependencies = [
+ "ab_glyph",
+]
 
 [[package]]
 name = "num_enum"

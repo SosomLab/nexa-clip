@@ -1,24 +1,24 @@
 //! `demo` — ★ **렌더 파이프라인 실증**(T-12b2).
 //!
-//! 창을 열고 [`nclip_gfx`] CPU 래스터라이저 위에 **S1 퀵 팝업 레이아웃**을 그린다.
+//! 창을 열고 [`nexa_gfx`] CPU 래스터라이저 위에 **S1 퀵 팝업 레이아웃**을 그린다.
 //! "hello world" 대신 **실제 설계**를 그리는 이유는, 이 단계에서 확인해야 할 것이
 //! *"픽셀이 나오는가"* 만이 아니라 ***"우리가 정한 화면이 실제로 그렇게 보이는가"*** 이기 때문이다.
 //!
 //! | 검증 대상 | 어떻게 |
 //! |---|---|
 //! | 렌더 파이프라인 | winit 창 → softbuffer 버퍼 → `Surface` → `RasterCtx` |
-//! | 시스템 폰트 + 한글 | `nclip_plat::font` mmap → `Font::from_static` |
+//! | 시스템 폰트 + 한글 | `nexa_font` mmap → `Font::from_static` |
 //! | ★ **보기 3모드** | `1`·`2`·`3` 키로 전환 — 행 높이가 실제로 달라지는가 |
 //! | ★ **세로 밀도**(DR-14) | 크롬 1~2줄 · 같은 높이에서 항목이 몇 개 보이는가 |
 //! | 테마 | `T` 키로 다크/라이트 — 색 하드코딩이 없는가 |
 //! | ★ **알파 합성** | `P` 키로 **반투명 미리보기 패널** — 뒤 목록이 비치는가([docs/23](../../../docs/23-alpha-rendering.md)) |
 
-use nclip_ctl::draw::{DrawCtx, FontSlot};
-use nclip_ctl::geom::Rect;
-use nclip_ctl::raster::RasterCtx;
-use nclip_ctl::theme::Theme;
-use nclip_ctl::ViewMode;
-use nclip_gfx::{Font, Surface};
+use nexa_ctl::draw::{DrawCtx, FontSlot};
+use nexa_ctl::geom::Rect;
+use nexa_ctl::raster::RasterCtx;
+use nexa_ctl::theme::Theme;
+use nexa_ctl::ViewMode;
+use nexa_gfx::{Font, Surface};
 
 use std::num::NonZeroU32;
 use std::rc::Rc;
@@ -418,8 +418,8 @@ fn draw_popup(
 
 /// 데모 실행.
 pub(crate) fn run() {
-    let Some((data, idx)) = nclip_plat::font::system_ui_font() else {
-        eprintln!("시스템 UI 폰트를 찾지 못했습니다 — nclip_plat::font 후보 목록을 확인하세요.");
+    let Some((data, idx)) = nexa_font::system_ui_font().map(|f| (f.data, f.index)) else {
+        eprintln!("시스템 UI 폰트를 찾지 못했습니다 — nexa_font 후보 목록을 확인하세요.");
         std::process::exit(1);
     };
     let font = match Font::from_static(data, idx) {
@@ -431,7 +431,9 @@ pub(crate) fn run() {
     };
     println!(
         "폰트: {}",
-        nclip_plat::font::system_ui_font_name().unwrap_or("(이름 미상)")
+        nexa_font::system_ui_font()
+            .map(|f| f.name)
+            .unwrap_or("(이름 미상)")
     );
     println!("창을 엽니다 — 1/2/3 보기 · P 반투명 미리보기 · T 테마 · Esc 종료");
 

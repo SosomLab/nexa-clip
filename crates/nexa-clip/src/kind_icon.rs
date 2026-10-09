@@ -15,9 +15,9 @@
 //! | 앱 개체 | 네모 테두리 + 겹친 원(도형) |
 
 use nclip_core::ClipKind;
-use nclip_ctl::draw::DrawCtx;
-use nclip_ctl::geom::Rect;
-use nclip_ctl::theme::Color;
+use nexa_ctl::draw::DrawCtx;
+use nexa_ctl::geom::Rect;
+use nexa_ctl::theme::Color;
 
 /// `(x, y)`에서 한 변 `side`인 정사각 상자 안에 종류 아이콘을 그린다.
 ///

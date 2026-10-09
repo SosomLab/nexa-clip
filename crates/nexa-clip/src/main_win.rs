@@ -16,17 +16,17 @@ use crate::xfer::{ItemStatus, State as XferState, XferView};
 use nclip_core::capture::decode_plain;
 use nclip_core::history::History;
 use nclip_core::{current_lang, tr, ClipKind, Msg, PasteAs};
-use nclip_ctl::controls::{
+use nexa_ctl::controls::{
     ContextMenu, Control as _, CtxItem, LabelSide, ScrollBars, Switch, TextBox,
 };
-use nclip_ctl::draw::{DrawCtx, FontSlot};
-use nclip_ctl::event::{InputEvent as CtlEvent, Key as CtlKey};
-use nclip_ctl::geom::Rect;
-use nclip_ctl::raster::RasterCtx;
-use nclip_ctl::theme::Theme;
-use nclip_ctl::widget::{Invalidations, Widget as _};
-use nclip_ctl::ViewMode;
-use nclip_gfx::{Font, Surface};
+use nexa_ctl::draw::{DrawCtx, FontSlot};
+use nexa_ctl::event::{InputEvent as CtlEvent, Key as CtlKey};
+use nexa_ctl::geom::Rect;
+use nexa_ctl::raster::RasterCtx;
+use nexa_ctl::theme::Theme;
+use nexa_ctl::widget::{Invalidations, Widget as _};
+use nexa_ctl::ViewMode;
+use nexa_gfx::{Font, Surface};
 
 use std::num::NonZeroU32;
 use std::rc::Rc;
@@ -136,7 +136,7 @@ enum XferHit {
 }
 
 /// ★ 원격 파일 배지(09-12) — 글자·색. 글리프는 글꼴에 없을 수 있어 **글자만** 쓴다.
-fn files_badge(th: &Theme, st: ItemStatus) -> (String, nclip_ctl::theme::Color) {
+fn files_badge(th: &Theme, st: ItemStatus) -> (String, nexa_ctl::theme::Color) {
     let lang = current_lang();
     match st {
         ItemStatus::Cached => (format!("[{}]", tr(lang, Msg::BadgeCached)), th.ok),
@@ -251,7 +251,7 @@ pub(crate) struct MainWin {
     ///   정식 편집기. 항상 포커스(키보드 기본 캡처)·IME preedit 인라인 표시.
     search: TextBox,
     /// ★ 검색 방식 드롭다운(09-04 사용자) — 검색바 앞 정사각(Aa · ≈ · .*).
-    mode_drop: nclip_ctl::controls::IconDropdown,
+    mode_drop: nexa_ctl::controls::IconDropdown,
     /// 캐럿 깜빡임 위상(셸 500ms 타이머).
     caret_phase: bool,
     /// ★ 최상위 고정 상태(`ui.always_on_top` 영속 — 셸이 넘겨준다).
@@ -291,15 +291,15 @@ pub(crate) struct MainWin {
     /// 툴바 hover — 머티리얼 상태 레이어 + 툴팁(09-01 사용자 요청).
     hovered: Option<Tool>,
     /// ★ 툴바 hover 페이드(09-04 사용자 — "설정 창처럼 서서히 진해지게"): 공용 `HoverFade`(켜지는 것·꺼지는 것 둘).
-    tool_fade: nclip_ctl::tokens::HoverFade,
+    tool_fade: nexa_ctl::tokens::HoverFade,
     /// ★ 상태줄 점 툴팁 페이드(09-04) — 툴바 툴팁과 같은 곡선.
-    dot_fade: nclip_ctl::tokens::Fade,
+    dot_fade: nexa_ctl::tokens::Fade,
     /// ★ 목록 행 hover 페이드(09-04 사용자 — "기본색보다 조금 진하게 서서히"): Material 상태 레이어(본문색 6%).
-    row_fade: nclip_ctl::tokens::HoverFade,
+    row_fade: nexa_ctl::tokens::HoverFade,
     /// ★ hover 의도 코얼레싱(09-04 · 28 §hover): 사건은 의도만 덮어쓰고, 수행(`row_fade.set`·툴팁)은
     ///   `tick_ui`가 70ms 뒤 1회 — 빠르게 지나간 행·버튼은 페이드를 시작조차 하지 않는다.
-    row_intent: nclip_ctl::tokens::HoverIntent<usize>,
-    tool_intent: nclip_ctl::tokens::HoverIntent<Tool>,
+    row_intent: nexa_ctl::tokens::HoverIntent<usize>,
+    tool_intent: nexa_ctl::tokens::HoverIntent<Tool>,
     /// 커서가 창 안에 있나(CursorMoved = 안 · CursorLeft = 밖) — 행이 재배열된 뒤 **가만히 있는 커서** 아래 행을 다시 재려면 필요.
     cursor_in: bool,
     /// ★ 행 재배열 뒤 재hover(09-04 사용자 — "더블클릭으로 순서가 바뀐 뒤 마우스를 안 움직이면 진해지지 않는다"):
@@ -323,15 +323,15 @@ pub(crate) struct MainWin {
     sync_dot_rect: std::cell::Cell<Rect>,
     sync_dot_hover: bool,
     /// 연결 아이콘 틴트 캐시 — (연결 여부, 색) 키(96² 재틴트를 매 프레임 안 하게).
-    sync_icon: std::cell::RefCell<Option<(bool, u32, nclip_ctl::theme::IconImage)>>,
+    sync_icon: std::cell::RefCell<Option<(bool, u32, nexa_ctl::theme::IconImage)>>,
     /// 미리보기 아이콘 틴트 캐시(색 키 · 09-03 사용자 지정 아이콘).
-    preview_icon: std::cell::RefCell<Option<(u32, nclip_ctl::theme::IconImage)>>,
+    preview_icon: std::cell::RefCell<Option<(u32, nexa_ctl::theme::IconImage)>>,
     /// 중복 제외 아이콘 틴트 캐시(색 키 · 09-04 사용자 지정 Material `compress`).
-    dedup_icon: std::cell::RefCell<Option<(u32, nclip_ctl::theme::IconImage)>>,
+    dedup_icon: std::cell::RefCell<Option<(u32, nexa_ctl::theme::IconImage)>>,
     /// ★ 감시 끄기 아이콘 캐시(09-04 사용자 지정 `stop_circle`) — 색별 틴트 1장.
-    watch_icon: std::cell::RefCell<Option<(u32, nclip_ctl::theme::IconImage)>>,
+    watch_icon: std::cell::RefCell<Option<(u32, nexa_ctl::theme::IconImage)>>,
     /// ★ 설정 아이콘 캐시(09-04 사용자 지정 Material `settings`).
-    settings_icon: std::cell::RefCell<Option<(u32, nclip_ctl::theme::IconImage)>>,
+    settings_icon: std::cell::RefCell<Option<(u32, nexa_ctl::theme::IconImage)>>,
     /// ★ 미리보기 패널 열림(09-02 K4 · `ui.preview_open` 영속 — 기본 접힘).
     preview_open: bool,
     /// ★ 전송 패널(09-12 · DR-30) — 펌프 스냅숏(비면 패널 없음) · 버튼 히트(페인트가 기록).
@@ -357,10 +357,10 @@ pub(crate) struct MainWin {
     preview_rich_id: Option<u64>,
     /// ★ 리치 미리보기의 인라인 이미지(09-04 — Outlook 표 = `data:` PNG): (줄, 런) → 디코드본.
     ///   미리보기 항목이 바뀔 때 한 번 격리 워커로 디코드(8장 · 변 1600 상한).
-    preview_rich_imgs: Vec<((usize, usize), nclip_ctl::theme::IconImage)>,
+    preview_rich_imgs: Vec<((usize, usize), nexa_ctl::theme::IconImage)>,
     /// 미리보기 이미지 원본 — (항목 id, 셸이 지연 디코드해 넘긴 RGBA ·
     /// `None` = 디코드 실패 → 텍스트 폴백 · 09-02 실기 P).
-    preview_img: Option<(u64, Option<nclip_ctl::theme::IconImage>)>,
+    preview_img: Option<(u64, Option<nexa_ctl::theme::IconImage>)>,
 }
 
 impl MainWin {
@@ -405,11 +405,11 @@ impl MainWin {
             follow_new: None,
             watch_off: false,
             hovered: None,
-            tool_fade: nclip_ctl::tokens::HoverFade::default(),
-            dot_fade: nclip_ctl::tokens::Fade::hover(),
-            row_fade: nclip_ctl::tokens::HoverFade::default(),
-            row_intent: nclip_ctl::tokens::HoverIntent::default(),
-            tool_intent: nclip_ctl::tokens::HoverIntent::default(),
+            tool_fade: nexa_ctl::tokens::HoverFade::default(),
+            dot_fade: nexa_ctl::tokens::Fade::hover(),
+            row_fade: nexa_ctl::tokens::HoverFade::default(),
+            row_intent: nexa_ctl::tokens::HoverIntent::default(),
+            tool_intent: nexa_ctl::tokens::HoverIntent::default(),
             cursor_in: false,
             rehover_pending: false,
             view: ViewMode::Compact,
@@ -456,9 +456,11 @@ impl MainWin {
     /// 검색 우클릭 편집 메뉴의 선택을 실행한다(복사/잘라내기/붙여넣기).
     fn drain_search_edit_ctx(&mut self) {
         if let Some(act) = self.search.take_edit_ctx() {
-            use nclip_ctl::controls::EditCtxAction as A;
+            use nexa_ctl::controls::EditCtxAction as A;
             let mut inv = Invalidations::default();
             match act {
+                // nexa-ctl 10-10: 호스트 추가 메뉴 항목(`set_menu_extras`)은 clip이 쓰지 않는다.
+                A::Custom(_) => {}
                 A::Copy => {
                     if let Some(t) = self.search.copy_selection() {
                         crate::cliptext::set_text(&t);
@@ -550,7 +552,7 @@ impl MainWin {
     }
 
     /// 행의 섬네일 — 캐시에 있으면 그것, 없으면 **요청만**(DR-41 요청/수행 분리) 남기고 None.
-    fn thumb_for(&self, row: &Row) -> Option<std::rc::Rc<nclip_ctl::theme::IconImage>> {
+    fn thumb_for(&self, row: &Row) -> Option<std::rc::Rc<nexa_ctl::theme::IconImage>> {
         row.thumb_dims?;
         let cache = self.thumbs.as_ref()?;
         let mut c = cache.borrow_mut();
@@ -1177,7 +1179,7 @@ impl MainWin {
         let sz = win.inner_size();
         let pr = self.preview_rect(sz.width as i32, sz.height as i32);
         let pad2 = (self.scale * 8.0).round() as i32;
-        let inner = nclip_ctl::geom::Rect::new(
+        let inner = nexa_ctl::geom::Rect::new(
             pr.x + pad2,
             pr.y + pad2,
             (pr.w - pad2 * 2).max(1),
@@ -1313,7 +1315,7 @@ impl MainWin {
     pub(crate) fn set_preview_image(&mut self, id: u64, iw: u32, ih: u32, rgba: Vec<u8>) {
         self.preview_img = Some((
             id,
-            Some(nclip_ctl::theme::IconImage::from_rgba(iw, ih, rgba)),
+            Some(nexa_ctl::theme::IconImage::from_rgba(iw, ih, rgba)),
         ));
         self.redraw();
     }
@@ -1435,7 +1437,7 @@ impl MainWin {
             let inside = matches!(
                 ev,
                 CtlEvent::MouseDown { x, y, .. }
-                    if self.mode_drop.bounds().contains(nclip_ctl::geom::Point { x, y })
+                    if self.mode_drop.bounds().contains(nexa_ctl::geom::Point { x, y })
             );
             if was_open || inside {
                 let mut inv = Invalidations::default();
@@ -1563,7 +1565,7 @@ impl MainWin {
                     }
                 }
                 // ★ 상태줄 점 hover(09-04) — 색의 뜻을 툴팁으로.
-                let dot_hover = self.sync_dot_rect.get().contains(nclip_ctl::geom::Point {
+                let dot_hover = self.sync_dot_rect.get().contains(nexa_ctl::geom::Point {
                     x: self.cursor.0,
                     y: self.cursor.1,
                 });
@@ -1600,7 +1602,7 @@ impl MainWin {
                         let sz = win.inner_size();
                         let pr = self.preview_rect(sz.width as i32, sz.height as i32);
                         let (cx, cy) = self.cursor;
-                        if pr.contains(nclip_ctl::geom::Point { x: cx, y: cy }) {
+                        if pr.contains(nexa_ctl::geom::Point { x: cx, y: cy }) {
                             // ★ 리치 미리보기 — 픽셀 스크롤(횡/종 · 스크롤바와 짝 · 09-03).
                             if self
                                 .rows
@@ -1666,7 +1668,7 @@ impl MainWin {
                     && self
                         .search
                         .bounds()
-                        .contains(nclip_ctl::geom::Point { x: sx, y: sy })
+                        .contains(nexa_ctl::geom::Point { x: sx, y: sy })
                 {
                     self.search
                         .set_clipboard_has_text(crate::cliptext::has_text());
@@ -1725,7 +1727,7 @@ impl MainWin {
                     if self
                         .search
                         .bounds()
-                        .contains(nclip_ctl::geom::Point { x, y })
+                        .contains(nexa_ctl::geom::Point { x, y })
                     {
                         // ★ ×(지우기)는 MouseDown에서 값이 바뀐다(09-02 실기 — 빈 결과
                         //   상태에서 × 눌러도 목록이 안 돌아오던 원인) → 변화 감지해 재필터.
@@ -1751,7 +1753,7 @@ impl MainWin {
                         .xfer_hits
                         .borrow()
                         .iter()
-                        .find(|(r, _)| r.contains(nclip_ctl::geom::Point { x, y }))
+                        .find(|(r, _)| r.contains(nexa_ctl::geom::Point { x, y }))
                         .map(|(_, h)| *h);
                     if let Some(hit) = xhit {
                         return match hit {
@@ -2086,7 +2088,7 @@ impl MainWin {
             if let Ok(mut buf) = surface.buffer_mut() {
                 {
                     let mut gfx = Surface::new(&mut buf, size.width as usize, size.height as usize);
-                    let mut fonts = nclip_ctl::raster::FontSet::single(&self.font);
+                    let mut fonts = nexa_ctl::raster::FontSet::single(&self.font);
                     fonts.mono = self.font_mono.as_ref();
                     let mut dc = RasterCtx::with_font_set(&mut gfx, fonts, self.scale)
                         .with_caret_on(self.caret_phase);
@@ -2136,7 +2138,7 @@ impl MainWin {
         // ★ 동기화 연결 아이콘(09-03 — beep Lucide 자산 동일: cable=연결 · unplug=끊김).
         if let Some(on) = self.sync_on {
             let col = if on {
-                nclip_ctl::theme::Color::from_rgb(46, 204, 64)
+                nexa_ctl::theme::Color::from_rgb(46, 204, 64)
             } else {
                 th.text_dim
             };
@@ -2157,7 +2159,7 @@ impl MainWin {
                 *cache = Some((
                     on,
                     col.0,
-                    nclip_ctl::theme::IconImage::from_rgba(LINK_ICON_SIDE, LINK_ICON_SIDE, rgba),
+                    nexa_ctl::theme::IconImage::from_rgba(LINK_ICON_SIDE, LINK_ICON_SIDE, rgba),
                 ));
             }
             if let Some((_, _, img)) = cache.as_ref() {
@@ -2256,7 +2258,7 @@ impl MainWin {
                         dc.fill_round_rect(
                             Rect::new(dot_x, dot_y, px(6.0), px(6.0)),
                             px(3.0),
-                            nclip_ctl::theme::Color::from_rgb(46, 204, 64),
+                            nexa_ctl::theme::Color::from_rgb(46, 204, 64),
                         );
                     }
                 }
@@ -2390,7 +2392,7 @@ impl MainWin {
                                                 Rect::new(cx0 + xoff, ly, sw, px(22.0)),
                                                 content_clip,
                                             ),
-                                            nclip_ctl::theme::Color::from_rgb(b[0], b[1], b[2]),
+                                            nexa_ctl::theme::Color::from_rgb(b[0], b[1], b[2]),
                                         );
                                     }
                                     dc.text(cx0 + xoff, ly, content_clip, seg, col);
@@ -2468,7 +2470,7 @@ impl MainWin {
                     dc.fill_round_rect(
                         Rect::new(lx, dot_y, px(6.0), px(6.0)),
                         px(3.0),
-                        nclip_ctl::theme::Color::from_rgb(46, 204, 64),
+                        nexa_ctl::theme::Color::from_rgb(46, 204, 64),
                     );
                 }
                 lx += px(12.0);
@@ -2586,7 +2588,7 @@ impl MainWin {
                 let img_at = |li: usize, ri: usize| {
                     imgs.iter().find(|(k, _)| *k == (li, ri)).map(|(_, im)| im)
                 };
-                let fit = |im: &nclip_ctl::theme::IconImage, avail: i32| -> (i32, i32) {
+                let fit = |im: &nexa_ctl::theme::IconImage, avail: i32| -> (i32, i32) {
                     #[allow(clippy::cast_possible_wrap)]
                     let (iw, ih) = (im.w.max(1) as i32, im.h.max(1) as i32);
                     let dw = iw.min(avail.max(40));
@@ -2688,7 +2690,7 @@ impl MainWin {
                                                 ),
                                                 inner,
                                             ),
-                                            nclip_ctl::theme::Color::from_rgb(b[0], b[1], b[2]),
+                                            nexa_ctl::theme::Color::from_rgb(b[0], b[1], b[2]),
                                         );
                                     }
                                     dc.text(inner.x - self.preview_hs + xoff, ly, inner, seg, col);
@@ -2913,9 +2915,9 @@ impl MainWin {
             let cxp = w - pad - r;
             let cyp = sy + self.status_h() / 2;
             let col = match self.sync_mode {
-                SyncMode::Relay => nclip_ctl::theme::Color::from_rgb(46, 204, 64),
-                SyncMode::Local => nclip_ctl::theme::Color::from_rgb(52, 120, 246),
-                SyncMode::Off => nclip_ctl::theme::Color::from_rgb(96, 96, 96),
+                SyncMode::Relay => nexa_ctl::theme::Color::from_rgb(46, 204, 64),
+                SyncMode::Local => nexa_ctl::theme::Color::from_rgb(52, 120, 246),
+                SyncMode::Off => nexa_ctl::theme::Color::from_rgb(96, 96, 96),
                 SyncMode::RelayDown => th.text_dim,
             };
             dc.fill_ellipse(Rect::new(cxp - r, cyp - r, r * 2, r * 2), col);
@@ -3147,7 +3149,7 @@ impl MainWin {
                     }
                     *cache = Some((
                         c.0,
-                        nclip_ctl::theme::IconImage::from_rgba(PREVIEW_SIDE, PREVIEW_SIDE, rgba),
+                        nexa_ctl::theme::IconImage::from_rgba(PREVIEW_SIDE, PREVIEW_SIDE, rgba),
                     ));
                 }
                 if let Some((_, img)) = cache.as_ref() {
@@ -3169,7 +3171,7 @@ impl MainWin {
                     }
                     *cache = Some((
                         c.0,
-                        nclip_ctl::theme::IconImage::from_rgba(PREVIEW_SIDE, PREVIEW_SIDE, rgba),
+                        nexa_ctl::theme::IconImage::from_rgba(PREVIEW_SIDE, PREVIEW_SIDE, rgba),
                     ));
                 }
                 if let Some((_, img)) = cache.as_ref() {
@@ -3184,7 +3186,7 @@ impl MainWin {
                 let on = self.always_top;
                 let c = if on { th.accent } else { ink };
                 let (w2, h2) = (px(8.0), px(4.5));
-                let mut rhombus = |dy: f32, col: nclip_ctl::theme::Color| {
+                let mut rhombus = |dy: f32, col: nexa_ctl::theme::Color| {
                     let yc = cy + px(dy);
                     dc.fill_triangle((cx, yc - h2), (cx - w2, yc), (cx + w2, yc), col);
                     dc.fill_triangle((cx - w2, yc), (cx + w2, yc), (cx, yc + h2), col);
@@ -3212,7 +3214,7 @@ impl MainWin {
                 //   중지됨: `play_circle` **초록**(누르면 다시 잡는다). 색 = 다음 동작의 성격(멈춤 = 경고 계열 ·
                 //   재개 = 진행 계열). 비활성(enabled=false)은 없다 — 항상 누를 수 있다.
                 let stopped = self.watch_off;
-                let (alpha, c): (&[u8], nclip_ctl::theme::Color) = if stopped {
+                let (alpha, c): (&[u8], nexa_ctl::theme::Color) = if stopped {
                     (WATCH_PLAY_ALPHA, WATCH_RESUME_COLOR)
                 } else {
                     (WATCH_ALPHA, WATCH_STOP_COLOR)
@@ -3228,7 +3230,7 @@ impl MainWin {
                     }
                     *cache = Some((
                         key,
-                        nclip_ctl::theme::IconImage::from_rgba(PREVIEW_SIDE, PREVIEW_SIDE, rgba),
+                        nexa_ctl::theme::IconImage::from_rgba(PREVIEW_SIDE, PREVIEW_SIDE, rgba),
                     ));
                 }
                 if let Some((_, img)) = cache.as_ref() {
@@ -3279,7 +3281,7 @@ impl MainWin {
                     }
                     *cache = Some((
                         c.0,
-                        nclip_ctl::theme::IconImage::from_rgba(PREVIEW_SIDE, PREVIEW_SIDE, rgba),
+                        nexa_ctl::theme::IconImage::from_rgba(PREVIEW_SIDE, PREVIEW_SIDE, rgba),
                     ));
                 }
                 if let Some((_, img)) = cache.as_ref() {
@@ -3583,7 +3585,7 @@ pub(crate) fn to_ctl_event(event: &WindowEvent, cursor: (i32, i32)) -> Option<Ct
 /// 풀어 (줄, 런) → 그림. 8장 · 변 1600 상한 — 미리보기로 바뀔 때·"이미지로 복사" 때 한 번씩.
 pub(crate) fn decode_inline_images(
     rich: &[Vec<nclip_core::richtext::Run>],
-) -> Vec<((usize, usize), nclip_ctl::theme::IconImage)> {
+) -> Vec<((usize, usize), nexa_ctl::theme::IconImage)> {
     let mut out = Vec::new();
     for (li, line) in rich.iter().enumerate() {
         for (ri, run) in line.iter().enumerate() {
@@ -3594,7 +3596,7 @@ pub(crate) fn decode_inline_images(
                 return out;
             }
             if let Some((w, h, rgba)) = nclip_plat::imgdec::decode_isolated(bytes, 1600) {
-                out.push(((li, ri), nclip_ctl::theme::IconImage::from_rgba(w, h, rgba)));
+                out.push(((li, ri), nexa_ctl::theme::IconImage::from_rgba(w, h, rgba)));
             }
         }
     }
@@ -3606,28 +3608,28 @@ pub(crate) fn decode_inline_images(
 /// 바탕색이 있는 런(셀 채움·형광펜)은 문서가 정한 조합이라 그대로 둔다.
 pub(crate) fn run_color(
     run: &nclip_core::richtext::Run,
-    text: nclip_ctl::theme::Color,
-    panel: nclip_ctl::theme::Color,
-) -> nclip_ctl::theme::Color {
-    let luma = |c: nclip_ctl::theme::Color| {
+    text: nexa_ctl::theme::Color,
+    panel: nexa_ctl::theme::Color,
+) -> nexa_ctl::theme::Color {
+    let luma = |c: nexa_ctl::theme::Color| {
         let (r, g, b) = c.rgb();
         (u32::from(r) * 299 + u32::from(g) * 587 + u32::from(b) * 114) / 1000
     };
     let Some(c) = run.color else {
         // ★ 바탕색만 있는 런(표 칸 채움 · T-63) — 테마 글자색이 그 바탕에서 안 읽히면 검정/흰색 중 읽히는 쪽.
         if let Some(b) = run.bg {
-            let bg = luma(nclip_ctl::theme::Color::from_rgb(b[0], b[1], b[2]));
+            let bg = luma(nexa_ctl::theme::Color::from_rgb(b[0], b[1], b[2]));
             if luma(text).abs_diff(bg) < 60 {
                 return if bg >= 128 {
-                    nclip_ctl::theme::Color::from_rgb(20, 20, 20)
+                    nexa_ctl::theme::Color::from_rgb(20, 20, 20)
                 } else {
-                    nclip_ctl::theme::Color::from_rgb(240, 240, 240)
+                    nexa_ctl::theme::Color::from_rgb(240, 240, 240)
                 };
             }
         }
         return text;
     };
-    let col = nclip_ctl::theme::Color::from_rgb(c[0], c[1], c[2]);
+    let col = nexa_ctl::theme::Color::from_rgb(c[0], c[1], c[2]);
     if run.bg.is_some() {
         return col;
     }
@@ -3710,9 +3712,9 @@ const SETTINGS_ALPHA: &[u8] = include_bytes!("../assets/icon-settings-96.alpha")
 /// 중지됨 = `play_circle`(누르면 재개).
 const WATCH_PLAY_ALPHA: &[u8] = include_bytes!("../assets/icon-watch-play-96.alpha");
 /// 멈춤 동작 = 벽돌색(사용자 09-04 "붉은 계열") — 라이트·다크 양쪽에서 읽히는 채도.
-const WATCH_STOP_COLOR: nclip_ctl::theme::Color = nclip_ctl::theme::Color(0x00B2_4C34);
+const WATCH_STOP_COLOR: nexa_ctl::theme::Color = nexa_ctl::theme::Color(0x00B2_4C34);
 /// 재개 동작 = Material Green 600(#43A047) — 상태줄 연결 녹색(46,204,64)보다 한 톤 가라앉혀 "진행" 신호로.
-const WATCH_RESUME_COLOR: nclip_ctl::theme::Color = nclip_ctl::theme::Color(0x0043_A047);
+const WATCH_RESUME_COLOR: nexa_ctl::theme::Color = nexa_ctl::theme::Color(0x0043_A047);
 /// 미리보기 자산 변(px).
 const PREVIEW_SIDE: u32 = 96;
 
@@ -3790,7 +3792,7 @@ impl MainWin {
 #[allow(clippy::too_many_arguments)]
 fn draw_tooltip(
     dc: &mut RasterCtx<'_, '_, '_>,
-    th: &nclip_ctl::theme::Theme,
+    th: &nexa_ctl::theme::Theme,
     tip: Rect,
     radius: i32,
     pad_x: i32,

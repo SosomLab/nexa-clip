@@ -16,11 +16,26 @@
 | 구성 요소 | `rustfmt` · `clippy` | 툴체인 파일에 포함 |
 | 외부 도구 | ★ **C 링커(`cc`)가 필요하다** | 정정 08-29 — 아래 참조 |
 
-```bash
-git clone git@github.com:SosomLab/nexa-clip.git
-cd nexa-clip
-cargo build          # 첫 빌드에서 툴체인·의존을 받는다
-```
+> ★ **형제 저장소 필수(10-10 · nexa-ui 전환 P1-c′ · 원본 = nexa-beep [18 §1](../../nexa-beep/docs/18-build-and-test.md) 10-09)** — UI 기반(그래픽·컨트롤·글꼴·설정 영속·파일 대화상자)은 계열 공용
+> **nexa-ui**를, 라이선스는 **nexa-license**를 **path 의존**(`../nexa-ui/crates/*` · `../nexa-license/crates/nexa-license`)으로 쓴다
+> (`nclip-gfx`·`nclip-ctl` 사본은 이 전환으로 걷어낸다 — nexa-ui는 원래 clip에서 뽑아낸 라이브러리다).
+> clone은 세 저장소를 **나란히** 둔다(nexa-beep·nexa-sql·nexa-dir3와 같은 규약) · 하나라도 없으면 첫 `cargo build`가
+> `failed to read …/nexa-ui/crates/…/Cargo.toml`로 멈춘다.
+> CI는 `SosomLab/nexa-ui`·`SosomLab/nexa-license`를 형제 경로로 체크아웃하고 `working-directory: nexa-clip`에서 cargo를 돈다(공개 저장소 · 토큰 불요).
+> 공개 API를 바꾸는 nexa-ui·nexa-license 변경은 **그 저장소를 먼저 push**한다(push 순서 nexa-ui → nexa-license → nexa-clip — 거꾸로 밀면 clip CI가 옛 형제를 받아 깨진다).
+>
+> ```bash
+> git clone git@github.com:SosomLab/nexa-ui.git
+> git clone git@github.com:SosomLab/nexa-license.git
+> git clone git@github.com:SosomLab/nexa-clip.git
+> cd nexa-clip
+> cargo build          # 첫 빌드에서 툴체인·의존을 받는다(형제 두 저장소는 path라 받지 않는다 — 위 clone이 전제)
+> ```
+>
+> - 형제 저장소는 **clip과 같은 시점의 커밋**이어야 한다 — clip을 pull할 때 형제도 `git -C ../nexa-ui pull --ff-only` · `git -C ../nexa-license pull --ff-only`.
+>   계열 공용 저장소는 다른 프로젝트 세션도 push하므로, 커밋 직전 fetch([33 §6](33-collab-session-operation.md))는 **세 저장소 모두** 본다.
+> - 형제 저장소에서 고친 것이 clip에 영향을 주면 nexa-ui `CONSUMER-CHANGES.md`의 clip 열에 기록한다(nexa-ui 쪽 규약).
+> - 크로스 검사(`scripts/check-3os.sh`)·Release 빌드도 같은 구조를 전제로 한다 — 형제가 없으면 3타깃 모두 같은 오류로 멈춘다.
 
 > ⚠️ **정정(08-29)** — 예전 이 표는 *"외부 도구 없음 · C 툴체인이 필요 없다"* 였다. **틀렸다.**
 > `rustc`는 링크를 **`cc`에 위임**하므로 C 컴파일러가 없으면 `error: linker \`cc\` not found` 로 죽는다.
@@ -72,10 +87,10 @@ cargo run -p nexa-clip                               # ④ 환경 점검(눈으�
 | 크레이트 | 지키는 것 |
 |---|---|
 | **`nclip-core`** | i18n 카탈로그 **빈 칸 없음**(4언어) · 열 번호와 `ALL` 순서 일치 · 항목 **중복 키**(순서 무관) · 평문 폴백 존재 · 진단 로그 링 버퍼·**원인/조치 쌍** |
-| **`nclip-ctl`** | ★ **디자인 토큰** — 간격이 4의 배수 · 상태 오버레이 **단조 증가** · 그림자 **두 겹** · 팝업 모션 **120ms 상한** · 보기 모드 밀도 순서 |
+| ~~`nclip-ctl`~~ → nexa-ui `nexa-ctl`(10-10 DR-47 · 이 시험은 nexa-ui 저장소로) | ★ **디자인 토큰** — 간격이 4의 배수 · 상태 오버레이 **단조 증가** · 그림자 **두 겹** · 팝업 모션 **120ms 상한** · 보기 모드 밀도 순서 |
 | **`nclip-plat`** | 감시 게이트 **판정 순서**(민감 표식 > 일시정지 > 다음 1건) · 붙여넣기 능력 진단 |
 | **`nclip-ui`** | 설정 **값 키 중복 금지** · 모든 항목이 기본값을 냄 · ★ **팝업 기본값 = 커서**(DR-24) |
-| **`nclip-gfx`** | 알파 블렌드 값 · 표면 밖 클리핑에서 **패닉 없음** |
+| ~~`nclip-gfx`~~ → nexa-ui `nexa-gfx`(10-10 DR-47 · 이 시험은 nexa-ui 저장소로) | 알파 블렌드 값 · 표면 밖 클리핑에서 **패닉 없음** |
 
 ### 3-2. ★ 이 테스트들이 왜 있는가
 
@@ -122,7 +137,7 @@ cargo check --workspace --all-targets --target x86_64-unknown-linux-gnu
 창(winit)을 뺀 순수 계층만 볼 때:
 
 ```bash
-cargo test -p nclip-core -p nclip-gfx -p nclip-ctl -p nclip-store
+cargo test -p nclip-core -p nclip-store   # nclip-gfx·nclip-ctl은 10-10 nexa-ui로 이전(DR-47) — 그쪽 저장소에서 cargo test
 ```
 
 ### 4-3. 릴리스 프로필

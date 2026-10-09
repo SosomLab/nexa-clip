@@ -16,12 +16,28 @@ jobs:
       matrix:
         os: [windows-latest, macos-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
+    # ★ nexa-ui·nexa-license = 형제 저장소 path 의존(10-10 · DR-47) — 형제 경로로 체크아웃하고 이 저장소 안에서 돈다.
+    defaults:
+      run:
+        working-directory: nexa-clip
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: nexa-clip
+      - uses: actions/checkout@v4
+        with:
+          repository: SosomLab/nexa-ui
+          path: nexa-ui
+      - uses: actions/checkout@v4
+        with:
+          repository: SosomLab/nexa-license
+          path: nexa-license
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: nexa-clip
 
       - name: fmt
         run: cargo fmt --all --check

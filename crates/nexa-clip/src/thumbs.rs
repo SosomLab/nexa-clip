@@ -11,7 +11,7 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::rc::Rc;
 
-use nclip_ctl::theme::IconImage;
+use nexa_ctl::theme::IconImage;
 
 /// 메인·팝업·셸이 나눠 드는 손잡이.
 pub(crate) type Thumbs = Rc<RefCell<ThumbCache>>;

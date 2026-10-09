@@ -5,7 +5,7 @@
 //! 이 경로는 사용자가 "이미지로 복사"를 고를 때만 탄다.
 
 use nclip_core::richtext::Run;
-use nclip_gfx::{Color, Font, IconImage, Surface, TextStyle};
+use nexa_gfx::{Color, Font, IconImage, Surface, TextStyle};
 
 /// 렌더 글자 크기(px) — PPT 슬라이드 대비 적당한 밀도.
 const SIZE: f32 = 18.0;
@@ -199,7 +199,7 @@ pub(crate) fn render_runs(
                         Color::from_rgb(b[0], b[1], b[2]),
                     );
                 }
-                font.draw_styled(&mut surf, x, y, size, col, seg, clip, style);
+                font.draw_styled(&mut surf, x, y, size, col, seg, clip, style, PAD as f32);
                 x += sw;
             }
         }

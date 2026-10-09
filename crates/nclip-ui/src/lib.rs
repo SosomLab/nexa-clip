@@ -1,4 +1,4 @@
-//! `nclip-ui` — 화면. [`nclip_core`] 상태를 읽어 [`nclip_ctl`]로 그린다.
+//! `nclip-ui` — 화면. [`nclip_core`] 상태를 읽어 [`nexa_ctl`]로 그린다.
 //!
 //! 플랫폼 API를 직접 부르지 않는다(그건 `nclip-plat`의 일이다).
 //!
@@ -16,6 +16,7 @@
 pub mod settings;
 mod settings_registry;
 
-pub mod hangul;
+/// 한글 2벌식 직접 조합기 — 10-10 nexa-ctl로 이관(본문 동일 · 사본 삭제).
+pub use nexa_ctl::hangul;
 pub mod typeahead;
 pub use settings::{registry, Entry, NoteTone, SettingKind, SettingsState, SettingsWidget};

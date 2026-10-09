@@ -18,6 +18,8 @@
 |---|---|---|
 | **`nexa-beep`** | `../nexa-beep` | ★ **기본 틀** — 크레이트 경계 · `plat` 포트 · CPU 래스터라이저(`nbeep-gfx`) · 컨트롤(`nbeep-ctl`) · 클립보드 어댑터(`nbeep-plat/clipboard.rs`) · 트레이 · **릴레이(`nbeep-relay`·`nexa-beepd`)** · 암호화 키 계층(ADR-0005) · 다중 기기 신원(ADR-0007) |
 | **`nexa-dir2`** | `../nexa-dir2` | ★ **컨트롤** — `ctl` 17종 · `nexa-gui`(`draw`·`event`·`geom`·`theme`·`edit`·`typeahead`) · **`grid`/`columns`**(정렬·리사이즈) · 가상화 목록 |
+| **`nexa-ui`** | `../nexa-ui` | ★ **공용 UI 라이브러리(path 의존 · DR-47 · 10-10)** — nexa-gfx(래스터·텍스트·PNG 글리프) · nexa-ctl(컨트롤·hangul) · nexa-conf(설정 영속) · nexa-font(시스템 글꼴) · nexa-dlg(파일 대화상자) — clip 사본(nclip-gfx·nclip-ctl·nexa-conf)은 10-10 삭제 · **고칠 것은 nexa-ui에서** · CONSUMER-CHANGES clip 열 |
+| **`nexa-license`** | `../nexa-license` | 라이선스 검증(path 의존 · ed25519·machine-id·fs) — 앱 어댑터 `nclip-license`(P4) |
 
 > ⚠️ **릴레이 서버(`nexa-beepd`)는 clip에 들어 있지 않다** — `nexa-beep` 저장소 `crates/nexa-beepd`에서 **`beepd-v*` 별도 태그**로 배포되는 **별도 실행 파일**이고, 사용자가 **따로 띄워야** 원격 동기화가 된다(공식 `beepd.sosomlab.com:47300` · LAN만 쓰면 None으로 서버 불요). clip은 `nclip-sync/*`에 와이어 사본만 둔다 → [18 §10-2](docs/18-build-and-test.md) · 위키 [릴레이 서버](https://github.com/SosomLab/nexa-clip/wiki/릴레이-서버).
 
@@ -60,6 +62,7 @@
 - **기능 설계 전 `nexa-beep`·`nexa-dir2` 문서·코드 먼저 확인**(재발명 금지). 이식 커밋에 원본 경로 명기.
 - 🔴 **모든 변경에서 상시 점검** — 이 변경이 ① `nexa-beepd`(서버) ② `nbeep-relay` 와이어 ③ beep과 공유하는 규약(도메인 문자열·prologue·타이브레이크)을 건드리는가?
   하나라도 예면 **[docs/22 전달 원장](docs/22-upstream-beep-liaison.md)** 에 기록하고 사용자에게 알린다. ⚠️ beep 저장소 직접 수정은 **승인 대상**(다른 프로젝트).
+- 🔴 **형제 저장소 push 순서 = nexa-ui → nexa-license → nexa-clip**(DR-47 · 거꾸로 밀면 clip CI가 옛 형제를 받아 깨진다) — clone은 세 저장소를 나란히([18 §1](docs/18-build-and-test.md)) · 커밋 직전 fetch도 세 저장소 모두.
 - `.claude/settings.json`(권한)은 **덮어쓰기 금지, 병합만**.
 
 ## 5. 새 세션 오리엔테이션

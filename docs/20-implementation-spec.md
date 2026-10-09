@@ -377,13 +377,12 @@ nexa-clip/                (bin) 조립 · 생명주기 · 창 라우팅 · 전�
 ├── nclip-core     도메인+포트  항목·표현 모델 · 정책 · i18n(Msg) · 포트 트레이트
 ├── nclip-store    영속        암호화 세그먼트 · 내용 주소 blob · 인덱스
 ├── nclip-crypto   보안        키 계층 · 크립토 셰레딩
-├── nclip-gfx      렌더        ♻ beep 무수정 복사
-├── nclip-ctl      컨트롤      vendor/(♻ 무수정) + src/(ClipRow · RichTextView · ViewModeList · 세로 Toolbar)
+├── (nclip-gfx · nclip-ctl — ★ 10-10 삭제 → ../nexa-ui 의 nexa-gfx · nexa-ctl · nexa-font path 의존 · DR-47)
 ├── nclip-ui       화면        ♻ settings 프레임워크 · hangul · typeahead · alert · prompt · about + S1~S8
 ├── nclip-plat     플랫폼      ⚠🆕 감시 · 🆕 전역 단축키 · 🆕 포커스/주입 · ♻ 트레이 · ♻ 클립보드 R/W · ♻ 자동시작
 ├── nclip-imgdec   (bin)       ♻ 이미지 격리 디코드
 ├── nclip-sync     (M2)        기기 목록 · 전파 정책 · relay 어댑터
-└── nexa-conf                  ♻ 설정 영속(무수정)
+└── (nexa-conf — ★ 10-10 삭제 → ../nexa-ui/crates/nexa-conf · DR-47)
 ```
 
 **의존 방향** — 어댑터가 `nclip-core`에 의존하고, core는 아무에게도 의존하지 않는다(의존성 역전). `nclip-ctl`은 **도메인을 모른다**(문자열 주입).

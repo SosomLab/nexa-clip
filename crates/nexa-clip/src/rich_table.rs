@@ -12,9 +12,9 @@
 //! - 런이 없는 빈 칸의 바탕색 — 칸 테두리는 그리지만 채움은 없다.
 
 use nclip_core::richtext::Run;
-use nclip_ctl::draw::DrawCtx;
-use nclip_ctl::geom::Rect;
-use nclip_ctl::theme::Color;
+use nexa_ctl::draw::DrawCtx;
+use nexa_ctl::geom::Rect;
+use nexa_ctl::theme::Color;
 
 /// 표 한 칸 — x·폭은 **내용 원점 기준**(px). 높이는 줄 높이(그리는 쪽이 안다).
 #[derive(Clone, Debug, PartialEq, Eq)]

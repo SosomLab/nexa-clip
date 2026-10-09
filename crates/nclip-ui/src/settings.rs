@@ -15,23 +15,23 @@
 //! | 검색 | [`TextBox`](placeholder·Beam 캐럿) |
 //! | 카테고리 사이드바 | [`TreeView`](검색 중 매치 카테고리 + "(N)") |
 //! | 택일 설정 | [`Combo`](드롭다운 · 선택 ✓) |
-//! | on/off 설정 | [`Checkbox`](nclip_ctl::controls::Checkbox) |
+//! | on/off 설정 | [`Checkbox`](nexa_ctl::controls::Checkbox) |
 //! | 글꼴 영역 | [`TextBox`] 글꼴명 + [`Combo`] 크기 |
 //!
 //! 값 반영은 기존 계약 그대로 — **즉시 적용**([`SettingsWidget::take_changes`] 폴링), 영속은
 //! M2-5(Repository 포트). i18n: 라벨은 [`Msg`] 키, 검색은 **전 언어 매치**.
 
 use nclip_core::{current_lang, tr, Lang, Msg};
-use nclip_ctl::controls::{
+use nexa_ctl::controls::{
     Button, ColorPicker, Combo, ComboControl, ComboItem, Control, LabelSide, ListEditor,
     PositionPicker, ScrollBars, Switch, TextBox, TreeControl, TreeModel, TreeNode, TreeView,
 };
-use nclip_ctl::draw::{DrawCtx, FontSlot};
-use nclip_ctl::event::{InputEvent, Key};
-use nclip_ctl::geom::{Point, Rect};
-use nclip_ctl::theme::Theme;
-use nclip_ctl::tokens::Fade;
-use nclip_ctl::widget::{Invalidations, Widget};
+use nexa_ctl::draw::{DrawCtx, FontSlot};
+use nexa_ctl::event::{InputEvent, Key};
+use nexa_ctl::geom::{Point, Rect};
+use nexa_ctl::theme::Theme;
+use nexa_ctl::tokens::Fade;
+use nexa_ctl::widget::{Invalidations, Widget};
 use std::collections::HashMap;
 
 // 크기 콤보 후보(beep 레지스트리 전용) — 우리 레지스트리가 해당 항목을 갖게 되면 되살린다.
@@ -187,7 +187,7 @@ impl DevRow {
 
 /// 호스트 값(`hex\tstate\ttext` 줄들) → 행들. state: `me`(버튼 없음) · `approved` · `pending`.
 fn build_dev_rows(value: &str, scale: f32, lang: Lang) -> Vec<DevRow> {
-    use nclip_ctl::controls::ButtonTone;
+    use nexa_ctl::controls::ButtonTone;
     value
         .lines()
         .filter(|l| !l.trim().is_empty())
@@ -294,7 +294,7 @@ fn pw_btn_rects(b: Rect) -> (Rect, Rect) {
 
 /// 96² 알파 자산을 잉크색으로 틴트해 캐시에 담는다(색이 같으면 재사용).
 fn tint_icon(
-    cell: &std::cell::RefCell<Option<(u32, nclip_ctl::theme::IconImage)>>,
+    cell: &std::cell::RefCell<Option<(u32, nexa_ctl::theme::IconImage)>>,
     alpha: &[u8],
     ink: u32,
 ) {
@@ -308,14 +308,14 @@ fn tint_icon(
         }
         *cache = Some((
             ink,
-            nclip_ctl::theme::IconImage::from_rgba(PW_EYE_SIDE, PW_EYE_SIDE, rgba),
+            nexa_ctl::theme::IconImage::from_rgba(PW_EYE_SIDE, PW_EYE_SIDE, rgba),
         ));
     }
 }
 
 /// 틴트된 아이콘을 버튼 자리에 그린다(안쪽 여백 = 높이/8).
 fn draw_icon(
-    cell: &std::cell::RefCell<Option<(u32, nclip_ctl::theme::IconImage)>>,
+    cell: &std::cell::RefCell<Option<(u32, nexa_ctl::theme::IconImage)>>,
     r: Rect,
     ctx: &mut dyn DrawCtx,
 ) {
@@ -391,7 +391,7 @@ pub enum SettingKind {
         /// 글꼴명 값 키.
         family_key: &'static str,
     },
-    /// on/off — [`Checkbox`](nclip_ctl::controls::Checkbox). 값은 `"on"`/`"off"`(기본 on).
+    /// on/off — [`Checkbox`](nexa_ctl::controls::Checkbox). 값은 `"on"`/`"off"`(기본 on).
     Toggle,
     /// 색상 — [`ColorPicker`](스와치 + `#RRGGBB` 입력 + 프리셋). 값 = `#RRGGBB`(08-10).
     Color {
@@ -646,7 +646,7 @@ impl SettingsState {
             // ★ 숫자 항목 — 파일에서 온 값도 **숫자여야** 받는다. 범위는 validate가 본다.
             SettingKind::Number { .. } => value.parse::<u64>().is_ok(),
             SettingKind::Toggle => value == "on" || value == "off",
-            SettingKind::Color { .. } => nclip_ctl::theme::color_from_hex(value).is_some(),
+            SettingKind::Color { .. } => nexa_ctl::theme::color_from_hex(value).is_some(),
             // 위치 코드·글꼴명(빈 값 = 시스템 기본)·크기 코드는 소비처가 관용 파싱한다.
             SettingKind::PositionGrid | SettingKind::FontFace { .. } => true,
             SettingKind::Text { .. } => true,
@@ -779,7 +779,7 @@ enum RowCtl {
     /// 실행 버튼(백업·복원 등 행위 항목).
     Act(Button),
     Font {
-        family: TextBox,
+        family: Box<TextBox>,
         size: Combo,
     },
     /// 3×3 위치 그리드.
@@ -871,9 +871,9 @@ pub struct SettingsWidget {
     /// 특정 설정 행 **바로 아래**에 붙는 한 줄 정보(자리 고정 — 호스트가 채운다).
     notes: HashMap<&'static str, (String, NoteTone)>,
     /// 암호 눈 아이콘 틴트 캐시(색 키 — 96² 재틴트 방지).
-    pw_eye: std::cell::RefCell<Option<(u32, nclip_ctl::theme::IconImage)>>,
+    pw_eye: std::cell::RefCell<Option<(u32, nexa_ctl::theme::IconImage)>>,
     /// 비밀번호 생성 아이콘 틴트 캐시(색 키).
-    pw_regen: std::cell::RefCell<Option<(u32, nclip_ctl::theme::IconImage)>>,
+    pw_regen: std::cell::RefCell<Option<(u32, nexa_ctl::theme::IconImage)>>,
     /// ★ 생성 2단 확인(09-03 사용자) — 첫 클릭 = 무장(빨강) · 2초 안 재클릭 = 생성 ·
     ///   지나면 원복. 호스트 시계에 안 기대고 자체 Instant(유휴 뒤 첫 클릭 오판 방지).
     pw_arm: Option<std::time::Instant>,
@@ -1007,7 +1007,7 @@ impl SettingsWidget {
     }
 
     /// 우클릭 편집 메뉴 행동(1회성 — 08-13 전수 검사) — 어느 텍스트 입력에서든.
-    pub fn take_edit_ctx(&mut self) -> Option<nclip_ctl::controls::EditCtxAction> {
+    pub fn take_edit_ctx(&mut self) -> Option<nexa_ctl::controls::EditCtxAction> {
         if let Some(a) = self.search.take_edit_ctx() {
             return Some(a);
         }
@@ -1372,7 +1372,11 @@ impl SettingsWidget {
                             .map_or(FONT_SIZE_DEFAULT, String::as_str),
                     );
                     size.set_scale(self.scale);
-                    RowCtl::Font { family, size }
+                    // Box = clippy large_enum_variant(10-10 nexa-ctl TextBox가 커짐) — 행은 수십 개라 비용 없음.
+                    RowCtl::Font {
+                        family: Box::new(family),
+                        size,
+                    }
                 }
             };
             // 그룹이 바뀌는 첫 행에만 하위 섹션 제목을 붙인다(상위 제목은 고정 밴드 몫).
@@ -1442,7 +1446,7 @@ impl SettingsWidget {
     pub fn set_action_tone(
         &mut self,
         key: &'static str,
-        tone: nclip_ctl::controls::ButtonTone,
+        tone: nexa_ctl::controls::ButtonTone,
         inv: &mut Invalidations,
     ) {
         for r in &mut self.rows {
@@ -1598,7 +1602,7 @@ impl SettingsWidget {
         let (ctl_h, pad) = (self.s(CTL_H), self.s(PAD));
         let (h_font, h_entry, h_pos) = (self.s(FONT_SECTION_H), self.s(ENTRY_H), self.s(POS_ROW_H));
         // 토글 폭 = Switch 트랙(20) × 컨트롤 크기 배율(ui.control_size).
-        let (combo_w, check_w) = (self.s(COMBO_W), self.s(nclip_ctl::controls::ctl_size(20)));
+        let (combo_w, check_w) = (self.s(COMBO_W), self.s(nexa_ctl::controls::ctl_size(20)));
         // 기기 목록 버튼 간격 — 루프 밖에서(차용 분리 · 폭은 행이 라벨로 정한다).
         let dev_g = self.s(6);
         let (family_w, size_w, gap10, dy32) =
@@ -2024,14 +2028,14 @@ impl Widget for SettingsWidget {
                     (&mut r.ctl, e.kind)
                 {
                     let (er, rr) = pw_btn_rects(f.bounds());
-                    if er.contains(nclip_ctl::geom::Point { x, y }) {
+                    if er.contains(nexa_ctl::geom::Point { x, y }) {
                         f.set_masked(!f.masked());
                         inv.push(self.bounds);
                         return;
                     }
                     // ★ 비밀번호 생성(09-03) — 값 생성은 호스트(설정 창) 몫이라
                     //   가짜 키로 요청만 올린다(sync.test = run 문법).
-                    if rr.contains(nclip_ctl::geom::Point { x, y }) {
+                    if rr.contains(nexa_ctl::geom::Point { x, y }) {
                         match self.pw_arm {
                             // 2초 안 재클릭 = 생성 — 새 암호는 **반드시 보이게**(가림 해제).
                             Some(t) if t.elapsed() <= PW_ARM_WINDOW => {
@@ -2053,12 +2057,12 @@ impl Widget for SettingsWidget {
                 let e = &registry()[r.idx];
                 let (family, key) = match (&mut r.ctl, e.kind) {
                     (RowCtl::Font { family, .. }, SettingKind::FontSection { family_key, .. }) => {
-                        (family, family_key)
+                        (family.as_mut(), family_key)
                     }
                     (RowCtl::Face(family), _) => (family, e.key),
                     _ => continue,
                 };
-                if family.is_focused() && !family.bounds().contains(nclip_ctl::geom::Point { x, y })
+                if family.is_focused() && !family.bounds().contains(nexa_ctl::geom::Point { x, y })
                 {
                     let v = family.text().trim().to_string();
                     if self.values.get(key).map(String::as_str) != Some(v.as_str()) {
@@ -2106,7 +2110,7 @@ impl Widget for SettingsWidget {
             let mut handled = false;
             if let Some(f) = self.rows.iter_mut().find_map(|r| match &mut r.ctl {
                 RowCtl::Font { family, .. } if family.popup_open() || family.is_focused() => {
-                    Some(family)
+                    Some(family.as_mut())
                 }
                 RowCtl::Face(family) if family.popup_open() || family.is_focused() => Some(family),
                 _ => None,
@@ -2336,18 +2340,32 @@ impl Widget for SettingsWidget {
                 inv.push(self.bounds);
             }
             InputEvent::MouseUp { .. } => {
-                // 실행 버튼과 목록(＋/－)은 "안에서 떼야" 클릭이다(Button 계약) — MouseUp을
-                // 전달해야 take_clicked가 성립하고 눌림 색도 풀린다(09-01 실기).
-                for row in &mut self.rows {
+                // ★ nexa-ctl 컨트롤은 **전부 "안에서 떼야" 확정**이다(Button·Switch·Combo·PositionPicker·ColorPicker —
+                //   10-10 nexa-ui 이관 · 종전 nclip-ctl은 Button·목록만 MouseUp이고 나머지는 MouseDown 완결이었다).
+                //   잠긴 행은 MouseDown과 같은 기준으로 건너뛴다(누름이 없었으니 뗌도 무효).
+                let locked: Vec<bool> = self.rows.iter().map(|r| self.is_locked(r.idx)).collect();
+                for (row, lock) in self.rows.iter_mut().zip(locked) {
+                    if lock {
+                        continue;
+                    }
                     match &mut row.ctl {
-                        RowCtl::Act(b) => b.on_event(ev, inv),
+                        RowCtl::Combo(c) => c.on_event(ev, inv),
+                        RowCtl::Check(c) => c.on_event(ev, inv),
+                        RowCtl::Font { family, size } => {
+                            family.on_event(ev, inv);
+                            size.on_event(ev, inv);
+                        }
+                        RowCtl::Pos(g) => g.on_event(ev, inv),
                         RowCtl::List(l) => l.on_event(ev, inv),
+                        RowCtl::Face(f) => f.on_event(ev, inv),
+                        RowCtl::Color(c) => c.on_event(ev, inv),
+                        RowCtl::Act(b) => b.on_event(ev, inv),
+                        RowCtl::Report => {}
                         RowCtl::Devices(rows) => {
                             for r in rows.iter_mut() {
                                 r.on_event(ev, inv);
                             }
                         }
-                        _ => {}
                     }
                 }
                 self.drain_changes(inv);
@@ -2966,7 +2984,7 @@ mod validate_tests {
     /// 빌더 순서가 뒤집히는 회귀를 여기서 잡는다.
     #[test]
     fn custom_number_value_is_shown_not_dropped() {
-        use nclip_ctl::controls::{Combo, ComboItem};
+        use nexa_ctl::controls::{Combo, ComboItem};
 
         let presets = ["200", "500", "1000"];
         let items: Vec<ComboItem> = presets.iter().map(|v| ComboItem::new(*v, *v)).collect();

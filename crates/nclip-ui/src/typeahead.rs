@@ -21,9 +21,9 @@ pub struct Query {
 #[derive(Debug)]
 pub struct TypeAhead {
     buf: String,
-    /// 한글 **직접 조합기**(두벌식 · IME 탈피 — [`crate::hangul`]). 자모는 여기서 조합되고
+    /// 한글 **직접 조합기**(두벌식 · IME 탈피 — [`nexa_ctl::hangul`]). 자모는 여기서 조합되고
     /// 완성 글자만 `buf`로 넘어간다. 타임아웃/ESC 리셋이 결정적이다.
-    composer: crate::hangul::Composer,
+    composer: nexa_ctl::hangul::Composer,
     /// IME 조합 중 텍스트(확정 전 · 실시간 매칭용). 확정(`push`)·소거 시 비운다.
     preedit: String,
     /// 타임아웃 초기화 시점의 **묵은 조합 텍스트**. macOS IME 세션(marked text)은 앱이 강제로
@@ -39,7 +39,7 @@ impl TypeAhead {
     pub fn new(timeout_ms: u64) -> Self {
         TypeAhead {
             buf: String::new(),
-            composer: crate::hangul::Composer::new(),
+            composer: nexa_ctl::hangul::Composer::new(),
             preedit: String::new(),
             stale: String::new(),
             last_ms: 0,

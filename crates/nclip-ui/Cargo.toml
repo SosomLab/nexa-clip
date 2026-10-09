@@ -13,5 +13,5 @@ workspace = true
 
 [dependencies]
 nclip-core.workspace = true
-nclip-ctl.workspace = true
-nclip-gfx.workspace = true
+nexa-ctl.workspace = true
+nexa-gfx.workspace = true

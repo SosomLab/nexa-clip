@@ -40,9 +40,9 @@ nbeep-gfx.workspace = true      # ← 의존은 이것 하나뿐
 
 | 원본 | LOC | 우리 이름 | 비고 |
 |---|---:|---|---|
-| `nbeep-gfx`(`surface`·`text`) | 579 | `nclip-gfx` | CPU 래스터라이저 · 텍스트 스택 |
-| `nbeep-ctl` **전체** | **11,214** | `nclip-ctl`(기반) | ★ 아래 [§2-2](#2-2--이미-있는-컨트롤이-우리-화면을-거의-덮는다) |
-| `nexa-conf` | 545 | `nexa-conf` **이름 그대로** | 설정 직렬화·영속(ADR-0011) |
+| `nbeep-gfx`(`surface`·`text`) | 579 | `nclip-gfx` → ★ 10-10 nexa-ui `nexa-gfx`(DR-47) | CPU 래스터라이저 · 텍스트 스택 |
+| `nbeep-ctl` **전체** | **11,214** | `nclip-ctl`(기반) → ★ 10-10 nexa-ui `nexa-ctl`(DR-47) | ★ 아래 [§2-2](#2-2--이미-있는-컨트롤이-우리-화면을-거의-덮는다) |
+| `nexa-conf` | 545 | `nexa-conf` **이름 그대로** → ★ 10-10 nexa-ui `nexa-conf`(사본 삭제 · DR-47) | 설정 직렬화·영속(ADR-0011) |
 
 ### 2-2. ★ 이미 있는 컨트롤이 우리 화면을 거의 덮는다
 
@@ -165,7 +165,9 @@ nbeep-gfx.workspace = true      # ← 의존은 이것 하나뿐
 
 ---
 
-## 5. 결합 방식 — ★ **포크(흡수)로 확정** (사용자 결정 2026-08-26)
+## 5. 결합 방식 — ★ **포크(흡수)로 확정** (사용자 결정 2026-08-26) → ★ **10-10 정정: nexa-ui path 의존**([DR-47](10-decision-record.md))
+
+> ★ **10-10 정정** — 포크 사본 `nclip-gfx`·`nclip-ctl`·`nexa-conf`는 **삭제**하고 형제 저장소 nexa-ui(`nexa-gfx` · `nexa-ctl` · `nexa-conf` · `nexa-font`)를 path로 쓴다(DR-47). 아래 §5 본문은 08-26 결정 기록으로 남긴다.
 
 ### 5-1. 무엇을 택했나
 

@@ -42,16 +42,16 @@ use nclip_core::{
     current_lang, tr, ClipboardWatch as _, Msg, PasteAs, PasteCapability, PasteInjector as _,
     WatchCapability,
 };
-use nclip_ctl::ViewMode;
 use nclip_plat::paste::{spike_steal_focus, PlatformPaste};
 use nclip_plat::watch::PlatformWatch;
+use nexa_ctl::ViewMode;
 
 fn main() {
     // 터미널에서 부르면 그 콘솔에 출력(windows 서브시스템 보완 · 09-03).
     nclip_plat::console::attach_parent();
     // ★ 이식 컨트롤(우클릭 편집 메뉴)의 라벨을 앱 i18n에 잇는다(미주입 기본 = 영어).
-    nclip_ctl::controls::set_ctl_labels(|m| {
-        use nclip_ctl::controls::CtlMsg as C;
+    nexa_ctl::controls::set_ctl_labels(|m| {
+        use nexa_ctl::controls::CtlMsg as C;
         let lang = current_lang();
         match m {
             C::CtxSelectAll => tr(lang, Msg::CtxSelectAll),

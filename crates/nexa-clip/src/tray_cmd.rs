@@ -478,7 +478,7 @@ fn to_history(it: StoredItem) -> HistoryItem {
 struct Shell {
     app: App,
     /// ★ 렌더 공용 폰트(09-03 — "이미지로 복사"가 창 없이도 그린다).
-    font: nclip_gfx::Font,
+    font: nexa_gfx::Font,
     popup: Popup,
     /// ★ S2 메인창(T-18b0) — 항목 관리(핀·삭제·검색·복사). 트레이 좌클릭/"열기"의 목적지.
     main: MainWin,
@@ -772,7 +772,7 @@ impl Shell {
                 if let Some((tw, th, px)) = it.thumb.take() {
                     self.thumbs.borrow_mut().insert(
                         id,
-                        nclip_ctl::theme::IconImage::from_rgba(tw, th, px),
+                        nexa_ctl::theme::IconImage::from_rgba(tw, th, px),
                         pinned,
                     );
                 }
@@ -1066,7 +1066,7 @@ impl Shell {
             };
             let pinned = it.pinned;
             if let Some((w, h, px)) = &it.thumb {
-                let img = nclip_ctl::theme::IconImage::from_rgba(*w, *h, px.clone());
+                let img = nexa_ctl::theme::IconImage::from_rgba(*w, *h, px.clone());
                 self.thumbs.borrow_mut().insert(id, img, pinned);
                 self.main.redraw_now();
                 self.popup.redraw_now();
@@ -1407,7 +1407,7 @@ impl Shell {
             let sizes: Vec<(u32, u32)> = imgs.iter().map(|(_, im)| (im.w, im.h)).collect();
             let rects = nclip_core::richtext::onlyoffice_shape_rects(reps);
             if let Some(at) = crate::render_img::place_shapes(&sizes, &rects) {
-                let items: Vec<((i32, i32), &nclip_ctl::theme::IconImage)> =
+                let items: Vec<((i32, i32), &nexa_ctl::theme::IconImage)> =
                     at.into_iter().zip(imgs.iter().map(|(_, im)| im)).collect();
                 if let Some(out) = crate::render_img::compose_at(&items) {
                     return Some(out);
@@ -2492,7 +2492,7 @@ impl ApplicationHandler<ShellEvent> for Shell {
                 let pinned = self.history.get_by_id(id).is_some_and(|it| it.pinned);
                 self.thumbs.borrow_mut().insert(
                     id,
-                    nclip_ctl::theme::IconImage::from_rgba(w, h, rgba),
+                    nexa_ctl::theme::IconImage::from_rgba(w, h, rgba),
                     pinned,
                 );
                 self.main.redraw_now();

@@ -18,15 +18,15 @@
 
 use nclip_core::history::History;
 use nclip_core::{current_lang, tr, ClipKind, Msg, PasteAs};
-use nclip_ctl::controls::{Control as _, ScrollBars, TextBox};
-use nclip_ctl::draw::{DrawCtx, FontSlot};
-use nclip_ctl::event::{InputEvent as CtlEvent, Key as CtlKey};
-use nclip_ctl::geom::Rect;
-use nclip_ctl::raster::RasterCtx;
-use nclip_ctl::theme::Theme;
-use nclip_ctl::widget::{Invalidations, Widget as _};
-use nclip_ctl::ViewMode;
-use nclip_gfx::{Font, Surface};
+use nexa_ctl::controls::{Control as _, ScrollBars, TextBox};
+use nexa_ctl::draw::{DrawCtx, FontSlot};
+use nexa_ctl::event::{InputEvent as CtlEvent, Key as CtlKey};
+use nexa_ctl::geom::Rect;
+use nexa_ctl::raster::RasterCtx;
+use nexa_ctl::theme::Theme;
+use nexa_ctl::widget::{Invalidations, Widget as _};
+use nexa_ctl::ViewMode;
+use nexa_gfx::{Font, Surface};
 
 use std::num::NonZeroU32;
 use std::rc::Rc;
@@ -118,7 +118,7 @@ pub(crate) struct Popup {
     ///   정식 편집기: 캐럿·드래그 선택·×지우기·우클릭 편집 메뉴·IME preedit.
     search: TextBox,
     /// ★ 검색 방식 드롭다운(09-04) — 메인과 동일.
-    mode_drop: nclip_ctl::controls::IconDropdown,
+    mode_drop: nexa_ctl::controls::IconDropdown,
     /// 캐럿 깜박임 위상(셸이 500ms마다 돌린다).
     caret_phase: bool,
     /// 필터 통과 행(최신이 위).
@@ -189,8 +189,8 @@ pub(crate) struct Popup {
     /// ★ 검색 방식(09-04 · 설정 `find.mode`).
     search_mode: nclip_core::search::Mode,
     /// ★ 행 hover 페이드(09-04 사용자 — 메인과 동일): 의도 코얼레싱(70ms · 휠 안정 120ms) + 상태 레이어 6%.
-    row_fade: nclip_ctl::tokens::HoverFade,
-    row_intent: nclip_ctl::tokens::HoverIntent<usize>,
+    row_fade: nexa_ctl::tokens::HoverFade,
+    row_intent: nexa_ctl::tokens::HoverIntent<usize>,
 }
 
 /// 열림 직후 문자 입력 유예 — 단축키(Ctrl+Shift+V)를 누른 손이 떨어지기 전의
@@ -372,8 +372,8 @@ impl Popup {
             cursor: (0, 0),
             search_mode: nclip_core::search::Mode::Fuzzy,
             search_idx: None,
-            row_fade: nclip_ctl::tokens::HoverFade::default(),
-            row_intent: nclip_ctl::tokens::HoverIntent::default(),
+            row_fade: nexa_ctl::tokens::HoverFade::default(),
+            row_intent: nexa_ctl::tokens::HoverIntent::default(),
         }
     }
 
@@ -520,11 +520,11 @@ impl Popup {
     }
 
     /// 목록 사각형(검색바 아래 · 힌트 줄 위).
-    fn list_vp(&self) -> Option<nclip_ctl::geom::Rect> {
+    fn list_vp(&self) -> Option<nexa_ctl::geom::Rect> {
         let win = self.window.as_ref()?;
         let sz = win.inner_size();
         let px = |v: f32| (v * self.scale).round() as i32;
-        Some(nclip_ctl::geom::Rect::new(
+        Some(nexa_ctl::geom::Rect::new(
             0,
             px(38.0),
             sz.width as i32,
@@ -701,8 +701,10 @@ impl Popup {
         let mut inv = Invalidations::default();
         self.search.on_event(ev, &mut inv);
         if let Some(act) = self.search.take_edit_ctx() {
-            use nclip_ctl::controls::EditCtxAction as A;
+            use nexa_ctl::controls::EditCtxAction as A;
             match act {
+                // nexa-ctl 10-10: 호스트 추가 메뉴 항목(`set_menu_extras`)은 clip이 쓰지 않는다.
+                A::Custom(_) => {}
                 A::Copy => {
                     if let Some(t) = self.search.copy_selection() {
                         crate::cliptext::set_text(&t);
@@ -975,7 +977,7 @@ impl Popup {
             let inside = matches!(
                 ev,
                 CtlEvent::MouseDown { x, y, .. }
-                    if self.mode_drop.bounds().contains(nclip_ctl::geom::Point { x, y })
+                    if self.mode_drop.bounds().contains(nexa_ctl::geom::Point { x, y })
             );
             if was_open || inside {
                 let mut inv = Invalidations::default();
@@ -1133,7 +1135,7 @@ impl Popup {
                     && self
                         .search
                         .bounds()
-                        .contains(nclip_ctl::geom::Point { x, y })
+                        .contains(nexa_ctl::geom::Point { x, y })
                 {
                     self.search
                         .set_clipboard_has_text(crate::cliptext::has_text());
@@ -1171,7 +1173,7 @@ impl Popup {
                     if self
                         .search
                         .bounds()
-                        .contains(nclip_ctl::geom::Point { x, y })
+                        .contains(nexa_ctl::geom::Point { x, y })
                     {
                         if self.feed_search(&CtlEvent::MouseDown {
                             x,
@@ -1509,7 +1511,7 @@ impl Popup {
         {
             let mut gfx = Surface::new(&mut buf, size.width as usize, size.height as usize);
             // ★ 배율은 레이아웃과 같은 값(08-27 macOS 회귀의 교훈).
-            let mut fonts = nclip_ctl::raster::FontSet::single(&self.font);
+            let mut fonts = nexa_ctl::raster::FontSet::single(&self.font);
             fonts.mono = self.font_mono.as_ref();
             let mut dc = RasterCtx::with_font_set(&mut gfx, fonts, self.scale)
                 .with_caret_on(self.caret_phase);
@@ -1532,7 +1534,7 @@ impl Popup {
                 &self.row_fade,
             );
             let total = *self.row_offs.last().unwrap_or(&0);
-            let vp = nclip_ctl::geom::Rect::new(0, px(38.0), iw, (ih - footer_h - px(38.0)).max(1));
+            let vp = nexa_ctl::geom::Rect::new(0, px(38.0), iw, (ih - footer_h - px(38.0)).max(1));
             self.bars.paint(
                 &mut dc,
                 &self.theme,
@@ -1554,7 +1556,7 @@ impl Popup {
 fn thumb_for(
     thumbs: Option<&crate::thumbs::Thumbs>,
     row: &Row,
-) -> Option<std::rc::Rc<nclip_ctl::theme::IconImage>> {
+) -> Option<std::rc::Rc<nexa_ctl::theme::IconImage>> {
     row.thumb_dims?;
     let mut c = thumbs?.borrow_mut();
     c.get(row.id).or_else(|| {
@@ -1571,7 +1573,7 @@ fn draw(
     s: f32,
     th: Theme,
     search: &TextBox,
-    mode_drop: &nclip_ctl::controls::IconDropdown,
+    mode_drop: &nexa_ctl::controls::IconDropdown,
     rows: &[Row],
     sel: usize,
     scroll: i32,
@@ -1580,7 +1582,7 @@ fn draw(
     marked: &[u64],
     km: &crate::keys::Keymap,
     thumbs: Option<&crate::thumbs::Thumbs>,
-    row_fade: &nclip_ctl::tokens::HoverFade,
+    row_fade: &nexa_ctl::tokens::HoverFade,
 ) {
     let px = |v: f32| (v * s).round() as i32;
     let full = Rect::new(0, 0, w, h);
@@ -1672,7 +1674,7 @@ fn draw(
                 dc.fill_round_rect(
                     Rect::new(dot_x, dot_y, px(5.0), px(5.0)),
                     px(2.5),
-                    nclip_ctl::theme::Color::from_rgb(46, 204, 64),
+                    nexa_ctl::theme::Color::from_rgb(46, 204, 64),
                 );
             }
         }
@@ -1826,7 +1828,7 @@ fn draw(
                                             Rect::new(cx0 + xoff, ly, sw, px(22.0)),
                                             content_clip,
                                         ),
-                                        nclip_ctl::theme::Color::from_rgb(b[0], b[1], b[2]),
+                                        nexa_ctl::theme::Color::from_rgb(b[0], b[1], b[2]),
                                     );
                                 }
                                 dc.text(cx0 + xoff, ly, content_clip, seg, col);

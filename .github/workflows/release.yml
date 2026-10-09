@@ -99,12 +99,28 @@ jobs:
       VERSION: ${{ needs.meta.outputs.version }}
       TARGET: ${{ matrix.target }}
       SLUG: ${{ matrix.slug }}
+    # ★ nexa-ui·nexa-license = 형제 저장소 path 의존(10-10 · DR-47) — 형제 경로로 체크아웃하고 이 저장소 안에서 돈다
+    #   (아래 run 단계의 상대 경로는 전부 nexa-clip/ 기준 · upload-artifact의 path만 작업 공간 기준이라 접두를 붙인다).
+    defaults:
+      run:
+        working-directory: nexa-clip
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: nexa-clip
+      - uses: actions/checkout@v4
+        with:
+          repository: SosomLab/nexa-ui
+          path: nexa-ui
+      - uses: actions/checkout@v4
+        with:
+          repository: SosomLab/nexa-license
+          path: nexa-license
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
           key: release-${{ matrix.target }}
+          workspaces: nexa-clip
 
       - name: 타깃 추가
         run: rustup target add ${{ matrix.target }}
@@ -314,7 +330,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: dist-${{ matrix.slug }}
-          path: out/*
+          path: nexa-clip/out/*
           if-no-files-found: error
 
   # ── 릴리스 게시 ───────────────────────────────────────────────────

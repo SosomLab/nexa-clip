@@ -37,7 +37,7 @@
 | **T-12** | P0 | 소 | 워크스페이스 `Cargo.toml` + 크레이트 골격 · CI(3타깃) | T-9 | ✅ |
 | **T-12b** | **P0** | 소 | ★ `nclip-gfx`·`nclip-ctl` **포크 흡수**(beep @ `7118252` 유래 · DR-17) | T-12 | ✅ |
 | **T-12b2** | **P0** | 중 | **창 + 렌더 데모** — S1 팝업 레이아웃·보기 3모드·테마 | T-12b | ✅ (⏳ 눈 확인 [21 §2-6](21-manual-test.md)) |
-| **T-12b3** | P1 | 소 | `FontSlot` 변형이 beep 도메인이다(`PeerList`·`Message`) → clip 용어로 정리. ⚠️ `settings.rs` 이식 후에 하는 게 안전 | T-12d | ☐ |
+| **T-12b3** | P1 | 소 | `FontSlot` 변형이 beep 도메인이다(`PeerList`·`Message`) → clip 용어로 정리. ⚠️ `settings.rs` 이식 후에 하는 게 안전 | T-12d | ➡ **nexa-ui 몫으로 이관**(10-10 DR-47 — `FontSlot`은 이제 nexa-ui `nexa-ctl` 소유 · clip은 사본 없음) |
 | **T-12c** | **P0** | 소 | `nclip-core` i18n 동형 배치(DR-16) · 항목/표현 모델 · 포트 | T-12b | ✅ |
 | **T-12d** | **P0** | 중 | ★ 설정 화면 이식 + `registry()` 교체 — 프레임워크 2,000줄 · 21항목 | T-12c | ✅ |
 | **T-12d2** | **P0** | 중 | 설정 화면을 **창에 띄우기** + ★ **스플리터**(하이라이트·커서·드래그) | T-12d, T-12b2 | ✅ (⏳ 눈 확인 [21 §2-7](21-manual-test.md)) |

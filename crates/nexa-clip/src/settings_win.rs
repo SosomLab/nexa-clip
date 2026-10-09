@@ -16,14 +16,14 @@
 //! | ★ **스플리터** | 사이드바 경계에 커서를 두면 **서서히 밝아지고** 좌우 리사이즈 커서 · 드래그로 조절 |
 //! | ★ **영속**(T-12c2) | 값을 바꾸고 창을 닫았다 다시 열면 **그대로 있다**([`crate::conf`]) |
 
-use nclip_ctl::draw::DrawCtx;
-use nclip_ctl::event::{InputEvent, Key as CtlKey, WHEEL_DELTA};
-use nclip_ctl::geom::Rect;
-use nclip_ctl::raster::RasterCtx;
-use nclip_ctl::theme::Theme;
-use nclip_ctl::widget::{Invalidations, Widget};
-use nclip_gfx::{Font, Surface};
 use nclip_ui::SettingsWidget;
+use nexa_ctl::draw::DrawCtx;
+use nexa_ctl::event::{InputEvent, Key as CtlKey, WHEEL_DELTA};
+use nexa_ctl::geom::Rect;
+use nexa_ctl::raster::RasterCtx;
+use nexa_ctl::theme::Theme;
+use nexa_ctl::widget::{Invalidations, Widget};
+use nexa_gfx::{Font, Surface};
 
 use crate::conf::Settings;
 
@@ -31,8 +31,8 @@ use std::num::NonZeroU32;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use nclip_ctl::draw::FontSlot;
-use nclip_ctl::Control as _;
+use nexa_ctl::draw::FontSlot;
+use nexa_ctl::Control as _;
 
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, MouseScrollDelta, WindowEvent};
@@ -101,9 +101,9 @@ struct HotkeyCapture {
     combo: Option<nclip_core::hotkey::Hotkey>,
     /// 규칙에 어긋난 조합을 눌렀다 — 안내 문구(전역/창 안 규칙이 다르다).
     need_mod: bool,
-    remove: nclip_ctl::controls::Button,
-    ok: nclip_ctl::controls::Button,
-    cancel: nclip_ctl::controls::Button,
+    remove: nexa_ctl::controls::Button,
+    ok: nexa_ctl::controls::Button,
+    cancel: nexa_ctl::controls::Button,
 }
 
 impl App {
@@ -196,7 +196,7 @@ impl App {
             self.widget.set_row_note("hist.clear", "", &mut inv);
             self.widget.set_action_tone(
                 "hist.clear",
-                nclip_ctl::controls::ButtonTone::Default,
+                nexa_ctl::controls::ButtonTone::Default,
                 &mut inv,
             );
             self.redraw();
@@ -226,7 +226,7 @@ impl App {
     /// ★ 캡처 오버레이 열기(09-04).
     fn begin_capture(&mut self, key: &'static str) {
         let lang = nclip_core::current_lang();
-        use nclip_ctl::controls::{Button, ButtonTone};
+        use nexa_ctl::controls::{Button, ButtonTone};
         let mk = |m: nclip_core::Msg, tone: ButtonTone| {
             let mut b = Button::new(nclip_core::tr(lang, m)).with_tone(tone);
             b.set_scale(self.scale);
@@ -394,7 +394,7 @@ fn paint_capture(
         let px = |v: f32| (v * scale).round() as i32;
         dc.fill_rect_alpha(
             Rect::new(0, 0, w, h),
-            nclip_ctl::theme::Color::from_rgb(0, 0, 0),
+            nexa_ctl::theme::Color::from_rgb(0, 0, 0),
             0.35,
         );
         dc.fill_round_rect(panel, px(8.0), th.window_bg);
@@ -1040,8 +1040,10 @@ impl App {
     ///   클립보드 접근은 호스트 몫(main_win `drain_search_edit_ctx`와 같은 경로).
     fn drain_edit_ctx(&mut self, inv: &mut Invalidations) {
         if let Some(act) = self.widget.take_edit_ctx() {
-            use nclip_ctl::controls::EditCtxAction as A;
+            use nexa_ctl::controls::EditCtxAction as A;
             match act {
+                // nexa-ctl 10-10: 호스트 추가 메뉴 항목(`set_menu_extras`)은 clip이 쓰지 않는다.
+                A::Custom(_) => {}
                 A::Copy => {
                     if let Some(t) = self.widget.clipboard_copy() {
                         crate::cliptext::set_text(&t);
@@ -1058,7 +1060,7 @@ impl App {
                     }
                 }
             }
-            inv.push(nclip_ctl::geom::Rect::new(0, 0, 1, 1)); // 다시 그리기 보장
+            inv.push(nexa_ctl::geom::Rect::new(0, 0, 1, 1)); // 다시 그리기 보장
         }
     }
 
@@ -1253,9 +1255,9 @@ impl App {
                 self.widget.set_action_tone(
                     "hist.clear",
                     if armed {
-                        nclip_ctl::controls::ButtonTone::Default
+                        nexa_ctl::controls::ButtonTone::Default
                     } else {
-                        nclip_ctl::controls::ButtonTone::Danger
+                        nexa_ctl::controls::ButtonTone::Danger
                     },
                     &mut inv,
                 );
@@ -1602,7 +1604,9 @@ pub(crate) fn run() {
     let conf = Settings::load();
     println!(
         "폰트: {} · 설정 항목 {}개",
-        nclip_plat::font::system_ui_font_name().unwrap_or("(이름 미상)"),
+        nexa_font::system_ui_font()
+            .map(|f| f.name)
+            .unwrap_or("(이름 미상)"),
         nclip_ui::registry().len()
     );
     println!("설정 파일: {}", conf.path().display());

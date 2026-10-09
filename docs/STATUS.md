@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-10-10 (1차 · win) — ★ P1-c′ nexa-ui 의존 전환(브랜치 `feat/nexa-ui` · 미커밋)
+
+**바꾼 것**(개발 세션): 사본 `nclip-gfx`·`nclip-ctl`·`nexa-conf` 삭제 → `../nexa-ui` path 의존(nexa-gfx · nexa-ctl · nexa-conf · nexa-font) · `nclip-plat/font.rs` → nexa_font · `memmap2` 제거 · hangul → `nexa_ctl::hangul` · ★ 설정 MouseUp을 잠긴 행 빼고 전 컨트롤에 · CI 형제 체크아웃 · [DR-47](10-decision-record.md)(DR-17 정정).
+**검증**(협업 세션 · V2): rustc 1.99.0(`rustup update stable` = unchanged) · fmt ✓ · clippy `--workspace --all-targets -D warnings` ✓ · test **367 통과 / 실패 0 / 무시 3**(종전 578 − 삭제 크레이트 몫 211) · `scripts/check-3os.sh` ✓(호스트 · x86_64-apple-darwin · x86_64-unknown-linux-gnu) · Release `nexa-clip.exe` **2,112,000 B(2.01MB)**(≤ 10MB ✓ · 종전 10-04 0.1.6 Release 1,848,832 B) · `nclip-imgdec.exe` 513,024 B · Debug PID 4592 · 유휴 WS **19.3MB** / Private 4.6MB(DR-42 ④ ≤ 40MB ✓(Debug 빌드 · 기동 27초 · Peak 26.9MB)) · 글꼴 폴백 줄 = **종전과 다름** — 10-10 `Segoe UI Symbol → Segoe MDL2 Assets → Segoe Fluent Icons → Segoe UI Emoji → seguisym → seguiemj → arialuni → JetBrainsMono Nerd Font`(커버 ✓·🎉 true) vs 10-04 `Segoe UI Symbol → Segoe UI Emoji → JetBrainsMono Nerd Font` — nexa-font의 기호 폴백 후보가 늘어난 것으로 보임(판정 = 개발 세션).
+**☐ 남은 것**: 사용자 실기 ①(설정 Switch·Combo 클릭) · nexa-ui `feat/bitmap-glyph` push(사용자 · 그 전엔 clip CI 빨강) · nexa-license clip 분기 커밋(사용자) · P2′ 설정 카드(진행 중) → P3′ → P4′ → P5′. → [journal](journal/2026-10-10.md)
+
+---
+
 ## 2026-10-05 (26차 · linux) — ★ v0.1.9 릴리스 · .rpm · pkg.sosomlab.com dnf 저장소 첫 발행 ✓
 
 **릴리스**: 태그 `v0.1.9`(`274273f`) · release `37264209908` ✅ · 자산 15(`.rpm` 추가 · `nexa-clip 0.1.9-1 x86_64` · 의존 glibc 계열) · brew 0.1.9 ✓.
