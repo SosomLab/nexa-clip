@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-10-10 (5차 · win) — push · CI 빨강(Ubuntu 시험 언어 경합) → 수정 · 설정 [닫기]·시스템 라벨
+
+**CI**: `34890a4` run `37960530868` ✗(ubuntu 시험 2건 · 전역 언어 경합 · windows·macos ✓) → `f8a4ff4` 시험 직렬화(`lang_test_lock`) + 실기 2건(설정 [닫기]·Esc 무반응 · 테마/언어 "시스템 (현재값)" 표기) · push 전 check-3os ✓ · push `f8a4ff4` · CI run **`37961839033`** ✅(macos · ubuntu · windows — 형제 체크아웃 포함 첫 녹색).
+**☐ 실기**: [21 §15](21-manual-test.md) P2-9 · P2-10. → [journal](journal/2026-10-10.md)
+
+---
+
 ## 2026-10-10 (종합 · win) — ★ nexa-ui 전환 · 설정 카드 · 라이선스 · 파일 대화상자 · Debug 제목 (브랜치 `feat/nexa-ui` 5커밋 → main)
 
 **커밋 5**: `566c541` P1-c′ nexa-ui 의존 전환(사본 nclip-gfx·nclip-ctl·nexa-conf 삭제 → `../nexa-ui` path · [DR-47](10-decision-record.md)) · `c240402` P2′ 설정 카드(그룹 트리 · 고급 9키 · 종속 잠금 9쌍 · 카드 · 자모 검색 · `app.lang = system` · [14 §7](14-settings-registry.md)) · `f224b05` P3′·P4′ 파일 대화상자(nexa-dlg) + 라이선스(`nclip-license` · `--license` CLI) · `9fe5d52` Debug 창 제목 "(Debug)" · `fa37a03` 4차 문서·[21 §15](21-manual-test.md).
