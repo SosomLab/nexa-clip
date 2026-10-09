@@ -573,6 +573,13 @@ ls -la target/release/nexa-clip* target/release/nclip-imgdec*      # 크기 게�
 elease
 exa-clip.exe -ArgumentList tray
 
+# ── 라이선스 CLI(10-10 · DR-47 ⑦ · nclip-license) — 데이터 폴더 기준(포터블 = exe 옆 data/license → 기기 공용은 읽기만)
+./target/release/nexa-clip --license status                       # 상태(Free/Trial/Pro/Org · ID · 파일 · 기기 코드)
+./target/release/nexa-clip --license path                         # 라이선스 파일을 찾는 폴더들
+./target/release/nexa-clip --license request "이름" "메일@주소"     # 요청 코드 한 줄(NEXAREQ1.…) — 발급 담당에게 보낸다
+./target/release/nexa-clip --license install <파일.license>        # 검증 통과만 설치(실패 = 종료 1)
+./target/release/nexa-clip --license remove                       # 설치한 라이선스 제거
+
 # ── 디버그 빌드 재시작(개발 반복) — Linux는 scripts/dev-restart.sh · Windows는 아래 두 줄
 taskkill //F //IM nexa-clip.exe; cargo build -p nexa-clip && ./target/debug/nexa-clip.exe tray
 

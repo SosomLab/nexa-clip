@@ -29,7 +29,7 @@ pub use capture::{
     PreviewMissing, RepInfo, ThumbInfo,
 };
 pub use diag::{DiagLog, Level, Record};
-pub use i18n::{current_lang, set_lang, tf, tr, Lang, Msg};
+pub use i18n::{current_lang, set_lang, t, tf, tr, Lang, Msg};
 pub use item::{is_plain_format, ClipItem, ClipKind, ItemId, Representation};
 pub use paste::{PasteAs, PasteCapability, PasteError, PasteInjector, PasteUnsupported};
 pub use ports::{

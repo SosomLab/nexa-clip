@@ -10,7 +10,7 @@
 
 - 조직: **SosomLab** · 개발자: Sangyong Bae · kiros33@gmail.com
 - 저장소: <https://github.com/SosomLab/nexa-clip> · 라이선스: **PolyForm Noncommercial 1.0.0**
-- 현 단계: ★ **M2 진행 중 · v0.1.9 배포됨**(10-05 · brew ✓ · pkg.sosomlab.com ✓ APT + RPM(dnf) — 릴리스 공개 → 색인 자동 갱신 · winget 0.1.6 en-US PR #446464·#446465 모더레이터 대기 → 0.1.7~0.1.9 미제출(guard skip) · choco 0.1.5 검수 중 → 0.1.6~0.1.9 미제출) — M1(감시·캡처·암호화 영속·팝업·메인창·설정·트레이·주입 3-OS) 완료 · 동기화(릴레이+LAN 직결·기기 승인·전파) · 리치 렌더 2단(표 격자 · 컬러 이모지 Linux) · 검색(색인·정규식) · 메모리 상주 계층(DR-42) · 배포 파이프라인(brew · winget · choco). ★ Linux 서명 저장소 **pkg.sosomlab.com**(APT · RPM)은 `SosomLab/linux-repo`가 발행한다(릴리스 공개 뒤 `app-released` 신호). 핵심 결정은 **DR-46**(시스템 글꼴 PNG 글리프 예외 · 10-05)까지 확정.
+- 현 단계: ★ **M2 진행 중 · v0.1.9 배포됨**(10-05 · brew ✓ · pkg.sosomlab.com ✓ APT + RPM(dnf) — 릴리스 공개 → 색인 자동 갱신 · winget 0.1.6 en-US PR #446464·#446465 모더레이터 대기 → 0.1.7~0.1.9 미제출(guard skip) · choco 0.1.5 검수 중 → 0.1.6~0.1.9 미제출) — M1(감시·캡처·암호화 영속·팝업·메인창·설정·트레이·주입 3-OS) 완료 · 동기화(릴레이+LAN 직결·기기 승인·전파) · 리치 렌더 2단(표 격자 · 컬러 이모지 Linux) · 검색(색인·정규식) · 메모리 상주 계층(DR-42) · 배포 파이프라인(brew · winget · choco). ★ Linux 서명 저장소 **pkg.sosomlab.com**(APT · RPM)은 `SosomLab/linux-repo`가 발행한다(릴리스 공개 뒤 `app-released` 신호). 핵심 결정은 **DR-47**(공용 UI = nexa-ui 형제 저장소 path 의존 · 10-10)까지 확정. ★ **10-10 feat/nexa-ui(미push)**: nclip-gfx·ctl·conf 사본 삭제 → nexa-ui · 설정 카드 개편(그룹 트리·고급·종속 잠금·자모 검색 · beep P2 동일) · 라이선스(nexa-license 어댑터 · 설정 › 정보 · `--license`) · 파일 선택기(nexa-dlg).
 
 ### 참조 원천 (재발명 금지 — 설계 전 반드시 확인)
 
@@ -19,7 +19,7 @@
 | **`nexa-beep`** | `../nexa-beep` | ★ **기본 틀** — 크레이트 경계 · `plat` 포트 · CPU 래스터라이저(`nbeep-gfx`) · 컨트롤(`nbeep-ctl`) · 클립보드 어댑터(`nbeep-plat/clipboard.rs`) · 트레이 · **릴레이(`nbeep-relay`·`nexa-beepd`)** · 암호화 키 계층(ADR-0005) · 다중 기기 신원(ADR-0007) |
 | **`nexa-dir2`** | `../nexa-dir2` | ★ **컨트롤** — `ctl` 17종 · `nexa-gui`(`draw`·`event`·`geom`·`theme`·`edit`·`typeahead`) · **`grid`/`columns`**(정렬·리사이즈) · 가상화 목록 |
 | **`nexa-ui`** | `../nexa-ui` | ★ **공용 UI 라이브러리(path 의존 · DR-47 · 10-10)** — nexa-gfx(래스터·텍스트·PNG 글리프) · nexa-ctl(컨트롤·hangul) · nexa-conf(설정 영속) · nexa-font(시스템 글꼴) · nexa-dlg(파일 대화상자) — clip 사본(nclip-gfx·nclip-ctl·nexa-conf)은 10-10 삭제 · **고칠 것은 nexa-ui에서** · CONSUMER-CHANGES clip 열 |
-| **`nexa-license`** | `../nexa-license` | 라이선스 검증(path 의존 · ed25519·machine-id·fs) — 앱 어댑터 `nclip-license`(P4) |
+| **`nexa-license`** | `../nexa-license` | 라이선스 검증(path 의존 · ed25519·machine-id·fs · 검증 전용) — 앱 어댑터 `crates/nclip-license`(10-10 · Feature 0 · 비상업 = Free · `--license` CLI · 설정 › 정보 › 라이선스…) |
 
 > ⚠️ **릴레이 서버(`nexa-beepd`)는 clip에 들어 있지 않다** — `nexa-beep` 저장소 `crates/nexa-beepd`에서 **`beepd-v*` 별도 태그**로 배포되는 **별도 실행 파일**이고, 사용자가 **따로 띄워야** 원격 동기화가 된다(공식 `beepd.sosomlab.com:47300` · LAN만 쓰면 None으로 서버 불요). clip은 `nclip-sync/*`에 와이어 사본만 둔다 → [18 §10-2](docs/18-build-and-test.md) · 위키 [릴레이 서버](https://github.com/SosomLab/nexa-clip/wiki/릴레이-서버).
 

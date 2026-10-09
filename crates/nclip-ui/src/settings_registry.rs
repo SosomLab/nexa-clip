@@ -715,6 +715,47 @@ pub(crate) const REGISTRY: &[Entry] = &[
         },
         "about.copy",
     ),
+    // ── ★ 라이선스(10-10 P4 · beep docs/50 D-33-6·7 동일) — 비상업 = 파일 없이 Free · 상태 4행은 호스트가 set_info로 채운다 ──
+    es(
+        Msg::CatAbout,
+        Msg::LicTitle,
+        Msg::LicTitle,
+        Msg::LicHint,
+        SettingKind::Action { verb: Msg::LicMenu },
+        "license.open",
+    ),
+    es(
+        Msg::CatAbout,
+        Msg::LicTitle,
+        Msg::LicInfoState,
+        Msg::LicInfoStateDesc,
+        SettingKind::Info,
+        "license.state",
+    ),
+    es(
+        Msg::CatAbout,
+        Msg::LicTitle,
+        Msg::LicInfoId,
+        Msg::LicInfoIdDesc,
+        SettingKind::Info,
+        "license.id",
+    ),
+    es(
+        Msg::CatAbout,
+        Msg::LicTitle,
+        Msg::LicInfoFile,
+        Msg::LicInfoFileDesc,
+        SettingKind::Info,
+        "license.file",
+    ),
+    es(
+        Msg::CatAbout,
+        Msg::LicTitle,
+        Msg::LicInfoMachine,
+        Msg::LicInfoMachineDesc,
+        SettingKind::Info,
+        "license.machine",
+    ),
 ];
 
 #[cfg(test)]
@@ -762,8 +803,8 @@ mod tests {
     #[test]
     fn every_entry_has_defaults() {
         for e in REGISTRY {
-            // 행위 항목(Action)은 값 키가 없다 — 설계상 기본값 예외(09-03 sync.test).
-            if matches!(e.kind, SettingKind::Action { .. }) {
+            // 행위 항목(Action)·정보 행(Info · 10-10)은 값 키가 없다 — 설계상 기본값 예외(09-03 sync.test).
+            if matches!(e.kind, SettingKind::Action { .. } | SettingKind::Info) {
                 continue;
             }
             assert!(!e.default_values().is_empty(), "기본값 없음: {}", e.key);

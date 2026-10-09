@@ -16,6 +16,8 @@
 //! | ★ **스플리터** | 사이드바 경계에 커서를 두면 **서서히 밝아지고** 좌우 리사이즈 커서 · 드래그로 조절 |
 //! | ★ **영속**(T-12c2) | 값을 바꾸고 창을 닫았다 다시 열면 **그대로 있다**([`crate::conf`]) |
 
+use nclip_ui::license_win::{license_view, state_text, LicAction, LicenseWidget};
+use nclip_ui::picker_win::{new_picker, FilePicker, PickFilter, PickerAction, PickerMode};
 use nclip_ui::SettingsWidget;
 use nexa_ctl::draw::DrawCtx;
 use nexa_ctl::event::{InputEvent, Key as CtlKey, WHEEL_DELTA};
@@ -91,6 +93,12 @@ pub(crate) struct App {
     on_top: bool,
     /// ★ 단축키 캡처 오버레이(09-04 사용자 — 설정 창 안 모달): 대상 키 · 지금까지 누른 조합 · 버튼 셋.
     capture: Option<HotkeyCapture>,
+    /// ★ 라이선스 문맥(10-10 P4 · 프로세스에 하나 · 데이터 폴더/license → 기기 공용).
+    licensing: nclip_license::Licensing,
+    /// ★ 지금 보여 주는 화면(설정 / 라이선스 / 파일 선택기).
+    view: View,
+    /// 이 PC 기기 코드(base32 · 정보 카드 표시용 · 한 번만 계산).
+    machine_code: String,
 }
 
 /// 캡처 오버레이 상태.
@@ -111,7 +119,10 @@ impl App {
         // 연결 상태 노트는 `poll_sync_status`가 첫 틱에 채운다(09-03 — 자동 Test 표시).
         let widget = SettingsWidget::new(&conf.state);
         let theme = crate::conf::current_theme(conf.state.get("ui.theme"));
-        Self {
+        let licensing = nclip_license::Licensing::open_default(&crate::conf::data_dir());
+        let machine_code =
+            nclip_license::Licensing::machine_code().unwrap_or_else(|| "-".to_string());
+        let mut app = Self {
             window: None,
             ctx: None,
             surface: None,
@@ -139,7 +150,12 @@ impl App {
             anchor: None,
             on_top: false,
             capture: None,
-        }
+            licensing,
+            view: View::Settings,
+            machine_code,
+        };
+        app.refresh_license_info();
+        app
     }
 
     /// UI 전역 변경(언어 등) 1회성 수거 — 셸이 트레이/창 라벨을 새 언어로.
@@ -1031,11 +1047,38 @@ impl App {
     }
 
     /// 위젯에 이벤트를 넘기고, **바뀐 값이 있으면 즉시 반영**한다(설정에 저장 버튼이 없는 이유).
+    /// 보기(10-10 P3·P4)에 따라 설정 위젯 · 라이선스 화면 · 파일 선택기 중 하나가 받는다.
     fn feed(&mut self, ev: InputEvent) {
         let mut inv = Invalidations::default();
-        self.widget.on_event(&ev, &mut inv);
-        self.drain_edit_ctx(&mut inv);
-        self.drain_changes();
+        let mut lic_action = None;
+        let mut pick_action = None;
+        match &mut self.view {
+            View::Settings => {
+                self.widget.on_event(&ev, &mut inv);
+                self.drain_edit_ctx(&mut inv);
+                self.drain_changes();
+            }
+            View::License(lw) => {
+                lw.on_event(&ev, &mut inv);
+                lic_action = lw.take_action();
+            }
+            View::Picker(fp) => {
+                fp.on_event(&ev, &mut inv);
+                let a = fp.take_action();
+                if !matches!(a, PickerAction::None) {
+                    pick_action = Some(a);
+                }
+            }
+        }
+        if matches!(self.view, View::License(_)) {
+            self.license_edit_ctx(&mut inv);
+        }
+        if let Some(a) = lic_action {
+            self.license_action(a);
+        }
+        if let Some(a) = pick_action {
+            self.picker_action(a);
+        }
         if !inv.is_empty() {
             self.redraw();
         }
@@ -1099,6 +1142,11 @@ impl App {
                 self.begin_capture(key);
                 continue;
             }
+            // ★ 라이선스 화면(10-10 P4 · 정보 › [라이선스…]).
+            if key == "license.open" && val == "run" {
+                self.open_license(None);
+                continue;
+            }
             // ★ 설정 파일 열기(10-10 P2 · 하단 [설정 파일 열기…]) — OS 기본 프로그램으로.
             if key == "settings.open_file" && val == "run" {
                 let path = self.conf.path().to_path_buf();
@@ -1142,6 +1190,7 @@ impl App {
                 self.widget.set_scale(self.scale, &mut inv2);
                 self.laid_out = (0, 0);
                 self.ui_refresh = true;
+                self.refresh_license_info();
                 self.redraw();
             }
             // ★ 자동 시작은 값만 저장하면 아무 일도 안 일어난다 — **OS 등록까지 즉시**.
@@ -1355,7 +1404,12 @@ impl App {
         let (iw, ih) = (size.width as i32, size.height as i32);
         if self.laid_out != (iw, ih) {
             let mut inv = Invalidations::default();
-            self.widget.set_bounds(Rect::new(0, 0, iw, ih), &mut inv);
+            let full = Rect::new(0, 0, iw, ih);
+            match &mut self.view {
+                View::Settings => self.widget.set_bounds(full, &mut inv),
+                View::License(lw) => lw.set_bounds(full, &mut inv),
+                View::Picker(fp) => fp.set_bounds(full, &mut inv),
+            }
             self.laid_out = (iw, ih);
         }
         let Ok(mut buf) = surface.buffer_mut() else {
@@ -1367,12 +1421,235 @@ impl App {
             //   글자만 작아진다(08-27 macOS 회귀).
             RasterCtx::new(&mut gfx, &self.font, self.scale);
             dc.fill_rect(Rect::new(0, 0, iw, ih), self.theme.window_bg);
-            self.widget.paint(&mut dc, &self.theme);
-            if let Some(c) = self.capture.as_mut() {
-                paint_capture(c, &mut dc, iw, ih, &self.theme, self.scale);
+            match &self.view {
+                View::Settings => {
+                    self.widget.paint(&mut dc, &self.theme);
+                    if let Some(c) = self.capture.as_mut() {
+                        paint_capture(c, &mut dc, iw, ih, &self.theme, self.scale);
+                    }
+                }
+                View::License(lw) => lw.paint(&mut dc, &self.theme),
+                View::Picker(fp) => fp.paint(&mut dc, &self.theme),
             }
         }
         let _ = buf.present();
+    }
+}
+
+/// 설정 창이 지금 보여 주는 화면(10-10 P3·P4) — clip 설정 창은 창 하나에 위젯 하나를 띄우는 호스트라
+/// beep의 별도 `Role` 창 대신 **같은 창 안에서 보기를 바꾼다**: 설정 → 라이선스(정보 › 라이선스…) → 파일 선택기(라이선스 파일 열기…).
+/// 닫기(Esc · \[닫기\] · 취소)는 한 단계 뒤로.
+enum View {
+    Settings,
+    License(Box<LicenseWidget>),
+    Picker(Box<FilePicker>),
+}
+
+impl core::fmt::Debug for View {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(match self {
+            View::Settings => "Settings",
+            View::License(_) => "License",
+            View::Picker(_) => "Picker",
+        })
+    }
+}
+
+impl App {
+    /// 설정 › 정보 › 라이선스 정보 카드 4행(상태 · ID · 파일 · 기기 코드) — 열 때 · 라이선스 화면에서 돌아올 때 · 언어 변경 뒤.
+    fn refresh_license_info(&mut self) {
+        let st = self.licensing.state();
+        let (state, _) = state_text(st);
+        let id = st
+            .license()
+            .map_or_else(|| "-".to_string(), |l| l.id.clone());
+        let file = self
+            .licensing
+            .path()
+            .map_or_else(|| "-".to_string(), |p| p.display().to_string());
+        let mc = self.machine_code.clone();
+        let mut inv = Invalidations::default();
+        self.widget.set_info("license.state", &state, &mut inv);
+        self.widget.set_info("license.id", &id, &mut inv);
+        self.widget.set_info("license.file", &file, &mut inv);
+        self.widget.set_info("license.machine", &mc, &mut inv);
+        if !inv.is_empty() {
+            self.redraw();
+        }
+    }
+    /// 라이선스 화면 열기(정보 › \[라이선스…\]) — 파일이 바뀌었으면 다시 판정하고 보기를 만든다.
+    fn open_license(&mut self, note: Option<(String, bool)>) {
+        self.licensing.refresh();
+        let mut lw = LicenseWidget::new(license_view(&self.licensing));
+        let mut inv = Invalidations::default();
+        lw.set_scale(self.scale, &mut inv);
+        if let Some((n, warn)) = note {
+            lw.set_note(n, warn, &mut inv);
+        }
+        self.view = View::License(Box::new(lw));
+        self.laid_out = (0, 0);
+        self.redraw();
+    }
+    /// 라이선스 파일 선택기(nexa-dlg · `.license` 필터 · 시작 = 데이터 폴더).
+    fn open_license_picker(&mut self) {
+        let start = crate::conf::data_dir();
+        let mut p = new_picker(
+            PickerMode::Open,
+            Some(&start),
+            PickFilter::License,
+            "",
+            false,
+        );
+        p.set_scale(self.scale);
+        self.view = View::Picker(Box::new(p));
+        self.laid_out = (0, 0);
+        self.redraw();
+    }
+    /// 설정 화면으로 복귀 — 정보 카드도 지금 상태로.
+    fn back_to_settings(&mut self) {
+        self.view = View::Settings;
+        self.laid_out = (0, 0);
+        self.refresh_license_info();
+        self.redraw();
+    }
+    /// 라이선스 화면 행동(beep `license_action` 동일) — 요청 코드 복사 · 연락처 복사 · 파일 열기 · 제거 · 닫기.
+    fn license_action(&mut self, a: LicAction) {
+        use nclip_core::{t, tf, Msg};
+        let mut inv = Invalidations::default();
+        match a {
+            LicAction::CopyRequest { name, email } => {
+                let meta = nclip_license::RequestMeta { name, email };
+                let note = match nclip_license::Licensing::request_code(&meta) {
+                    Some(code) => {
+                        crate::cliptext::set_text(&code);
+                        (t(Msg::LicNoteCopied).to_string(), false)
+                    }
+                    None => (t(Msg::LicNoMachine).to_string(), true),
+                };
+                if let View::License(lw) = &mut self.view {
+                    lw.set_note(note.0, note.1, &mut inv);
+                }
+            }
+            LicAction::CopyContact(s) => {
+                crate::cliptext::set_text(&s);
+                if let View::License(lw) = &mut self.view {
+                    lw.set_note(t(Msg::LicNoteAddrCopied), false, &mut inv);
+                }
+            }
+            LicAction::OpenFile => self.open_license_picker(),
+            LicAction::Remove => {
+                let note = match self.licensing.remove() {
+                    Ok(true) => (t(Msg::LicNoteRemoved).to_string(), false),
+                    Ok(false) => (t(Msg::LicNoteNothing).to_string(), false),
+                    Err(e) => (tf(Msg::LicNoteError, &[&e.to_string()]), true),
+                };
+                if let View::License(lw) = &mut self.view {
+                    lw.set_view(license_view(&self.licensing), &mut inv);
+                    lw.set_note(note.0, note.1, &mut inv);
+                }
+            }
+            LicAction::Close => self.back_to_settings(),
+        }
+        self.redraw();
+    }
+    /// 라이선스 파일 설치(선택기 결과 · CLI와 같은 경로) → 라이선스 화면으로 돌아가 결과 한 줄.
+    fn license_install(&mut self, path: &std::path::Path) {
+        use nclip_core::{tf, Msg};
+        let note = match self.licensing.install(path) {
+            Ok(l) => (tf(Msg::LicNoteInstalled, &[&l.id]), false),
+            Err(nclip_license::InstallError::Rejected(s)) => {
+                (tf(Msg::LicNoteRejected, &[&state_text(&s).0]), true)
+            }
+            Err(e) => (tf(Msg::LicNoteError, &[&e.to_string()]), true),
+        };
+        println!("라이선스: {}", note.0);
+        self.open_license(Some(note));
+    }
+    /// 파일 선택기 결과.
+    fn picker_action(&mut self, a: PickerAction) {
+        match a {
+            PickerAction::None => {}
+            PickerAction::Confirm(p) => self.license_install(&p),
+            PickerAction::ConfirmMany(v) => {
+                if let Some(p) = v.first() {
+                    let p = p.clone();
+                    self.license_install(&p);
+                }
+            }
+            PickerAction::Cancel => self.open_license(None),
+            PickerAction::CopyText(s) => crate::cliptext::set_text(&s),
+        }
+    }
+    /// 보기별 틱(파일 선택기 애니메이션·아이콘 적재).
+    fn view_tick(&mut self, now_ms: u64) -> bool {
+        match &mut self.view {
+            View::Picker(fp) => fp.tick(now_ms),
+            _ => false,
+        }
+    }
+    fn view_clipboard_copy(&self) -> Option<String> {
+        match &self.view {
+            View::Settings => self.widget.clipboard_copy(),
+            View::License(lw) => lw.clipboard_copy(),
+            View::Picker(fp) => fp.focused_textbox_ref()?.copy_selection(),
+        }
+    }
+    fn view_clipboard_cut(&mut self, inv: &mut Invalidations) -> Option<String> {
+        match &mut self.view {
+            View::Settings => self.widget.clipboard_cut(inv),
+            View::License(lw) => lw.clipboard_cut(inv),
+            View::Picker(fp) => fp.focused_textbox()?.cut_selection(inv),
+        }
+    }
+    fn view_clipboard_paste(&mut self, text: &str, inv: &mut Invalidations) {
+        match &mut self.view {
+            View::Settings => self.widget.clipboard_paste(text, inv),
+            View::License(lw) => lw.clipboard_paste(text, inv),
+            View::Picker(fp) => {
+                if let Some(tb) = fp.focused_textbox() {
+                    tb.paste(text, inv);
+                }
+            }
+        }
+    }
+    fn view_set_clipboard_has_text(&mut self, yes: bool) {
+        match &mut self.view {
+            View::Settings => self.widget.set_clipboard_has_text(yes),
+            View::License(lw) => lw.set_clipboard_has_text(yes),
+            View::Picker(fp) => {
+                if let Some(tb) = fp.focused_textbox() {
+                    tb.set_clipboard_has_text(yes);
+                }
+            }
+        }
+    }
+    /// 라이선스 화면의 텍스트 입력 우클릭 메뉴 실행(설정 화면의 `drain_edit_ctx`와 같은 경로).
+    fn license_edit_ctx(&mut self, inv: &mut Invalidations) {
+        let View::License(lw) = &mut self.view else {
+            return;
+        };
+        let Some(act) = lw.take_edit_ctx() else {
+            return;
+        };
+        use nexa_ctl::controls::EditCtxAction as A;
+        match act {
+            A::Custom(_) => {}
+            A::Copy => {
+                if let Some(t) = lw.clipboard_copy() {
+                    crate::cliptext::set_text(&t);
+                }
+            }
+            A::Cut => {
+                if let Some(t) = lw.clipboard_cut(inv) {
+                    crate::cliptext::set_text(&t);
+                }
+            }
+            A::Paste => {
+                if let Some(t) = crate::cliptext::get_text() {
+                    lw.clipboard_paste(t.trim_end_matches('\n'), inv);
+                }
+            }
+        }
     }
 }
 
@@ -1432,6 +1709,11 @@ impl ApplicationHandler for App {
                 self.scale = scale_factor as f32;
                 let mut inv = Invalidations::default();
                 self.widget.set_scale(self.scale, &mut inv);
+                match &mut self.view {
+                    View::License(lw) => lw.set_scale(self.scale, &mut inv),
+                    View::Picker(fp) => fp.set_scale(self.scale),
+                    View::Settings => {}
+                }
                 self.laid_out = (0, 0); // 재배치 강제
                 self.redraw();
             }
@@ -1444,8 +1726,7 @@ impl ApplicationHandler for App {
                 // ★ 우클릭 = 텍스트 입력 편집 메뉴(09-03) — 위젯이 포커스된 입력 안일 때만 연다.
                 if button == winit::event::MouseButton::Right {
                     if state == ElementState::Pressed {
-                        self.widget
-                            .set_clipboard_has_text(crate::cliptext::has_text());
+                        self.view_set_clipboard_has_text(crate::cliptext::has_text());
                         self.feed(InputEvent::RightDown { x, y });
                     }
                     return;
@@ -1471,7 +1752,8 @@ impl ApplicationHandler for App {
                 self.feed(InputEvent::MouseMove { x, y });
                 // ★ 스플리터 위면 좌우 리사이즈 커서로 바꾼다(VS Code 방식 —
                 //   위젯은 "보여야 하는가"만 말하고, OS 커서 번역은 호스트 몫이다).
-                let want = self.widget.wants_col_resize_cursor(x, y);
+                let want = matches!(self.view, View::Settings)
+                    && self.widget.wants_col_resize_cursor(x, y);
                 if want != self.col_resize {
                     self.col_resize = want;
                     if let Some(w) = &self.window {
@@ -1507,7 +1789,13 @@ impl ApplicationHandler for App {
                     primary,
                 };
                 match event.logical_key.as_ref() {
-                    Key::Named(NamedKey::Escape) => self.request_close(el),
+                    Key::Named(NamedKey::Escape) => {
+                        if matches!(self.view, View::Settings) {
+                            self.request_close(el);
+                        } else {
+                            self.feed(named(CtlKey::Escape));
+                        }
+                    }
                     Key::Named(NamedKey::ArrowUp) => self.feed(named(CtlKey::Up)),
                     Key::Named(NamedKey::ArrowDown) => self.feed(named(CtlKey::Down)),
                     Key::Named(NamedKey::ArrowLeft) => self.feed(named(CtlKey::Left)),
@@ -1536,7 +1824,7 @@ impl ApplicationHandler for App {
                     _ if primary
                         && phys_is(&event.physical_key, winit::keyboard::KeyCode::KeyC) =>
                     {
-                        if let Some(s) = self.widget.clipboard_copy() {
+                        if let Some(s) = self.view_clipboard_copy() {
                             crate::cliptext::set_text(&s);
                         }
                     }
@@ -1544,7 +1832,7 @@ impl ApplicationHandler for App {
                         && phys_is(&event.physical_key, winit::keyboard::KeyCode::KeyX) =>
                     {
                         let mut inv = Invalidations::default();
-                        if let Some(s) = self.widget.clipboard_cut(&mut inv) {
+                        if let Some(s) = self.view_clipboard_cut(&mut inv) {
                             crate::cliptext::set_text(&s);
                         }
                         self.drain_changes();
@@ -1555,8 +1843,7 @@ impl ApplicationHandler for App {
                     {
                         if let Some(s) = crate::cliptext::get_text() {
                             let mut inv = Invalidations::default();
-                            self.widget
-                                .clipboard_paste(s.trim_end_matches('\n'), &mut inv);
+                            self.view_clipboard_paste(s.trim_end_matches('\n'), &mut inv);
                             self.drain_changes();
                             self.redraw();
                         }
@@ -1581,7 +1868,7 @@ impl ApplicationHandler for App {
         self.fire_lan_respawn(); // ★ 릴레이 None 자동 재기동(09-05) — 디바운스 만료 시 셸에 요청.
         self.poll_sync_test(); // ★ 동기화 테스트 결과 소비(09-03).
         self.poll_sync_status(); // ★ 러너 상태 → 노트(자동 Test 표시).
-        let animating = self.widget.tick(now);
+        let animating = self.widget.tick(now) | self.view_tick(now);
         if animating {
             self.redraw();
         }

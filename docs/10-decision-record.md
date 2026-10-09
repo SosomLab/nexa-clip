@@ -252,6 +252,7 @@ Material의 상태 전이 90ms보다 11배 길다 — **의도된 예외**다.
 | ③ push 순서 | **nexa-ui → nexa-license → nexa-clip** | 거꾸로 밀면 clip CI가 옛 형제를 받아 깨진다(beep 10-09 함정) |
 | ④ 정정 | **DR-17(포크)을 이 결정으로 대체**한다(기록은 지우지 않음) · DR-46 ①의 구현 위치 = `nclip-gfx` → **nexa-ui `nexa-gfx` `bitmap_glyph.rs`**(191차) | — |
 | ⑤ beep 영향 | 없음 — 의존 구조 변경 · 와이어·서버·공유 규약 변경 0(개발 세션 판정) | — |
+| ⑦ 라이선스 | **nexa-license 어댑터 `nclip-license`** — Feature 0 · 비상업 = 파일 없이 Free · 폴더 `data_dir()/license` → 기기 공용 · CLI `--license status\|request\|install\|remove\|path` · 설정 정보 › 라이선스 카드 + 라이선스 화면(창 안 보기 전환) · 파일 열기 = nexa-dlg · 전화홈 0(10-10 3차 · beep D-33-6·7과 같음) | PolyForm NC가 상업 = 유료를 정하고 앱은 감지하지 않는다 |
 | ⑥ 설정 체계 | **beep P2(`6f5475d`)와 같은 체계** — 그룹 트리 · 고급(`ADVANCED` 9키) · 종속 잠금(`DEPENDS` 9쌍) · 카드(키 복사 · [초기화] · 기본값) · 자모 검색 + 이력 · `app.lang = system`(10-10 2차 · [14 §7](14-settings-registry.md)) | 계열 공통 설정 화면 — 같은 손에 같은 화면 |
 
 ---
@@ -334,6 +335,7 @@ Material의 상태 전이 90ms보다 11배 길다 — **의도된 예외**다.
 | `chacha20poly1305` · `sha2` · `getrandom` | 영속 암호화(T-16 · DR-37·38) — 레코드·blob AEAD 봉투 · 키 KDF/blob_id · OS 난수 | ★ **암호화 자체 구현 금지 부류** — beep `nbeep-store` 원장과 동일 판(0.10/0.10/0.2 · RustCrypto · MIT/Apache-2.0) | 2026-08-31 |
 | `png`(0.17 · **`nclip-gfx` 직접**) | ★ 시스템 글꼴의 **PNG 글리프**(컬러 이모지 CBDT·sbix) 디코드(10-05 · T-18f) | ★ **DR-46 예외** — 종전엔 격리 워커(`nclip-imgdec`)에만 링크했다. 시스템 글꼴 파일 안의 글리프 한정 · 512KB/512px 상한 · 클립보드 그림은 계속 워커. **새 crate·새 내려받기 0** — 이미 lock에 있던 같은 판(0.17.16)을 `nclip-gfx`에서도 참조 · 대안 = 자체 inflate+PNG 해석(재발명 · 위험 큼) · 컬러 이모지 포기 | 2026-10-05 | ★ **10-10 정정**: 본체의 `png` 링크 **0** — PNG 글리프는 nexa-ui `nexa-gfx`의 **자체 디코더**(외부 crate 0 · 191차)가 푼다(DR-47 · `cargo tree`로 본체 미링크 확인) · `png`는 다시 격리 워커(`nclip-imgdec`)에만.
 | `sha2`(nexa-clip 직접) | ★ 정보 화면 실행 파일 SHA-256(09-12 · 설치본은 두고 실행 파일만 바꿔도 빌드 식별) | 새 crate 0 — nclip-store·nclip-sync가 이미 쓰는 같은 판(0.10)을 앱 crate에서도 참조 · build.rs는 표준 라이브러리 + `git` 명령만 | 2026-09-12 |
+| `ed25519-dalek` 2.2 · `curve25519-dalek` 4.1 · `ed25519` 2.2 · `signature` 2.2 — **nexa-license 경유 · 본체 링크** | ★ **라이선스 파일 서명 검증**(10-10 · DR-47 ⑦ · `nclip-license`) | 서명 검증은 **암호화 자체 구현 금지 부류** — 계열 공용 nexa-license가 이미 쓰는 판(beep·nexa-sql·nexa-dir3와 같음) · features `ed25519`·`machine-id`·`fs`만 · **`issuer`(서명 생성) 금지** — 앱은 검증만 · 크기 영향 = Release +304KB | 2026-10-10 |
 
 ---
 

@@ -298,6 +298,177 @@ pub enum Msg {
     StKeyCopied,
     /// 설정 창 제목(10-10 · 종전 한국어 고정 → i18n · Linux는 서버 장식 글꼴 문제로 ASCII 유지).
     WinTitleSettings,
+    // ── 라이선스 화면(10-10 P4 · beep nbeep-ui license_win 이식) · 파일 선택기 라벨(P3 · nexa-dlg) ──
+    LicInfoState,
+    LicInfoStateDesc,
+    LicInfoId,
+    LicInfoIdDesc,
+    LicInfoFile,
+    LicInfoFileDesc,
+    LicInfoMachine,
+    LicInfoMachineDesc,
+    /// 도움말 ▸ 라이선스… 메뉴 항목·창 제목 꼬리.
+    LicMenu,
+    /// 라이선스 창 제목.
+    LicTitle,
+    /// 상태 줄: 파일 없음(무료 · 비상업).
+    LicStateFree,
+    /// 상태 줄: 정식 — `{}` = 등급(pro·org…).
+    LicStateLicensed,
+    /// 상태 줄: 무효 — `{}` = 사유(LicWhy*).
+    LicStateInvalid,
+    /// 상태 줄: 영구 라이선스의 업데이트 기한 뒤 빌드 — `{}` = updates_until.
+    LicStateOutdated,
+    /// 상태 줄: 만료 — `{}` = expires.
+    LicStateExpired,
+    /// 무효 사유: 서명.
+    LicWhySignature,
+    /// 무효 사유: 다른 제품.
+    LicWhyProduct,
+    /// 무효 사유: 다른 기기.
+    LicWhyMachine,
+    /// 무효 사유: 이 빌드에 검증 키 없음.
+    LicWhyNoRoot,
+    /// 무효 사유: 형식(읽을 수 없음·중복 키·손상).
+    LicWhyFormat,
+    /// 표 라벨: 파일.
+    LicRowFile,
+    /// 표 라벨: 라이선스 ID.
+    LicRowId,
+    /// 표 라벨: 사용자.
+    LicRowLicensee,
+    /// 표 라벨: 종류 / 등급.
+    LicRowTier,
+    /// 표 라벨: 유효 기한.
+    LicRowTerm,
+    /// 표 라벨: 업데이트 기한(영구 모델).
+    LicRowUpdates,
+    /// 표 라벨: 빌드일.
+    LicRowBuild,
+    /// 표 라벨: 기기 코드.
+    LicRowMachine,
+    /// 기한 없음.
+    LicTermForever,
+    /// 요청 코드 안내 — `{}` = 보낼 이메일(링크 · 클릭 = 복사).
+    LicReqTitle,
+    /// 요청 코드 메타: 이름(입력 안내).
+    LicReqName,
+    /// 요청 코드 메타: 이메일(입력 안내).
+    LicReqEmail,
+    /// 버튼: 요청 코드 복사(발급기 안내 문구와 일치 — nexa-license presets).
+    LicBtnCopyReq,
+    /// 버튼: 라이선스 파일 열기…(발급기 안내 문구와 일치).
+    LicBtnOpen,
+    /// 버튼: 제거.
+    LicBtnRemove,
+    /// 버튼: 닫기.
+    LicBtnClose,
+    /// 기기 ID 없음 — 요청 코드 불가.
+    LicNoMachine,
+    /// 창 아래 안내(D-33-6).
+    LicHint,
+    /// 결과: 설치 — `{}` = 라이선스 ID.
+    LicNoteInstalled,
+    /// 결과: 거부(쓰지 않음) — `{}` = 상태 사유.
+    LicNoteRejected,
+    /// 결과: 제거.
+    LicNoteRemoved,
+    /// 결과: 제거할 것 없음.
+    LicNoteNothing,
+    /// 결과: 요청 코드 복사.
+    LicNoteCopied,
+    /// 결과: 이메일 주소 복사.
+    LicNoteAddrCopied,
+    /// 결과: 입출력 실패 — `{}` = 오류.
+    LicNoteError,
+    /// 파일 이름 라벨.
+    PkFileName,
+    /// 파일 형식 라벨.
+    PkFileType,
+    /// 확정 버튼(열기).
+    PkOkOpen,
+    /// 확정 버튼(저장).
+    PkOkSave,
+    /// 확정 버튼(폴더 고르기).
+    PkOkFolder,
+    /// 폴더 고르기의 이름 상자 라벨.
+    PkFolderName,
+    /// 취소.
+    PkCancel,
+    /// 새 폴더 버튼.
+    PkNewFolder,
+    /// 새 폴더 기본 이름.
+    PkNewFolderName,
+    /// 숨김 파일 표시.
+    PkShowHidden,
+    /// 점 파일 표시.
+    PkShowDot,
+    /// 열 제목: 이름.
+    PkColName,
+    /// 열 제목: 수정한 날짜.
+    PkColModified,
+    /// 열 제목: 크기.
+    PkColSize,
+    /// 열 제목: 종류.
+    PkColKind,
+    /// 종류 셀: 폴더.
+    PkKindFolder,
+    /// 종류 셀: 파일(`{EXT} File`의 뒷말).
+    PkKindFile,
+    /// 장소: 홈.
+    PkPlaceHome,
+    /// 장소: 바탕 화면.
+    PkPlaceDesktop,
+    /// 장소: 문서.
+    PkPlaceDocuments,
+    /// 장소: 다운로드.
+    PkPlaceDownloads,
+    /// 장소 그룹: 내 PC(드라이브 목록).
+    PkPlaceDrives,
+    /// 종류 셀: 드라이브.
+    PkKindDrive,
+    /// 장소 그룹: 최근.
+    PkPlaceRecent,
+    /// 경로 상자 안내.
+    PkPathHint,
+    /// 오류: 파일 없음.
+    PkErrNotFound,
+    /// 안내: 같은 이름 존재.
+    PkErrExists,
+    /// 덮어쓰기 확인 — `{0}` = 파일 이름.
+    PkOverwriteAsk,
+    /// 덮어쓰기 확인 버튼.
+    PkOverwriteYes,
+    /// 오류: 파일명 규칙.
+    PkErrBadName,
+    /// 오류: 폴더를 읽을 수 없음.
+    PkErrList,
+    /// 오류: 새 폴더 실패.
+    PkErrMkdir,
+    /// 우클릭: 열기.
+    PkMenuOpen,
+    /// 우클릭: 경로 복사.
+    PkMenuCopyPath,
+    /// 우클릭: 이름 복사.
+    PkMenuCopyName,
+    /// 우클릭: 새로 고침.
+    PkMenuRefresh,
+    /// 다중 선택 안내 — `{0}` = 파일 수 · `{1}` = 합계 크기.
+    PkMultiSelected,
+    /// 필터: 모든 파일.
+    PkFilterAll,
+    /// 필터: 폴더(폴더 고르기).
+    PkFilterFolders,
+    /// 필터: 신원 키.
+    PkFilterKey,
+    /// 필터: 설정 백업.
+    PkFilterSettings,
+    /// 필터: 이미지.
+    PkFilterImage,
+    /// 필터: 대화 기록 세그먼트.
+    PkFilterHistory,
+    /// 필터: 라이선스.
+    PkFilterLicense,
     /// 로그인 시 자동 시작.
     SetAutostart,
     /// 자동 시작 설명.
@@ -937,6 +1108,521 @@ impl Msg {
             ],
             Msg::StKeyCopied => ["Copied key: {}", "키를 복사했습니다: {}", "已复制键名: {}", "キーをコピーしました: {}"],
             Msg::WinTitleSettings => ["Nexa Clip — Settings", "Nexa Clip — 설정", "Nexa Clip — 设置", "Nexa Clip — 設定"],
+            // ── 라이선스 화면 · 파일 선택기(10-10) ──
+            Msg::LicInfoState => ["License status", "라이선스 상태", "许可证状态", "ライセンス状態"],
+            Msg::LicInfoStateDesc => [
+                "free = no file (non-commercial use is free). Install or remove in Help ▸ License…",
+                "free = 파일 없음(비상업 사용 무료). 설치·제거는 도움말 ▸ 라이선스…",
+                "free = 无文件（非商业使用免费）。安装或移除请在 帮助 ▸ 许可证…",
+                "free = ファイルなし（非商用は無料）。インストール・削除は ヘルプ ▸ ライセンス…",
+            ],
+            Msg::LicInfoId => ["License ID", "라이선스 ID", "许可证 ID", "ライセンス ID"],
+            Msg::LicInfoIdDesc => [
+                "Identifier printed on the issued license (quote it when asking for support)",
+                "발급된 라이선스에 적힌 식별자(문의 시 알려 주세요)",
+                "签发许可证上的标识符（咨询时请提供）",
+                "発行ライセンスに記載の識別子（問い合わせ時にお知らせください）",
+            ],
+            Msg::LicInfoFile => ["License file", "라이선스 파일", "许可证文件", "ライセンスファイル"],
+            Msg::LicInfoFileDesc => [
+                "Where the installed file lives (user folder first, then machine-wide)",
+                "설치된 파일 위치(사용자 폴더 우선 · 다음 기기 공용 폴더)",
+                "已安装文件的位置（先用户目录，再本机公用目录）",
+                "インストール済みファイルの場所（ユーザー → 機器共通の順）",
+            ],
+            Msg::LicInfoMachine => ["Machine code", "기기 코드", "设备代码", "機器コード"],
+            Msg::LicInfoMachineDesc => [
+                "Stable code for this PC that a license is bound to (part of the request code)",
+                "이 PC를 가리키는 고정 코드(라이선스가 묶이는 대상 · 요청 코드에 포함)",
+                "绑定许可证的本机固定代码（包含在请求代码中）",
+                "ライセンスを紐付けるこのPCの固定コード（要求コードに含まれる）",
+            ],
+            Msg::LicMenu => [
+                "License…",
+                "라이선스…",
+                "许可证…",
+                "ライセンス…",
+            ],
+            Msg::LicTitle => [
+                "License",
+                "라이선스",
+                "许可证",
+                "ライセンス",
+            ],
+            Msg::LicStateFree => [
+                "Free — non-commercial use",
+                "무료 — 비상업적 사용",
+                "免费 — 非商业用途",
+                "無料 — 非商用利用",
+            ],
+            Msg::LicStateLicensed => [
+                "Licensed — {}",
+                "정식 라이선스 — {}",
+                "已授权 — {}",
+                "ライセンス済み — {}",
+            ],
+            Msg::LicStateInvalid => [
+                "License file is not valid ({}) — running as Free",
+                "라이선스 파일이 유효하지 않습니다({}) — 무료로 동작합니다",
+                "许可证文件无效（{}）— 以免费模式运行",
+                "ライセンスファイルが無効です（{}）— 無料として動作します",
+            ],
+            Msg::LicStateOutdated => [
+                "This build is newer than the license covers (updates until {}) — earlier builds stay licensed",
+                "이 빌드는 라이선스 범위(업데이트 {}까지) 이후에 나왔습니다 — 그 전 버전은 계속 정식입니다",
+                "此版本晚于许可证覆盖范围（更新至 {}）— 之前的版本仍有效",
+                "このビルドはライセンス範囲（更新 {} まで）より新しいものです — それ以前の版は引き続き有効です",
+            ],
+            Msg::LicStateExpired => [
+                "License expired on {}",
+                "라이선스가 {}에 만료되었습니다",
+                "许可证已于 {} 过期",
+                "ライセンスは {} に期限切れになりました",
+            ],
+            Msg::LicWhySignature => [
+                "signature mismatch",
+                "서명 불일치",
+                "签名不匹配",
+                "署名不一致",
+            ],
+            Msg::LicWhyProduct => [
+                "issued for another product",
+                "다른 제품용",
+                "为其他产品签发",
+                "別製品用",
+            ],
+            Msg::LicWhyMachine => [
+                "issued for another PC",
+                "다른 PC용",
+                "为其他电脑签发",
+                "別のPC用",
+            ],
+            Msg::LicWhyNoRoot => [
+                "no verification key in this build",
+                "이 빌드에 검증 키 없음",
+                "此版本没有验证密钥",
+                "このビルドに検証キーがありません",
+            ],
+            Msg::LicWhyFormat => [
+                "unreadable file",
+                "읽을 수 없는 파일",
+                "无法读取的文件",
+                "読めないファイル",
+            ],
+            Msg::LicRowFile => [
+                "File",
+                "파일",
+                "文件",
+                "ファイル",
+            ],
+            Msg::LicRowId => [
+                "License ID",
+                "라이선스 ID",
+                "许可证 ID",
+                "ライセンス ID",
+            ],
+            Msg::LicRowLicensee => [
+                "Licensee",
+                "사용자",
+                "被许可人",
+                "ライセンシー",
+            ],
+            Msg::LicRowTier => [
+                "Type / tier",
+                "종류 / 등급",
+                "类型 / 等级",
+                "種類 / 等級",
+            ],
+            Msg::LicRowTerm => [
+                "Valid until",
+                "유효 기한",
+                "有效期至",
+                "有効期限",
+            ],
+            Msg::LicRowUpdates => [
+                "Updates until",
+                "업데이트 기한",
+                "更新期限",
+                "アップデート期限",
+            ],
+            Msg::LicRowBuild => [
+                "Build date",
+                "빌드일",
+                "构建日期",
+                "ビルド日",
+            ],
+            Msg::LicRowMachine => [
+                "Machine code",
+                "기기 코드",
+                "设备代码",
+                "マシンコード",
+            ],
+            Msg::LicTermForever => [
+                "No expiry",
+                "무기한",
+                "无限期",
+                "無期限",
+            ],
+            Msg::LicReqTitle => [
+                "To get a license, send the request code to {}",
+                "라이선스를 받으려면 요청 코드를 {} 로 보내 주세요",
+                "如需许可证，请将请求代码发送至 {}",
+                "ライセンスを受けるには、リクエストコードを {} へ送ってください",
+            ],
+            Msg::LicReqName => [
+                "Name",
+                "이름",
+                "姓名",
+                "名前",
+            ],
+            Msg::LicReqEmail => [
+                "Email",
+                "이메일",
+                "邮箱",
+                "メール",
+            ],
+            Msg::LicBtnCopyReq => [
+                "Copy request code",
+                "요청 코드 복사",
+                "复制请求代码",
+                "リクエストコードをコピー",
+            ],
+            Msg::LicBtnOpen => [
+                "Open license file…",
+                "라이선스 파일 열기…",
+                "打开许可证文件…",
+                "ライセンスファイルを開く…",
+            ],
+            Msg::LicBtnRemove => [
+                "Remove",
+                "제거",
+                "移除",
+                "削除",
+            ],
+            Msg::LicBtnClose => [
+                "Close",
+                "닫기",
+                "关闭",
+                "閉じる",
+            ],
+            Msg::LicNoMachine => [
+                "This PC's machine ID is unavailable — a request code cannot be made",
+                "이 PC의 기기 ID를 얻을 수 없어 요청 코드를 만들 수 없습니다",
+                "无法获取此电脑的设备 ID — 无法生成请求代码",
+                "このPCのマシンIDを取得できないため、リクエストコードを作れません",
+            ],
+            Msg::LicHint => [
+                "Free for non-commercial use. Commercial use requires a license.",
+                "비상업적 사용은 무료입니다. 상업적 사용에는 라이선스가 필요합니다.",
+                "非商业用途免费。商业用途需要许可证。",
+                "非商用利用は無料です。商用利用にはライセンスが必要です。",
+            ],
+            Msg::LicNoteInstalled => [
+                "Installed — {}",
+                "설치했습니다 — {}",
+                "已安装 — {}",
+                "インストールしました — {}",
+            ],
+            Msg::LicNoteRejected => [
+                "Not installed — {}",
+                "설치하지 않았습니다 — {}",
+                "未安装 — {}",
+                "インストールしませんでした — {}",
+            ],
+            Msg::LicNoteRemoved => [
+                "License removed",
+                "라이선스를 제거했습니다",
+                "已移除许可证",
+                "ライセンスを削除しました",
+            ],
+            Msg::LicNoteNothing => [
+                "No license to remove",
+                "제거할 라이선스가 없습니다",
+                "没有可移除的许可证",
+                "削除するライセンスはありません",
+            ],
+            Msg::LicNoteCopied => [
+                "Request code copied",
+                "요청 코드를 복사했습니다",
+                "已复制请求代码",
+                "リクエストコードをコピーしました",
+            ],
+            Msg::LicNoteAddrCopied => [
+                "Address copied",
+                "주소를 복사했습니다",
+                "已复制地址",
+                "アドレスをコピーしました",
+            ],
+            Msg::LicNoteError => [
+                "Failed — {}",
+                "실패 — {}",
+                "失败 — {}",
+                "失敗 — {}",
+            ],
+            Msg::PkFileName => [
+                "File name:",
+                "파일 이름:",
+                "文件名:",
+                "ファイル名:",
+            ],
+            Msg::PkFileType => [
+                "File type:",
+                "파일 형식:",
+                "文件类型:",
+                "ファイルの種類:",
+            ],
+            Msg::PkOkOpen => [
+                "Open",
+                "열기",
+                "打开",
+                "開く",
+            ],
+            Msg::PkOkSave => [
+                "Save",
+                "저장",
+                "保存",
+                "保存",
+            ],
+            Msg::PkOkFolder => [
+                "Select folder",
+                "폴더 선택",
+                "选择文件夹",
+                "フォルダーを選択",
+            ],
+            Msg::PkFolderName => [
+                "Folder:",
+                "폴더:",
+                "文件夹:",
+                "フォルダー:",
+            ],
+            Msg::PkCancel => [
+                "Cancel",
+                "취소",
+                "取消",
+                "キャンセル",
+            ],
+            Msg::PkNewFolder => [
+                "New folder",
+                "새 폴더",
+                "新建文件夹",
+                "新しいフォルダー",
+            ],
+            Msg::PkNewFolderName => [
+                "New folder",
+                "새 폴더",
+                "新建文件夹",
+                "新しいフォルダー",
+            ],
+            Msg::PkShowHidden => [
+                "Show hidden files",
+                "숨김 파일 표시",
+                "显示隐藏文件",
+                "隠しファイルを表示",
+            ],
+            Msg::PkShowDot => [
+                "Show dot files",
+                "점(.) 파일 표시",
+                "显示点文件",
+                "ドットファイルを表示",
+            ],
+            Msg::PkColName => [
+                "Name",
+                "이름",
+                "名称",
+                "名前",
+            ],
+            Msg::PkColModified => [
+                "Date modified",
+                "수정한 날짜",
+                "修改日期",
+                "更新日時",
+            ],
+            Msg::PkColSize => [
+                "Size",
+                "크기",
+                "大小",
+                "サイズ",
+            ],
+            Msg::PkColKind => [
+                "Type",
+                "종류",
+                "类型",
+                "種類",
+            ],
+            Msg::PkKindFolder => [
+                "Folder",
+                "폴더",
+                "文件夹",
+                "フォルダー",
+            ],
+            Msg::PkKindFile => [
+                "File",
+                "파일",
+                "文件",
+                "ファイル",
+            ],
+            Msg::PkPlaceHome => [
+                "Home",
+                "홈",
+                "主目录",
+                "ホーム",
+            ],
+            Msg::PkPlaceDesktop => [
+                "Desktop",
+                "바탕 화면",
+                "桌面",
+                "デスクトップ",
+            ],
+            Msg::PkPlaceDocuments => [
+                "Documents",
+                "문서",
+                "文档",
+                "ドキュメント",
+            ],
+            Msg::PkPlaceDownloads => [
+                "Downloads",
+                "다운로드",
+                "下载",
+                "ダウンロード",
+            ],
+            Msg::PkPlaceDrives => [
+                "This PC",
+                "내 PC",
+                "此电脑",
+                "PC",
+            ],
+            Msg::PkKindDrive => [
+                "Drive",
+                "드라이브",
+                "驱动器",
+                "ドライブ",
+            ],
+            Msg::PkPlaceRecent => [
+                "Recent",
+                "최근",
+                "最近",
+                "最近",
+            ],
+            Msg::PkPathHint => [
+                "Type a path",
+                "경로 입력",
+                "输入路径",
+                "パスを入力",
+            ],
+            Msg::PkErrNotFound => [
+                "File not found",
+                "파일이 없습니다",
+                "找不到文件",
+                "ファイルが見つかりません",
+            ],
+            Msg::PkErrExists => [
+                "A file with this name exists — press again to overwrite",
+                "같은 이름의 파일이 있습니다 — 한 번 더 누르면 덮어씁니다",
+                "已存在同名文件 — 再按一次将覆盖",
+                "同名のファイルがあります — もう一度押すと上書きします",
+            ],
+            Msg::PkOverwriteAsk => [
+                "\"{0}\" already exists. Replace it?",
+                "\"{0}\" 파일이 이미 있습니다. 바꿀까요?",
+                "\"{0}\" 已存在。要替换吗？",
+                "\"{0}\" は既に存在します。置き換えますか？",
+            ],
+            Msg::PkOverwriteYes => [
+                "Replace",
+                "바꾸기",
+                "替换",
+                "置き換え",
+            ],
+            Msg::PkErrBadName => [
+                "This name is not allowed",
+                "사용할 수 없는 이름입니다",
+                "不允许使用此名称",
+                "この名前は使用できません",
+            ],
+            Msg::PkErrList => [
+                "Cannot read this folder",
+                "폴더를 읽을 수 없습니다",
+                "无法读取此文件夹",
+                "このフォルダーを読み取れません",
+            ],
+            Msg::PkErrMkdir => [
+                "Cannot create the folder",
+                "폴더를 만들 수 없습니다",
+                "无法创建文件夹",
+                "フォルダーを作成できません",
+            ],
+            Msg::PkMenuOpen => [
+                "Open",
+                "열기",
+                "打开",
+                "開く",
+            ],
+            Msg::PkMenuCopyPath => [
+                "Copy path",
+                "경로 복사",
+                "复制路径",
+                "パスをコピー",
+            ],
+            Msg::PkMenuCopyName => [
+                "Copy name",
+                "이름 복사",
+                "复制名称",
+                "名前をコピー",
+            ],
+            Msg::PkMenuRefresh => [
+                "Refresh",
+                "새로 고침",
+                "刷新",
+                "最新の情報に更新",
+            ],
+            Msg::PkMultiSelected => [
+                "{0} files selected ({1})",
+                "파일 {0}개 선택({1})",
+                "已选择 {0} 个文件（{1}）",
+                "{0} 個のファイルを選択（{1}）",
+            ],
+            Msg::PkFilterAll => [
+                "All files (*.*)",
+                "모든 파일 (*.*)",
+                "所有文件 (*.*)",
+                "すべてのファイル (*.*)",
+            ],
+            Msg::PkFilterFolders => [
+                "Folders",
+                "폴더",
+                "文件夹",
+                "フォルダー",
+            ],
+            Msg::PkFilterKey => [
+                "Identity key (*.key)",
+                "신원 키 (*.key)",
+                "身份密钥 (*.key)",
+                "ID キー (*.key)",
+            ],
+            Msg::PkFilterSettings => [
+                "Settings backup (*.cfg)",
+                "설정 백업 (*.cfg)",
+                "设置备份 (*.cfg)",
+                "設定バックアップ (*.cfg)",
+            ],
+            Msg::PkFilterImage => [
+                "Images (*.png;*.jpg;…)",
+                "이미지 (*.png;*.jpg;…)",
+                "图像 (*.png;*.jpg;…)",
+                "画像 (*.png;*.jpg;…)",
+            ],
+            Msg::PkFilterHistory => [
+                "Chat history (*.seg)",
+                "대화 기록 (*.seg)",
+                "聊天记录 (*.seg)",
+                "会話履歴 (*.seg)",
+            ],
+            Msg::PkFilterLicense => [
+                "License (*.license)",
+                "라이선스 (*.license)",
+                "许可证 (*.license)",
+                "ライセンス (*.license)",
+            ],
             Msg::SetAutostart => [
                 "Launch at login",
                 "로그인 시 자동 시작",
@@ -1741,10 +2427,15 @@ impl Msg {
     }
 }
 
-/// 번역 조회. 빈 문자열이면 **영어로 폴백**한다(누락이 화면을 비우지 않게).
+/// 현재 언어로 번역(10-10 · beep `t` 동일 — 라이선스·피커 위젯 이식분이 쓴다).
 #[must_use]
+pub fn t(msg: Msg) -> &'static str {
+    tr(current_lang(), msg)
+}
+
 /// `{}` 자리에 인자를 **차례로** 넣은 문장(10-10 · nexa-beep `tf` 동일) — 자리가 모자라면 남은 인자는 버리고,
 /// 인자가 모자라면 `{}`가 남는다(번역 표의 자리 수와 호출의 인자 수는 시험이 대조한다).
+#[must_use]
 pub fn tf(msg: Msg, args: &[&str]) -> String {
     let mut s = tr(current_lang(), msg).to_string();
     for a in args {
@@ -1753,6 +2444,8 @@ pub fn tf(msg: Msg, args: &[&str]) -> String {
     s
 }
 
+/// 번역 조회. 빈 문자열이면 **영어로 폴백**한다(누락이 화면을 비우지 않게).
+#[must_use]
 pub fn tr(lang: Lang, msg: Msg) -> &'static str {
     let row = msg.row();
     let s = row[lang.column()];
@@ -1768,7 +2461,7 @@ mod tests {
     use super::*;
 
     /// 카탈로그 전수 — 새 `Msg`를 더하면 여기도 더한다(빈칸 검사가 그걸 강제한다).
-    const ALL_MSG: [Msg; 333] = [
+    const ALL_MSG: [Msg; 422] = [
         Msg::AppName,
         Msg::SearchPlaceholder,
         Msg::EmptyHistory,
@@ -1882,6 +2575,95 @@ mod tests {
         Msg::StSettingsFileOpened,
         Msg::StKeyCopied,
         Msg::WinTitleSettings,
+        Msg::LicInfoState,
+        Msg::LicInfoStateDesc,
+        Msg::LicInfoId,
+        Msg::LicInfoIdDesc,
+        Msg::LicInfoFile,
+        Msg::LicInfoFileDesc,
+        Msg::LicInfoMachine,
+        Msg::LicInfoMachineDesc,
+        Msg::LicMenu,
+        Msg::LicTitle,
+        Msg::LicStateFree,
+        Msg::LicStateLicensed,
+        Msg::LicStateInvalid,
+        Msg::LicStateOutdated,
+        Msg::LicStateExpired,
+        Msg::LicWhySignature,
+        Msg::LicWhyProduct,
+        Msg::LicWhyMachine,
+        Msg::LicWhyNoRoot,
+        Msg::LicWhyFormat,
+        Msg::LicRowFile,
+        Msg::LicRowId,
+        Msg::LicRowLicensee,
+        Msg::LicRowTier,
+        Msg::LicRowTerm,
+        Msg::LicRowUpdates,
+        Msg::LicRowBuild,
+        Msg::LicRowMachine,
+        Msg::LicTermForever,
+        Msg::LicReqTitle,
+        Msg::LicReqName,
+        Msg::LicReqEmail,
+        Msg::LicBtnCopyReq,
+        Msg::LicBtnOpen,
+        Msg::LicBtnRemove,
+        Msg::LicBtnClose,
+        Msg::LicNoMachine,
+        Msg::LicHint,
+        Msg::LicNoteInstalled,
+        Msg::LicNoteRejected,
+        Msg::LicNoteRemoved,
+        Msg::LicNoteNothing,
+        Msg::LicNoteCopied,
+        Msg::LicNoteAddrCopied,
+        Msg::LicNoteError,
+        Msg::PkFileName,
+        Msg::PkFileType,
+        Msg::PkOkOpen,
+        Msg::PkOkSave,
+        Msg::PkOkFolder,
+        Msg::PkFolderName,
+        Msg::PkCancel,
+        Msg::PkNewFolder,
+        Msg::PkNewFolderName,
+        Msg::PkShowHidden,
+        Msg::PkShowDot,
+        Msg::PkColName,
+        Msg::PkColModified,
+        Msg::PkColSize,
+        Msg::PkColKind,
+        Msg::PkKindFolder,
+        Msg::PkKindFile,
+        Msg::PkPlaceHome,
+        Msg::PkPlaceDesktop,
+        Msg::PkPlaceDocuments,
+        Msg::PkPlaceDownloads,
+        Msg::PkPlaceDrives,
+        Msg::PkKindDrive,
+        Msg::PkPlaceRecent,
+        Msg::PkPathHint,
+        Msg::PkErrNotFound,
+        Msg::PkErrExists,
+        Msg::PkOverwriteAsk,
+        Msg::PkOverwriteYes,
+        Msg::PkErrBadName,
+        Msg::PkErrList,
+        Msg::PkErrMkdir,
+        Msg::PkMenuOpen,
+        Msg::PkMenuCopyPath,
+        Msg::PkMenuCopyName,
+        Msg::PkMenuRefresh,
+        Msg::PkMultiSelected,
+        Msg::PkFilterAll,
+        Msg::PkFilterFolders,
+        Msg::PkFilterKey,
+        Msg::PkFilterSettings,
+        Msg::PkFilterImage,
+        Msg::PkFilterHistory,
+        Msg::PkFilterLicense,
         Msg::SetAutostart,
         Msg::SetAutostartDesc,
         Msg::SetLang,

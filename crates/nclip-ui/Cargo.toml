@@ -15,3 +15,5 @@ workspace = true
 nclip-core.workspace = true
 nexa-ctl.workspace = true
 nexa-gfx.workspace = true
+nexa-dlg.workspace = true
+nclip-license.workspace = true

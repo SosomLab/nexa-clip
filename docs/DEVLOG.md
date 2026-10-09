@@ -2,6 +2,8 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-10-10 (3차 · win) — ★ **P3′ 파일 대화상자(nexa-dlg) · P4′ 라이선스**(`nclip-license` · Feature 0 · `--license` 5종 · 정보 › 라이선스 카드 · 창 안 보기 전환) · 외부 crate ed25519 계열 4(검증 전용) · V2 = test 401 · check-3os ✓ · Release 2,432,000 B(2.32MB) · CLI 스모크 ✓ → [journal](journal/2026-10-10.md)
+
 ## 2026-10-10 (2차 · win) — ★ **P2′ 설정 카드 개편**(beep P2와 같은 체계) — 그룹 트리 · 고급 9키 · 종속 잠금 9쌍 · 카드(키 복사 · 초기화) · 자모 검색 + 이력 · `app.lang = system` · [14 §7](14-settings-registry.md) 확정 · V2 = test 378 · check-3os ✓ · Release 2,128,384 B(2.03MB) · 유휴 WS 18.9MB → [journal](journal/2026-10-10.md)
 
 ## 2026-10-10 (1차 · win) — ★ **P1-c′ nexa-ui 의존 전환**(사용자 지시 · beep 10-09와 같은 절차) — 사본 nclip-gfx·nclip-ctl·nexa-conf 삭제 → ../nexa-ui path 의존 · nexa_font · memmap2 제거 · 설정 MouseUp 전 컨트롤 전달 · CI 형제 체크아웃 · [DR-47](10-decision-record.md) · V2 = test 367 · check-3os ✓ · Release 2,112,000 B(2.01MB) · 유휴 WS 19.3MB → [journal](journal/2026-10-10.md)

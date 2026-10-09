@@ -14,6 +14,7 @@ members = [
   "crates/nclip-sync",         # ★ M2 동기화 기반 — 신원·랑데부 파생·릴레이 클라이언트(09-03)
   "crates/nclip-ui",           # 화면 S1~S8
   "crates/nclip-imgdec",       # (bin) 이미지 격리 디코드 워커 — 파서는 여기에만(beep R-5)
+  "crates/nclip-license",      # ★ 라이선스 앱 층(10-10 · nexa-license 위 얇은 층 · beep nbeep-license 복제)
   "crates/nexa-clip",          # (bin) 진입·조립·생명주기
 ]
 
@@ -45,6 +46,10 @@ nexa-ctl = { path = "../nexa-ui/crates/nexa-ctl" }
 nexa-conf = { path = "../nexa-ui/crates/nexa-conf" }
 nexa-font = { path = "../nexa-ui/crates/nexa-font" }
 nexa-sys = { path = "../nexa-ui/crates/nexa-sys", default-features = false } # OS 신호(locale — `app.lang=system` · 10-10)
+nexa-dlg = { path = "../nexa-ui/crates/nexa-dlg" } # 파일 선택 대화상자(3-OS 자체 · 10-10 P3 · 라이선스 파일 열기)
+# ★ nexa-license(계열 공용 라이선스 검증 · 10-10 P4) — 형제 저장소 path 의존 · 검증 전용(issuer 금지).
+nexa-license = { path = "../nexa-license/crates/nexa-license" }
+nclip-license = { path = "crates/nclip-license" }
 nclip-plat = { path = "crates/nclip-plat" }
 nclip-store = { path = "crates/nclip-store" }
 nclip-ui = { path = "crates/nclip-ui" }

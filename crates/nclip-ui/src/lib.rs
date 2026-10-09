@@ -15,6 +15,10 @@
 
 /// 한글 자모열 검색(10-10 · 설정 검색 — nexa-beep jamo.rs 이식).
 pub mod jamo;
+/// 라이선스 화면 위젯(10-10 P4 · beep license_win.rs 이식).
+pub mod license_win;
+/// 파일 선택 대화상자 조립(10-10 P3 · nexa-dlg FilePicker + 앱 라벨·필터 · beep picker_win.rs 이식).
+pub mod picker_win;
 pub mod settings;
 mod settings_registry;
 

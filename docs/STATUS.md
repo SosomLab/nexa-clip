@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-10-10 (3차 · win) — ★ P3′ 파일 대화상자 · P4′ 라이선스(브랜치 `feat/nexa-ui` · 미커밋)
+
+**바꾼 것**(개발 세션): `crates/nclip-license`(nexa-license 어댑터 · Feature 0 · `--license` CLI 5종) · `license_win.rs` · `picker_win.rs`(nexa-dlg) · 설정 정보 › 라이선스 카드(Action + Info 4행) · 창 하나 보기 전환(설정 → 라이선스 → 파일 선택기) · 외부 crate = ed25519 계열 4(검증 전용 · [10 §3](10-decision-record.md)) · DR-47 ⑦ · [14 §7-9](14-settings-registry.md).
+**검증**(협업 세션 · V2): fmt ✓ · clippy `--workspace --all-targets -D warnings` ✓ · test **401 통과 / 실패 0 / 무시 3**(378 + 23) · `scripts/check-3os.sh` ✓(호스트 · x86_64-apple-darwin · x86_64-unknown-linux-gnu) · Release `nexa-clip.exe` **2,432,000 B(2.32MB)**(≤ 10MB ✓ · P2′ 2.03MB 대비 +304KB — 서명 검증 코드) · Debug PID 39100 · 유휴 WS **19.5MB** / Private 4.7MB(≤ 40MB ✓) · CLI 스모크 4종 ✓.
+**☐ 남은 것**: 사용자 실기 T-P4 7항목 · T-72 발급 왕복(발급기 = 사용자 PC) · T-P1·T-P2 실기 · P5′ 마감. → [journal](journal/2026-10-10.md)
+
+---
+
 ## 2026-10-10 (2차 · win) — ★ P2′ 설정 카드 개편(브랜치 `feat/nexa-ui` · 미커밋)
 
 **바꾼 것**(개발 세션): 그룹 트리(일반 · 클립보드 · 모양 · 동기화 · 고급) · 고급 9키 · 종속 잠금 9쌍 · 카드(키 ⧉ 복사 · [초기화] · 기본값) · 하단 [고급 스위치][설정 파일 열기…][닫기] · 자모 검색(`jamo.rs`) + 이력 · `app.lang = system`(nexa-sys) · [14 §7](14-settings-registry.md) 확정 · DR-47 ⑥.

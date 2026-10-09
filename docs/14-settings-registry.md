@@ -514,6 +514,14 @@ General 안내문 그대로:
 
 - `app.lang` = **`system`(기본값)** / en / ko / zh / ja — `system`은 OS 언어를 따른다(`nexa-sys` locale · `conf::resolve_lang` · 미지원 언어 = en).
 
+### 7-9. 라이선스 카드 · 화면 · CLI (P4′ · 10-10)
+
+- **설정 카드**: 고급 › 정보 카테고리의 하위 "라이선스" 섹션 = **[라이선스…]**(Action) + **Info 4행**(상태 · ID · 파일 · 기기 코드 — 호스트 `set_info`).
+- **라이선스 화면**(`nclip-ui/src/license_win.rs` · beep 이식): 상태 띠 · 표 · 요청 구역 · 버튼 행([요청 코드 복사] · 연락처 복사 · [라이선스 파일 열기…] · [제거] · [닫기]) · 설치 = 검증 통과만.
+- **창 하나 · 보기 전환** `View{Settings, License, Picker}` — 설정 → 라이선스 → 파일 선택기(nexa-dlg `FilePicker` · `.license` 필터) · Esc/닫기/취소 = 한 단계 뒤.
+- **CLI**: `nexa-clip --license status | request [이름 [이메일]] | install <파일> | remove | path`([18 §10-1](18-build-and-test.md)).
+- 비상업 사용 = 라이선스 파일 없이 Free · Feature 0(잠그는 기능 없음) · 전화홈 0([DR-47](10-decision-record.md) ⑦).
+
 ### 7-8. 남은 것
 
 - 사용자 실기 T-P2 9항목([journal 10-10 2차](journal/2026-10-10.md) ③).
