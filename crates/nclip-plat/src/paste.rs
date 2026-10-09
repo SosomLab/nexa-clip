@@ -196,6 +196,17 @@ mod imp {
             if ok == 0 {
                 return Err(PasteError::Os("SetForegroundWindow 실패".into()));
             }
+            // ★ 포그라운드 전환은 비동기다(10-10 Windows E2E · 메모장에 글이 있을 때 Ctrl+V가 사라짐 — 복원 직후 바로
+            //   SendInput을 쏘면 입력이 **아직 전 창(팝업)에 묶인 큐**로 가 버린다 · K-1 spike는 600ms 뒤라 통과).
+            //   mac(SETTLE)·Linux(150ms)처럼 **대상이 실제로 포그라운드가 될 때까지** 짧게 기다린다(최대 250ms · 10ms 간격) +
+            //   입력 큐가 옮겨 앉을 60ms. UI 스레드를 길게 잡지 않는다(상한 310ms · 보통 수십 ms).
+            for _ in 0..25 {
+                if GetForegroundWindow() == hwnd {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            std::thread::sleep(std::time::Duration::from_millis(60));
         }
         Ok(())
     }

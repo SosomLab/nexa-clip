@@ -580,6 +580,9 @@ exa-clip.exe -ArgumentList tray
 ./target/release/nexa-clip --license install <파일.license>        # 검증 통과만 설치(실패 = 종료 1)
 ./target/release/nexa-clip --license remove                       # 설치한 라이선스 제거
 
+# ── Windows E2E(10-10) — --profile e2e 격리 · 실제 클립보드는 끝에 원복 · 키 주입 허용 경로 · 다른 인스턴스(Debug)는 먼저 종료(전역 단축키는 한 프로세스만)
+pwsh scripts/win-e2e.ps1                                           # 기동·캡처·팝업·붙여넣기(글 있는 메모장)·설정 [닫기]·둘째 인스턴스 → target\e2e\result-*.json
+
 # ── 디버그 빌드 재시작(개발 반복) — Linux는 scripts/dev-restart.sh · Windows는 아래 두 줄
 taskkill //F //IM nexa-clip.exe; cargo build -p nexa-clip && ./target/debug/nexa-clip.exe tray
 
