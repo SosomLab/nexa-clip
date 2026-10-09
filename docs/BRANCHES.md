@@ -4,7 +4,7 @@
 
 | 브랜치 | 생성 | 병합 | 커밋 수 | 요약 |
 |---|---|---|---:|---|
-| `feat/nexa-ui` | 2026-10-10 | 2026-10-10 → main(ff · 해시 미정 — 개발 세션이 채움) | 5 | ★ nexa-ui 전환(DR-47) · 설정 카드 개편(14 §7) · 라이선스 `nclip-license` + 파일 대화상자 nexa-dlg · Debug 창 제목 · 21 §15 실기 표 — `566c541` · `c240402` · `f224b05` · `9fe5d52` · `fa37a03` · 형제 nexa-ui 192차 · nexa-license 먼저 push |
+| `feat/nexa-ui` | 2026-10-10 | 2026-10-10 → main(ff · 24ef462 · 삭제) | 6 | ★ nexa-ui 전환(DR-47) · 설정 카드 개편(14 §7) · 라이선스 `nclip-license` + 파일 대화상자 nexa-dlg · Debug 창 제목 · 21 §15 실기 표 — `566c541` · `c240402` · `f224b05` · `9fe5d52` · `fa37a03` · 형제 nexa-ui 192차 · nexa-license 먼저 push |
 | `chore/release-0.1.9` | 2026-10-05 | 2026-10-05 | 2 | ★ v0.1.9 릴리스 — 버전 0.1.8→0.1.9(`73525c9`) + 24·25차 문서 + CLAUDE.md 현 단계 · .rpm 첫 포함 · V3 생략(로컬 빌드 금지 · Rust 소스 = V3 통과분) · journal 10-05 25~26차 · 병합 `274273f` · push `98ab8f0..274273f` · CI `37263990461` ✅ · 태그 `v0.1.9` · release `37264209908` ✅ · pkg dnf 저장소 첫 발행 |
 | `feat/release-rpm` | 2026-10-05 | 2026-10-05 | 1 | ★ `.rpm` 산출물 — `packaging/linux/nexa-clip.spec` · `release.yml` "Linux 설치본(.rpm)" 스텝(러너 `rpmbuild` · 사전 배포 `-`→`~`) · 릴리스 노트 표 · packaging/README · journal 10-05 25차 · 병합 `5e62933`(커밋 `c9c3d8b`) |
 | `chore/release-0.1.8` | 2026-10-05 | 2026-10-05 | 2 | ★ v0.1.8 릴리스 — 버전 0.1.7→0.1.8(`4bd5ee5`) + 23차 문서 · 배포 전 V3 ✓(test 578) · journal 10-05 23~24차 · 병합 `98ab8f0` · push `0ec5066..98ab8f0` · CI `37263300576` ✅ · 태그 `v0.1.8` · release `37263475999` ✅ · pkg 자동 갱신 첫 실동작 |
