@@ -1989,6 +1989,13 @@ pub(crate) fn linux_raise_x11(win: &Window) -> bool {
 }
 
 pub(crate) fn win_name(attrs: winit::window::WindowAttributes) -> winit::window::WindowAttributes {
+    // ★ 디버그 빌드 표식(사용자 10-10 · nexa-dir3 규칙): 제목 앞머리 "Nexa Clip" → "Nexa Clip (Debug)"(릴리스 = 무변경).
+    let attrs = if crate::APP_TITLE == "Nexa Clip" {
+        attrs
+    } else {
+        let t = attrs.title.replacen("Nexa Clip", crate::APP_TITLE, 1);
+        attrs.with_title(t)
+    };
     // ★ 프로필 실행(09-04)은 창 제목 끝에 `[프로필]` — 두 인스턴스를 눈으로 가른다.
     let attrs = match crate::conf::profile() {
         Some(p) => {

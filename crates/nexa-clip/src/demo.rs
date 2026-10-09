@@ -135,7 +135,10 @@ impl ApplicationHandler for App {
         }
         let attrs = crate::icon::with_icon(
             Window::default_attributes()
-                .with_title("Nexa Clip — 렌더 데모 (1/2/3 보기 · P 미리보기 · T 테마 · Esc)")
+                .with_title(format!(
+                    "{} — 렌더 데모 (1/2/3 보기 · P 미리보기 · T 테마 · Esc)",
+                    crate::APP_TITLE
+                ))
                 .with_inner_size(winit::dpi::LogicalSize::new(560.0, 620.0)),
         );
         let Ok(win) = el.create_window(attrs) else {

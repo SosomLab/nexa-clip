@@ -13,6 +13,14 @@
 //! 창보다 먼저 검증한다([docs/02 §7](../../docs/02-roadmap.md) · [docs/21](../../docs/21-manual-test.md)).
 
 /// ★ 정보(About) — 버전·빌드·실행 파일 SHA-256(09-12).
+/// 창 제목의 앱 이름 — ★ 디버그 빌드는 "(Debug)"를 붙인다(사용자 10-10 · nexa-dir3 10-06 규칙 동일 · 설치본과 debug 앱을 제목으로 구분).
+/// 모든 창은 [`settings_win::win_name`]을 거치며 제목 앞머리 "Nexa Clip"이 이 값으로 바뀐다(릴리스 = 그대로).
+pub(crate) const APP_TITLE: &str = if cfg!(debug_assertions) {
+    "Nexa Clip (Debug)"
+} else {
+    "Nexa Clip"
+};
+
 mod about;
 mod cliptext;
 mod conf;
@@ -317,5 +325,18 @@ fn spike_paste(args: &[String]) {
             println!("❌ K-1 미통과. docs/21-manual-test.md 에 증상과 함께 기록하세요.");
             std::process::exit(1);
         }
+    }
+}
+
+#[cfg(test)]
+mod title_tests {
+    /// 창 제목(사용자 10-10 · nexa-dir3 동일): 디버그 빌드만 "(Debug)" 꼬리 · 릴리스는 "Nexa Clip".
+    #[test]
+    fn app_title_marks_debug_builds() {
+        assert_eq!(
+            super::APP_TITLE.ends_with("(Debug)"),
+            cfg!(debug_assertions)
+        );
+        assert!(super::APP_TITLE.starts_with("Nexa Clip"));
     }
 }
