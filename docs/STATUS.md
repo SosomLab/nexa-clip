@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-10-10 (6차 · win) — ★ v0.2.0 릴리스 준비 · 배포 전 V3
+
+**버전**: 0.1.9 → **0.2.0**(브랜치 `chore/release-0.2.0` · 의존 구조 변경 = 마이너) · 범위 = nexa-ui 전환 · 설정 카드 · 라이선스·파일 대화상자 · Debug 제목 · [닫기]/시스템 라벨.
+**V3**: `rustup update stable` = unchanged · rustc 1.99.0 (b940084d7 2026-09-28) · fmt ✓ · clippy `--workspace --all-targets -D warnings` ✓ · test **403 통과 / 실패 0 / 무시 3** · `scripts/check-3os.sh` ✓(호스트 · x86_64-apple-darwin · x86_64-unknown-linux-gnu) · Release `nexa-clip.exe` **2,436,096 B(2.32MB · ≤ 10MB ✓)** · `nclip-imgdec.exe` 513,024 B · `--version` = **nexa-clip 0.2.0** · `packaging/render-manifests.sh` 영어 게이트 ✓(v0.1.9 실제 자산 15개로 렌더 · exit 0 · winget `locale.en-US` 생성) · 렌더 게이트 = 별도 없음 · 166초.
+**게시**: winget 0.1.6 PR 2건 모더레이터 대기 → v0.2.0 **skip** 예상 · choco 0.1.5 설치본 = 예외 필요 · 포터블 = 사람 검수 대기 → **skip** 예상 · brew·pkg.sosomlab.com 자동.
+**☐ 다음**: 버전 커밋 → push → 태그 `v0.2.0` → release 감시(7차). → [journal](journal/2026-10-10.md)
+
+---
+
 ## 2026-10-10 (5차 · win) — push · CI 빨강(Ubuntu 시험 언어 경합) → 수정 · 설정 [닫기]·시스템 라벨
 
 **CI**: `34890a4` run `37960530868` ✗(ubuntu 시험 2건 · 전역 언어 경합 · windows·macos ✓) → `f8a4ff4` 시험 직렬화(`lang_test_lock`) + 실기 2건(설정 [닫기]·Esc 무반응 · 테마/언어 "시스템 (현재값)" 표기) · push 전 check-3os ✓ · push `f8a4ff4` · CI run **`37961839033`** ✅(macos · ubuntu · windows — 형제 체크아웃 포함 첫 녹색).
