@@ -4,6 +4,12 @@
 
 ---
 
+## 2026-10-10 (4차 · win) — 디버그 빌드 창 제목 "(Debug)"(`9fe5d52`)
+
+**바꾼 것**(개발 세션): nexa-dir3 10-06 규칙 이식 — Debug 빌드면 메인 · 팝업 · 설정 창 제목이 "Nexa Clip (Debug)…"(릴리스 무변경). **☐ 실기**: Debug 재시작 뒤 제목([21 §15](21-manual-test.md) D1). → [journal](journal/2026-10-10.md)
+
+---
+
 ## 2026-10-10 (3차 · win) — ★ P3′ 파일 대화상자 · P4′ 라이선스(브랜치 `feat/nexa-ui` · 미커밋)
 
 **바꾼 것**(개발 세션): `crates/nclip-license`(nexa-license 어댑터 · Feature 0 · `--license` CLI 5종) · `license_win.rs` · `picker_win.rs`(nexa-dlg) · 설정 정보 › 라이선스 카드(Action + Info 4행) · 창 하나 보기 전환(설정 → 라이선스 → 파일 선택기) · 외부 crate = ed25519 계열 4(검증 전용 · [10 §3](10-decision-record.md)) · DR-47 ⑦ · [14 §7-9](14-settings-registry.md).
