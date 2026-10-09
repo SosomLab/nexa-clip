@@ -123,6 +123,7 @@ mod tests {
 
     #[test]
     fn labels_are_all_filled_in_every_language() {
+        let _lang = crate::lang_test_lock();
         for lang in nclip_core::Lang::ALL {
             nclip_core::set_lang(lang);
             let l = picker_labels();

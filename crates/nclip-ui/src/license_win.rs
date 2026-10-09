@@ -815,6 +815,7 @@ mod tests {
 
     #[test]
     fn state_text_tones_and_args() {
+        let _lang = crate::lang_test_lock();
         nclip_core::set_lang(nclip_core::Lang::En);
         assert_eq!(state_text(&LicenseState::Free).1, LicTone::Neutral);
         let (s, tone) = state_text(&LicenseState::Licensed(lic("pro", "", "")));
@@ -831,6 +832,7 @@ mod tests {
 
     #[test]
     fn license_view_free_has_file_build_machine_rows() {
+        let _lang = crate::lang_test_lock();
         nclip_core::set_lang(nclip_core::Lang::En);
         let dir = std::env::temp_dir().join(format!("nclip-licview-{}", std::process::id()));
         let l = Licensing::open(vec![dir.join("u")]);

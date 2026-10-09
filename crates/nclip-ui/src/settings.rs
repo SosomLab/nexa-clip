@@ -1045,6 +1045,10 @@ pub struct SettingsWidget {
     btn_close: Button,
     /// 읽기 전용 정보 행 본문(`SettingKind::Info` — 호스트 `set_info`).
     infos: HashMap<&'static str, String>,
+    /// 콤보 옵션 **표시 라벨 덮어쓰기**((키, 값) → 라벨 · 10-10 사용자 "시스템 (현재 설정)" — beep `set_option_label` 동일):
+    /// `ui.theme`/`app.lang`의 `system` 항목을 "시스템 (라이트)"·"시스템 (English)"처럼 **지금 OS가 무엇으로 풀리는지**와 함께.
+    /// 판정은 호스트 · 위젯은 OS를 모른다.
+    option_labels: HashMap<(&'static str, &'static str), String>,
     /// 검색 이력(최근이 앞 · `prefs.search` 탭 구분 · 최대 [`HISTORY_MAX`]) · ↑/↓ 탐색 위치.
     history: Vec<String>,
     hist_pos: Option<usize>,
@@ -1137,6 +1141,7 @@ impl SettingsWidget {
             btn_file: Button::new(tr(lang, Msg::BtnOpenSettingsFile)),
             btn_close: Button::new(tr(lang, Msg::BtnClose)),
             infos: HashMap::new(),
+            option_labels: HashMap::new(),
             history,
             hist_pos: None,
             rows: Vec::new(),
@@ -1327,6 +1332,23 @@ impl SettingsWidget {
             }
         }
         inv.push(self.bounds);
+    }
+    /// 콤보 옵션 하나의 표시 라벨을 바꾼다(호스트 — OS 판정값 동반 표기 · 10-10). 같은 값이면 no-op ·
+    /// 바뀌면 보이는 행을 다시 짓는다(콤보 라벨은 생성 시 고정 — 선택값은 `values`가 지켜 유지된다).
+    pub fn set_option_label(
+        &mut self,
+        key: &'static str,
+        value: &'static str,
+        text: &str,
+        inv: &mut Invalidations,
+    ) {
+        if self.option_labels.get(&(key, value)).map(String::as_str) == Some(text) {
+            return;
+        }
+        self.option_labels.insert((key, value), text.to_string());
+        if self.rows.iter().any(|r| registry()[r.idx].key == key) {
+            self.rebuild(inv);
+        }
     }
     /// 현재 선택(시험·호스트 진단용).
     #[must_use]
@@ -1548,7 +1570,14 @@ impl SettingsWidget {
                 SettingKind::Radio(opts) | SettingKind::RadioInput(opts, _) => {
                     let items: Vec<ComboItem> = opts
                         .iter()
-                        .map(|(v, m)| ComboItem::new(*v, tr(lang, *m)))
+                        .map(|(v, m)| {
+                            // 호스트가 덮어쓴 라벨(시스템 (라이트) 등 · 10-10)이 있으면 그것.
+                            let label = self
+                                .option_labels
+                                .get(&(e.key, *v))
+                                .map_or_else(|| tr(lang, *m).to_string(), Clone::clone);
+                            ComboItem::new(*v, label)
+                        })
                         .collect();
                     let mut c = Combo::new(items, 0);
                     if let SettingKind::RadioInput(_, suffix) = e.kind {
@@ -3600,6 +3629,7 @@ mod card_tests {
 
     #[test]
     fn depends_locks_child_until_parent_satisfied() {
+        let _lang = crate::lang_test_lock();
         let (mut w, mut inv) = widget();
         w.set_advanced(true, &mut inv);
         w.select_category(Msg::CatSync, &mut inv);
@@ -3733,5 +3763,40 @@ mod card_tests {
             ch_.iter().any(|(k, v)| *k == "prefs.copy_key" && v == key0),
             "{ch_:?}"
         );
+    }
+}
+
+#[cfg(test)]
+mod option_label_tests {
+    use super::*;
+
+    /// 호스트가 `system` 항목 라벨을 "시스템 (English)"처럼 덮어쓰면 콤보가 그 글자를 보인다(10-10 사용자).
+    #[test]
+    fn system_option_label_override_shows_in_combo() {
+        let mut w = SettingsWidget::new(&SettingsState::with_defaults());
+        let mut inv = Invalidations::default();
+        w.set_bounds(Rect::new(0, 0, 900, 700), &mut inv);
+        w.select_category(Msg::CatGeneral, &mut inv);
+        w.set_option_label("app.lang", "system", "시스템 (English)", &mut inv);
+        let combo = w
+            .rows
+            .iter()
+            .find(|r| registry()[r.idx].key == "app.lang")
+            .and_then(|r| match &r.ctl {
+                RowCtl::Combo(c) => Some(c),
+                _ => None,
+            })
+            .expect("app.lang 콤보");
+        let label = combo
+            .core()
+            .items()
+            .iter()
+            .find(|i| i.value == "system")
+            .map(|i| i.label.clone());
+        assert_eq!(label.as_deref(), Some("시스템 (English)"));
+        // 같은 글자면 no-op(재구성 없음) — 행 수 불변.
+        let n = w.rows.len();
+        w.set_option_label("app.lang", "system", "시스템 (English)", &mut inv);
+        assert_eq!(w.rows.len(), n);
     }
 }

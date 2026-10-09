@@ -26,3 +26,13 @@ mod settings_registry;
 pub use nexa_ctl::hangul;
 pub mod typeahead;
 pub use settings::{registry, Entry, NoteTone, SettingKind, SettingsState, SettingsWidget};
+
+/// ★ 시험 전용 — 전역 언어(`nclip_core::set_lang`)를 바꾸거나 `current_lang()`에 기대는 시험은 이 잠금을 쥔다
+/// (10-10 CI ubuntu: 피커 라벨 시험이 4개 국어를 돌리는 사이 라이선스 시험이 문자열을 비교해 zh/ja로 어긋남 ·
+/// 시험은 병렬이라 프로세스 전역 스위치는 직렬화해야 한다 — nexa-ui `GdiOn` 가드와 같은 규칙).
+#[cfg(test)]
+pub(crate) fn lang_test_lock() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    LOCK.lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}

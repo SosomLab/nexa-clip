@@ -99,6 +99,8 @@ pub(crate) struct App {
     view: View,
     /// 이 PC 기기 코드(base32 · 정보 카드 표시용 · 한 번만 계산).
     machine_code: String,
+    /// ★ 위젯 [닫기]/Esc 요청(10-10 사용자 "닫기 버튼이 동작하지 않아" — `take_back`을 호스트가 소비하지 않았다) → `about_to_wait`가 `request_close`.
+    close_pending: bool,
 }
 
 /// 캡처 오버레이 상태.
@@ -153,8 +155,10 @@ impl App {
             licensing,
             view: View::Settings,
             machine_code,
+            close_pending: false,
         };
         app.refresh_license_info();
+        app.refresh_system_option_labels();
         app
     }
 
@@ -1057,6 +1061,9 @@ impl App {
                 self.widget.on_event(&ev, &mut inv);
                 self.drain_edit_ctx(&mut inv);
                 self.drain_changes();
+                if self.widget.take_back() {
+                    self.close_pending = true;
+                }
             }
             View::License(lw) => {
                 lw.on_event(&ev, &mut inv);
@@ -1132,6 +1139,8 @@ impl App {
             }
             self.redraw();
         }
+        // OS 테마가 바뀌면 "시스템 (다크/라이트)" 표기도(10-10).
+        self.refresh_system_option_labels();
     }
 
     fn drain_changes(&mut self) {
@@ -1191,6 +1200,7 @@ impl App {
                 self.laid_out = (0, 0);
                 self.ui_refresh = true;
                 self.refresh_license_info();
+                self.refresh_system_option_labels();
                 self.redraw();
             }
             // ★ 자동 시작은 값만 저장하면 아무 일도 안 일어난다 — **OS 등록까지 즉시**.
@@ -1456,6 +1466,41 @@ impl core::fmt::Debug for View {
 }
 
 impl App {
+    /// ★ 테마·언어 콤보의 `system` 항목 라벨 = "시스템 (지금 OS 값)"(10-10 사용자 · beep 10-09 동일): 테마 = OS 다크/라이트
+    /// (판정 없음 = 라이트 · `resolve_theme`와 같은 규칙) · 언어 = `system`이 풀리는 언어 이름. 열 때 · 테마 변경 · 언어 변경 뒤.
+    fn refresh_system_option_labels(&mut self) {
+        use nclip_core::{current_lang, tr, Lang, Msg};
+        let lang = current_lang();
+        let sys = tr(lang, Msg::ValSystem);
+        let theme_now = if nclip_plat::theme::system_prefers_dark().unwrap_or(false) {
+            Msg::ValDark
+        } else {
+            Msg::ValLight
+        };
+        let lang_now = match crate::conf::resolve_lang("system") {
+            Lang::En => Msg::ValLangEn,
+            Lang::Ko => Msg::ValLangKo,
+            Lang::Zh => Msg::ValLangZh,
+            Lang::Ja => Msg::ValLangJa,
+        };
+        let mut inv = Invalidations::default();
+        self.widget.set_option_label(
+            "ui.theme",
+            "system",
+            &format!("{sys} ({})", tr(lang, theme_now)),
+            &mut inv,
+        );
+        self.widget.set_option_label(
+            "app.lang",
+            "system",
+            &format!("{sys} ({})", tr(lang, lang_now)),
+            &mut inv,
+        );
+        if !inv.is_empty() {
+            self.laid_out = (0, 0);
+            self.redraw();
+        }
+    }
     /// 설정 › 정보 › 라이선스 정보 카드 4행(상태 · ID · 파일 · 기기 코드) — 열 때 · 라이선스 화면에서 돌아올 때 · 언어 변경 뒤.
     fn refresh_license_info(&mut self) {
         let st = self.licensing.state();
@@ -1863,6 +1908,10 @@ impl ApplicationHandler for App {
     }
 
     fn about_to_wait(&mut self, el: &ActiveEventLoop) {
+        // ★ 위젯 [닫기]·Esc(10-10) — 이벤트 루프 핸들이 있는 여기서 닫는다(상주 = 트레이로 · 단독 = 종료).
+        if std::mem::take(&mut self.close_pending) {
+            self.request_close(el);
+        }
         // 캐럿 깜빡임·툴팁·★ 상태 페이드 — 위젯이 "다시 그려야 한다"고 할 때만.
         let now = self.now_ms();
         self.fire_lan_respawn(); // ★ 릴레이 None 자동 재기동(09-05) — 디바운스 만료 시 셸에 요청.
