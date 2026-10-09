@@ -252,6 +252,7 @@ Material의 상태 전이 90ms보다 11배 길다 — **의도된 예외**다.
 | ③ push 순서 | **nexa-ui → nexa-license → nexa-clip** | 거꾸로 밀면 clip CI가 옛 형제를 받아 깨진다(beep 10-09 함정) |
 | ④ 정정 | **DR-17(포크)을 이 결정으로 대체**한다(기록은 지우지 않음) · DR-46 ①의 구현 위치 = `nclip-gfx` → **nexa-ui `nexa-gfx` `bitmap_glyph.rs`**(191차) | — |
 | ⑤ beep 영향 | 없음 — 의존 구조 변경 · 와이어·서버·공유 규약 변경 0(개발 세션 판정) | — |
+| ⑥ 설정 체계 | **beep P2(`6f5475d`)와 같은 체계** — 그룹 트리 · 고급(`ADVANCED` 9키) · 종속 잠금(`DEPENDS` 9쌍) · 카드(키 복사 · [초기화] · 기본값) · 자모 검색 + 이력 · `app.lang = system`(10-10 2차 · [14 §7](14-settings-registry.md)) | 계열 공통 설정 화면 — 같은 손에 같은 화면 |
 
 ---
 

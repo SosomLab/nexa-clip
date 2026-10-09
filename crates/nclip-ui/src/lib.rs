@@ -13,6 +13,8 @@
 #![forbid(unsafe_code)]
 #![cfg_attr(test, allow(clippy::unwrap_used))]
 
+/// 한글 자모열 검색(10-10 · 설정 검색 — nexa-beep jamo.rs 이식).
+pub mod jamo;
 pub mod settings;
 mod settings_registry;
 

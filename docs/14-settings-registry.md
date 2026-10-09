@@ -442,3 +442,79 @@ General 안내문 그대로:
 
 > 글꼴 크기(`font.*.size`)는 **바꾸지 않았다** — 거기서는 *작게/보통/크게* 가
 > 관례이고, 사용자가 원하는 것도 "몇 px"가 아니라 "지금보다 크게"다.
+
+---
+
+## 7. ★ 설정 화면 개편 — 그룹 트리 · 고급 · 종속 잠금 · 카드 (P2′ · 10-10 · 확정판)
+
+> **출처** — nexa-beep [docs/50 §2·§3](../../nexa-beep/docs/50-settings-overhaul-nexa-ui-plan.md)(10-09 · "설정 모델" · "설정 화면" 행 · 구현 `6f5475d`)을 clip 용어로 바꿨다. beep도 nexa-sql 설정 화면 구조를 자기 레지스트리에 얹은 것이다 — 계열 공통 형태([DR-47](10-decision-record.md) ⑥).
+> **상태**: ★ **확정**(개발 세션 결정 · 구현 10-10 `feat/nexa-ui` · [journal 10-10 2차](journal/2026-10-10.md)) · 사용자 실기 대기(T-P2).
+> 위 §3(카테고리별 `registry()` 명세)은 **카테고리 안의 항목** 명세로 그대로 유효하다 — 이 절은 그 **위 층(그룹)** 과 **화면 형태**를 정한다.
+
+### 7-1. 왜 바꾸나
+
+- 종전 설정 화면은 **카테고리 11개를 평평하게** 나열했다(동기화 한 칸이 19항목 · 자주 쓰는 것과 드물게 쓰는 것이 같은 무게).
+- 계열(nexa-sql · nexa-beep · nexa-dir3)이 같은 설정 화면 형태로 모이는 중 — 같은 손에 같은 화면.
+
+### 7-2. 설정 모델 — 레지스트리에 더한 층(`crates/nclip-ui/src/settings.rs`)
+
+| 층 | 무엇 | clip 값 |
+|---|---|---|
+| **`CATEGORY_TREE`** | 그룹 → 카테고리 2단(트리 좌측) | 7-3 |
+| **`ADVANCED`** | 고급 스위치를 켜야 보이는 키 | 7-4(9키) |
+| **`HIDDEN`** | 화면에 안 내놓는 키(설정 파일로만) | `ui.prefs_advanced` · `prefs.search` |
+| **`DEPENDS`** | 종속 잠금 — 상위가 꺼지면 하위 카드가 **잠김 + 흐림 + 안내**(값은 유지) | 7-5(9쌍) |
+| **`SettingKind::Info`** | 읽기 전용 정보 카드 | 정보 카테고리 · (P4′) 라이선스 |
+| **`display_order`** | 카테고리 안 표시 순서 | 있음 |
+| **`RENAMED`** | 키 이름 이관 | **안 함** — clip 키는 이미 2레벨(`<접두>.<이름>`) |
+
+- **즉시 적용 · 즉시 저장 유지** + **카드별 [초기화]**(기본값과 다를 때만 보임).
+
+### 7-3. 그룹 트리
+
+| 그룹 | 카테고리 |
+|---|---|
+| **일반** | 일반 · 단축키 |
+| **클립보드** | 캡처 · 붙여넣기 · 검색 · 보관 · 개인정보 |
+| **모양** | 모양 |
+| **동기화** | 동기화 |
+| **고급** | 고급 · 정보 |
+
+- **그룹 행을 누르면 그룹 전체**(카테고리 제목을 달고 이어서) · 검색 중에는 일치 수 표시.
+
+### 7-4. 고급(`ADVANCED`) — 9키
+
+`cap.cell_pic_rows` · `cap.cell_pic_cols` · `cap.cell_pic_cells` · `cap.native_formats` · `sync.files_max` · `sync.file_bg_kbps` · `sync.file_cache_mb` · `sync.file_max_mb` · `adv.log`
+
+- 스위치 = `ui.prefs_advanced`(HIDDEN · beep·sql과 같은 이름) · 끄면 카테고리에 **"고급 N개 숨김" 배너**.
+- 고급에 넣지 않은 것: `sync.port` · `sync.retry` · `sync.file_dir` · `sync.file_auto_mb` · `find.hangul_compose` — **사용자가 만지는 값**이라 일반에 둔다.
+- §6 **D-73**(모션 개별 수치 노출 = "고급 접힘")은 이 스위치로 닫을 수 있다(모션 수치를 레지스트리에 올릴 때).
+
+### 7-5. 종속 잠금(`DEPENDS`) — 9쌍
+
+| 상위(꺼지면) | 하위(잠김 + 흐림 + 안내) |
+|---|---|
+| `sync.files` | `sync.files_max` |
+| `sync.file_contents` | `sync.file_auto_mb` · `sync.file_bg_kbps` · `sync.file_max_mb` · `sync.file_cache_mb` · `sync.file_dir` |
+| `cap.rich` | `cap.cell_pic_rows` · `cap.cell_pic_cols` · `cap.cell_pic_cells` |
+
+- `sync.enabled` = off → 동기화의 나머지 잠금은 **`settings_win`의 `set_disabled`가 이미 한다** — DEPENDS에 중복으로 넣지 않는다(두 잠금의 합집합).
+- `cap.image` · `cap.files` · `paste.auto` 기준의 종속은 **코드 근거가 없어 넣지 않았다**.
+- 값은 잠겨도 유지 · 잠긴 행은 MouseUp을 받지 않는다(P1-c′ "잠긴 행 빼고 전 컨트롤에 MouseUp"과 한 묶음).
+
+### 7-6. 설정 화면(카드)
+
+- **좌 그룹 트리** + 스플리터 + **우 카드 목록**.
+- **카드 한 장** = 제목 / **키 이름 + ⧉ 복사**(`prefs.copy_key` → 클립보드) / 설명 / 컨트롤(좌하단) / **[초기화]**(기본과 다를 때만) / "기본값:".
+- **하단 줄** = [고급 설정 스위치] … [설정 파일 열기…](`settings.open_file` → `nclip-plat/src/launch.rs` · Windows explorer · mac open · Linux xdg-open) [닫기].
+- 비밀 값 행(예 `sync.passphrase`)의 버튼은 입력 상자 **오른쪽**.
+- **검색** = 토큰 **AND** + **자모열**(`crates/nclip-ui/src/jamo.rs` 신규 — beep `nbeep-ui/src/jamo.rs` 계승: 글자를 자모열로 펴고 겹모음·겹받침은 둘로 · 글자 경계에서 시작하는 부분열만 인정 · 조합 중 글자도 매치) + **이력 ↑/↓**(Enter로 기록 · `prefs.search` HIDDEN).
+
+### 7-7. 시스템 언어 추종
+
+- `app.lang` = **`system`(기본값)** / en / ko / zh / ja — `system`은 OS 언어를 따른다(`nexa-sys` locale · `conf::resolve_lang` · 미지원 언어 = en).
+
+### 7-8. 남은 것
+
+- 사용자 실기 T-P2 9항목([journal 10-10 2차](journal/2026-10-10.md) ③).
+- 라이선스 정보 카드(P4′) 자리 = 고급 › 정보.

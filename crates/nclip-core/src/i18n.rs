@@ -261,6 +261,43 @@ pub enum Msg {
     CatAdvanced,
     /// ★ 설정 카테고리: 정보(About · 09-12).
     CatAbout,
+    // ── 설정 체계 개편(10-10 · nexa-beep docs/50 P2 동일) — 그룹 트리·카드 문구 ──
+    /// 설정 그룹(트리 최상위 — nexa-sql CATEGORY_TREE 차용): 일반(일반·단축키).
+    GrpGeneral,
+    /// 설정 그룹: 클립보드(캡처·붙여넣기·검색·보관·개인정보).
+    GrpClipboard,
+    /// 설정 그룹: 모양.
+    GrpAppearance,
+    /// 설정 그룹: 동기화.
+    GrpSync,
+    /// 설정 그룹: 고급(고급·정보).
+    GrpAdvanced,
+    /// 언어 "시스템 언어 따름"(`app.lang=system` · 기본값).
+    LangSystem,
+    /// 고급 설정 스위치 라벨.
+    PrefsAdvanced,
+    /// "고급 설정 {}개 숨김 — 고급을 켜면 보입니다".
+    PrefsAdvancedHidden,
+    /// "기본값: {}".
+    LblDefaultValue,
+    /// 카드 [초기화].
+    BtnReset,
+    /// 하단 [설정 파일 열기…].
+    BtnOpenSettingsFile,
+    /// 하단 [닫기].
+    BtnClose,
+    /// 키 복사 버튼 툴팁.
+    PrefsCopyKey,
+    /// 종속 잠금 안내 "“{}”을(를) 켜면 쓸 수 있습니다".
+    PrefsLockedBy,
+    /// 종속 잠금 안내(값 일치형) "“{}”이(가) {}일 때 쓸 수 있습니다".
+    PrefsLockedByValue,
+    /// 상태줄 "설정 파일을 열었습니다: {}".
+    StSettingsFileOpened,
+    /// 상태줄 "키를 복사했습니다: {}".
+    StKeyCopied,
+    /// 설정 창 제목(10-10 · 종전 한국어 고정 → i18n · Linux는 서버 장식 글꼴 문제로 ASCII 유지).
+    WinTitleSettings,
     /// 로그인 시 자동 시작.
     SetAutostart,
     /// 자동 시작 설명.
@@ -851,6 +888,55 @@ impl Msg {
             Msg::CatSync => ["Sync", "동기화", "同步", "同期"],
             Msg::CatAdvanced => ["Advanced", "고급", "高级", "詳細"],
             Msg::CatAbout => ["About", "정보", "关于", "情報"],
+            // ── 설정 체계 개편(10-10) ──
+            Msg::GrpGeneral => ["General", "일반", "常规", "一般"],
+            Msg::GrpClipboard => ["Clipboard", "클립보드", "剪贴板", "クリップボード"],
+            Msg::GrpAppearance => ["Appearance", "모양", "外观", "外観"],
+            Msg::GrpSync => ["Sync", "동기화", "同步", "同期"],
+            Msg::GrpAdvanced => ["Advanced", "고급", "高级", "詳細"],
+            Msg::LangSystem => [
+                "Follow system language",
+                "시스템 언어 따름",
+                "跟随系统语言",
+                "システムの言語に従う",
+            ],
+            Msg::PrefsAdvanced => ["Advanced settings", "고급 설정", "高级设置", "詳細設定"],
+            Msg::PrefsAdvancedHidden => [
+                "{} advanced settings hidden — turn on Advanced to show them",
+                "고급 설정 {}개 숨김 — 고급 설정을 켜면 보입니다",
+                "已隐藏 {} 项高级设置 — 打开“高级设置”即可显示",
+                "詳細設定 {} 件を非表示 — 詳細設定をオンにすると表示されます",
+            ],
+            Msg::LblDefaultValue => ["default: {}", "기본값: {}", "默认: {}", "既定: {}"],
+            Msg::BtnReset => ["Reset", "초기화", "重置", "リセット"],
+            Msg::BtnOpenSettingsFile => [
+                "Open settings file…",
+                "설정 파일 열기…",
+                "打开设置文件…",
+                "設定ファイルを開く…",
+            ],
+            Msg::BtnClose => ["Close", "닫기", "关闭", "閉じる"],
+            Msg::PrefsCopyKey => ["Copy key name", "키 이름 복사", "复制键名", "キー名をコピー"],
+            Msg::PrefsLockedBy => [
+                "Available when “{}” is on",
+                "“{}”을(를) 켜면 쓸 수 있습니다",
+                "打开“{}”后可用",
+                "“{}”をオンにすると使えます",
+            ],
+            Msg::PrefsLockedByValue => [
+                "Available when “{}” is {}",
+                "“{}”이(가) {}일 때 쓸 수 있습니다",
+                "“{}”为 {} 时可用",
+                "“{}”が {} のとき使えます",
+            ],
+            Msg::StSettingsFileOpened => [
+                "Opened settings file: {}",
+                "설정 파일을 열었습니다: {}",
+                "已打开设置文件: {}",
+                "設定ファイルを開きました: {}",
+            ],
+            Msg::StKeyCopied => ["Copied key: {}", "키를 복사했습니다: {}", "已复制键名: {}", "キーをコピーしました: {}"],
+            Msg::WinTitleSettings => ["Nexa Clip — Settings", "Nexa Clip — 설정", "Nexa Clip — 设置", "Nexa Clip — 設定"],
             Msg::SetAutostart => [
                 "Launch at login",
                 "로그인 시 자동 시작",
@@ -1657,6 +1743,16 @@ impl Msg {
 
 /// 번역 조회. 빈 문자열이면 **영어로 폴백**한다(누락이 화면을 비우지 않게).
 #[must_use]
+/// `{}` 자리에 인자를 **차례로** 넣은 문장(10-10 · nexa-beep `tf` 동일) — 자리가 모자라면 남은 인자는 버리고,
+/// 인자가 모자라면 `{}`가 남는다(번역 표의 자리 수와 호출의 인자 수는 시험이 대조한다).
+pub fn tf(msg: Msg, args: &[&str]) -> String {
+    let mut s = tr(current_lang(), msg).to_string();
+    for a in args {
+        s = s.replacen("{}", a, 1);
+    }
+    s
+}
+
 pub fn tr(lang: Lang, msg: Msg) -> &'static str {
     let row = msg.row();
     let s = row[lang.column()];
@@ -1672,7 +1768,7 @@ mod tests {
     use super::*;
 
     /// 카탈로그 전수 — 새 `Msg`를 더하면 여기도 더한다(빈칸 검사가 그걸 강제한다).
-    const ALL_MSG: [Msg; 315] = [
+    const ALL_MSG: [Msg; 333] = [
         Msg::AppName,
         Msg::SearchPlaceholder,
         Msg::EmptyHistory,
@@ -1768,6 +1864,24 @@ mod tests {
         Msg::CatSync,
         Msg::CatAdvanced,
         Msg::CatAbout,
+        Msg::GrpGeneral,
+        Msg::GrpClipboard,
+        Msg::GrpAppearance,
+        Msg::GrpSync,
+        Msg::GrpAdvanced,
+        Msg::LangSystem,
+        Msg::PrefsAdvanced,
+        Msg::PrefsAdvancedHidden,
+        Msg::LblDefaultValue,
+        Msg::BtnReset,
+        Msg::BtnOpenSettingsFile,
+        Msg::BtnClose,
+        Msg::PrefsCopyKey,
+        Msg::PrefsLockedBy,
+        Msg::PrefsLockedByValue,
+        Msg::StSettingsFileOpened,
+        Msg::StKeyCopied,
+        Msg::WinTitleSettings,
         Msg::SetAutostart,
         Msg::SetAutostartDesc,
         Msg::SetLang,

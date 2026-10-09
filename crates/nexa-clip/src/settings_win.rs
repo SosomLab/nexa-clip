@@ -598,9 +598,14 @@ impl App {
                 // Linux(GNOME)는 서버 장식이 없어 winit(sctk-adwaita)이 제목을 자체 폰트로
                 // 그리는데 한글 글리프가 없다(08-30 사용자 실기 "타이틀바 글씨 깨짐") → ASCII.
                 .with_title(if cfg!(target_os = "linux") {
-                    "Nexa Clip - Settings"
+                    "Nexa Clip - Settings".to_string()
                 } else {
-                    "Nexa Clip — 설정 (검색 · 사이드바 경계 드래그 · Esc 종료)"
+                    // i18n(10-10 — 종전 한국어 고정 · 협업 세션 관찰 ⓐ).
+                    nclip_core::tr(
+                        nclip_core::current_lang(),
+                        nclip_core::Msg::WinTitleSettings,
+                    )
+                    .to_string()
                 })
                 .with_inner_size(winit::dpi::LogicalSize::new(760.0, 560.0)),
         ));
@@ -1092,6 +1097,28 @@ impl App {
             // ★ 단축키 행 클릭(09-04) — 값이 아니라 캡처 오버레이를 연다.
             if key.starts_with("key.") && val == "run" {
                 self.begin_capture(key);
+                continue;
+            }
+            // ★ 설정 파일 열기(10-10 P2 · 하단 [설정 파일 열기…]) — OS 기본 프로그램으로.
+            if key == "settings.open_file" && val == "run" {
+                let path = self.conf.path().to_path_buf();
+                if path.is_file() && nclip_plat::launch::open_path(&path) {
+                    println!(
+                        "{}",
+                        nclip_core::tf(
+                            nclip_core::Msg::StSettingsFileOpened,
+                            &[&path.display().to_string()]
+                        )
+                    );
+                } else {
+                    println!("설정 파일: {}", path.display());
+                }
+                continue;
+            }
+            // ★ 키 이름 복사(10-10 P2 · 카드의 키 이름/⧉ 클릭).
+            if key == "prefs.copy_key" {
+                crate::cliptext::set_text(&val);
+                println!("{}", nclip_core::tf(nclip_core::Msg::StKeyCopied, &[&val]));
                 continue;
             }
             // ★ 즉시 적용 계약 — 값은 바로 반영하고, **파일 쓰기는 미룬다**

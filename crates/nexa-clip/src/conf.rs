@@ -466,8 +466,17 @@ pub(crate) fn load_mono_font(conf: &Settings, ui: &nexa_gfx::Font) -> Option<nex
 /// ★ `app.lang` 적용(09-02 "재시작 없는 설정") — 부팅·변경 즉시 전역 언어를 바꾼다.
 /// 이전엔 부팅에서조차 안 불려 설정이 죽은 값이었다(스윙 중 발견).
 pub(crate) fn apply_lang(conf: &Settings) {
-    let code = conf.state.get("app.lang");
-    if let Some(l) = nclip_core::Lang::from_code(code) {
-        nclip_core::set_lang(l);
+    nclip_core::set_lang(resolve_lang(conf.state.get("app.lang")));
+}
+
+/// `app.lang` 값 → 언어(10-10 · beep D-33-4): `system`(기본) = **OS 표시 언어**(nexa-sys locale · 부팅마다 판정 ·
+/// 미지원·판정 불가 = 영어) · 그 밖은 코드 그대로(미지 코드 = 영어).
+pub(crate) fn resolve_lang(value: &str) -> nclip_core::Lang {
+    if value == "system" || value.is_empty() {
+        return nexa_sys::locale::ui_language()
+            .as_deref()
+            .and_then(nclip_core::Lang::from_code)
+            .unwrap_or_default();
     }
+    nclip_core::Lang::from_code(value).unwrap_or_default()
 }

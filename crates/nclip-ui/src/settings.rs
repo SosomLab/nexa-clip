@@ -80,7 +80,163 @@ const HIDDEN_KEYS: &[&str] = &[
     "ui.set_w",
     "ui.set_h",
     "ui.set_mon",
+    // ── 설정 체계 개편(10-10 · beep P2) ──
+    // 고급 설정 스위치 상태(기본 off) — 설정 창 하단 스위치가 쓰고 열 때 되살린다.
+    "ui.prefs_advanced",
+    // 설정 검색 이력(탭 구분 · 최근 20) — 검색창 ↑/↓.
+    "prefs.search",
 ];
+
+/// ★ 설정 트리(10-10 · nexa-beep P2 · nexa-sql `CATEGORY_TREE` 차용 — DBeaver Preferences 모양): **그룹 → 카테고리**.
+/// 사이드바·표시 순서·검색 결과 정렬의 단일 원천. 카테고리 안 하위 그룹(`Entry::sub`)은 본문 섹션 제목으로만 쓴다.
+/// 새 카테고리는 여기 한 줄 — 트리에 없는 카테고리의 Entry는 시험 `tree_covers_every_category`가 잡는다.
+pub const CATEGORY_TREE: &[(Msg, &[Msg])] = &[
+    (Msg::GrpGeneral, &[Msg::CatGeneral, Msg::CatShortcuts]),
+    (
+        Msg::GrpClipboard,
+        &[
+            Msg::CatCapture,
+            Msg::CatPaste,
+            Msg::CatSearch,
+            Msg::CatStorage,
+            Msg::CatPrivacy,
+        ],
+    ),
+    (Msg::GrpAppearance, &[Msg::CatAppearance]),
+    (Msg::GrpSync, &[Msg::CatSync]),
+    (Msg::GrpAdvanced, &[Msg::CatAdvanced, Msg::CatAbout]),
+];
+
+/// 트리 안 위치 `(그룹 순서, 카테고리 순서)` — 없으면 맨 뒤.
+#[must_use]
+pub fn tree_pos(cat: Msg) -> (usize, usize) {
+    for (gi, (_, cats)) in CATEGORY_TREE.iter().enumerate() {
+        if let Some(ci) = cats.iter().position(|c| *c == cat) {
+            return (gi, ci);
+        }
+    }
+    (usize::MAX, usize::MAX)
+}
+
+/// 카테고리가 속한 그룹.
+#[must_use]
+pub fn group_of(cat: Msg) -> Option<Msg> {
+    CATEGORY_TREE
+        .iter()
+        .find(|(_, cats)| cats.contains(&cat))
+        .map(|(g, _)| *g)
+}
+
+/// ★ 고급 설정(10-10 · 설정 창 "고급 설정" 스위치 대상) — 한 번 정하면 거의 손대지 않는 구현값·상한.
+/// 글꼴·모드·켜기/끄기 같은 습관값은 기본 표시로 남긴다. 표에 없는 키는 시험 `advanced_keys_exist`가 잡는다.
+pub const ADVANCED: &[&str] = &[
+    // 표 캡처 그림 상한(셀 수·행·열) — 실측으로 정한 구현값.
+    "cap.cell_pic_rows",
+    "cap.cell_pic_cols",
+    "cap.cell_pic_cells",
+    // 네이티브 포맷 보관.
+    "cap.native_formats",
+    // 파일 동기화 상한·대역.
+    "sync.files_max",
+    "sync.file_bg_kbps",
+    "sync.file_cache_mb",
+    "sync.file_max_mb",
+    // 진단 로그.
+    "adv.log",
+];
+
+/// 고급 설정인가(설정 창 스위치가 꺼져 있으면 숨기고 수만 센다).
+#[must_use]
+pub fn is_advanced(key: &str) -> bool {
+    ADVANCED.contains(&key)
+}
+
+/// ★ OS별 숨김(10-10 · 협업 세션 관찰 ⓒ "Windows에서도 Dock 아이콘 카드") — (키, 보이는 OS). 값은 영속·등재 그대로(다른 OS에서 열어도 잃지 않는다) · 화면·검색에서만 뺀다.
+pub const SHOWN_ONLY_ON: &[(&str, &str)] = &[("ui.dock_icon", "macos")];
+
+/// 이 OS에서 숨기는 키인가.
+#[must_use]
+pub fn hidden_on_this_os(key: &str) -> bool {
+    SHOWN_ONLY_ON
+        .iter()
+        .any(|(k, os)| *k == key && *os != std::env::consts::OS)
+}
+
+/// 종속 조건(10-10 · nexa-sql `Dep` 차용 — "종속 설정은 부모가 조건을 만족할 때만 만질 수 있다").
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Dep {
+    /// 부모가 `on`.
+    On,
+    /// 부모가 이 값.
+    Eq(&'static str),
+}
+
+impl Dep {
+    /// 부모 값이 조건을 만족하는가.
+    #[must_use]
+    pub fn satisfied(self, parent_value: &str) -> bool {
+        match self {
+            Dep::On => parent_value == "on",
+            Dep::Eq(v) => parent_value == v,
+        }
+    }
+}
+
+/// (자식, 부모, 조건) — 부모가 조건을 만족하지 않으면 자식 행은 **잠긴다**(값은 유지 · 흐리게 + 안내 1줄).
+/// 호스트가 `set_disabled`로 거는 런타임 잠금(동기화 켬/연결 상태 — settings_win)과 **합집합**이다.
+pub const DEPENDS: &[(&str, &str, Dep)] = &[
+    ("sync.files_max", "sync.files", Dep::On),
+    ("sync.file_auto_mb", "sync.file_contents", Dep::On),
+    ("sync.file_bg_kbps", "sync.file_contents", Dep::On),
+    ("sync.file_max_mb", "sync.file_contents", Dep::On),
+    ("sync.file_cache_mb", "sync.file_contents", Dep::On),
+    ("sync.file_dir", "sync.file_contents", Dep::On),
+    ("cap.cell_pic_rows", "cap.rich", Dep::On),
+    ("cap.cell_pic_cols", "cap.rich", Dep::On),
+    ("cap.cell_pic_cells", "cap.rich", Dep::On),
+];
+
+/// 이 키의 종속(부모 키, 조건) — 없으면 `None`.
+#[must_use]
+pub fn depends_of(key: &str) -> Option<(&'static str, Dep)> {
+    DEPENDS
+        .iter()
+        .find(|(c, _, _)| *c == key)
+        .map(|(_, p, d)| (*p, *d))
+}
+
+/// ★ 표시 순서(10-10 · nexa-sql `display_order` 차용) = (그룹, 카테고리, 하위 섹션, 키 접두 첫 등재, 등재 순).
+/// 같은 카테고리에 여러 접두(`ui.`·`app.`)가 섞여도 접두끼리 모인다.
+#[must_use]
+pub fn display_order(idx: usize) -> (usize, usize, usize, usize, usize) {
+    let e = &registry()[idx];
+    let (g, c) = tree_pos(e.cat);
+    // 하위 섹션: 직속(None) = 0 · 하위는 같은 카테고리 안 첫 등재 순.
+    let si = match e.sub {
+        None => 0,
+        Some(sub) => {
+            let mut seen: Vec<Msg> = Vec::new();
+            for x in registry().iter().filter(|x| x.cat == e.cat) {
+                if let Some(s) = x.sub {
+                    if !seen.contains(&s) {
+                        seen.push(s);
+                    }
+                }
+            }
+            seen.iter()
+                .position(|y| *y == sub)
+                .map_or(usize::MAX, |p| p + 1)
+        }
+    };
+    let prefix = e.key.split('.').next().unwrap_or(e.key);
+    let first = registry()
+        .iter()
+        .position(|x| {
+            x.cat == e.cat && x.sub == e.sub && x.key.split('.').next().unwrap_or(x.key) == prefix
+        })
+        .unwrap_or(idx);
+    (g, c, si, first, idx)
+}
 
 /// 직접 입력이 **텍스트**인 RadioInput 키(08-22) — 기본은 숫자 전용(포트·ms·MiB).
 /// 서버 주소는 도메인·IP를 받아야 해서 숫자 필터가 입력 자체를 막았다(실기).
@@ -285,10 +441,11 @@ fn report_lines(v: Option<&String>) -> i32 {
     i32::try_from(n.max(1)).unwrap_or(i32::MAX)
 }
 
+/// 비밀 행 버튼 자리(09-03 사용자 확정 "두 버튼을 텍스트 우상단으로" → 10-10 카드 레이아웃: 컨트롤이 좌하단으로
+/// 가면서 버튼은 **상자 오른쪽** 같은 줄에 \[생성\]\[눈\] 순 · 버튼 크기 = 상자 높이 · 간격 = 높이/8).
 fn pw_btn_rects(b: Rect) -> (Rect, Rect) {
-    // ★ 09-03 사용자: "두 버튼을 텍스트 우상단으로" — 상자 위 한 줄, 오른쪽 끝 정렬.
-    let eye = Rect::new(b.right() - b.h, b.y - b.h / 8 - b.h, b.h, b.h);
-    let regen = Rect::new(eye.x - b.h / 8 - b.h, eye.y, b.h, b.h);
+    let regen = Rect::new(b.right() + b.h / 8, b.y, b.h, b.h);
+    let eye = Rect::new(regen.right() + b.h / 8, b.y, b.h, b.h);
     (eye, regen)
 }
 
@@ -327,7 +484,7 @@ fn draw_icon(
 }
 
 const RADIO_DEFAULTS: &[(&str, &str)] = &[
-    ("app.lang", "en"),
+    ("app.lang", "system"),
     // ★ 차단 출처 기본값 = 코어 기본 접두 목록(레지스트리 테스트가 동기화를 강제).
     (
         "sec.conceal_urls",
@@ -429,6 +586,8 @@ pub enum SettingKind {
         /// ★ 전역(OS 등록 · 수식 키 필수)인가 — 창 안 단축키는 `false`(09-08 · 맨 키 허용).
         global: bool,
     },
+    /// ★ 읽기 전용 정보 행(10-10 · beep P2) — 값 키 없음 · 호스트가 `set_info`로 본문을 채운다(라이선스 상태 등).
+    Info,
     /// ★ 자유 문자열 한 줄(09-03 동기화 기반 — 핸들·패스프레이즈·서버 주소).
     /// [`FontFace`](SettingKind::FontFace)의 TextBox 행(`RowCtl::Face`)을 재사용한다 —
     /// 플러시가 `e.key` 범용이라 추가 배선이 없다.
@@ -510,6 +669,8 @@ impl Entry {
             SettingKind::PositionGrid => vec![(self.key, "bl".to_string())],
             SettingKind::FontFace { family_key } => vec![(family_key, String::new())],
             SettingKind::Text { .. } => vec![(self.key, String::new())],
+            // 정보 행 — 값 키 없음(영속 파일에 실리지 않는다 · 호스트가 set_info로 채운다).
+            SettingKind::Info => Vec::new(),
             SettingKind::FontSection {
                 family_key,
                 size_key,
@@ -652,7 +813,7 @@ impl SettingsState {
             SettingKind::Text { .. } => true,
             SettingKind::FontSection { .. } => true,
             // 행위 항목은 값이 없다 — 파일에서 와도 무시(default_values가 비어 도달 불가).
-            SettingKind::Action { .. } => false,
+            SettingKind::Action { .. } | SettingKind::Info => false,
             // 단축키 = 빈 값(없음) 또는 파싱되는 조합만.
             SettingKind::Hotkey { .. } => {
                 value.trim().is_empty() || nclip_core::hotkey::Hotkey::parse(value).is_some()
@@ -723,38 +884,64 @@ pub(crate) fn wrap_text(
     lines
 }
 
+/// 검색 매칭(10-10 개정 · beep D-33-1): 공백 토큰 **AND** · 대상 = 키 이름 + 그룹·카테고리·하위·제목·설명(전 언어) ·
+/// 한글 토큰은 **자모열 대조**(조합 중 "ㅌ"·"테"도 "테마"에 맞는다 · [`crate::jamo`]).
 /// 전 언어에 걸쳐 매칭한다 — 영어 UI에서도 "테마"로, 한국어 UI에서도 "theme"로 찾힌다.
 fn entry_matches(e: &Entry, toks: &[String]) -> bool {
     if toks.is_empty() {
         return true;
     }
     let mut hay = String::new();
+    hay.push_str(e.key);
+    hay.push(' ');
     for lang in Lang::ALL {
+        if let Some(g) = group_of(e.cat) {
+            hay.push_str(tr(lang, g));
+            hay.push(' ');
+        }
         hay.push_str(tr(lang, e.cat));
         hay.push(' ');
+        if let Some(sub) = e.sub {
+            hay.push_str(tr(lang, sub));
+            hay.push(' ');
+        }
         hay.push_str(tr(lang, e.label));
         hay.push(' ');
         hay.push_str(tr(lang, e.desc));
         hay.push(' ');
     }
     let hay = hay.to_lowercase();
-    toks.iter().all(|t| hay.contains(t))
+    toks.iter().all(|t| {
+        if crate::jamo::has_hangul(t) {
+            crate::jamo::contains_jamo(&hay, &crate::jamo::decompose(t, true), true)
+        } else {
+            hay.contains(t.as_str())
+        }
+    })
 }
 
 // 레이아웃(논리 px).
-const SIDEBAR_W: i32 = 150;
+const SIDEBAR_W: i32 = 170;
 const SEARCH_H: i32 = 30;
-const ENTRY_H: i32 = 52;
-const FONT_SECTION_H: i32 = 88;
+/// 하단 줄(고급 스위치 · 설정 파일 열기 · 닫기 — 10-10 beep P2 · nexa-sql 차용) 높이.
+const BOTTOM_H: i32 = 44;
+/// 고급 숨김 배너(밴드 셋째 줄) 높이.
+const BANNER_H: i32 = 22;
+/// 카드 \[초기화\] 버튼 폭.
+const RESET_W: i32 = 72;
+/// 검색 이력 보관 수.
+const HISTORY_MAX: usize = 20;
+/// 카드 제목 줄 높이.
+const TITLE_H: i32 = 20;
+/// 카드 안쪽 여백 · 카드 사이 간격.
+const CARD_PAD: i32 = 12;
+const CARD_GAP: i32 = 8;
+/// 자유 문자열 상자 폭.
+const TEXT_W: i32 = 260;
 /// 설정 행에 붙는 정보 줄 높이(논리 px).
 const NOTE_H: i32 = 22;
-/// 행 노트 **아래** 여백 — 노트가 다음 행이 아니라 제 행에 붙어 보이게(09-03 사용자 지적:
-/// 예약만 하고 노트를 행 바닥에 그려 여백이 **위**로 가 있었다).
-const NOTE_GAP_B: i32 = 16;
 /// 설명 워드랩 줄 높이(논리 px — Status 폰트 한 줄 + 행간).
 const DESC_LINE_H: i32 = 16;
-/// 위치 그리드 행 높이(3×3 미니 화면 93 + 여백).
-const POS_ROW_H: i32 = 110;
 const CTL_H: i32 = 26;
 const COMBO_W: i32 = 170;
 const SIZE_W: i32 = 112;
@@ -794,6 +981,8 @@ enum RowCtl {
     Face(TextBox),
     /// 색상(스와치 + hex + 프리셋 · 08-10).
     Color(ColorPicker),
+    /// 읽기 전용 정보(10-10 · 호스트가 채운 글).
+    Info(String),
 }
 
 #[derive(Debug)]
@@ -810,14 +999,23 @@ struct RowUi {
     head: Option<Msg>,
     /// 헤더까지 포함한 이 행의 시작 y(레이아웃이 채운다) — 밴드 판정에 쓴다.
     head_h: i32,
-    /// ★ 비밀 행(09-03) — 제목·설명·상자를 이만큼 아래로 내리고 그 위에 버튼 줄을 둔다.
-    top_inset: i32,
     /// 설명에 예약된 줄 수(1~3 · 레이아웃이 추정) — 워드랩이 이 안에서 그린다(08-11).
     desc_lines: i32,
     /// 설명 워드랩 가용 폭(물리 px — 컨트롤 왼쪽까지). 레이아웃·페인트가 같은 값을 쓴다.
     desc_avail: i32,
+    /// [초기화](10-10 · 값이 기본값과 다를 때만 보인다 · 값 키가 없는 행위/정보/보고 행은 `None`).
+    reset: Option<Button>,
+    /// 키 이름+복사 글리프 자리(페인트가 실측해 채운다 · 클릭 = 키 복사 요청).
+    key_rect: std::cell::Cell<Rect>,
 }
-
+/// 사이드바 트리 선택(10-10 그룹 트리) — 그룹 행 = 그 그룹의 카테고리 전부 · 카테고리 행 = 그것만.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TreeSel {
+    /// `CATEGORY_TREE` 그룹 인덱스.
+    Group(usize),
+    /// `SettingsWidget::cats` 인덱스(트리 순서의 카테고리).
+    Cat(usize),
+}
 /// 설정 위젯 — 커스텀 컨트롤 컴포지션.
 #[derive(Debug)]
 pub struct SettingsWidget {
@@ -833,12 +1031,23 @@ pub struct SettingsWidget {
     default_mono_name: String,
     /// 카테고리 사이드바(TreeView).
     tree: TreeView,
-    /// 사이드바 가시 행 → (cats() 인덱스, 하위 카테고리).
-    cat_map: Vec<(usize, Option<Msg>)>,
-    /// 선택 카테고리(cats() 인덱스).
-    selected_cat: usize,
-    /// 선택 하위 카테고리(None = 최상위 — 하위 항목도 함께 보인다).
-    selected_sub: Option<Msg>,
+    /// 사이드바 가시 행 → 트리 선택(그룹/카테고리 · 트리 행 순서와 같다).
+    cat_map: Vec<TreeSel>,
+    /// 현재 선택.
+    selected: TreeSel,
+    /// 고급 설정 스위치 상태(`ui.prefs_advanced`) — 끄면 [`ADVANCED`] 항목은 숨기고 수만 센다.
+    advanced: bool,
+    /// 지금 보기에서 숨긴 고급 항목 수(밴드 배너).
+    adv_hidden: usize,
+    /// 하단 줄 컨트롤 — 고급 스위치 · \[설정 파일 열기…\] · \[닫기\].
+    adv_switch: Switch,
+    btn_file: Button,
+    btn_close: Button,
+    /// 읽기 전용 정보 행 본문(`SettingKind::Info` — 호스트 `set_info`).
+    infos: HashMap<&'static str, String>,
+    /// 검색 이력(최근이 앞 · `prefs.search` 탭 구분 · 최대 [`HISTORY_MAX`]) · ↑/↓ 탐색 위치.
+    history: Vec<String>,
+    hist_pos: Option<usize>,
     /// 우측 행들(가시 항목 + 컨트롤).
     rows: Vec<RowUi>,
     /// 현재 값 스냅숏(컨트롤 초기화·보고 근거).
@@ -903,6 +1112,15 @@ impl SettingsWidget {
                 values.insert(k, state.get(k).to_string());
             }
         }
+        let lang = current_lang();
+        let advanced = state.get("ui.prefs_advanced") == "on";
+        let history: Vec<String> = state
+            .get("prefs.search")
+            .split('\t')
+            .filter(|h| !h.is_empty())
+            .take(HISTORY_MAX)
+            .map(str::to_string)
+            .collect();
         let mut w = Self {
             bounds: Rect::default(),
             scale: 1.0,
@@ -912,8 +1130,15 @@ impl SettingsWidget {
             default_mono_name: String::new(),
             tree: TreeView::new(TreeModel::default()),
             cat_map: Vec::new(),
-            selected_cat: 0,
-            selected_sub: None,
+            selected: TreeSel::Cat(0),
+            advanced,
+            adv_hidden: 0,
+            adv_switch: Switch::new(tr(lang, Msg::PrefsAdvanced), advanced),
+            btn_file: Button::new(tr(lang, Msg::BtnOpenSettingsFile)),
+            btn_close: Button::new(tr(lang, Msg::BtnClose)),
+            infos: HashMap::new(),
+            history,
+            hist_pos: None,
             rows: Vec::new(),
             values,
             changes: Vec::new(),
@@ -1073,13 +1298,40 @@ impl SettingsWidget {
     /// 검색은 지우고 스크롤은 맨 위로. 미지 카테고리는 무시.
     pub fn select_category(&mut self, cat: Msg, inv: &mut Invalidations) {
         if let Some(ci) = Self::cats().iter().position(|(c, _)| *c == cat) {
-            self.selected_cat = ci;
-            self.selected_sub = None;
+            self.selected = TreeSel::Cat(ci);
             self.query.clear();
             self.search.set_text("");
             self.scroll = 0;
             self.rebuild(inv);
         }
+    }
+    /// 고급 설정 스위치 상태를 외부에서 맞춘다(열 때 `ui.prefs_advanced` 복원은 `new`가 한다 — 런타임 동기용).
+    pub fn set_advanced(&mut self, on: bool, inv: &mut Invalidations) {
+        if self.advanced != on {
+            self.advanced = on;
+            self.adv_switch.set_on(on);
+            self.rebuild(inv);
+        }
+    }
+    /// 읽기 전용 정보 행 본문 지정(`SettingKind::Info` · 빈 문자열 = 비움) — 바뀔 때만 다시 그린다.
+    pub fn set_info(&mut self, key: &'static str, text: &str, inv: &mut Invalidations) {
+        if self.infos.get(key).map(String::as_str) == Some(text) {
+            return;
+        }
+        self.infos.insert(key, text.to_string());
+        for row in &mut self.rows {
+            if registry()[row.idx].key == key {
+                if let RowCtl::Info(t) = &mut row.ctl {
+                    *t = text.to_string();
+                }
+            }
+        }
+        inv.push(self.bounds);
+    }
+    /// 현재 선택(시험·호스트 진단용).
+    #[must_use]
+    pub fn selected(&self) -> TreeSel {
+        self.selected
     }
 
     pub fn take_changes(&mut self) -> Vec<(&'static str, String)> {
@@ -1110,118 +1362,152 @@ impl SettingsWidget {
         (v as f32 * self.scale).round() as i32
     }
 
-    /// 카테고리 목록(레지스트리 순서·중복 제거) — (최상위, 하위들).
-    fn cats() -> Vec<(Msg, Vec<Msg>)> {
-        let mut out: Vec<(Msg, Vec<Msg>)> = Vec::new();
-        for e in registry() {
-            if !out.iter().any(|(c, _)| *c == e.cat) {
-                out.push((e.cat, Vec::new()));
-            }
-            if let Some(sub) = e.sub {
-                if let Some((_, subs)) = out.iter_mut().find(|(c, _)| *c == e.cat) {
-                    if !subs.contains(&sub) {
-                        subs.push(sub);
-                    }
+    /// 카테고리 목록 — **트리 순서**(`CATEGORY_TREE`)로, 레지스트리에 항목이 있는 것만: (카테고리, 그룹 인덱스).
+    fn cats() -> Vec<(Msg, usize)> {
+        let mut out = Vec::new();
+        for (gi, (_, cats)) in CATEGORY_TREE.iter().enumerate() {
+            for &c in *cats {
+                if registry().iter().any(|e| e.cat == c) {
+                    out.push((c, gi));
                 }
             }
         }
         out
     }
-
-    fn cat_match_count(cat: Msg, sub: Option<Msg>, toks: &[String]) -> usize {
+    /// 이 행이 기본값과 다른가(값 키가 하나라도 다르면 · 값 키 없는 행 = 거짓).
+    fn is_modified(&self, idx: usize) -> bool {
+        registry()[idx]
+            .default_values()
+            .iter()
+            .any(|(k, d)| self.values.get(k).map(String::as_str) != Some(d.as_str()))
+    }
+    /// 종속 잠금(DEPENDS) — 부모 값이 조건을 만족하지 않으면 `Some(부모 키, 조건)`.
+    fn dep_lock(&self, idx: usize) -> Option<(&'static str, Dep)> {
+        let (parent, dep) = depends_of(registry()[idx].key)?;
+        let pv = self.values.get(parent).map_or("", String::as_str);
+        (!dep.satisfied(pv)).then_some((parent, dep))
+    }
+    /// 행 아래 한 줄 — 호스트 노트가 우선 · 없으면 종속 잠금 안내.
+    fn row_note(&self, idx: usize) -> Option<(String, NoteTone)> {
+        let key = registry()[idx].key;
+        if let Some((t, tone)) = self.notes.get(key) {
+            return Some((t.clone(), *tone));
+        }
+        let (parent, dep) = self.dep_lock(idx)?;
+        let lang = current_lang();
+        let plabel = registry()
+            .iter()
+            .find(|e| e.key == parent)
+            .map_or(parent, |e| tr(lang, e.label));
+        let text = match dep {
+            Dep::On => nclip_core::tf(Msg::PrefsLockedBy, &[plabel]),
+            Dep::Eq(v) => {
+                // 부모 옵션의 표시 라벨(없으면 값 그대로).
+                let vlabel = registry()
+                    .iter()
+                    .find(|e| e.key == parent)
+                    .and_then(|e| match e.kind {
+                        SettingKind::Radio(opts) | SettingKind::RadioInput(opts, _) => opts
+                            .iter()
+                            .find(|(o, _)| *o == v)
+                            .map(|(_, m)| tr(lang, *m)),
+                        _ => None,
+                    })
+                    .unwrap_or(v);
+                nclip_core::tf(Msg::PrefsLockedByValue, &[plabel, vlabel])
+            }
+        };
+        Some((text, NoteTone::Plain))
+    }
+    /// 카테고리 매치 수(고급 숨김 반영 — 사이드바 "(N)"은 실제로 보일 수와 같아야 한다).
+    fn cat_match_count(&self, cat: Msg, toks: &[String]) -> usize {
         registry()
             .iter()
-            .filter(|e| e.cat == cat && (sub.is_none() || e.sub == sub) && entry_matches(e, toks))
+            .filter(|e| {
+                e.cat == cat
+                    && !hidden_on_this_os(e.key)
+                    && (self.advanced || !is_advanced(e.key))
+                    && entry_matches(e, toks)
+            })
             .count()
     }
-
-    /// 가시 항목(registry 인덱스) — 검색 중=전 카테고리 매치, 아니면 선택 카테고리.
-    ///
-    /// **그룹 순서로 정렬해서 돌려준다** — 상위에 직속인 설정이 먼저, 그다음 하위 그룹이
-    /// 사이드바에 보이는 순서대로 이어진다(사용자 확정 08-10). registry 순서를 그대로
-    /// 쓰면 "다크 색 → 라이트 색 → 언어 → 타입어헤드"처럼 섞여 나와, 지금 보는 값이
-    /// 어느 그룹의 것인지 화면만 봐서는 알 수 없다. 그룹 안에서는 registry 순서를 지킨다.
-    fn visible_indices(&self) -> Vec<usize> {
+    /// 고급 필터 **전** 후보(검색 또는 선택 범위) — 숨긴 수를 세는 기준.
+    fn candidate_indices(&self) -> Vec<usize> {
         let toks = tokens(&self.query);
         let searching = !toks.is_empty();
-        let selected = Self::cats().get(self.selected_cat).map(|(c, _)| *c);
-        let mut hits: Vec<usize> = registry()
+        let cats = Self::cats();
+        let allowed: Vec<Msg> = match self.selected {
+            TreeSel::Group(gi) => CATEGORY_TREE
+                .get(gi)
+                .map_or(Vec::new(), |(_, c)| c.to_vec()),
+            TreeSel::Cat(ci) => cats.get(ci).map(|(c, _)| *c).into_iter().collect(),
+        };
+        registry()
             .iter()
             .enumerate()
+            .filter(|(_, e)| !hidden_on_this_os(e.key))
             .filter(|(_, e)| {
                 if searching {
                     entry_matches(e, &toks)
-                } else if Some(e.cat) != selected {
-                    false
                 } else {
-                    // 최상위 선택 = 하위 포함 전부 · 하위 선택 = 그 하위만(VS Code식).
-                    self.selected_sub.is_none() || e.sub == self.selected_sub
+                    allowed.contains(&e.cat)
                 }
             })
             .map(|(i, _)| i)
+            .collect()
+    }
+    /// 가시 항목(registry 인덱스) — 검색 중 = 전 카테고리 매치 · 아니면 선택 범위(그룹/카테고리) ·
+    /// 고급 스위치가 꺼져 있으면 [`ADVANCED`] 제외 · 순서 = [`display_order`](그룹 → 카테고리 → 하위 → 접두 → 등재).
+    fn visible_indices(&self) -> Vec<usize> {
+        let mut hits: Vec<usize> = self
+            .candidate_indices()
+            .into_iter()
+            .filter(|&i| self.advanced || !is_advanced(registry()[i].key))
             .collect();
-        // 정렬 키 = (상위 순서, 하위 순서). 직속(sub=None)은 하위보다 **먼저**(=0).
-        let cats = Self::cats();
-        let key = |idx: &usize| -> (usize, usize) {
-            let e = &registry()[*idx];
-            let ci = cats
-                .iter()
-                .position(|(c, _)| *c == e.cat)
-                .unwrap_or(usize::MAX);
-            let si = match e.sub {
-                None => 0,
-                Some(sub) => cats
-                    .get(ci)
-                    .and_then(|(_, subs)| subs.iter().position(|s| *s == sub))
-                    .map_or(usize::MAX, |p| p + 1),
-            };
-            (ci, si)
-        };
-        // 안정 정렬 — 같은 그룹 안에서는 registry 순서가 그대로 남는다.
-        hits.sort_by_key(key);
+        hits.sort_by_key(|&i| display_order(i));
         hits
     }
-
     /// 사이드바·우측 행(컨트롤 포함)을 현재 상태(검색·선택·값)로 다시 만든다.
     fn rebuild(&mut self, inv: &mut Invalidations) {
         let lang = current_lang();
         let toks = tokens(&self.query);
         let searching = !toks.is_empty();
-
-        // ── 사이드바 트리(계층 카테고리 · 검색 중엔 매치만 + "(N)") ──
+        // ── 사이드바 트리(그룹 → 카테고리 · 10-10 · 검색 중엔 매치만 + "(N)") ──
         let cats = Self::cats();
         self.cat_map.clear();
         let mut roots = Vec::new();
-        for (ci, (cat, subs)) in cats.iter().enumerate() {
-            let n = Self::cat_match_count(*cat, None, &toks);
-            if searching && n == 0 {
-                continue;
-            }
-            let label = if searching {
-                format!("{} ({n})", tr(lang, *cat))
-            } else {
-                tr(lang, *cat).to_string()
-            };
-            self.cat_map.push((ci, None));
+        for (gi, (g, _)) in CATEGORY_TREE.iter().enumerate() {
             let mut children = Vec::new();
-            for &sub in subs {
-                let sn = Self::cat_match_count(*cat, Some(sub), &toks);
-                if searching && sn == 0 {
+            let mut sels = Vec::new();
+            let mut gn = 0usize;
+            for (ci, (c, cgi)) in cats.iter().enumerate() {
+                if *cgi != gi {
                     continue;
                 }
-                let sl = if searching {
-                    format!("{} ({sn})", tr(lang, sub))
+                let n = self.cat_match_count(*c, &toks);
+                if searching && n == 0 {
+                    continue;
+                }
+                gn += n;
+                let label = if searching {
+                    format!("{} ({n})", tr(lang, *c))
                 } else {
-                    tr(lang, sub).to_string()
+                    tr(lang, *c).to_string()
                 };
-                children.push(TreeNode::leaf(sl));
-                self.cat_map.push((ci, Some(sub)));
+                children.push(TreeNode::leaf(label));
+                sels.push(TreeSel::Cat(ci));
             }
             if children.is_empty() {
-                roots.push(TreeNode::leaf(label));
-            } else {
-                roots.push(TreeNode::branch(label, children)); // 기본 펼침
+                continue;
             }
+            let glabel = if searching {
+                format!("{} ({gn})", tr(lang, *g))
+            } else {
+                tr(lang, *g).to_string()
+            };
+            self.cat_map.push(TreeSel::Group(gi));
+            self.cat_map.extend(sels);
+            roots.push(TreeNode::branch(glabel, children)); // 기본 펼침
         }
         let mut tree = TreeView::new(TreeModel::new(roots));
         tree.set_scale(self.scale);
@@ -1229,16 +1515,23 @@ impl SettingsWidget {
         let sel_row = self
             .cat_map
             .iter()
-            .position(|&(c, sub)| c == self.selected_cat && sub == self.selected_sub)
+            .position(|&sel| sel == self.selected)
             .unwrap_or(0);
         tree.set_selected_row(sel_row);
         self.tree = tree;
-
+        let candidates = self.candidate_indices().len();
         // ── 우측 행 + 컨트롤 ──
         self.rows.clear();
-        for idx in self.visible_indices() {
+        let visible = self.visible_indices();
+        self.adv_hidden = candidates.saturating_sub(visible.len());
+        // 여러 카테고리가 한 목록에 섞이는 보기(그룹 선택·검색)는 카테고리 경계에 제목을 붙인다.
+        let multi_cat = searching || matches!(self.selected, TreeSel::Group(_));
+        for idx in visible {
             let e = &registry()[idx];
             let ctl = match e.kind {
+                SettingKind::Info => {
+                    RowCtl::Info(self.infos.get(e.key).cloned().unwrap_or_default())
+                }
                 // ★ 숫자 항목 — 라벨이 곧 값이다(번역하지 않는다).
                 SettingKind::Number { presets, suffix } => {
                     let items: Vec<ComboItem> =
@@ -1379,16 +1672,22 @@ impl SettingsWidget {
                     }
                 }
             };
-            // 그룹이 바뀌는 첫 행에만 하위 섹션 제목을 붙인다(상위 제목은 고정 밴드 몫).
+            // 제목 규칙: 카테고리가 바뀌면(여러 카테고리 보기) 카테고리 제목 · 같은 카테고리 안에서 하위 섹션이
+            // 바뀌면 하위 제목 · 직속 구간은 없음(상위 제목은 고정 밴드 몫).
             let group = (e.cat, e.sub);
-            let head = match (self.rows.last().map(|r| r.group), e.sub) {
-                (_, None) => None,
-                (Some(prev), Some(sub)) if prev == group => {
-                    let _ = sub;
-                    None
-                }
-                (_, Some(sub)) => Some(sub),
+            let head = match self.rows.last().map(|r| r.group) {
+                Some((pc, ps)) if pc == e.cat => e.sub.filter(|_| ps != e.sub),
+                _ if multi_cat => Some(e.cat),
+                _ => e.sub,
             };
+            // [초기화] — 값 키가 있는 행만(행위·정보·보고 행은 없다). 보이기는 layout이 `is_modified`로 정한다.
+            let resettable = !e.default_values().is_empty()
+                && !matches!(e.kind, SettingKind::Report | SettingKind::DeviceList);
+            let reset = resettable.then(|| {
+                let mut b = Button::new(tr(lang, Msg::BtnReset));
+                b.set_scale(self.scale);
+                b
+            });
             self.rows.push(RowUi {
                 idx,
                 rect: Rect::default(),
@@ -1396,9 +1695,10 @@ impl SettingsWidget {
                 group,
                 head,
                 head_h: 0,
-                top_inset: 0,
                 desc_lines: 1,
                 desc_avail: 0,
+                reset,
+                key_rect: std::cell::Cell::new(Rect::default()),
             });
         }
         self.layout(inv);
@@ -1490,34 +1790,46 @@ impl SettingsWidget {
         inv.push(self.bounds);
     }
 
-    /// 이 행에 붙은 정보 줄 높이(없으면 0) — 노트 아래 **여백 8**을 포함해
-    /// 다음 행과 시각 구분한다(08-23 사용자 확정 — 검증 노트와 다음 설정이 붙어
-    /// 보였다).
+    /// 이 행에 붙은 정보 줄 높이(없으면 0) — 노트는 카드 안 컨트롤 줄 아래(간격 6 + 노트).
     fn note_h(&self, idx: usize) -> i32 {
-        if self.notes.contains_key(registry()[idx].key) {
-            self.s(NOTE_H + NOTE_GAP_B) // 아래 여백(08-23 2차 — 8은 여전히 붙어 보였다)
+        if self.row_note(idx).is_some() {
+            self.s(NOTE_H + 6)
         } else {
             0
         }
     }
-
-    /// 이 행이 잠겼는가.
+    /// 이 행이 잠겼는가 — 호스트 런타임 잠금 ∪ 종속(DEPENDS) 불충족.
     fn is_locked(&self, idx: usize) -> bool {
-        self.disabled.contains(registry()[idx].key)
+        self.disabled.contains(registry()[idx].key) || self.dep_lock(idx).is_some()
     }
-
-    /// 상단 고정 밴드(상위 + 하위 제목) 높이 — 하위가 없어도 **줄어들지 않는다**.
+    /// 하단 줄 높이(물리 px).
+    fn bottom_h(&self) -> i32 {
+        self.s(BOTTOM_H)
+    }
+    /// 하단 줄 영역.
+    fn bottom_rect(&self) -> Rect {
+        let b = self.bounds;
+        let h = self.bottom_h();
+        Rect::new(b.x, b.bottom() - h, b.w, h)
+    }
+    /// 상단 고정 밴드(상위 + 하위 제목 + 고급 숨김 배너) 높이 — 하위가 없어도 **줄어들지 않는다**.
     /// 그룹 경계를 넘을 때 아래 내용이 위아래로 튀면 읽던 자리를 잃는다.
     fn crumb_h(&self) -> i32 {
-        self.s(CRUMB_CAT_H) + self.s(CRUMB_SUB_H)
+        self.s(CRUMB_CAT_H)
+            + self.s(CRUMB_SUB_H)
+            + if self.adv_hidden > 0 {
+                self.s(BANNER_H)
+            } else {
+                0
+            }
     }
-
-    /// 우측 패널 뷰포트(사이드바 제외 · **고정 밴드 아래**부터).
+    /// 우측 패널 뷰포트(사이드바 제외 · **고정 밴드 아래**부터 · 하단 줄 위까지).
     fn right_viewport(&self) -> Rect {
         let sw = self.s(self.sidebar_w);
         let b = self.bounds;
         let top = b.y + self.crumb_h();
-        Rect::new(b.x + sw, top, (b.w - sw).max(0), (b.bottom() - top).max(0))
+        let bottom = b.bottom() - self.bottom_h();
+        Rect::new(b.x + sw, top, (b.w - sw).max(0), (bottom - top).max(0))
     }
 
     /// 스크롤 위치 기준으로 지금 보이는 그룹 `(상위, 하위)` — 고정 밴드가 이걸 그린다.
@@ -1556,7 +1868,11 @@ impl SettingsWidget {
                 RowCtl::Font { size, .. } => size.tick_hover(now_ms),
                 _ => false,
             };
+            if let Some(b) = &mut row.reset {
+                dirty |= b.tick(now_ms);
+            }
         }
+        dirty |= self.btn_file.tick(now_ms) | self.btn_close.tick(now_ms);
         dirty
     }
 
@@ -1577,7 +1893,7 @@ impl SettingsWidget {
         (x - split_x).abs() <= self.s(4) && y >= self.bounds.y && y < self.bounds.bottom()
     }
 
-    /// 현 bounds에 맞춰 자식 컨트롤 배치.
+    /// 현 bounds에 맞춰 자식 컨트롤 배치 — ★ 카드 레이아웃(10-10 · beep P2 · nexa-sql 모양).
     fn layout(&mut self, inv: &mut Invalidations) {
         let sw = self.s(self.sidebar_w);
         let b = self.bounds;
@@ -1591,65 +1907,79 @@ impl SettingsWidget {
             inv,
         );
         let tree_top = b.y + self.s(SEARCH_H) + self.s(8);
+        let bottom_top = b.bottom() - self.bottom_h();
         self.tree.set_bounds(
-            Rect::new(b.x, tree_top, sw, (b.bottom() - tree_top).max(0)),
+            Rect::new(b.x, tree_top, sw, (bottom_top - tree_top).max(0)),
             inv,
         );
-
+        // ── 하단 줄(10-10): [고급 스위치] ………… [설정 파일 열기…][닫기] ──
+        {
+            let ctl_h = self.s(CTL_H);
+            let pad = self.s(PAD);
+            let cy = bottom_top + (self.bottom_h() - ctl_h) / 2;
+            self.adv_switch.set_scale(self.scale);
+            self.adv_switch
+                .set_bounds(Rect::new(b.x + pad, cy, self.s(190), ctl_h), inv);
+            let close_w = self.s(90);
+            let file_w = self.s(150);
+            self.btn_close.set_scale(self.scale);
+            self.btn_close.set_bounds(
+                Rect::new(b.right() - pad - close_w, cy, close_w, ctl_h),
+                inv,
+            );
+            self.btn_file.set_scale(self.scale);
+            self.btn_file.set_bounds(
+                Rect::new(
+                    b.right() - pad - close_w - self.s(8) - file_w,
+                    cy,
+                    file_w,
+                    ctl_h,
+                ),
+                inv,
+            );
+        }
         let rx = b.x + sw; // 우측 패널 시작
         let rw = (b.w - sw).max(0);
-        // 차용 분리를 위해 치수 사전 계산.
-        let (ctl_h, pad) = (self.s(CTL_H), self.s(PAD));
-        let (h_font, h_entry, h_pos) = (self.s(FONT_SECTION_H), self.s(ENTRY_H), self.s(POS_ROW_H));
-        // 토글 폭 = Switch 트랙(20) × 컨트롤 크기 배율(ui.control_size).
+        // ── 카드 레이아웃(10-10 · nexa-sql 모양) ──
+        //   ┌ 제목 ……………………………… 키 이름 ⧉ ┐
+        //   │ 설명(워드랩 1~3줄)                      │
+        //   │ [컨트롤] [초기화]           기본값: … │
+        //   └ (노트 — 호스트/종속 잠금)              ┘
+        //   목록·보고·기기 목록은 컨트롤 줄이 카드 전폭 여러 줄.
+        let (ctl_h, pad, cpad, gap) = (
+            self.s(CTL_H),
+            self.s(PAD),
+            self.s(CARD_PAD),
+            self.s(CARD_GAP),
+        );
         let (combo_w, check_w) = (self.s(COMBO_W), self.s(nexa_ctl::controls::ctl_size(20)));
-        // 기기 목록 버튼 간격 — 루프 밖에서(차용 분리 · 폭은 행이 라벨로 정한다).
+        let (family_w, size_w, gap10, text_w) =
+            (self.s(FAMILY_W), self.s(SIZE_W), self.s(10), self.s(TEXT_W));
         let dev_g = self.s(6);
-        let (family_w, size_w, gap10, dy32) =
-            (self.s(FAMILY_W), self.s(SIZE_W), self.s(10), self.s(32));
-        let note_hs: Vec<i32> = self.rows.iter().map(|r| self.note_h(r.idx)).collect();
         let lang = current_lang();
         let scale = self.scale;
         let desc_line_h = self.s(DESC_LINE_H);
-        let min_avail = self.s(60);
-        // 콘텐츠 총 높이 → 스크롤 클램프(행 추가/검색으로 줄어들면 위로 당긴다).
-        // ★ **설명 워드랩 예약분 포함**(08-15 실기 — 이걸 빼고 합산하면 IME처럼
-        // 2줄 설명이 많은 카테고리에서 총높이가 과소평가돼 **끝까지 스크롤이 안 됐다**.
-        // 아래 배치 루프와 같은 추정식을 써야 상한이 실제 끝과 일치한다).
+        let title_h = self.s(TITLE_H);
         let head_h = self.s(SUB_HEAD_H);
-        self.content_h = self
+        let reset_w = self.s(RESET_W);
+        let card_x = rx + pad;
+        let card_w = (rw - pad * 2).max(self.s(120));
+        let inner_w = (card_w - cpad * 2).max(self.s(60));
+        let desc_avail = inner_w;
+        let desc_gap = self.s(2);
+        let ctl_gap = self.s(8);
+        // 행별 치수를 **한 번** 계산해 총높이와 배치가 같은 값을 쓴다(08-15 상한 불일치 재발 방지).
+        struct Metric {
+            desc_lines: i32,
+            ctl_block: i32,
+            h: i32,
+        }
+        let metrics: Vec<Metric> = self
             .rows
             .iter()
-            .enumerate()
-            .map(|(ri, row)| {
+            .map(|row| {
                 let e = &registry()[row.idx];
-                let base = match (&row.ctl, e.kind) {
-                    // 목록은 제목 줄 아래 전폭으로 눈는다(FontSection 문법).
-                    (RowCtl::List(l), _) => dy32 + l.preferred_height() + pad,
-                    (RowCtl::Report, _) => {
-                        dy32 + report_lines(self.values.get(e.key)) * desc_line_h + pad
-                    }
-                    (RowCtl::Devices(rows), _) => {
-                        dy32 + dev_rows_h(rows, rw, pad, dev_g, ctl_h, desc_line_h, scale) + pad
-                    }
-                    (_, SettingKind::FontSection { .. }) => h_font,
-                    (_, SettingKind::PositionGrid) => h_pos,
-                    // ★ 비밀 행(09-03) — 상자 위 버튼 줄(ctl_h + 간격)만큼 더 높다.
-                    (_, SettingKind::Text { secret: true, .. }) => h_entry + ctl_h + ctl_h / 8,
-                    _ => h_entry,
-                };
-                let ctl_w = match &row.ctl {
-                    RowCtl::Combo(_) | RowCtl::Act(_) => combo_w,
-                    RowCtl::Check(_) => check_w,
-                    RowCtl::Face(_) if matches!(e.kind, SettingKind::Text { .. }) => combo_w,
-                    RowCtl::Face(_) => family_w,
-                    RowCtl::Pos(p) => p.preferred_size().0,
-                    RowCtl::Color(c) => c.preferred_width().min(rw - pad * 2),
-                    RowCtl::Font { .. } | RowCtl::List(_) | RowCtl::Report | RowCtl::Devices(_) => {
-                        0
-                    }
-                };
-                let desc_avail = (rw - pad * 2 - ctl_w - gap10).max(min_avail);
+                // 설명 줄 수 추정(ASCII 7·그 외 14 논리px — 실측은 페인트가 하고 여기는 **예약**).
                 let est_logical: i32 = tr(lang, e.desc)
                     .chars()
                     .map(|c| if c.is_ascii() { 7 } else { 14 })
@@ -1657,175 +1987,152 @@ impl SettingsWidget {
                 #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
                 let est_px = (est_logical as f32 * scale).round() as i32;
                 let desc_lines = ((est_px + desc_avail - 1) / desc_avail).clamp(1, 3);
-                base + (desc_lines - 1) * desc_line_h
-                    + note_hs[ri]
-                    + if row.head.is_some() { head_h } else { 0 }
+                // 컨트롤 블록 높이 — 대부분 한 줄 · 목록/보고/기기 목록/위치 그리드는 제 높이.
+                let ctl_block = match &row.ctl {
+                    RowCtl::List(l) => l.preferred_height(),
+                    RowCtl::Report => report_lines(self.values.get(e.key)).max(1) * desc_line_h,
+                    RowCtl::Devices(rows) => {
+                        dev_rows_h(rows, card_w, cpad, dev_g, ctl_h, desc_line_h, scale).max(ctl_h)
+                    }
+                    RowCtl::Pos(p) => p.preferred_size().1.max(ctl_h),
+                    _ => ctl_h,
+                };
+                let h = cpad
+                    + title_h
+                    + desc_gap
+                    + desc_lines * desc_line_h
+                    + ctl_gap
+                    + ctl_block
+                    + self.note_h(row.idx)
+                    + cpad;
+                Metric {
+                    desc_lines,
+                    ctl_block,
+                    h,
+                }
             })
+            .collect();
+        self.content_h = self
+            .rows
+            .iter()
+            .zip(&metrics)
+            .map(|(row, m)| m.h + gap + if row.head.is_some() { head_h } else { 0 })
             .sum();
         let vp_h = self.right_viewport().h;
         self.scroll = self.scroll.clamp(0, (self.content_h - vp_h).max(0));
+        // [초기화] 표시 여부 = 기본값과 다름 ∧ 잠기지 않음.
+        let show_reset: Vec<bool> = self
+            .rows
+            .iter()
+            .map(|r| self.is_modified(r.idx) && !self.is_locked(r.idx))
+            .collect();
+        let vp_bottom = self.bounds.bottom() - self.bottom_h();
+        let min_color_w = self.s(80);
         // 내용은 **밴드 아래**에서 시작한다(밴드가 첫 행을 가리면 못 만진다).
         let mut top = b.y + self.crumb_h() - self.scroll;
         for (ri, row) in self.rows.iter_mut().enumerate() {
             let e = &registry()[row.idx];
-            // ── 설명 워드랩 예약(08-11 — 설명이 컨트롤을 침범하지 않게) ──
-            // 가용 폭 = 행 폭 − 좌우 여백 − 그 행 컨트롤 폭 − 간격. 줄 수는 문자 폭
-            // 추정(ASCII 7·그 외 14 논리px — 실측은 페인트가 하고, 여기는 **예약**이라
-            // 약간의 과대/과소는 여백/말줄임으로 흡수된다).
-            let ctl_w = match &row.ctl {
-                RowCtl::Combo(_) | RowCtl::Act(_) => combo_w,
-                RowCtl::Check(_) => check_w,
-                RowCtl::Face(_) if matches!(e.kind, SettingKind::Text { .. }) => combo_w,
-                RowCtl::Face(_) => family_w,
-                RowCtl::Pos(p) => p.preferred_size().0,
-                RowCtl::Color(c) => c.preferred_width().min(rw - pad * 2),
-                // 설명이 전폭을 쓴다(컨트롤이 아래 줄).
-                RowCtl::Font { .. } | RowCtl::List(_) | RowCtl::Report | RowCtl::Devices(_) => 0,
-            };
-            row.desc_avail = (rw - pad * 2 - ctl_w - gap10).max(min_avail);
-            let est_logical: i32 = tr(lang, e.desc)
-                .chars()
-                .map(|c| if c.is_ascii() { 7 } else { 14 })
-                .sum();
-            #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
-            let est_px = (est_logical as f32 * scale).round() as i32;
-            row.desc_lines = ((est_px + row.desc_avail - 1) / row.desc_avail).clamp(1, 3);
-            let h = match (&row.ctl, e.kind) {
-                (RowCtl::List(l), _) => dy32 + l.preferred_height() + pad,
-                (RowCtl::Report, _) => {
-                    dy32 + report_lines(self.values.get(e.key)) * desc_line_h + pad
-                }
-                (RowCtl::Devices(rows), _) => {
-                    dy32 + dev_rows_h(rows, rw, pad, dev_g, ctl_h, desc_line_h, scale) + pad
-                }
-                (_, SettingKind::FontSection { .. }) => h_font,
-                (_, SettingKind::PositionGrid) => h_pos,
-                (_, SettingKind::Text { secret: true, .. }) => h_entry + ctl_h + ctl_h / 8,
-                _ => h_entry,
-            } + (row.desc_lines - 1) * desc_line_h
-                + note_hs[ri];
-            // 하위 섹션 제목 자리를 행 **위에** 비워 둔다.
+            let m = &metrics[ri];
+            row.desc_avail = desc_avail;
+            row.desc_lines = m.desc_lines;
             row.head_h = if row.head.is_some() { head_h } else { 0 };
-            // ★ 비밀 행: 버튼 줄이 **제목 위**에 — 제목·설명·상자가 그만큼 내려간다(09-03 사용자:
-            //   "입력칸은 버튼 자리로, 버튼은 그 위로").
-            row.top_inset = if matches!(e.kind, SettingKind::Text { secret: true, .. }) {
-                ctl_h + ctl_h / 8
-            } else {
-                0
-            };
             top += row.head_h;
-            row.rect = Rect::new(rx, top, rw, h);
-            // ★ 컨트롤은 **노트를 뺀** 높이 중앙에(09-03 실기 — 노트가 붙어도 컨트롤이 안 밀린다;
-            //   노트는 행 바닥에 따로 그린다).
-            let hc = h - note_hs[ri];
-            match &mut row.ctl {
+            row.rect = Rect::new(card_x, top, card_w, m.h);
+            // 컨트롤 줄 = 좌하단(제목·설명 아래).
+            let cy = top + cpad + title_h + desc_gap + m.desc_lines * desc_line_h + ctl_gap;
+            let cx = card_x + cpad;
+            let secret = matches!(e.kind, SettingKind::Text { secret: true, .. });
+            let text_row = matches!(e.kind, SettingKind::Text { .. });
+            let ctl_right = match &mut row.ctl {
                 RowCtl::Combo(c) => {
-                    c.set_bounds(
-                        Rect::new(
-                            rx + rw - combo_w - pad,
-                            top + (hc - ctl_h) / 2,
-                            combo_w,
-                            ctl_h,
-                        ),
-                        inv,
-                    );
-                    // 창 하한 전달(08-20) — 아래 끝 행의 팝업이 잘리지 않게
-                    // 시작 위치를 위로 옮긴다(콤보가 스스로 계산).
-                    c.set_viewport_bottom(self.bounds.bottom());
+                    c.set_bounds(Rect::new(cx, cy, combo_w, ctl_h), inv);
+                    c.set_viewport_bottom(vp_bottom); // 아래 끝 행의 팝업이 잘리지 않게(08-20)
+                    cx + combo_w
                 }
                 RowCtl::Check(c) => {
-                    c.set_bounds(
-                        Rect::new(
-                            rx + rw - check_w - pad,
-                            top + (hc - ctl_h) / 2,
-                            check_w,
-                            ctl_h,
-                        ),
-                        inv,
-                    );
+                    c.set_bounds(Rect::new(cx, cy, check_w, ctl_h), inv);
+                    cx + check_w
                 }
                 RowCtl::Font { family, size } => {
-                    let fy = top + dy32;
-                    family.set_bounds(Rect::new(rx + pad, fy, family_w, ctl_h), inv);
-                    size.set_bounds(
-                        Rect::new(rx + pad + family_w + gap10, fy, size_w, ctl_h),
-                        inv,
-                    );
-                    size.set_viewport_bottom(self.bounds.bottom()); // 08-20 잘림 방지
+                    family.set_bounds(Rect::new(cx, cy, family_w, ctl_h), inv);
+                    size.set_bounds(Rect::new(cx + family_w + gap10, cy, size_w, ctl_h), inv);
+                    size.set_viewport_bottom(vp_bottom);
+                    cx + family_w + gap10 + size_w
                 }
-                RowCtl::Face(family) => {
-                    // 크기 콤보가 없다 — 얼굴만 지정하고 크기는 Base UI를 따른다.
-                    // ★ 텍스트 입력(09-03 사용자)은 콤보와 **시작 x·폭을 정렬**한다
-                    //   (입력란 세로 정렬 · 암호 상자도 동일 크기). 비밀 행의 생성·눈
-                    //   버튼은 상자 **왼쪽 바깥**에 그린다([`pw_btn_rects`]).
-                    let is_text = matches!(e.kind, SettingKind::Text { .. });
-                    let base_w = if is_text { combo_w } else { family_w };
-                    // 비밀 행: 상자는 inset 아래 영역의 중앙(= Handle 상자처럼 제목·설명 옆) ·
-                    //   버튼 줄은 그 위(pw_btn_rects).
-                    let ins = row.top_inset;
-                    let y = top + ins + (hc - ins - ctl_h) / 2;
-                    family.set_bounds(Rect::new(rx + rw - base_w - pad, y, base_w, ctl_h), inv);
+                RowCtl::Face(f) if text_row => {
+                    f.set_bounds(Rect::new(cx, cy, text_w, ctl_h), inv);
+                    // 비밀 행은 상자 오른쪽에 [생성][눈] 두 칸(ctl_h 정사각 · 간격 ctl_h/8).
+                    cx + text_w + if secret { ctl_h / 8 * 2 + ctl_h * 2 } else { 0 }
+                }
+                RowCtl::Face(f) => {
+                    f.set_bounds(Rect::new(cx, cy, family_w, ctl_h), inv);
+                    cx + family_w
                 }
                 RowCtl::Pos(p) => {
-                    p.set_scale(self.scale);
+                    p.set_scale(scale);
                     let (pw, ph) = p.preferred_size();
-                    p.set_bounds(
-                        Rect::new(rx + rw - pw - pad, top + (hc - ph) / 2, pw, ph),
-                        inv,
-                    );
+                    p.set_bounds(Rect::new(cx, cy, pw, ph), inv);
+                    cx + pw
                 }
                 RowCtl::Color(c) => {
-                    c.set_scale(self.scale);
-                    let cw = c.preferred_width().min(rw - pad * 2);
-                    c.set_bounds(
-                        Rect::new(rx + rw - cw - pad, top + (hc - ctl_h) / 2, cw, ctl_h),
-                        inv,
-                    );
+                    c.set_scale(scale);
+                    let cw = c
+                        .preferred_width()
+                        .min((inner_w - reset_w - gap10).max(min_color_w));
+                    c.set_bounds(Rect::new(cx, cy, cw, ctl_h), inv);
+                    cx + cw
                 }
                 RowCtl::Act(b) => {
-                    b.set_scale(self.scale);
-                    b.set_bounds(
-                        Rect::new(
-                            rx + rw - combo_w - pad,
-                            top + (hc - ctl_h) / 2,
-                            combo_w,
-                            ctl_h,
-                        ),
-                        inv,
-                    );
+                    b.set_scale(scale);
+                    b.set_bounds(Rect::new(cx, cy, combo_w, ctl_h), inv);
+                    cx + combo_w
                 }
                 RowCtl::List(l) => {
-                    l.set_scale(self.scale);
-                    let lh = l.preferred_height();
-                    l.set_bounds(Rect::new(rx + pad, top + dy32, rw - pad * 2, lh), inv);
+                    l.set_scale(scale);
+                    l.set_bounds(Rect::new(cx, cy, inner_w, m.ctl_block), inv);
+                    cx + inner_w
                 }
-                RowCtl::Report => {}
+                RowCtl::Report => cx + inner_w,
                 RowCtl::Devices(rows) => {
-                    // 행마다: 텍스트(왼쪽) + [승인|해제][삭제](오른쪽 정렬).
+                    // 행마다: 텍스트(왼쪽) + [승인|해제][삭제](오른쪽 정렬) — 카드 안쪽 폭 기준.
                     let g = dev_g;
                     let bh = dev_btn_h(ctl_h);
-                    let mut y = top + dy32;
+                    let mut y = cy;
                     for r in rows.iter_mut() {
                         r.y = y;
-                        r.text_w = dev_text_w(r, rw, pad, g);
+                        r.text_w = dev_text_w(r, card_w, cpad, g);
                         r.lines = est_lines(&r.text, r.text_w, scale);
                         let row_h = (r.lines * desc_line_h).max(bh);
                         let (bw, dw) = (r.bw, r.dw);
-                        // 버튼은 첫 줄에 맞춰 세로 중앙(한 줄 행은 곧 행 중앙).
                         let by = y + (desc_line_h.max(bh) - bh) / 2;
                         if let Some(b) = r.del.as_mut() {
-                            b.set_scale(self.scale);
-                            b.set_bounds(Rect::new(rx + rw - pad - dw, by, dw, bh), inv);
+                            b.set_scale(scale);
+                            b.set_bounds(Rect::new(card_x + card_w - cpad - dw, by, dw, bh), inv);
                         }
                         if let Some(b) = r.approve.as_mut() {
-                            b.set_scale(self.scale);
-                            b.set_bounds(Rect::new(rx + rw - pad - dw - g - bw, by, bw, bh), inv);
+                            b.set_scale(scale);
+                            b.set_bounds(
+                                Rect::new(card_x + card_w - cpad - dw - g - bw, by, bw, bh),
+                                inv,
+                            );
                         }
                         y += row_h + g;
                     }
+                    cx + inner_w
                 }
+                RowCtl::Info(_) => cx + text_w,
+            };
+            // [초기화] — 컨트롤 오른쪽(값이 기본값과 다를 때만 · 잠기면 숨김).
+            if let Some(btn) = &mut row.reset {
+                btn.set_scale(scale);
+                let rect = if show_reset[ri] {
+                    Rect::new(ctl_right + gap10, cy, reset_w, ctl_h)
+                } else {
+                    Rect::default()
+                };
+                btn.set_bounds(rect, inv);
             }
-            top += h;
+            top += m.h + gap;
         }
         inv.push(self.bounds);
     }
@@ -1928,6 +2235,19 @@ impl SettingsWidget {
                         }
                     }
                 }
+                RowCtl::Info(_) => {}
+            }
+        }
+        // [초기화](10-10) — 그 행의 값 키 전부를 기본값으로(FontSection = family+size).
+        let mut reset_any = false;
+        for row in &mut self.rows {
+            if let Some(b) = &mut row.reset {
+                if b.take_clicked() {
+                    for (k, d) in registry()[row.idx].default_values() {
+                        got.push((k, d));
+                    }
+                    reset_any = true;
+                }
             }
         }
         if !got.is_empty() {
@@ -1936,6 +2256,13 @@ impl SettingsWidget {
             }
             self.changes.extend(got);
             inv.push(self.bounds);
+            if reset_any {
+                // 컨트롤 표시를 값에 맞춘다(종류마다 역반영 API가 달라 재구성이 가장 확실하다).
+                self.rebuild(inv);
+            } else {
+                // 기본값 여부([초기화] 노출)·종속 잠금(부모 값)이 바뀌었을 수 있다 — 재배치.
+                self.layout(inv);
+            }
         }
         if !warn.is_empty() {
             self.warnings.extend(warn);
@@ -1960,6 +2287,38 @@ impl SettingsWidget {
             self.default_mono_name = mono.to_string();
             self.rebuild(inv);
         }
+    }
+
+    /// 카드 우상단 키 이름 + ⧉(10-10) — 고급 키는 accent · 자리는 `key_rect`에 남겨 클릭 = 키 복사.
+    fn paint_key(
+        &self,
+        ctx: &mut dyn DrawCtx,
+        theme: &Theme,
+        row: &RowUi,
+        right: i32,
+        y: i32,
+        clip: Rect,
+    ) {
+        let key = registry()[row.idx].key;
+        let color = if is_advanced(key) {
+            theme.accent
+        } else {
+            theme.text_dim
+        };
+        ctx.select_font(FontSlot::Base, false);
+        let bh = ctx.text_height();
+        ctx.select_font(FontSlot::Status, false);
+        let th = ctx.text_height();
+        let glyph = "⧉";
+        let kw = ctx.text_width(key);
+        let gw = ctx.text_width(glyph);
+        let w = kw + self.s(4) + gw;
+        let kx = right - w;
+        let ky = y + (bh - th) / 2;
+        ctx.text(kx, ky, clip, key, color);
+        ctx.text(kx + kw + self.s(4), ky, clip, glyph, color);
+        row.key_rect
+            .set(Rect::new(kx, y, w, bh).intersection(&clip));
     }
 
     fn any_family_focused(&self) -> bool {
@@ -2018,40 +2377,6 @@ impl Widget for SettingsWidget {
         //    포커스된 글꼴명 밖을 클릭하면 미확정 텍스트를 그 자리에서 확정 보고한다
         //    (Enter의 take_committed와 같은 경로 · Esc는 취소라 여기 안 온다).
         if let &InputEvent::MouseDown { x, y, .. } = ev {
-            // ★ 비밀 행 눈 버튼(09-03) — 마스킹 보기 토글(값·포커스 불변). 잠긴 행은 건너뛴다(09-04).
-            for r in &mut self.rows {
-                let e = &registry()[r.idx];
-                if self.disabled.contains(e.key) {
-                    continue;
-                }
-                if let (RowCtl::Face(f), SettingKind::Text { secret: true, .. }) =
-                    (&mut r.ctl, e.kind)
-                {
-                    let (er, rr) = pw_btn_rects(f.bounds());
-                    if er.contains(nexa_ctl::geom::Point { x, y }) {
-                        f.set_masked(!f.masked());
-                        inv.push(self.bounds);
-                        return;
-                    }
-                    // ★ 비밀번호 생성(09-03) — 값 생성은 호스트(설정 창) 몫이라
-                    //   가짜 키로 요청만 올린다(sync.test = run 문법).
-                    if rr.contains(nexa_ctl::geom::Point { x, y }) {
-                        match self.pw_arm {
-                            // 2초 안 재클릭 = 생성 — 새 암호는 **반드시 보이게**(가림 해제).
-                            Some(t) if t.elapsed() <= PW_ARM_WINDOW => {
-                                self.pw_arm = None;
-                                f.set_masked(false);
-                                self.changes
-                                    .push(("sync.passphrase.regen", "run".to_string()));
-                            }
-                            // 첫 클릭 = 무장(빨강) — 실수 클릭으로 암호가 바뀌지 않게.
-                            _ => self.pw_arm = Some(std::time::Instant::now()),
-                        }
-                        inv.push(self.bounds);
-                        return;
-                    }
-                }
-            }
             let mut got: Vec<(&'static str, String)> = Vec::new();
             for r in &mut self.rows {
                 let e = &registry()[r.idx];
@@ -2062,8 +2387,7 @@ impl Widget for SettingsWidget {
                     (RowCtl::Face(family), _) => (family, e.key),
                     _ => continue,
                 };
-                if family.is_focused() && !family.bounds().contains(nexa_ctl::geom::Point { x, y })
-                {
+                if family.is_focused() && !family.bounds().contains(Point { x, y }) {
                     let v = family.text().trim().to_string();
                     if self.values.get(key).map(String::as_str) != Some(v.as_str()) {
                         got.push((key, v));
@@ -2085,7 +2409,6 @@ impl Widget for SettingsWidget {
             inv.push(self.bounds); // 드롭다운 영역 재그리기
             return;
         }
-
         // ── 인라인 편집(직접 입력) 모달 캡처 — 편집 중 콤보가 모든 입력을 받는다 ──
         // FontSection의 크기 콤보도 포함(08-18 실기 — 빠져 있어 커스텀 px 입력이
         // 검색란으로 샜다: 캐럿은 콤보에, 글자는 검색에 가는 어긋남).
@@ -2099,7 +2422,6 @@ impl Widget for SettingsWidget {
             inv.push(self.bounds);
             return;
         }
-
         // ── 포커스된 글꼴명 텍스트박스 — **편집 이벤트 일반 라우팅**(08-18 사용자
         //    지적: 드래그 선택·우클릭 메뉴·전체 선택이 공통 기능인데 컨테이너의
         //    키 화이트리스트가 끊었다 — 기능은 TextBox에 이미 있다).
@@ -2141,7 +2463,50 @@ impl Widget for SettingsWidget {
                 return;
             }
         }
-
+        // ── 하단 줄(10-10): 고급 스위치 · 설정 파일 열기 · 닫기 ──
+        {
+            let in_bar = match *ev {
+                InputEvent::MouseDown { x, y, .. }
+                | InputEvent::MouseUp { x, y }
+                | InputEvent::MouseMove { x, y } => self.bottom_rect().contains(Point { x, y }),
+                _ => false,
+            };
+            // MouseUp은 누른 컨트롤이 떼는 자리를 봐야 하므로 항상 흘린다(안쪽에서 눌러 밖에서 떼면 취소).
+            if in_bar
+                || matches!(
+                    *ev,
+                    InputEvent::MouseUp { .. } | InputEvent::MouseMove { .. }
+                )
+            {
+                self.adv_switch.on_event(ev, inv);
+                self.btn_file.on_event(ev, inv);
+                self.btn_close.on_event(ev, inv);
+                if let Some(on) = self.adv_switch.take_toggled() {
+                    self.advanced = on;
+                    self.changes.push((
+                        "ui.prefs_advanced",
+                        if on { "on" } else { "off" }.to_string(),
+                    ));
+                    self.rebuild(inv);
+                    inv.push(self.bounds);
+                    return;
+                }
+                if self.btn_close.take_clicked() {
+                    self.back = true;
+                    inv.push(self.bounds);
+                    return;
+                }
+                if self.btn_file.take_clicked() {
+                    self.changes.push(("settings.open_file", "run".to_string()));
+                    inv.push(self.bounds);
+                    return;
+                }
+                if in_bar {
+                    inv.push(self.bounds);
+                    return;
+                }
+            }
+        }
         // ── 사이드바 스플리터 드래그(폭 조절) ──
         {
             let bx = self.bounds.x;
@@ -2181,7 +2546,6 @@ impl Widget for SettingsWidget {
                 _ => {}
             }
         }
-
         // ── 상단 고정 밴드는 클릭을 **먹는다** ──
         // 밴드는 스크롤해 올라간 행 위에 덮여 있다. 막지 않으면 제목을 눌렀을 뿐인데
         // 보이지도 않는 행의 콤보가 열린다.
@@ -2252,10 +2616,57 @@ impl Widget for SettingsWidget {
                     let q = self.search.text();
                     if q != self.query {
                         self.query = q;
+                        self.hist_pos = None;
                         self.rebuild(inv);
                         inv.push(self.bounds);
                         return;
                     }
+                }
+                // ★ 비밀 행 버튼(09-03) — 눈 = 가림 토글 · 생성 = 2초 무장 후 2차 클릭. 잠긴 행은 건너뛴다(09-04).
+                let locked_now: Vec<bool> =
+                    self.rows.iter().map(|r| self.is_locked(r.idx)).collect();
+                for (r, lock) in self.rows.iter_mut().zip(&locked_now) {
+                    if *lock {
+                        continue;
+                    }
+                    let e = &registry()[r.idx];
+                    if let (RowCtl::Face(f), SettingKind::Text { secret: true, .. }) =
+                        (&mut r.ctl, e.kind)
+                    {
+                        let (er, rr) = pw_btn_rects(f.bounds());
+                        if er.contains(p) {
+                            f.set_masked(!f.masked());
+                            inv.push(self.bounds);
+                            return;
+                        }
+                        if rr.contains(p) {
+                            match self.pw_arm {
+                                // 2초 안 재클릭 = 생성 — 새 암호는 **반드시 보이게**(가림 해제).
+                                Some(t) if t.elapsed() <= PW_ARM_WINDOW => {
+                                    self.pw_arm = None;
+                                    f.set_masked(false);
+                                    // 값 생성은 호스트(설정 창) 몫이라 가짜 키로 요청만 올린다(sync.test = run 문법).
+                                    self.changes
+                                        .push(("sync.passphrase.regen", "run".to_string()));
+                                }
+                                // 첫 클릭 = 무장(빨강) — 실수 클릭으로 암호가 바뀌지 않게.
+                                _ => self.pw_arm = Some(std::time::Instant::now()),
+                            }
+                            inv.push(self.bounds);
+                            return;
+                        }
+                    }
+                }
+                // ★ 키 이름·복사 글리프 클릭(10-10) = 키 복사 요청(클립보드는 호스트 몫).
+                if let Some(key) = self
+                    .rows
+                    .iter()
+                    .find(|r| r.key_rect.get().contains(p))
+                    .map(|r| registry()[r.idx].key)
+                {
+                    self.changes.push(("prefs.copy_key", key.to_string()));
+                    inv.push(self.bounds);
+                    return;
                 }
                 // ★ 포커스는 **매 클릭마다 전 컨트롤에 다시 계산**한다. 콤보는 자기 클릭에
                 // 스스로 포커스를 켜지만 남의 포커스를 끄지는 못해서, 이걸 빼먹으면
@@ -2282,7 +2693,7 @@ impl Widget for SettingsWidget {
                         RowCtl::Combo(c) => c.set_focused(c.bounds().contains(p)),
                         RowCtl::Check(c) => c.set_focused(c.bounds().contains(p)),
                         RowCtl::Act(b) => b.set_focused(b.bounds().contains(p)),
-                        RowCtl::Report => {}
+                        RowCtl::Report | RowCtl::Info(_) => {}
                         RowCtl::Devices(rows) => {
                             for r in rows.iter_mut() {
                                 r.set_focused(p);
@@ -2301,10 +2712,10 @@ impl Widget for SettingsWidget {
                 if self.tree.bounds().contains(p) && after != before
                     || (self.tree.bounds().contains(p) && !self.query.is_empty())
                 {
-                    if let Some(&(ci, sub)) = self.cat_map.get(after) {
-                        self.selected_cat = ci;
-                        self.selected_sub = sub;
+                    if let Some(&sel) = self.cat_map.get(after) {
+                        self.selected = sel;
                     }
+                    self.hist_pos = None;
                     self.query.clear();
                     self.search.set_text("");
                     self.rebuild(inv);
@@ -2328,12 +2739,15 @@ impl Widget for SettingsWidget {
                         RowCtl::Face(f) => f.on_event(ev, inv),
                         RowCtl::Color(c) => c.on_event(ev, inv),
                         RowCtl::Act(b) => b.on_event(ev, inv),
-                        RowCtl::Report => {}
+                        RowCtl::Report | RowCtl::Info(_) => {}
                         RowCtl::Devices(rows) => {
                             for r in rows.iter_mut() {
                                 r.on_event(ev, inv);
                             }
                         }
+                    }
+                    if let Some(b) = &mut row.reset {
+                        b.on_event(ev, inv);
                     }
                 }
                 self.drain_changes(inv);
@@ -2360,15 +2774,41 @@ impl Widget for SettingsWidget {
                         RowCtl::Face(f) => f.on_event(ev, inv),
                         RowCtl::Color(c) => c.on_event(ev, inv),
                         RowCtl::Act(b) => b.on_event(ev, inv),
-                        RowCtl::Report => {}
+                        RowCtl::Report | RowCtl::Info(_) => {}
                         RowCtl::Devices(rows) => {
                             for r in rows.iter_mut() {
                                 r.on_event(ev, inv);
                             }
                         }
                     }
+                    if let Some(b) = &mut row.reset {
+                        b.on_event(ev, inv);
+                    }
                 }
                 self.drain_changes(inv);
+            }
+            // ★ 포커스된 실행 버튼 — Space/Enter = 클릭(종전엔 "기본 타이핑 = 검색"이 삼켜 키보드로는
+            //   행위 버튼을 누를 수 없었다 · beep 09-06). 목록 편집 중은 목록이 우선.
+            InputEvent::Char { c: ' ', .. }
+            | InputEvent::Key {
+                key: Key::Enter, ..
+            } if !self.any_list_editing()
+                && self
+                    .rows
+                    .iter()
+                    .any(|r| matches!(&r.ctl, RowCtl::Act(b) if b.is_focused())) =>
+            {
+                let locked: Vec<bool> = self.rows.iter().map(|r| self.is_locked(r.idx)).collect();
+                for (row, lock) in self.rows.iter_mut().zip(locked) {
+                    if let RowCtl::Act(b) = &mut row.ctl {
+                        if b.is_focused() && !lock {
+                            // nexa-ctl Button은 Enter/Space를 스스로 클릭으로 처리한다.
+                            b.on_event(ev, inv);
+                        }
+                    }
+                }
+                self.drain_changes(inv);
+                inv.push(self.bounds);
             }
             InputEvent::Char { .. } => {
                 if self.any_list_editing() {
@@ -2393,6 +2833,7 @@ impl Widget for SettingsWidget {
                     let q = self.search.text();
                     if q != self.query {
                         self.query = q;
+                        self.hist_pos = None;
                         self.rebuild(inv);
                     }
                 }
@@ -2435,6 +2876,8 @@ impl Widget for SettingsWidget {
                             }
                         }
                         inv.push(self.bounds);
+                    } else if self.hist_pos.is_some() {
+                        self.hist_pos = None; // 이력 탐색 중 Esc = 탐색만 끝낸다
                     } else {
                         self.back = true;
                     }
@@ -2473,23 +2916,54 @@ impl Widget for SettingsWidget {
                     self.drain_changes(inv);
                     inv.push(self.bounds);
                 }
+                // ★ 검색 이력(10-10 · nexa-sql 차용): 검색 중 ↑/↓ = 최근 검색어 순환(최근이 먼저).
+                Key::Up | Key::Down
+                    if !self.history.is_empty()
+                        && self.search.is_focused()
+                        && (!self.query.is_empty() || self.hist_pos.is_some()) =>
+                {
+                    let n = self.history.len();
+                    let next = match (key, self.hist_pos) {
+                        (Key::Up, None) => Some(0),
+                        (Key::Up, Some(i)) => Some((i + 1).min(n - 1)),
+                        (Key::Down, Some(0) | None) => None,
+                        (Key::Down, Some(i)) => Some(i - 1),
+                        _ => self.hist_pos,
+                    };
+                    self.hist_pos = next;
+                    let text = next.map_or(String::new(), |i| self.history[i].clone());
+                    self.search.set_text(&text);
+                    self.query = text;
+                    self.rebuild(inv);
+                    inv.push(self.bounds);
+                }
+                // Enter = 검색어를 이력에 기록(중복 제거 · 최근이 앞 · 최대 20) → 호스트가 영속.
+                Key::Enter if self.search.is_focused() && !self.query.trim().is_empty() => {
+                    let q = self.query.trim().to_string();
+                    self.history.retain(|h| *h != q);
+                    self.history.insert(0, q);
+                    self.history.truncate(HISTORY_MAX);
+                    self.hist_pos = None;
+                    self.changes.push(("prefs.search", self.history.join("\t")));
+                    inv.push(self.bounds);
+                }
                 Key::Up | Key::Down if self.query.is_empty() => {
                     // 사이드바 카테고리 탐색(검색 중엔 유지).
                     let before = self.tree.selected_row();
                     self.tree.on_event(ev, inv);
                     let after = self.tree.selected_row();
                     if after != before {
-                        if let Some(&(ci, sub)) = self.cat_map.get(after) {
-                            self.selected_cat = ci;
-                            self.selected_sub = sub;
+                        if let Some(&sel) = self.cat_map.get(after) {
+                            self.selected = sel;
                         }
+                        self.hist_pos = None;
                         self.rebuild(inv);
                     }
                 }
                 _ => {}
             },
             _ => {
-                // 마우스 이동은 목록 버튼 hover 페이드에도 필요하다(09-01).
+                // 마우스 이동은 목록·기기 버튼 hover 페이드에도 필요하다(09-01).
                 if matches!(*ev, InputEvent::MouseMove { .. }) {
                     for row in &mut self.rows {
                         match &mut row.ctl {
@@ -2511,9 +2985,8 @@ impl Widget for SettingsWidget {
 
     fn paint(&self, ctx: &mut dyn DrawCtx, theme: &Theme) {
         let lang = current_lang();
-        ctx.fill_rect(self.bounds, theme.panel_bg);
+        ctx.fill_rect(self.bounds, theme.window_bg); // 카드(panel_bg)가 떠 보이는 바탕(10-10)
         let sw = self.s(self.sidebar_w);
-
         // 사이드바 배경 + 검색 + 트리 + 경계선.
         ctx.fill_rect(
             Rect::new(self.bounds.x, self.bounds.y, sw, self.bounds.h),
@@ -2524,8 +2997,7 @@ impl Widget for SettingsWidget {
         // ★ 스플리터 — 경계선에서 accent로 **서서히** 밝아진다(글로우 0.0~1.0).
         //
         // ⚠️ **밝기는 세로 전 구간이 균일하다**(사용자 확정 08-26 · [docs/25 §3-7]).
-        //   예전에는 가운데 손잡이가 글로우에 따라 **자라나서** 중심에서 번지는 그라데이션처럼
-        //   읽혔다. 스플리터는 **띠 전체가 하나의 대상**이라 부분이 먼저 밝아지면
+        //   스플리터는 **띠 전체가 하나의 대상**이라 부분이 먼저 밝아지면
         //   "어디를 잡아야 하는가"가 흐려진다 — 한 값으로 **전체를 같이** 올린다.
         let g = self.split_fade.value().clamp(0.0, 1.0);
         if g <= 0.0 {
@@ -2540,7 +3012,6 @@ impl Widget for SettingsWidget {
             let x = self.bounds.x + sw - w / 2 - 1;
             ctx.fill_rect(Rect::new(x, self.bounds.y, w, self.bounds.h), col);
         }
-
         // 하위 섹션 제목(스크롤과 함께 올라간다 — 고정 밴드가 그 위를 덮는다).
         let vp_clip = self.right_viewport();
         // 하위 제목 = 본문(Base)보다 **+1px · 굵게**(사용자 확정 08-11).
@@ -2561,158 +3032,61 @@ impl Widget for SettingsWidget {
                 theme.text,
             );
         }
-
-        // 우측 행: 라벨/설명 + 컨트롤.
+        // 우측 카드(10-10): 바탕 → 제목·키 → 설명 → 컨트롤(+비밀 행 아이콘) → [초기화]·기본값 → 노트.
+        let cpad = self.s(CARD_PAD);
+        let title_h = self.s(TITLE_H);
+        let desc_gap = self.s(2);
+        let ctl_gap = self.s(8);
+        let desc_line_h = self.s(DESC_LINE_H);
+        let ctl_h = self.s(CTL_H);
         for row in &self.rows {
             let e = &registry()[row.idx];
             let r = row.rect;
-            match &row.ctl {
-                RowCtl::Combo(_)
-                | RowCtl::Check(_)
-                | RowCtl::Act(_)
-                | RowCtl::Pos(_)
-                | RowCtl::Face(_)
-                | RowCtl::Color(_) => {
-                    ctx.select_font(FontSlot::Base, false);
-                    ctx.text(
-                        r.x + self.s(PAD),
-                        r.y + row.top_inset + self.s(6),
-                        r,
-                        tr(lang, e.label),
-                        theme.text,
-                    );
-                    // 설명 — 컨트롤을 침범하지 않게 워드랩(08-11 사용자 지적).
-                    ctx.select_font(FontSlot::Status, false);
-                    #[allow(clippy::cast_sign_loss)]
-                    let lines = wrap_text(
-                        ctx,
-                        tr(lang, e.desc),
-                        row.desc_avail,
-                        row.desc_lines as usize,
-                    );
-                    for (i, line) in lines.iter().enumerate() {
-                        #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
-                        let dy = row.top_inset + self.s(30) + i as i32 * self.s(DESC_LINE_H);
-                        ctx.text(r.x + self.s(PAD), r.y + dy, r, line, theme.text_dim);
-                    }
-                }
-                RowCtl::Devices(rows) => {
-                    ctx.select_font(FontSlot::Base, true);
-                    ctx.text(
-                        r.x + self.s(PAD),
-                        r.y + self.s(6),
-                        r,
-                        tr(lang, e.label),
-                        theme.text,
-                    );
-                    ctx.select_font(FontSlot::Status, false);
-                    if rows.is_empty() {
-                        ctx.text(
-                            r.x + self.s(PAD),
-                            r.y + self.s(30),
-                            r,
-                            tr(lang, e.desc),
-                            theme.text_dim,
-                        );
-                    } else {
-                        let th = ctx.text_height();
-                        let dlh = self.s(DESC_LINE_H);
-                        for d in rows {
-                            let col = if d.emph { theme.text } else { theme.text_dim };
-                            #[allow(clippy::cast_sign_loss)]
-                            let lines =
-                                wrap_text(ctx, &d.text, d.text_w.max(1), d.lines.max(1) as usize);
-                            for (i, line) in lines.iter().enumerate() {
-                                #[allow(
-                                    clippy::cast_possible_truncation,
-                                    clippy::cast_possible_wrap
-                                )]
-                                let ly = d.y + i as i32 * dlh;
-                                let clip = Rect::new(r.x + self.s(PAD), ly, d.text_w.max(0), dlh);
-                                ctx.text(r.x + self.s(PAD), ly + (dlh - th) / 2, clip, line, col);
-                            }
-                        }
-                    }
-                }
-                RowCtl::Report => {
-                    ctx.select_font(FontSlot::Base, true);
-                    ctx.text(
-                        r.x + self.s(PAD),
-                        r.y + self.s(6),
-                        r,
-                        tr(lang, e.label),
-                        theme.text,
-                    );
-                    ctx.select_font(FontSlot::Status, false);
-                    let v = self.values.get(e.key).map_or("", String::as_str);
-                    if v.trim().is_empty() {
-                        ctx.text(
-                            r.x + self.s(PAD),
-                            r.y + self.s(30),
-                            r,
-                            tr(lang, e.desc),
-                            theme.text_dim,
-                        );
-                    } else {
-                        let dlh = self.s(DESC_LINE_H);
-                        let mut y = r.y + self.s(30);
-                        for line in v.lines() {
-                            // 줄 앞 `*` = 강조(온라인·이 기기) — 본문색, 나머지는 흐림.
-                            let (txt, col) = match line.strip_prefix('*') {
-                                Some(rest) => (rest, theme.text),
-                                None => (line, theme.text_dim),
-                            };
-                            ctx.text(r.x + self.s(PAD), y, r, txt, col);
-                            y += dlh;
-                        }
-                    }
-                }
-                RowCtl::List(_) => {
-                    ctx.select_font(FontSlot::Base, true);
-                    ctx.text(
-                        r.x + self.s(PAD),
-                        r.y + self.s(6),
-                        r,
-                        tr(lang, e.label),
-                        theme.text,
-                    );
-                }
-                RowCtl::Font { .. } => {
-                    ctx.select_font(FontSlot::Base, true);
-                    ctx.text(
-                        r.x + self.s(PAD),
-                        r.y + self.s(6),
-                        r,
-                        tr(lang, e.label),
-                        theme.text,
-                    );
-                    ctx.select_font(FontSlot::Status, false);
-                    #[allow(clippy::cast_sign_loss)]
-                    let lines = wrap_text(
-                        ctx,
-                        tr(lang, e.desc),
-                        row.desc_avail,
-                        row.desc_lines as usize,
-                    );
-                    for (i, line) in lines.iter().enumerate() {
-                        #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
-                        let dy = self.s(64) + i as i32 * self.s(DESC_LINE_H);
-                        ctx.text(r.x + self.s(PAD), r.y + dy, r, line, theme.text_dim);
-                    }
+            if r.bottom() <= vp_clip.y || r.y >= vp_clip.bottom() {
+                continue; // 화면 밖 카드
+            }
+            ctx.fill_round_rect(r, self.s(6), theme.panel_bg);
+            let tx = r.x + cpad;
+            let ty = r.y + cpad;
+            // 제목(글꼴 영역·목록·보고·기기 목록은 굵게 — 종전 규약 유지).
+            let bold_title = matches!(
+                row.ctl,
+                RowCtl::Font { .. } | RowCtl::List(_) | RowCtl::Report | RowCtl::Devices(_)
+            );
+            ctx.select_font(FontSlot::Base, bold_title);
+            ctx.text(tx, ty, r, tr(lang, e.label), theme.text);
+            // 키 이름 + ⧉ — 우상단.
+            self.paint_key(ctx, theme, row, r.right() - cpad, ty, r);
+            // 설명 — 카드 폭 전체(컨트롤이 아래로 내려가 침범할 것이 없다).
+            ctx.select_font(FontSlot::Status, false);
+            #[allow(clippy::cast_sign_loss)]
+            let lines = wrap_text(
+                ctx,
+                tr(lang, e.desc),
+                row.desc_avail,
+                row.desc_lines as usize,
+            );
+            // 보고·기기 목록 행은 값이 비어 있을 때만 설명을 보인다(종전 규약 — 설명이 "비어 있음" 안내).
+            let desc_hidden = match &row.ctl {
+                RowCtl::Report => !self
+                    .values
+                    .get(e.key)
+                    .map_or("", String::as_str)
+                    .trim()
+                    .is_empty(),
+                RowCtl::Devices(rows) => !rows.is_empty(),
+                _ => false,
+            };
+            if !desc_hidden {
+                for (i, line) in lines.iter().enumerate() {
+                    #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+                    let dy = title_h + desc_gap + i as i32 * desc_line_h;
+                    ctx.text(tx, ty + dy, r, line, theme.text_dim);
                 }
             }
+            let cy = ty + title_h + desc_gap + row.desc_lines * desc_line_h + ctl_gap;
+            // 컨트롤.
             match &row.ctl {
-                RowCtl::Report => {}
-                RowCtl::Devices(rows) => {
-                    for r in rows {
-                        if let Some(b) = &r.approve {
-                            b.paint(ctx, theme);
-                        }
-                        if let Some(b) = &r.del {
-                            b.paint(ctx, theme);
-                        }
-                    }
-                }
                 RowCtl::Combo(c) => c.paint(ctx, theme),
                 RowCtl::Check(c) => c.paint(ctx, theme),
                 RowCtl::Act(b) => b.paint(ctx, theme),
@@ -2720,11 +3094,9 @@ impl Widget for SettingsWidget {
                 RowCtl::List(l) => l.paint(ctx, theme),
                 RowCtl::Face(f) => {
                     f.paint(ctx, theme);
-                    // ★ 비밀 행 눈 버튼(09-03 — 사용자 지정 Material 아이콘):
-                    //   보임 = accent · 가림 = 흐림.
+                    // ★ 비밀 행 버튼 — 눈: 보임 = accent · 가림 = 흐림 / 생성: 평소 흐림 · 무장 = 빨강.
                     if matches!(e.kind, SettingKind::Text { secret: true, .. }) {
                         let (er, rr) = pw_btn_rects(f.bounds());
-                        // 눈 — 보임 = accent · 가림 = 흐림.
                         let ink = if f.masked() {
                             theme.text_dim
                         } else {
@@ -2732,7 +3104,6 @@ impl Widget for SettingsWidget {
                         };
                         tint_icon(&self.pw_eye, PW_EYE_ALPHA, ink.0);
                         draw_icon(&self.pw_eye, er, ctx);
-                        // 생성 — 평소 흐림 · 무장(첫 클릭 뒤 2초) = 빨강.
                         let rink = if self.pw_arm.is_some() {
                             theme.danger
                         } else {
@@ -2747,76 +3118,121 @@ impl Widget for SettingsWidget {
                     family.paint(ctx, theme);
                     size.paint(ctx, theme);
                 }
+                RowCtl::Info(text) => {
+                    // 읽기 전용 — 컨트롤 자리에 흐린 글(왼쪽 정렬).
+                    ctx.select_font(FontSlot::Status, false);
+                    let th = ctx.text_height();
+                    let slot = Rect::new(tx, cy, r.w - cpad * 2, ctl_h);
+                    ctx.text(tx, cy + (ctl_h - th) / 2, slot, text, theme.text_dim);
+                }
+                RowCtl::Report => {
+                    // 보고 줄들(개행 구분 · 줄 앞 `*` = 강조) — 컨트롤 자리에.
+                    ctx.select_font(FontSlot::Status, false);
+                    let v = self.values.get(e.key).map_or("", String::as_str);
+                    let mut y = cy;
+                    for line in v.lines() {
+                        let (txt, col) = match line.strip_prefix('*') {
+                            Some(rest) => (rest, theme.text),
+                            None => (line, theme.text_dim),
+                        };
+                        ctx.text(tx, y, r, txt, col);
+                        y += desc_line_h;
+                    }
+                }
+                RowCtl::Devices(rows) => {
+                    ctx.select_font(FontSlot::Status, false);
+                    let th = ctx.text_height();
+                    for d in rows {
+                        let col = if d.emph { theme.text } else { theme.text_dim };
+                        #[allow(clippy::cast_sign_loss)]
+                        let lines =
+                            wrap_text(ctx, &d.text, d.text_w.max(1), d.lines.max(1) as usize);
+                        for (i, line) in lines.iter().enumerate() {
+                            #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+                            let ly = d.y + i as i32 * desc_line_h;
+                            let clip = Rect::new(tx, ly, d.text_w.max(0), desc_line_h);
+                            ctx.text(tx, ly + (desc_line_h - th) / 2, clip, line, col);
+                        }
+                        if let Some(b) = &d.approve {
+                            b.paint(ctx, theme);
+                        }
+                        if let Some(b) = &d.del {
+                            b.paint(ctx, theme);
+                        }
+                    }
+                }
             }
-        }
-        // 잠긴 행은 위에 얇은 가림막을 덮어 "지금은 못 만진다"를 보여 준다.
-        for row in &self.rows {
+            // [초기화](컨트롤 오른쪽 · 기본값과 다를 때만) + "기본값: …"(우하단 · 한 줄 컨트롤 행만).
+            if let Some(b) = &row.reset {
+                if b.bounds().w > 0 {
+                    b.paint(ctx, theme);
+                }
+            }
+            if let Some(def) = e
+                .default_values()
+                .into_iter()
+                .map(|(_, d)| d)
+                .find(|d| !d.is_empty())
+            {
+                if let Some(cr) = ctl_rect(&row.ctl) {
+                    ctx.select_font(FontSlot::Status, false);
+                    let txt = nclip_core::tf(Msg::LblDefaultValue, &[&def]);
+                    let tw = ctx.text_width(&txt);
+                    let th = ctx.text_height();
+                    // [초기화]/컨트롤과 겹치면 생략(좁은 카드).
+                    let left_edge = row
+                        .reset
+                        .as_ref()
+                        .filter(|b| b.bounds().w > 0)
+                        .map_or_else(|| cr.right(), |b| b.bounds().right());
+                    let dx = r.right() - cpad - tw;
+                    if dx > left_edge + self.s(12) {
+                        ctx.text(dx, cy + (ctl_h - th) / 2, r, &txt, theme.text_dim);
+                    }
+                }
+            }
+            // 노트(호스트 정보 또는 종속 잠금 안내) — 컨트롤 블록 아래 · 카드 안.
+            if let Some((note, tone)) = self.row_note(row.idx) {
+                let key = e.key;
+                let mono = key == "xfer.approval_window"; // 자동 수락 카운트다운만 고정폭
+                ctx.select_font(
+                    if mono {
+                        FontSlot::Mono
+                    } else {
+                        FontSlot::Status
+                    },
+                    false,
+                );
+                let nh = self.s(NOTE_H);
+                let nr = Rect::new(
+                    r.x + cpad - self.s(6),
+                    r.bottom() - cpad - nh,
+                    r.w - cpad * 2 + self.s(12),
+                    nh,
+                );
+                let th = ctx.text_height();
+                let color = match tone {
+                    NoteTone::Plain => theme.text_dim,
+                    NoteTone::Ok => {
+                        ctx.fill_round_rect_alpha(nr, self.s(5), theme.ok, 0.14);
+                        theme.ok
+                    }
+                    NoteTone::Warn => {
+                        ctx.fill_round_rect_alpha(nr, self.s(5), theme.warn, 0.14);
+                        theme.warn
+                    }
+                    NoteTone::Info => {
+                        ctx.fill_round_rect_alpha(nr, self.s(5), theme.accent, 0.10);
+                        theme.text
+                    }
+                };
+                ctx.text(nr.x + self.s(6), nr.y + (nr.h - th) / 2, nr, &note, color);
+            }
+            // 잠긴 카드는 얇은 가림막(그 위 글은 흐려진다 — "지금은 못 만진다").
             if self.is_locked(row.idx) {
-                ctx.fill_round_rect_alpha(row.rect, 0, theme.panel_bg, 0.55);
+                ctx.fill_round_rect_alpha(r, self.s(6), theme.panel_bg, 0.55);
             }
         }
-
-        // 행에 붙은 정보 줄 — **행 바로 아래 고정 위치**.
-        // ★ 카운트다운(초 단위 갱신)만 고정폭: 숫자 폭이 변하면 1초마다 글자가
-        //   흔들린다(사용자 지적 08-09). 그 외 산문 노트(속도 설명 등)는 **설명과
-        //   같은 폰트**로 그린다(고정폭은 산문에 부적절 · 사용자 요청 08-18).
-        for row in &self.rows {
-            let key = registry()[row.idx].key;
-            let Some((note, tone)) = self.notes.get(key) else {
-                continue;
-            };
-            let mono = key == "xfer.approval_window"; // 자동 수락 카운트다운만
-            ctx.select_font(
-                if mono {
-                    FontSlot::Mono
-                } else {
-                    FontSlot::Status
-                },
-                false,
-            );
-            let nh = self.s(NOTE_H);
-            // 노트는 예약 슬롯의 **위쪽**에 — 아래 여백(NOTE_GAP_B)이 다음 행과 끊는다.
-            let r = Rect::new(
-                row.rect.x,
-                row.rect.bottom() - self.s(NOTE_GAP_B) - nh,
-                row.rect.w,
-                nh,
-            );
-            let th = ctx.text_height();
-            // 톤 있는 노트(08-22) — 옅은 배경 + 톤색 글자(검증됨이 한눈에 보이게).
-            let color = match tone {
-                NoteTone::Plain => theme.text_dim,
-                NoteTone::Ok => {
-                    ctx.fill_round_rect_alpha(
-                        Rect::new(r.x + self.s(PAD) - self.s(6), r.y, r.w - self.s(PAD), r.h),
-                        self.s(5),
-                        theme.ok,
-                        0.14,
-                    );
-                    theme.ok
-                }
-                NoteTone::Warn => {
-                    ctx.fill_round_rect_alpha(
-                        Rect::new(r.x + self.s(PAD) - self.s(6), r.y, r.w - self.s(PAD), r.h),
-                        self.s(5),
-                        theme.warn,
-                        0.14,
-                    );
-                    theme.warn
-                }
-                NoteTone::Info => {
-                    ctx.fill_round_rect_alpha(
-                        Rect::new(r.x + self.s(PAD) - self.s(6), r.y, r.w - self.s(PAD), r.h),
-                        self.s(5),
-                        theme.accent,
-                        0.10,
-                    );
-                    theme.text
-                }
-            };
-            ctx.text(r.x + self.s(PAD), r.y + (r.h - th) / 2, r, note, color);
-        }
-
         // 열린 콤보 드롭다운은 맨 위에 다시 그린다(아래 행에 가리지 않게).
         for row in &self.rows {
             match &row.ctl {
@@ -2839,10 +3255,9 @@ impl Widget for SettingsWidget {
             self.scroll,
             self.scale,
         );
-
         // ── 상단 고정 밴드: 지금 보고 있는 설정의 계층 ──
-        // 스크롤해 올라간 섹션 제목이 사라지면, 화면 가운데의 "Accent"가 다크의 것인지
-        // 라이트의 것인지 알 수 없다(사용자 지적 08-10). 그래서 **늘 남긴다**.
+        // 스크롤해 올라간 섹션 제목이 사라지면, 화면 가운데의 값이 어느 그룹의 것인지
+        // 알 수 없다(사용자 지적 08-10). 그래서 **늘 남긴다**.
         // 스크롤 내용을 덮어야 하므로 **맨 마지막에, 불투명하게** 그린다.
         let crumb = Rect::new(
             self.bounds.x + sw,
@@ -2852,15 +3267,22 @@ impl Widget for SettingsWidget {
         );
         ctx.fill_rect(crumb, theme.panel_bg);
         if let Some((cat, sub)) = self.current_group() {
-            // 상위 제목 = 본문(Base)보다 **+2px · 굵게**(사용자 확정 08-11).
+            // 상위 제목 = "그룹 › 카테고리"(10-10) · 본문(Base)보다 **+2px · 굵게**(사용자 확정 08-11).
             ctx.select_font_sized(FontSlot::Base, true, 2.0);
             let th = ctx.text_height();
             let cat_h = self.s(CRUMB_CAT_H);
+            // 그룹명 = 카테고리명(일반 › 일반 · 모양 › 모양)이면 한 번만(협업 세션 관찰 ⓑ · 10-10).
+            let title = match group_of(cat) {
+                Some(g) if tr(lang, g) != tr(lang, cat) => {
+                    format!("{} › {}", tr(lang, g), tr(lang, cat))
+                }
+                _ => tr(lang, cat).to_string(),
+            };
             ctx.text(
                 crumb.x + self.s(PAD),
                 crumb.y + (cat_h - th) / 2,
                 crumb,
-                tr(lang, cat),
+                &title,
                 theme.text,
             );
             // 하위 줄 — 직속 설정 구간이면 비워 둔다(자리는 유지).
@@ -2879,11 +3301,31 @@ impl Widget for SettingsWidget {
                 );
             }
         }
+        // 고급 숨김 배너(밴드 셋째 줄 · 10-10) — "고급 설정 N개 숨김 — 고급 설정을 켜면 보입니다".
+        if self.adv_hidden > 0 {
+            ctx.select_font(FontSlot::Status, false);
+            let th = ctx.text_height();
+            let bh = self.s(BANNER_H);
+            let by = crumb.bottom() - bh;
+            ctx.text(
+                crumb.x + self.s(PAD),
+                by + (bh - th) / 2,
+                crumb,
+                &nclip_core::tf(Msg::PrefsAdvancedHidden, &[&self.adv_hidden.to_string()]),
+                theme.text_dim,
+            );
+        }
         ctx.fill_rect(
             Rect::new(crumb.x, crumb.bottom() - 1, crumb.w, 1),
             theme.border,
         );
-
+        // ── 하단 줄(10-10) ──
+        let bar = self.bottom_rect();
+        ctx.fill_rect(bar, theme.chrome_bg);
+        ctx.fill_rect(Rect::new(bar.x, bar.y, bar.w, 1), theme.border);
+        self.adv_switch.paint(ctx, theme);
+        self.btn_file.paint(ctx, theme);
+        self.btn_close.paint(ctx, theme);
         // 텍스트 필드 우클릭 메뉴 — 진짜 최상위(고정 밴드보다도 위 · 08-13 실기:
         // 프로필에서 형제 위젯이 메뉴를 덮던 것과 같은 z순서 계열).
         self.search.paint_popup(ctx, theme);
@@ -2894,6 +3336,23 @@ impl Widget for SettingsWidget {
                 _ => {}
             }
         }
+    }
+}
+
+/// 행 컨트롤의 자리(글꼴 영역·목록·보고·기기 목록·정보 행은 `None`) — "기본값: …" 배치 기준.
+fn ctl_rect(ctl: &RowCtl) -> Option<Rect> {
+    match ctl {
+        RowCtl::Combo(c) => Some(c.bounds()),
+        RowCtl::Check(c) => Some(c.bounds()),
+        RowCtl::Act(b) => Some(b.bounds()),
+        RowCtl::Pos(g) => Some(g.bounds()),
+        RowCtl::Face(f) => Some(f.bounds()),
+        RowCtl::Color(c) => Some(c.bounds()),
+        RowCtl::Font { .. }
+        | RowCtl::List(_)
+        | RowCtl::Report
+        | RowCtl::Devices(_)
+        | RowCtl::Info(_) => None,
     }
 }
 
@@ -3020,5 +3479,259 @@ mod validate_tests {
         assert!(st.set_by_name("store.max_items", "2500"));
         assert_eq!(st.get("store.max_items"), "2500");
         assert!(st.known_pairs().contains(&("store.max_items", "2500")));
+    }
+}
+
+/// ★ 설정 카드 개편(10-10 · nexa-beep P2 이식) — 그룹 트리 · 고급 스위치 · 종속 잠금 · 초기화 · 검색 이력 · 자모 검색.
+#[cfg(test)]
+mod card_tests {
+    use super::*;
+
+    fn widget() -> (SettingsWidget, Invalidations) {
+        // 테스트는 연타 가드(nexa-ctl 기본 350ms)를 끈다 — 같은 ms에 두 번 누르는 시험이 있다.
+        nexa_ctl::controls::button::set_default_click_guard_ms(0);
+        let mut w = SettingsWidget::new(&SettingsState::with_defaults());
+        let mut inv = Invalidations::default();
+        w.set_bounds(Rect::new(0, 0, 900, 700), &mut inv);
+        (w, inv)
+    }
+    /// 클릭 = 누름+뗌 한 쌍(nexa-ctl 컨트롤은 **MouseUp에서 확정**).
+    fn click(x: i32, y: i32) -> [InputEvent; 2] {
+        [
+            InputEvent::MouseDown {
+                x,
+                y,
+                shift: false,
+                primary: false,
+            },
+            InputEvent::MouseUp { x, y },
+        ]
+    }
+    fn key(k: Key) -> InputEvent {
+        InputEvent::Key {
+            key: k,
+            shift: false,
+            primary: false,
+        }
+    }
+    fn ch(c: char) -> InputEvent {
+        InputEvent::Char { c, now_ms: 0 }
+    }
+    fn keys_of(w: &SettingsWidget) -> Vec<&'static str> {
+        w.rows.iter().map(|r| registry()[r.idx].key).collect()
+    }
+    fn center(r: Rect) -> (i32, i32) {
+        (r.x + r.w / 2, r.y + r.h / 2)
+    }
+
+    #[test]
+    fn tree_covers_every_category_and_tables_name_real_keys() {
+        for e in registry() {
+            assert_ne!(
+                tree_pos(e.cat).0,
+                usize::MAX,
+                "트리에 없는 카테고리: {:?}",
+                e.cat
+            );
+        }
+        for k in ADVANCED {
+            assert!(
+                registry().iter().any(|e| e.key == *k),
+                "ADVANCED에 없는 키: {k}"
+            );
+        }
+        for (c, p, _) in DEPENDS {
+            assert!(
+                registry().iter().any(|e| e.key == *c),
+                "DEPENDS 자식 없음: {c}"
+            );
+            assert!(
+                registry().iter().any(|e| e.key == *p),
+                "DEPENDS 부모 없음: {p}"
+            );
+        }
+        // 표시 순서는 그룹 → 카테고리 순으로 단조.
+        let order: Vec<_> = (0..registry().len()).map(display_order).collect();
+        let mut sorted = order.clone();
+        sorted.sort();
+        assert_eq!(sorted.len(), order.len());
+    }
+
+    #[test]
+    fn advanced_switch_hides_and_counts() {
+        let (mut w, mut inv) = widget();
+        w.select_category(Msg::CatCapture, &mut inv);
+        let shown = keys_of(&w);
+        assert!(!shown.contains(&"cap.cell_pic_rows"), "고급 꺼짐 = 숨김");
+        let hidden_expected = registry()
+            .iter()
+            .filter(|e| e.cat == Msg::CatCapture && is_advanced(e.key))
+            .count();
+        assert_eq!(w.adv_hidden, hidden_expected);
+        assert!(
+            w.crumb_h() > w.s(CRUMB_CAT_H) + w.s(CRUMB_SUB_H),
+            "배너 줄이 생긴다"
+        );
+        w.set_advanced(true, &mut inv);
+        assert!(keys_of(&w).contains(&"cap.cell_pic_rows"));
+        assert_eq!(w.adv_hidden, 0);
+    }
+
+    #[test]
+    fn group_view_shows_all_categories_with_headers() {
+        let (mut w, mut inv) = widget();
+        w.selected = TreeSel::Group(1); // 클립보드 그룹
+        w.rebuild(&mut inv);
+        let cats: Vec<Msg> = w.rows.iter().map(|r| registry()[r.idx].cat).collect();
+        for c in [
+            Msg::CatCapture,
+            Msg::CatPaste,
+            Msg::CatSearch,
+            Msg::CatStorage,
+            Msg::CatPrivacy,
+        ] {
+            assert!(cats.contains(&c), "{c:?} 없음");
+        }
+        // 카테고리가 바뀌는 첫 행마다 카테고리 제목이 붙는다.
+        let heads = w.rows.iter().filter(|r| r.head.is_some()).count();
+        assert!(heads >= 5, "제목 {heads}");
+        assert_eq!(w.rows[0].head, Some(Msg::CatCapture));
+    }
+
+    #[test]
+    fn depends_locks_child_until_parent_satisfied() {
+        let (mut w, mut inv) = widget();
+        w.set_advanced(true, &mut inv);
+        w.select_category(Msg::CatSync, &mut inv);
+        let idx = w
+            .rows
+            .iter()
+            .position(|r| registry()[r.idx].key == "sync.files_max")
+            .expect("sync.files_max 행");
+        let ridx = w.rows[idx].idx;
+        w.set_value("sync.files", "on", &mut inv);
+        assert!(!w.is_locked(ridx));
+        w.set_value("sync.files", "off", &mut inv);
+        assert!(w.is_locked(ridx), "부모가 꺼지면 잠긴다");
+        let (note, _) = w.row_note(ridx).expect("잠금 안내");
+        assert!(
+            note.contains(tr(current_lang(), Msg::SetSyncFiles)),
+            "{note}"
+        );
+        w.set_value("sync.files", "on", &mut inv);
+        assert!(!w.is_locked(ridx));
+    }
+
+    #[test]
+    fn reset_button_appears_when_modified_and_restores_default() {
+        let (mut w, mut inv) = widget();
+        w.select_category(Msg::CatGeneral, &mut inv);
+        let find = |w: &SettingsWidget| {
+            w.rows
+                .iter()
+                .position(|r| registry()[r.idx].key == "ui.close_to_tray")
+                .expect("ui.close_to_tray 행")
+        };
+        let i = find(&w);
+        assert_eq!(
+            w.rows[i].reset.as_ref().map(|b| b.bounds().w),
+            Some(0),
+            "기본값이면 숨김"
+        );
+        w.set_value("ui.close_to_tray", "off", &mut inv);
+        w.layout(&mut inv);
+        let i = find(&w);
+        let rb = w.rows[i]
+            .reset
+            .as_ref()
+            .map(|b| b.bounds())
+            .expect("초기화 버튼");
+        assert!(rb.w > 0, "값이 바뀌면 보인다");
+        let (x, y) = center(rb);
+        for e in click(x, y) {
+            w.on_event(&e, &mut inv);
+        }
+        let ch = w.take_changes();
+        assert!(
+            ch.iter()
+                .any(|(k, v)| *k == "ui.close_to_tray" && v == "on"),
+            "초기화 = 기본값 보고: {ch:?}"
+        );
+    }
+
+    #[test]
+    fn search_history_records_on_enter_and_cycles() {
+        let (mut w, mut inv) = widget();
+        for c in "theme".chars() {
+            w.on_event(&ch(c), &mut inv);
+        }
+        assert_eq!(w.query, "theme");
+        w.on_event(&key(Key::Enter), &mut inv);
+        assert_eq!(w.history, vec!["theme".to_string()]);
+        let ch_ = w.take_changes();
+        assert!(ch_
+            .iter()
+            .any(|(k, v)| *k == "prefs.search" && v == "theme"));
+        // 새 검색어 입력 중 ↑ = 이력 순환.
+        w.on_event(&key(Key::Escape), &mut inv);
+        w.query.clear();
+        w.search.set_text("");
+        w.on_event(&ch('x'), &mut inv);
+        assert_eq!(w.query, "x");
+        w.on_event(&key(Key::Up), &mut inv);
+        assert_eq!(w.query, "theme");
+        w.on_event(&key(Key::Down), &mut inv);
+        assert_eq!(w.query, "");
+    }
+
+    #[test]
+    fn jamo_search_matches_composing_hangul() {
+        let e = registry()
+            .iter()
+            .find(|e| e.key == "ui.theme")
+            .expect("ui.theme");
+        assert!(entry_matches(e, &tokens("테")));
+        assert!(entry_matches(e, &tokens("ㅌ")), "조합 중 자모도 맞는다");
+        assert!(entry_matches(e, &tokens("theme")));
+        assert!(entry_matches(e, &tokens("ui.theme")), "키 이름도 검색 대상");
+        assert!(!entry_matches(e, &tokens("ㅍㅍㅍ")));
+    }
+
+    #[test]
+    fn bottom_bar_close_and_advanced_switch() {
+        let (mut w, mut inv) = widget();
+        let (x, y) = center(w.btn_close.bounds());
+        for e in click(x, y) {
+            w.on_event(&e, &mut inv);
+        }
+        assert!(w.take_back(), "[닫기] = 닫기 요청");
+        let (x, y) = center(w.adv_switch.bounds());
+        for e in click(x, y) {
+            w.on_event(&e, &mut inv);
+        }
+        assert!(w.advanced, "스위치 = 고급 켜짐");
+        let ch_ = w.take_changes();
+        assert!(
+            ch_.iter()
+                .any(|(k, v)| *k == "ui.prefs_advanced" && v == "on"),
+            "{ch_:?}"
+        );
+    }
+
+    #[test]
+    fn key_click_requests_copy() {
+        let (mut w, mut inv) = widget();
+        // key_rect는 페인트가 채운다 — 시험에선 첫 행의 자리를 손으로 넣는다.
+        let r = w.rows[0].rect;
+        let kr = Rect::new(r.right() - 60, r.y + 4, 50, 16);
+        w.rows[0].key_rect.set(kr);
+        let key0 = registry()[w.rows[0].idx].key;
+        let (x, y) = center(kr);
+        w.on_event(&click(x, y)[0], &mut inv);
+        let ch_ = w.take_changes();
+        assert!(
+            ch_.iter().any(|(k, v)| *k == "prefs.copy_key" && v == key0),
+            "{ch_:?}"
+        );
     }
 }

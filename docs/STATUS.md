@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-10-10 (2차 · win) — ★ P2′ 설정 카드 개편(브랜치 `feat/nexa-ui` · 미커밋)
+
+**바꾼 것**(개발 세션): 그룹 트리(일반 · 클립보드 · 모양 · 동기화 · 고급) · 고급 9키 · 종속 잠금 9쌍 · 카드(키 ⧉ 복사 · [초기화] · 기본값) · 하단 [고급 스위치][설정 파일 열기…][닫기] · 자모 검색(`jamo.rs`) + 이력 · `app.lang = system`(nexa-sys) · [14 §7](14-settings-registry.md) 확정 · DR-47 ⑥.
+**검증**(협업 세션 · V2): fmt ✓ · clippy `--workspace --all-targets -D warnings` ✓ · test **378 통과 / 실패 0 / 무시 3**(367 + 11 = card_tests 9 · jamo 2) · `scripts/check-3os.sh` ✓(호스트 · x86_64-apple-darwin · x86_64-unknown-linux-gnu) · Release `nexa-clip.exe` **2,128,384 B(2.03MB)**(≤ 10MB ✓ · P1-c′ 2.01MB 대비 +16KB) · Debug PID 31168 · 유휴 WS **18.9MB** / Private 4.7MB(≤ 40MB ✓).
+**☐ 남은 것**: 사용자 실기 T-P2 9항목(그룹 · 고급 배너 · 종속 잠금 · 초기화 · 키 복사 · 자모 검색 · 설정 파일 열기 · 시스템 언어 · Switch/Combo) · P3′ → P4′ → P5′ · nexa-ui push(사용자). → [journal](journal/2026-10-10.md)
+
+---
+
 ## 2026-10-10 (1차 · win) — ★ P1-c′ nexa-ui 의존 전환(브랜치 `feat/nexa-ui` · 미커밋)
 
 **바꾼 것**(개발 세션): 사본 `nclip-gfx`·`nclip-ctl`·`nexa-conf` 삭제 → `../nexa-ui` path 의존(nexa-gfx · nexa-ctl · nexa-conf · nexa-font) · `nclip-plat/font.rs` → nexa_font · `memmap2` 제거 · hangul → `nexa_ctl::hangul` · ★ 설정 MouseUp을 잠긴 행 빼고 전 컨트롤에 · CI 형제 체크아웃 · [DR-47](10-decision-record.md)(DR-17 정정).

@@ -1234,6 +1234,7 @@ dependencies = [
  "nexa-ctl",
  "nexa-font",
  "nexa-gfx",
+ "nexa-sys",
  "sha2",
  "softbuffer",
  "winit",
@@ -1264,6 +1265,10 @@ version = "0.1.0"
 dependencies = [
  "ab_glyph",
 ]
+
+[[package]]
+name = "nexa-sys"
+version = "0.1.0"
 
 [[package]]
 name = "num_enum"

@@ -18,7 +18,9 @@ use crate::settings::{Entry, SettingKind};
 use nclip_core::Msg;
 
 /// 언어 후보 — 4개 기본 관리([DR-21](../../../docs/10-decision-record.md)).
+/// 언어 후보 — ★ `system` = OS 표시 언어 추종(10-10 · beep D-33-4 · nexa-sys locale · 기본값) + 4개 기본 관리.
 const LANG_OPTS: &[(&str, Msg)] = &[
+    ("system", Msg::LangSystem),
     ("en", Msg::ValLangEn),
     ("ko", Msg::ValLangKo),
     ("zh", Msg::ValLangZh),

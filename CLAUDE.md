@@ -62,7 +62,7 @@
 - **기능 설계 전 `nexa-beep`·`nexa-dir2` 문서·코드 먼저 확인**(재발명 금지). 이식 커밋에 원본 경로 명기.
 - 🔴 **모든 변경에서 상시 점검** — 이 변경이 ① `nexa-beepd`(서버) ② `nbeep-relay` 와이어 ③ beep과 공유하는 규약(도메인 문자열·prologue·타이브레이크)을 건드리는가?
   하나라도 예면 **[docs/22 전달 원장](docs/22-upstream-beep-liaison.md)** 에 기록하고 사용자에게 알린다. ⚠️ beep 저장소 직접 수정은 **승인 대상**(다른 프로젝트).
-- 🔴 **형제 저장소 push 순서 = nexa-ui → nexa-license → nexa-clip**(DR-47 · 거꾸로 밀면 clip CI가 옛 형제를 받아 깨진다) — clone은 세 저장소를 나란히([18 §1](docs/18-build-and-test.md)) · 커밋 직전 fetch도 세 저장소 모두.
+- 🔴 **형제 저장소(nexa-ui · nexa-license) 수정 규칙(사용자 10-10)** — ① **수정 전 최신화**가 기본 단계(`git fetch` → `main`이 뒤졌으면 `pull --ff-only` · 작업 브랜치는 `origin/main` 위로 rebase) — 다른 PC가 같은 저장소를 개발 중일 수 있다 ② **기능 단위로 커밋 + push**(작업 브랜치 → 게이트 → `main` ff 병합 → 즉시 push · clip처럼 모아 두지 않는다) ③ push 순서 = **nexa-ui → nexa-license → nexa-clip**(DR-47 · 거꾸로 밀면 clip CI가 옛 형제를 받아 깨진다) · clone은 세 저장소를 나란히([18 §1](docs/18-build-and-test.md)) · 커밋 직전 fetch도 세 저장소 모두.
 - `.claude/settings.json`(권한)은 **덮어쓰기 금지, 병합만**.
 
 ## 5. 새 세션 오리엔테이션

@@ -44,6 +44,7 @@ nexa-gfx = { path = "../nexa-ui/crates/nexa-gfx" }
 nexa-ctl = { path = "../nexa-ui/crates/nexa-ctl" }
 nexa-conf = { path = "../nexa-ui/crates/nexa-conf" }
 nexa-font = { path = "../nexa-ui/crates/nexa-font" }
+nexa-sys = { path = "../nexa-ui/crates/nexa-sys", default-features = false } # OS 신호(locale — `app.lang=system` · 10-10)
 nclip-plat = { path = "crates/nclip-plat" }
 nclip-store = { path = "crates/nclip-store" }
 nclip-ui = { path = "crates/nclip-ui" }
