@@ -2,6 +2,8 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-10-10 (종합 · win) — ★ **nexa-ui 전환 · 설정 카드 · 라이선스 · 파일 대화상자 · Debug 제목**(`feat/nexa-ui` 5커밋 → main) — DR-47 · 형제 nexa-ui 192차 · nexa-license push 완료 · test 401 · check-3os ✓ · Release 2.32MB · choco 0.1.5 설치본 = VirusTotal 6~10건(예외 필요) · ☐ 실기 21 §15 · T-72 · T-73 → [journal](journal/2026-10-10.md)
+
 ## 2026-10-10 (3차 · win) — ★ **P3′ 파일 대화상자(nexa-dlg) · P4′ 라이선스**(`nclip-license` · Feature 0 · `--license` 5종 · 정보 › 라이선스 카드 · 창 안 보기 전환) · 외부 crate ed25519 계열 4(검증 전용) · V2 = test 401 · check-3os ✓ · Release 2,432,000 B(2.32MB) · CLI 스모크 ✓ → [journal](journal/2026-10-10.md)
 
 ## 2026-10-10 (2차 · win) — ★ **P2′ 설정 카드 개편**(beep P2와 같은 체계) — 그룹 트리 · 고급 9키 · 종속 잠금 9쌍 · 카드(키 복사 · 초기화) · 자모 검색 + 이력 · `app.lang = system` · [14 §7](14-settings-registry.md) 확정 · V2 = test 378 · check-3os ✓ · Release 2,128,384 B(2.03MB) · 유휴 WS 18.9MB → [journal](journal/2026-10-10.md)

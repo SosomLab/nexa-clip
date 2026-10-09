@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-10-10 (종합 · win) — ★ nexa-ui 전환 · 설정 카드 · 라이선스 · 파일 대화상자 · Debug 제목 (브랜치 `feat/nexa-ui` 5커밋 → main)
+
+**커밋 5**: `566c541` P1-c′ nexa-ui 의존 전환(사본 nclip-gfx·nclip-ctl·nexa-conf 삭제 → `../nexa-ui` path · [DR-47](10-decision-record.md)) · `c240402` P2′ 설정 카드(그룹 트리 · 고급 9키 · 종속 잠금 9쌍 · 카드 · 자모 검색 · `app.lang = system` · [14 §7](14-settings-registry.md)) · `f224b05` P3′·P4′ 파일 대화상자(nexa-dlg) + 라이선스(`nclip-license` · `--license` CLI) · `9fe5d52` Debug 창 제목 "(Debug)" · `fa37a03` 4차 문서·[21 §15](21-manual-test.md).
+**형제 저장소**: nexa-ui **192차**(`61e3073` · DR-46 컬러 이모지 이식 · 원격이 191을 먼저 써 번호 조정) · nexa-license(`e8cca60` · `bcf6830` · clip 분기) — **main에 push 완료**(push 순서 nexa-ui → nexa-license → nexa-clip · 새 규칙 = 수정 전 fetch · 기능 단위 커밋 + 즉시 push).
+**검증**: 단계마다 V2(test 367 → 378 → 401 · check-3os ✓) · push 전 게이트 = `rustup update stable`(rustc 1.99.0 unchanged) + check-3os ✓(`fa37a03`) · Release 2.32MB · 유휴 WS 19.5MB(Debug).
+**검수**(10-10 조회): winget 0.1.6 #446464·#446465 모더레이터 대기(10-04 뒤 무변화) · choco nexa-clip 0.1.5 = VirusTotal 6~10건 → **모더레이터 예외 없이 승인 불가** · nexa-clip-portable 0.1.5 = 1~5건(막힘 없음 · 사람 검수 대기).
+**☐ 남은 것**: 사용자 실기 [21 §15](21-manual-test.md)(P1-1 · P2-1~8 · P4-1~6 · D1) · choco nexa-clip 0.1.5 대응 결정(VirusTotal 6~10건 → 모더레이터 예외 필요) · T-72 라이선스 발급 왕복 · T-73 nexa-font 중복 face(nexa-ui 과제). → [journal](journal/2026-10-10.md)
+
+---
+
 ## 2026-10-10 (4차 · win) — 디버그 빌드 창 제목 "(Debug)"(`9fe5d52`)
 
 **바꾼 것**(개발 세션): nexa-dir3 10-06 규칙 이식 — Debug 빌드면 메인 · 팝업 · 설정 창 제목이 "Nexa Clip (Debug)…"(릴리스 무변경). **☐ 실기**: Debug 재시작 뒤 제목([21 §15](21-manual-test.md) D1). → [journal](journal/2026-10-10.md)

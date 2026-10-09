@@ -53,9 +53,9 @@
 | 32 | 🔴 [beep 전달문](32-beep-handover.md) | ★ **beep에 그대로 건네는 문서**(09-05) — 공용 `nexa-conf` 결함 2건(설정 파일 0600 · 미지 키 중복) + 공유 규약 3건(도메인/prologue · glare · relay 결합) + 서버 변경 대기 3건. 항목마다 *무엇 · 왜 · beep 어디 · 정할 것* |
 | 18 | ★ [빌드 · 테스트](18-build-and-test.md) | **절차 SSOT** — 매번 돌리는 네 줄 · 테스트가 지키는 것 · 교차 검사 · CI · 흔한 실패 |
 | 27 | ★ [케이스별 캡처·표시](27-capture-cases.md) | **PPT 도형 · 색 텍스트 · 이미지 · 파일** 네 케이스가 각각 어떻게 기록되고 보이는가 |
-| 21 | ★ [실기 점검표](21-manual-test.md) | **Windows·macOS·Linux 각각** 무엇이 검증됐는지 · 점검 절차 · 증상 기록 |
+| 21 | ★ [실기 점검표](21-manual-test.md) | **Windows·macOS·Linux 각각** 무엇이 검증됐는지 · 점검 절차 · 증상 기록 · ★ §15 nexa-ui 전환·설정 카드·라이선스·Debug 제목(10-10) |
 | 20 | ★ [구현 설계서](20-implementation-spec.md) | **화면 레이아웃 · 기능 목록 · 각 기능의 구현 방법 · 설정 구성 · 크레이트 배치 · 구현 순서** — 코드 직전에 읽는 한 장 |
-| 14 | [설정 레지스트리 명세](14-settings-registry.md) | ★ **Maccy 설정 전수 실측** + 우리 `registry()` 명세(카테고리 11개) |
+| 14 | [설정 레지스트리 명세](14-settings-registry.md) | ★ **Maccy 설정 전수 실측** + 우리 `registry()` 명세(카테고리 11개) · ★ §7 설정 화면 개편 — 그룹 트리 · 고급 · 종속 잠금 · 카드 · 라이선스 카드(10-10) |
 | 17 | [참조 제품 UI 해부](17-reference-ui-teardown.md) | ★ **Maccy 팝업 · CopyQ 메인창/트레이** 실물 해부 → 우리 설계 정정 |
 | 13 | [beep UI 재사용 계획](13-ui-reuse-from-beep.md) | ★ **무엇을 그대로 쓰고 무엇을 버리나** — 재사용 원장(실측 LOC) · 결합 방식 · 착수 순서 |
 | 10 | [결정 기록](10-decision-record.md) | **DR 표 + 열린 결정(D) 색인 + 외부 의존 원장 + ADR 색인** |
