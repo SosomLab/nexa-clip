@@ -229,9 +229,21 @@ jobs:
             tar -czf "../out/$PORTABLE_NAME.tar.gz" "$PORTABLE_NAME"
           fi
 
+      # ★ 재시도(10-10 v0.2.0 release 1차 실패 — Chocolatey 커뮤니티 피드 504로 windows-arm64 잡이 죽고 공개 단계 전부 skip).
+      #   러너 이미지에 NSIS가 이미 있으면(makensis.exe) 설치를 건너뛰고, 없을 때만 choco를 3회(20초 간격)까지 시도한다.
       - name: NSIS 설치
         if: runner.os == 'Windows'
-        run: choco install nsis -y --no-progress
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -x "/c/Program Files (x86)/NSIS/makensis.exe" ]; then
+            echo "NSIS 있음: $('/c/Program Files (x86)/NSIS/makensis.exe' -VERSION)"; exit 0
+          fi
+          for i in 1 2 3; do
+            if choco install nsis -y --no-progress; then exit 0; fi
+            echo "::warning::choco install nsis 실패($i/3) — 20초 뒤 재시도"; sleep 20
+          done
+          echo "::error::NSIS 설치 실패(choco 피드 장애?) — 실패 잡만 재실행: gh run rerun <run> --failed"; exit 1
 
       - name: Windows 설치본(.exe) + zip
         if: runner.os == 'Windows'

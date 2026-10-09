@@ -2,6 +2,8 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-10-10 (7차 · win) — ★ **v0.2.0 릴리스** — release `37964721378` 1차 ✗(windows-arm64 NSIS 설치 = Chocolatey 피드 504) → 실패 잡 재실행 ✅ · 자산 15 · brew 0.2.0 · pkg.sosomlab.com 0.2.0 · winget·choco guard skip(IsApproved 판정 첫 실전 정상) · ☐ NSIS 재시도 → [journal](journal/2026-10-10.md)
+
 ## 2026-10-10 (종합 · win) — ★ **nexa-ui 전환 · 설정 카드 · 라이선스 · 파일 대화상자 · Debug 제목**(`feat/nexa-ui` 5커밋 → main) — DR-47 · 형제 nexa-ui 192차 · nexa-license push 완료 · test 401 · check-3os ✓ · Release 2.32MB · choco 0.1.5 설치본 = VirusTotal 6~10건(예외 필요) · ☐ 실기 21 §15 · T-72 · T-73 → [journal](journal/2026-10-10.md)
 
 ## 2026-10-10 (3차 · win) — ★ **P3′ 파일 대화상자(nexa-dlg) · P4′ 라이선스**(`nclip-license` · Feature 0 · `--license` 5종 · 정보 › 라이선스 카드 · 창 안 보기 전환) · 외부 crate ed25519 계열 4(검증 전용) · V2 = test 401 · check-3os ✓ · Release 2,432,000 B(2.32MB) · CLI 스모크 ✓ → [journal](journal/2026-10-10.md)
