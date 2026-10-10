@@ -3,22 +3,29 @@
 # 무엇을 재나(전부 실제 제품 경로 · `--profile e2e`로 격리 — 데이터 폴더 data\profiles\e2e · 단일 인스턴스 가드 분리):
 #   S1 기동     : tray 시작 → "클립보드 감시: ok"까지 시간 · 저장소 복원 줄 · 전역 단축키 줄
 #   S2 캡처     : 실제 클립보드에 텍스트 3건 복사(Set-Clipboard) → 감시가 잡는다(검증은 S4에서 결과로)
-#   S3 팝업     : 메모장을 앞에 두고 Shift+Alt+C(기본 퀵 팝업) → 팝업 창 등장 → Enter = 최근 항목 붙여넣기
-#   S4 붙여넣기 : 메모장 본문에 마지막 복사 텍스트가 들어갔는가(Ctrl+A·Ctrl+C로 읽어 비교) + 로그 "키 주입 ok"
+#   S3 팝업     : ★ 스크립트 전용 대상 창(win-e2e-target.ps1 · 기본)을 앞에 두고 Shift+Alt+C(기본 퀵 팝업) → 팝업 창 등장 → Enter = 최근 항목 붙여넣기
+#   S4 붙여넣기 : 대상 창 본문에 마지막 복사 텍스트가 들어갔는가(대상이 200ms마다 덤프하는 파일로 읽어 비교 · 키로 읽지 않는다) + 로그 "키 주입 ok"
 #   S5 설정 창  : `settings` 단독 실행 → 창 표시 시간 · 검색어 입력 · ★[닫기] 버튼 **마우스 클릭** → 프로세스 종료(P2-9 회귀)
 #   S6 둘째 인스턴스: 같은 프로필 tray 재실행 = 열기 위임 뒤 즉시 종료
 #   S7 메모리   : tray WS/Private(기동 직후 · 끝) · 설정 창 프로세스 WS
 #
 # 사용:  pwsh scripts/win-e2e.ps1 -Exe target\e2e\0.2.0\nexa-clip.exe     # 포터블(공식 zip 풀어 둔 것)
 #        pwsh scripts/win-e2e.ps1                                           # 기본 = target\release\nexa-clip.exe
-# 주의:  실제 클립보드를 쓴다(끝에 텍스트였으면 원복) · 키 주입(SendKeys)은 이 스크립트가 띄운 메모장·우리 창에만 ·
+# 주의:  실제 클립보드를 쓴다(끝에 텍스트였으면 원복) · 키 주입(SendKeys)은 이 스크립트가 띄운 대상 창·우리 창에만 ·
 #        전역 단축키(Shift+Alt+C)는 **한 프로세스만** 등록할 수 있다 → 다른 nexa-clip(설치본·Debug)이 떠 있으면 팝업이
 #        그쪽에 뜬다 — 돌리기 전에 끈다(감시 둘도 피한다).
+# 🔴 10-10 사고: 메모장을 대상으로 쓴 1판이 **사용자의 미저장 메모장 문서**에 붙여넣고 메모장 프로세스를 끝냈다 — Win11 메모장은
+#   한 프로세스·탭이라 Start-Process가 돌려준 PID도 제목 패턴(*메모장*)도 우리 창을 가리키지 않았다. 그 뒤 규칙:
+#   ① 기본 대상 = 스크립트 전용 창(win-e2e-target.ps1 · HWND·PID를 대상이 직접 파일로 알려 준다 · 정리 = 그 프로세스만).
+#   ② -Target notepad(실제 메모장 재현이 꼭 필요할 때만): 시작 전에 notepad.exe가 **하나라도 떠 있으면 중단**(exit 2) ·
+#      창은 우리가 띄운 뒤 생긴 notepad PID로만 식별 · 정리도 그 PID만.
+#   ③ 제목 패턴·시작 시각 범위로 남의 창을 집거나 프로세스를 끝내는 코드는 두지 않는다.
 # 결과:  콘솔 표 + target\e2e\result-<시각>.json · 로그 target\e2e\tray-<시각>.log
 
 param(
     [string]$Exe = "",
     [string]$Profile = "e2e",
+    [ValidateSet('own', 'notepad')][string]$Target = 'own',
     [int]$ReadyTimeoutSec = 40
 )
 
@@ -114,31 +121,69 @@ function Mark([string]$Step, [bool]$Ok, [string]$Note) {
     Write-Host ("[{0}] {1} — {2}" -f $tag, $Step, $Note)
 }
 function Keys([string]$s) { [System.Windows.Forms.SendKeys]::SendWait($s) }
-function Read-Notepad($hwnd) {
-    [void][W32]::SetForegroundWindow($hwnd)
+# ── 붙여넣기 대상 창(10-10 사고 뒤 재설계 · 머리말 🔴) ──
+$script:targetProc = $null; $script:targetHwnd = [IntPtr]::Zero; $script:targetText = ""
+# 대상 창을 띄우고 HWND를 돌려준다. own = scripts/win-e2e-target.ps1(전용 WinForms 창 · HWND·PID를 파일로 보고) · notepad = 우리가 띄운 뒤 생긴 PID의 창만.
+function Start-Target([string]$Title) {
+    if ($Target -eq 'own') {
+        $hwndFile = Join-Path $outDir "target-$stamp.hwnd"
+        $script:targetText = Join-Path $outDir "target-$stamp.txt"
+        Remove-Item $hwndFile, $script:targetText -ErrorAction SilentlyContinue
+        $script:targetProc = Start-Process pwsh -ArgumentList @('-NoProfile', '-File', (Join-Path $PSScriptRoot 'win-e2e-target.ps1'), ('"{0}"' -f $hwndFile), ('"{0}"' -f $script:targetText), ('"{0}"' -f $Title)) -PassThru # 인자에 공백이 있을 수 있어 따옴표로 감싼다
+        $deadline = (Get-Date).AddSeconds(15)
+        while (-not (Test-Path $hwndFile) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 150 }
+        if (-not (Test-Path $hwndFile)) { throw "대상 창이 15초 안에 뜨지 않음(win-e2e-target.ps1)" }
+        $lines = @(Get-Content $hwndFile)
+        $script:targetHwnd = [IntPtr]::new([int64]$lines[0])
+        Start-Sleep -Milliseconds 400
+        return $script:targetHwnd
+    }
+    # notepad: 전제 0(시작 전 notepad 0개)을 지났으므로 지금부터 생기는 notepad 프로세스는 전부 우리가 띄운 것.
+    $script:targetProc = Start-Process notepad.exe -PassThru
+    $deadline = (Get-Date).AddSeconds(8)
+    do {
+        $pids = @(Get-Process notepad -ErrorAction SilentlyContinue | ForEach-Object { [uint32]$_.Id })
+        foreach ($w in [W32]::Visible()) { if ($pids -contains $w.Item3) { $script:targetHwnd = $w.Item1; return $w.Item1 } }
+        Start-Sleep -Milliseconds 150
+    } while ((Get-Date) -lt $deadline)
+    throw "우리가 띄운 메모장(PID $($script:targetProc.Id))의 창을 못 찾음"
+}
+# 대상 본문 읽기 — own = 대상이 200ms마다 덤프한 파일 · notepad = 우리 창(HWND 고정 · PID로 보장)에서 Ctrl+A·Ctrl+C.
+function Read-Target {
+    if ($Target -eq 'own') {
+        Start-Sleep -Milliseconds 500
+        try { return (Get-Content $script:targetText -Raw -ErrorAction Stop) } catch { return "" }
+    }
+    [void][W32]::SetForegroundWindow($script:targetHwnd)
     Start-Sleep -Milliseconds 400
     Keys "^a"; Start-Sleep -Milliseconds 150; Keys "^c"; Start-Sleep -Milliseconds 500
     try { return (Get-Clipboard -Raw) } catch { return "" }
 }
-# ★ 사용한 메모장 전부 닫기(10-10 사용자 규칙 "테스트에 쓴 노트패드는 모두 닫히게"). Win11 메모장은 기존 프로세스에 **탭**으로 열려
-#   띄운 PID를 죽여도 창이 남고, 미저장 본문은 다음 실행에 복원된다 → 본문을 비우고(Ctrl+A·Del) 탭을 닫아(Ctrl+W · 저장 질문 없음)
-#   그래도 남은 창은 그 프로세스를 종료한다. 대상 = 제목에 우리 표식(e2e)이 있는 메모장 창 + 이 실행 중 시작된 Notepad 프로세스.
-function Close-Notepads([datetime]$Since) {
-    foreach ($w in [W32]::Visible()) {
-        $isNp = ($w.Item2 -like "*메모장*" -or $w.Item2 -like "*Notepad*")
-        if (-not $isNp -or $w.Item2 -notlike "*e2e*") { continue }
-        [void][W32]::SetForegroundWindow($w.Item1); Start-Sleep -Milliseconds 300
-        Keys "^a"; Start-Sleep -Milliseconds 120; Keys "{DEL}"; Start-Sleep -Milliseconds 200
-        Keys "^w"; Start-Sleep -Milliseconds 500
-    }
-    Start-Sleep -Milliseconds 300
-    foreach ($w in [W32]::Visible()) {
-        if (($w.Item2 -like "*메모장*" -or $w.Item2 -like "*Notepad*") -and $w.Item2 -like "*e2e*") {
-            Stop-Process -Id $w.Item3 -Force -ErrorAction SilentlyContinue
+# 대상 정리(규칙 10-10 "쓴 창은 모두 닫는다") — **우리가 띄운 프로세스만**. own = 그 pwsh 종료(자동 저장·복원 없음) ·
+# notepad = 우리 창 본문 비우기(Ctrl+A·Del) → 탭 닫기(Ctrl+W) → 전제 0 덕에 지금 있는 notepad 프로세스(= 전부 우리 것) 종료.
+function Close-Target {
+    if (-not $script:targetProc) { return }
+    if ($Target -eq 'notepad') {
+        if ($script:targetHwnd -ne [IntPtr]::Zero) {
+            try {
+                [void][W32]::SetForegroundWindow($script:targetHwnd); Start-Sleep -Milliseconds 300
+                Keys "^a"; Start-Sleep -Milliseconds 120; Keys "{DEL}"; Start-Sleep -Milliseconds 200
+                Keys "^w"; Start-Sleep -Milliseconds 500
+            } catch {}
         }
+        Get-Process notepad -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue }
+        return
     }
-    Get-Process Notepad -ErrorAction SilentlyContinue | Where-Object { $_.StartTime -gt $Since } |
-        ForEach-Object { Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue }
+    if (-not $script:targetProc.HasExited) { Stop-Process -Id $script:targetProc.Id -Force -ErrorAction SilentlyContinue }
+}
+
+# ── 전제 0(10-10 사고 뒤): -Target notepad 는 notepad.exe 가 하나라도 떠 있으면 **시작하지 않는다**(Win11 메모장 = 한 프로세스·탭 → 사용자 문서를 건드릴 수 있다). ──
+if ($Target -eq 'notepad') {
+    $np0 = @(Get-Process notepad -ErrorAction SilentlyContinue)
+    if ($np0.Count -gt 0) {
+        Write-Host ("중단: 메모장이 이미 떠 있음(PID {0}) — 저장하고 닫은 뒤 다시 실행하거나 기본 -Target own 을 쓴다" -f ($np0.Id -join ","))
+        exit 2
+    }
 }
 
 # ── 전제: 같은 프로필 인스턴스가 남아 있으면 정리(다른 프로필·설치본은 건드리지 않는다) ──
@@ -148,8 +193,7 @@ $others = @(Get-Process nexa-clip -ErrorAction SilentlyContinue)
 if ($others.Count -gt 0) { Write-Host ("경고: 다른 nexa-clip {0}개가 떠 있음(PID {1}) — 전역 단축키를 그쪽이 쥐면 S3가 실패한다" -f $others.Count, ($others.Id -join ",")) }
 $origClip = $null
 try { $origClip = Get-Clipboard -Raw -ErrorAction SilentlyContinue } catch {}
-$notepad = $null; $tray = $null; $settings = $null
-$runStart = Get-Date
+$tray = $null; $settings = $null
 
 try {
     # ── S1 기동 ──
@@ -174,12 +218,9 @@ try {
     Start-Sleep -Seconds 2
     Mark "S2 캡처(복사 3건)" $true "$marker-1..3 복사 완료(검증은 S4 결과로)"
 
-    # ── S3 팝업 — 메모장 앞에 두고 Shift+Alt+C → Enter ──
-    $notepad = Start-Process notepad.exe -PassThru
-    Start-Sleep -Seconds 2
-    $np = Find-Window @("*메모장*", "*Notepad*") 6
-    if (-not $np) { throw "메모장 창을 못 찾음" }
-    [void][W32]::SetForegroundWindow($np.Item1)
+    # ── S3 팝업 — 대상 창(기본 = 스크립트 전용 창) 앞에 두고 Shift+Alt+C → Enter ──
+    $tgt = Start-Target "nexa-clip e2e target $stamp"
+    [void][W32]::SetForegroundWindow($tgt)
     Start-Sleep -Milliseconds 600
     Keys "e2e: "
     Start-Sleep -Milliseconds 600
@@ -199,11 +240,11 @@ try {
     $pasted = Wait-LogLine $trayLog "키 주입 ok" 6
     Start-Sleep -Milliseconds 2500 # 주입 뒤 대상 앱이 처리할 시간(10-10 1차 E2E: 1초는 짧았다)
 
-    # ── S4 붙여넣기 검증 — 메모장 본문 읽기 ──
+    # ── S4 붙여넣기 검증 — 대상 창 본문 읽기 ──
     try { $metrics.clip_after_paste = Get-Clipboard -Raw } catch { $metrics.clip_after_paste = "" }
-    $body = Read-Notepad $np.Item1
+    $body = Read-Target
     $okPaste = $pasted -and ($body -like "*$marker-3*")
-    Mark "S4 붙여넣기(최근 항목 → 메모장)" $okPaste ("로그 주입 ok={0} · 본문='{1}' · Enter 뒤 포그라운드 '{2}' · 클립보드 '{3}'" -f $pasted, ($body -replace "`r?`n", "⏎"), $metrics.fg_after_enter, $metrics.clip_after_paste)
+    Mark "S4 붙여넣기(최근 항목 → 대상 창)" $okPaste ("로그 주입 ok={0} · 본문='{1}' · Enter 뒤 포그라운드 '{2}' · 클립보드 '{3}'" -f $pasted, ($body -replace "`r?`n", "⏎"), $metrics.fg_after_enter, $metrics.clip_after_paste)
 
     # ── S5 설정 창 — 열기 시간 · 검색 입력 · [닫기] 클릭 → 종료 ──
     $tSet0 = Get-Date
@@ -254,9 +295,8 @@ try {
 }
 finally {
     if ($settings -and -not $settings.HasExited) { Stop-Process -Id $settings.Id -Force -ErrorAction SilentlyContinue }
-    # 메모장 정리(규칙 10-10) — 띄운 PID만이 아니라 우리가 쓴 창 전부(본문 비우기 → 탭 닫기 → 남으면 프로세스 종료).
-    try { Close-Notepads $runStart } catch {}
-    if ($notepad -and -not $notepad.HasExited) { Stop-Process -Id $notepad.Id -Force -ErrorAction SilentlyContinue }
+    # 대상 창 정리(규칙 10-10 "쓴 창은 모두 닫는다" · 10-10 사고 뒤 = **우리가 띄운 프로세스만**).
+    try { Close-Target } catch {}
     if ($tray -and -not $tray.HasExited) { Stop-Process -Id $tray.Id -Force -ErrorAction SilentlyContinue }
     if ($null -ne $origClip -and $origClip -is [string]) { try { Set-Clipboard -Value $origClip } catch {} }
 }
