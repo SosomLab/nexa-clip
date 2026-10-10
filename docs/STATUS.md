@@ -12,7 +12,7 @@
 **재실행**(16:32 · 사용자 확인 뒤): **8/8 PASS** · notepad 0 → 0 · 전용 창·nexa-clip 잔존 0 · 붙여넣기(S4) ✓ + 사용자 실기 "정해진 위치에 붙음"(P5-1 ✓).
 **v0.2.1 검토**(개발 세션): **릴리스 권고** — v0.2.0 이후 코드 변경 = `ed494f3`(Windows 붙여넣기 settle) · `bd11001`(영어 CLI) · NSIS 재시도(워크플로) · 형제 저장소 변경 없음 · 절차 = `rustup update` → check-3os → `cargo test --workspace`(V3) → 0.2.1 → 태그.
 **지금**: Debug PID 12276(`15e3c61` 소스) 상주.
-**✅ v0.2.1 릴리스**(사용자 지시 "새 버전 릴리즈 및 게시 진행" · 태그 `596e968` · V3 = test 403 · clippy 3타깃 ✓ · release `38035574119` **1차 ✅** · 자산 15 · 릴리스 노트 영어 · brew 0.2.1 · pkg.sosomlab.com 0.2.1 · winget·choco guard skip) · ★ **choco `nexa-clip-portable` 0.1.5 승인**(moderator Windos · 10-10) — 설치본 `nexa-clip` 0.1.5는 아직 검수 중이라 choco는 채널 묶음 판정으로 skip → 포터블만 0.2.1로 올릴지 결정 대상 · [journal 12차](journal/2026-10-10.md).
+**✅ v0.2.1 릴리스**(사용자 지시 "새 버전 릴리즈 및 게시 진행" · 태그 `596e968` · V3 = test 403 · clippy 3타깃 ✓ · release `38035574119` **1차 ✅** · 자산 15 · 릴리스 노트 영어 · brew 0.2.1 · pkg.sosomlab.com 0.2.1 · winget·choco guard skip) · ★ **choco `nexa-clip-portable` 0.1.5 승인**(moderator Windos · 10-10) — 설치본 `nexa-clip` 0.1.5는 아직 검수 중 → ✅ **처리됨**: guard 패키지별 판정(`c7fb80d`) → run `38036119249`로 **포터블 0.2.1만 choco 제출**(pushed · 검수 큐 Pending) · 설치본은 승인 뒤 자동(T-78) · [journal 12차](journal/2026-10-10.md).
 **☐ 결정 대기**: ~~T-74 v0.2.1 릴리스~~(진행 중) · T-77 Windows 코드 서명 · choco 답변(2~3일 뒤 페이지 확인). → [journal](journal/2026-10-10.md)
 
 ---
