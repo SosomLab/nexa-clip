@@ -8,7 +8,7 @@
 # | 채널 | 스위치 변수 | 시크릿 | 대기 판정 |
 # | --- | --- | --- | --- |
 # | winget | `WINGET_PUBLISH=true` | `WINGET_TOKEN` | microsoft/winget-pkgs에 우리 패키지 식별자를 단 **열린 PR**이 있으면 대기 |
-# | Chocolatey | `CHOCO_PUSH=true` | `CHOCO_API_KEY` | **직전 릴리스 버전**이 아직 승인되지 않았으면 대기(IsApproved=true로 판정 — 검수 중 패키지도 Id+Version 조회에는 나온다) |
+# | Chocolatey | `CHOCO_PUSH=true` | `CHOCO_API_KEY` | **패키지별**로 마지막 제출 버전이 승인되지 않았으면 그 패키지만 대기(IsApproved=true로 판정 — 검수 중 패키지도 Id+Version 조회에는 나온다 · 10-10 패키지별로 분리) |
 #
 # 수동 실행의 `force=true`는 대기 판정을 무시한다(사람이 확인했을 때만).
 name: publish-windows-packages
@@ -45,6 +45,7 @@ jobs:
     outputs:
       winget_go: ${{ steps.winget.outputs.go }}
       choco_go: ${{ steps.choco.outputs.go }}
+      choco_pkgs: ${{ steps.choco.outputs.pkgs }}
     env:
       WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
       CHOCO_API_KEY: ${{ secrets.CHOCO_API_KEY }}
@@ -83,31 +84,37 @@ jobs:
           echo "winget 제출: $go"
 
       - id: choco
-        name: Chocolatey 대기 판정(마지막 제출 버전이 승인됐는가)
+        name: Chocolatey 대기 판정(패키지별 · 마지막 제출 버전이 승인됐는가)
         shell: bash
         run: |
           set -euo pipefail
+          # ★ 패키지별 판정(10-10 v0.2.1 · 포터블 0.1.5는 승인됐는데 설치본 0.1.5가 검수 중이라 묶음 판정이 둘 다 skip한 교훈):
+          #   패키지마다 따로 "마지막으로 낸 버전이 승인됐는가"를 보고, 통과한 패키지만 `pkgs`에 넣어 push 잡이 그것만 올린다.
+          #   force=true 는 두 패키지 다(사람이 확인했을 때만).
           go=false
+          pkgs=""
           if [ "${{ vars.CHOCO_PUSH }}" = "true" ] && [ -n "${CHOCO_API_KEY:-}" ]; then
-            go=true
-            if [ "${{ inputs.force }}" != "true" ]; then
+            if [ "${{ inputs.force }}" = "true" ]; then
+              pkgs="nexa-clip nexa-clip-portable"
+            else
               cur="${{ inputs.tag }}"
               # ★ 판정 기준 = **choco에 마지막으로 낸 버전**이 승인됐는가(10-05 · v0.1.7 준비 중 발견).
               #   종전에는 "직전 git 태그 버전"을 봤는데, 그 버전을 choco에 못 낸 경우(0.1.6 — 403)에는
               #   피드에 항목이 없어 **앞으로 계속 skip**됐다(0.1.5가 승인돼도). 피드는 버전을 지정하지 않으면
               #   검수 중인 항목을 숨기므로(실측), 태그를 최신부터 훑어 **처음 항목이 나오는 버전**을 찾는다.
-              #   - 그 버전이 승인됨(IsApproved=true) → 제출 · 아니면(검수 중) → 건너뜀
+              #   - 그 버전이 승인됨(IsApproved=true) → 제출 · 아니면(검수 중) → 그 패키지만 건너뜀
               #   - 어느 태그 버전도 피드에 없음 → 첫 제출
-              #   - 조회 실패 → 건너뜀(모르는 상태에서 밀지 않는다)
+              #   - 조회 실패 → 그 패키지 건너뜀(모르는 상태에서 밀지 않는다)
               tags=$(git tag -l 'v*' --sort=-v:refname | grep -v -- '-' | grep -vx "$cur" || true)
               for pkg in nexa-clip nexa-clip-portable; do
+                ok=true
                 found=false
                 for t in $tags; do
                   pv="${t#v}"
                   url="https://community.chocolatey.org/api/v2/Packages()?\$filter=Id%20eq%20'$pkg'%20and%20Version%20eq%20'$pv'"
                   if ! body=$(curl -fsS "$url"); then
-                    echo "::warning::choco: $pkg $pv 조회 실패 — 이번 릴리스는 제출을 건너뛴다."
-                    go=false
+                    echo "::warning::choco: $pkg $pv 조회 실패 — 이번 릴리스는 $pkg 제출을 건너뛴다."
+                    ok=false
                     found=true
                     break
                   fi
@@ -115,10 +122,10 @@ jobs:
                     found=true
                     # Id+Version으로 물으면 검수 중인 패키지도 항목이 돌아온다(IsApproved=false · 10-04 실측).
                     if ! echo "$body" | grep -q '<d:IsApproved m:type="Edm.Boolean">true'; then
-                      echo "::warning::choco: $pkg 의 마지막 제출 버전 $pv 이(가) 아직 승인되지 않았다(모더레이션 대기) — 이번 릴리스는 제출을 건너뛴다."
-                      go=false
+                      echo "::warning::choco: $pkg 의 마지막 제출 버전 $pv 이(가) 아직 승인되지 않았다(모더레이션 대기) — 이번 릴리스는 $pkg 제출을 건너뛴다."
+                      ok=false
                     else
-                      echo "choco: $pkg 마지막 제출 버전 $pv 승인됨."
+                      echo "choco: $pkg 마지막 제출 버전 $pv 승인됨 → 제출."
                     fi
                     break
                   fi
@@ -126,11 +133,16 @@ jobs:
                 if [ "$found" = false ]; then
                   echo "choco: $pkg 피드에 제출 이력 없음 — 첫 제출."
                 fi
+                if [ "$ok" = true ]; then
+                  pkgs="${pkgs:+$pkgs }$pkg"
+                fi
               done
             fi
+            if [ -n "$pkgs" ]; then go=true; fi
           fi
           echo "go=$go" >> "$GITHUB_OUTPUT"
-          echo "choco 제출: $go"
+          echo "pkgs=$pkgs" >> "$GITHUB_OUTPUT"
+          echo "choco 제출: $go · 패키지: ${pkgs:-(없음)}"
 
   # ── Chocolatey ──
   chocolatey:
@@ -170,7 +182,8 @@ jobs:
         run: |
           set -euo pipefail
           v="${TAG#v}"
-          for pkg in nexa-clip nexa-clip-portable; do
+          # 패키지별 대기 판정을 통과한 것만(guard 출력 pkgs)
+          for pkg in ${{ needs.guard.outputs.choco_pkgs }}; do
             choco push "out/choco/nupkg/$pkg.$v.nupkg" --source https://push.chocolatey.org/ --api-key "$CHOCO_API_KEY"
           done
           echo "제출 완료 — 커뮤니티 저장소는 검수를 거쳐야 노출된다(즉시 아님)."
@@ -178,7 +191,7 @@ jobs:
         if: needs.guard.outputs.choco_go != 'true'
         shell: bash
         run: |
-          echo "::notice::choco push하지 않았다(스위치 꺼짐·키 없음·또는 직전 제출 검수 대기)."
+          echo "::notice::choco push하지 않았다(스위치 꺼짐·키 없음·또는 두 패키지 모두 직전 제출 검수 대기)."
           echo "아티팩트 chocolatey-${{ inputs.tag }}의 nupkg를 받아 직접 push할 수 있다."
 
   # ── winget ──
