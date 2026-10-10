@@ -390,51 +390,41 @@ jobs:
           set -euo pipefail
           cat > notes.md <<EOF
           # Nexa Clip $VERSION
-
-          3-OS에서 똑같이 생긴 화면으로 동작하는 클립보드 매니저 — 로컬 암호화 저장 · 승인한 기기와만 E2E 동기화.
-
-          ## 받을 파일 고르기
-
-          | 운영체제 | 설치본 | 포터블(압축 해제 후 바로 실행) |
+          A clipboard manager that looks and works the same on Windows, macOS and Linux — encrypted local history · end-to-end sync only with devices you approve.
+          ## Which file to download
+          | OS | Installer | Portable (unzip and run) |
           | --- | --- | --- |
-          | Windows x64 | \`...windows-x64-setup.exe\`(+\`.zip\`) | \`...windows-x64-portable.zip\` |
-          | Windows ARM64 | \`...windows-arm64-setup.exe\`(+\`.zip\`) | \`...windows-arm64-portable.zip\` |
+          | Windows x64 | \`...windows-x64-setup.exe\` (+\`.zip\`) | \`...windows-x64-portable.zip\` |
+          | Windows ARM64 | \`...windows-arm64-setup.exe\` (+\`.zip\`) | \`...windows-arm64-portable.zip\` |
           | macOS (Apple Silicon) | \`...macos-arm64.dmg\` | \`...macos-arm64-portable.tar.gz\` |
           | macOS (Intel) | \`...macos-x64.dmg\` | \`...macos-x64-portable.tar.gz\` |
           | Linux x86_64 | \`...linux-x64.deb\` · \`...linux-x64.rpm\` | \`...linux-x64-portable.tar.gz\` |
-
-          ## 패키지 관리자
-
+          ## Package managers
           \`\`\`bash
-          brew install --cask kiros33/tap/nexa-clip        # macOS 설치본(.app)
-          brew install kiros33/tap/nexa-clip-portable      # macOS/Linux 포터블
+          brew install --cask kiros33/tap/nexa-clip        # macOS app bundle
+          brew install kiros33/tap/nexa-clip-portable      # macOS/Linux portable
+          sudo apt install nexa-clip                       # Debian/Ubuntu (pkg.sosomlab.com)
+          sudo dnf install nexa-clip                       # Fedora/RHEL (pkg.sosomlab.com)
           \`\`\`
           \`\`\`powershell
-          winget install SosomLab.NexaClip                 # Windows 설치본
-          winget install SosomLab.NexaClip.Portable        # Windows 포터블
-          choco  install nexa-clip                         # Windows 설치본
-          choco  install nexa-clip-portable                # Windows 포터블
+          winget install SosomLab.NexaClip                 # Windows installer
+          winget install SosomLab.NexaClip.Portable        # Windows portable
+          choco  install nexa-clip                         # Windows installer
+          choco  install nexa-clip-portable                # Windows portable
           \`\`\`
-
-          ⚠️ winget·Chocolatey는 **중앙 검수**를 거쳐야 위 명령이 동작한다. 직전 제출이 검수 대기 중이면 이번
-          릴리스는 자동으로 제출을 건너뛰며(큐 엉킴 방지), 함께 올린 \`...package-manifests.zip\`이 실제 제출본이다.
-
-          ## ⚠️ 서명하지 않은 배포다
-
-          코드 서명 인증서가 없어 macOS Gatekeeper와 Windows SmartScreen이 경고한다. 받은 파일이 맞는지
-          \`SHA256SUMS.txt\`로 먼저 확인하길 권한다.
-
-          - macOS: \`.dmg\`로 직접 설치했다면 격리 표식을 떼야 실행된다 — \`xattr -dr com.apple.quarantine "/Applications/Nexa Clip.app"\`
-            (brew Cask로 설치하면 자동).
-          - Windows: SmartScreen 화면에서 **추가 정보 → 실행**.
-
-          ## 사용 안내 · 변경 내역
-
-          - 사용자 안내: <https://github.com/SosomLab/nexa-clip/wiki>
-          - 변경 내역: [docs/DEVLOG.md](https://github.com/SosomLab/nexa-clip/blob/main/docs/DEVLOG.md)
-
+          ⚠️ winget and Chocolatey packages go through community moderation before the commands above work. When the
+          previous submission is still under review, this release skips submitting (to avoid queue pile-ups); the attached
+          \`...package-manifests.zip\` is the exact manifest set that would have been submitted.
+          ## ⚠️ Unsigned release
+          There is no code-signing certificate yet, so macOS Gatekeeper and Windows SmartScreen will warn. Verify the
+          download against \`SHA256SUMS.txt\` first.
+          - macOS: if you installed from the \`.dmg\` directly, remove the quarantine flag before the first run —
+            \`xattr -dr com.apple.quarantine "/Applications/Nexa Clip.app"\` (brew Cask does this automatically).
+          - Windows: on the SmartScreen dialog choose **More info → Run anyway**.
+          ## Documentation · changelog
+          - User guide: <https://github.com/SosomLab/nexa-clip/wiki>
+          - Changelog: [docs/DEVLOG.md](https://github.com/SosomLab/nexa-clip/blob/main/docs/DEVLOG.md)
           License: PolyForm Noncommercial 1.0.0 — free for noncommercial use only.
-          라이선스: PolyForm Noncommercial 1.0.0 (비상업적 사용만 허용).
           EOF
           cat notes.md
 

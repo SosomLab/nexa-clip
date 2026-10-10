@@ -81,20 +81,20 @@ fn main() {
         match (name, a.starts_with("--profile")) {
             (Some(n), _) => {
                 if !conf::valid_profile_name(&n) {
-                    eprintln!("프로필 이름은 영문·숫자·-·_ 1~32자: {n:?}");
+                    eprintln!("profile name must be 1-32 chars of letters, digits, - or _: {n:?}");
                     std::process::exit(2);
                 }
                 conf::set_profile(&n);
             }
             (None, true) => {
-                eprintln!("--profile 뒤에 이름이 필요합니다");
+                eprintln!("--profile needs a name");
                 std::process::exit(2);
             }
             (None, false) => args.push(a),
         }
     }
     if let Some(p) = conf::profile() {
-        println!("프로필: {p} — 데이터 {}", conf::data_dir().display());
+        println!("profile: {p} — data {}", conf::data_dir().display());
     }
     // ★ `--license <status|request|install|remove|path>`(10-10 P4 · beep D-33-7 동일) — GUI와 같은 데이터 폴더.
     if args.first().map(String::as_str) == Some("--license") {
@@ -118,7 +118,7 @@ fn main() {
         Some("--version" | "-V") => println!("nexa-clip {}", env!("CARGO_PKG_VERSION")),
         Some("--help" | "-h" | "help") => usage(),
         Some(other) => {
-            eprintln!("알 수 없는 명령: {other}\n");
+            eprintln!("unknown command: {other}\n");
             usage();
             std::process::exit(2);
         }
@@ -129,33 +129,35 @@ fn main() {
     }
 }
 
+/// `--help` — ★ English only(10-10 user rule: anything shipped in a package — CLI help/status/version, release notes,
+/// package descriptions — is written in English; the UI itself follows the system language via i18n).
 fn usage() {
     println!(
         "\
-nexa-clip [명령]
+nexa-clip [command]
 
-  (없음)         ★ 트레이 상주(= tray) — 더블클릭 기본 동작(09-03)
-  status         환경 점검 — 이 PC에서 무엇이 되고 무엇이 안 되는지
-  demo           렌더 데모 — 창을 열고 S1 퀵 팝업 레이아웃을 그린다
-                 (1/2/3 보기 모드 · T 테마 · Esc 종료)
-  settings       설정 창 — 좌측 카테고리 + 검색 + 우측 폼(이식 프레임워크)
-  watch          ★ 클립보드 감시 — 복사할 때마다 무엇이 잡히는지 찍는다
-                 (종류 판정 · 표현 목록 · 용량 규칙 · Ctrl+C 종료)
-  peek           지금 클립보드만 한 번 읽고 끝낸다(watch와 함께 써도 된다)
-  tray           ★ 트레이 상주 — 아이콘 + 우클릭 메뉴(열기/종료) + 감시 통합
-                 (수집 수가 툴팁에 반영 · 종료는 메뉴에서)
-  spike-paste    K-1 스파이크 — 포커스 복원 + 붙여넣기 키 주입 검증
-      --plain        평문 붙여넣기 경로로 시도
-      --wait <초>    대상 앱을 고를 시간(기본 5)
-  --license <status|request [이름 [이메일]]|install <파일>|remove|path>
-                 ★ 라이선스(10-10) — 상태 · 요청 코드 · 설치(검증 통과만) · 제거 · 설치 자리
-  --version      버전 출력(배포 검증용)
-  --help         이 도움말
-  --profile <이름>  ★ 별도 프로필로 실행(09-04) — 데이터 폴더 data/profiles/<이름>
-                 (설정·저장소·신원·기기 목록 분리 · 단일 인스턴스 가드도 분리)
-                 → 한 PC에서 두 인스턴스로 동기화 시험: `nexa-clip --profile b`
+  (none)         ★ Stay resident in the tray (= tray) — default double-click behaviour
+  status         Environment check — what works on this PC and what does not
+  demo           Render demo — opens a window with the S1 quick-popup layout
+                 (1/2/3 view modes · T theme · Esc to quit)
+  settings       Settings window — categories on the left, search, cards on the right
+  watch          ★ Clipboard watch — prints what is captured on every copy
+                 (kind detection · representation list · size rules · Ctrl+C to quit)
+  peek           Read the clipboard once and exit (can be combined with watch)
+  tray           ★ Tray residency — icon + right-click menu (Open/Quit) + watch
+                 (capture count in the tooltip · quit from the menu)
+  spike-paste    K-1 spike — verify focus restore + paste key injection
+      --plain        try the plain-text paste path
+      --wait <sec>   time to pick the target app (default 5)
+  --license <status|request [name [email]]|install <file>|remove|path>
+                 ★ License (10-10) — status · request code · install (verified only) · remove · install path
+  --version      print the version (used by package tests)
+  --help         this help
+  --profile <name>  ★ Run with a separate profile (09-04) — data folder data/profiles/<name>
+                 (separate settings · store · identity · device list · single-instance guard)
+                 → test sync between two instances on one PC: `nexa-clip --profile b`
 
-점검 절차는 docs/21-manual-test.md 를 따른다."
+Manual test procedure: docs/21-manual-test.md"
     );
 }
 
@@ -187,7 +189,9 @@ fn status() {
         }
         PasteCapability::ClipboardOnly { reason } => {
             println!("paste inject    : clipboard only ({reason:?})");
-            println!("                  → 붙여넣기 키는 못 넣는다. 클립보드 적재까지만 한다");
+            println!(
+                "                  → cannot inject the paste key; the clipboard is loaded only"
+            );
         }
     }
 
@@ -201,9 +205,9 @@ fn status() {
         "settings        : {} ({})",
         conf.path().display(),
         if saved {
-            "저장본 사용"
+            "from saved settings"
         } else {
-            "아직 없음 — 기본값"
+            "none yet — defaults"
         }
     );
 
@@ -251,52 +255,54 @@ fn spike_paste(args: &[String]) {
 
     let mut paste = PlatformPaste::new();
 
-    println!("── K-1 스파이크: 포커스 복원 + 키 주입 ──");
+    println!("── K-1 spike: focus restore + key injection ──");
     match paste.capability() {
-        PasteCapability::Full { backend } => println!("[0] 능력      : ok ({backend})"),
+        PasteCapability::Full { backend } => println!("[0] capability : ok ({backend})"),
         PasteCapability::NeedsPermission { backend, hint } => {
-            println!("[0] 능력      : 권한 필요 ({backend})");
+            println!("[0] capability : permission needed ({backend})");
             println!("               → {hint}");
-            println!("               권한을 켠 뒤 다시 실행하세요. 계속 진행하면 실패합니다.");
+            println!("               enable the permission and run again; continuing will fail.");
         }
         PasteCapability::ClipboardOnly { reason } => {
-            println!("[0] 능력      : 주입 불가 ({reason:?}) — 이 타깃은 스파이크 대상이 아닙니다");
+            println!("[0] capability : no injection ({reason:?}) — this target is out of scope for the spike");
             std::process::exit(1);
         }
     }
 
     println!();
-    println!("준비:");
-    println!("  1) 아무 텍스트나 복사해 두세요(Ctrl+C / ⌘C).");
-    println!("  2) 붙여넣을 앱(메모장·TextEdit 등)을 열고 커서를 두세요.");
-    println!("  3) {wait_s}초 안에 그 앱을 클릭해 **포그라운드로** 두세요.");
+    println!("Prepare:");
+    println!("  1) copy any text (Ctrl+C / ⌘C).");
+    println!("  2) open the target app (Notepad, TextEdit, …) and place the caret.");
+    println!("  3) within {wait_s}s click that app so it is in the **foreground**.");
     println!();
     for left in (1..=wait_s).rev() {
-        print!("\r  대상 확정까지 {left}초… ");
+        print!("\r  target locks in {left}s… ");
         use std::io::Write as _;
         let _ = std::io::stdout().flush();
         std::thread::sleep(std::time::Duration::from_secs(1));
     }
-    println!("\r  대상 확정              ");
+    println!("\r  target locked           ");
 
     // ② 팝업을 띄우기 "전"에 기억한다.
     if !paste.capture_focus() {
-        println!("[2] 대상 기억 : 실패 — 포그라운드 창을 못 찾았습니다");
+        println!("[2] remember   : failed — no foreground window");
         std::process::exit(1);
     }
     let label = paste.target_label().unwrap_or_default();
-    println!("[2] 대상 기억 : {label}");
+    println!("[2] remember   : {label}");
 
     // ③ 팝업이 포커스를 뺏는 순간을 흉내 낸다(실물에서는 창이 뜨면서 일어난다).
     let stolen = spike_steal_focus();
     if stolen {
-        println!("[3] 포커스 탈취: ok (우리에게 옴)");
+        println!("[3] steal focus: ok (we are foreground)");
     } else {
         // ★ 탈취가 실패하면 대상이 계속 포그라운드라, 복원이 "성공"해도 아무것도 안 한 것이다.
-        println!("[3] 포커스 탈취: 실패");
-        println!("     ⚠️ 대상이 계속 포그라운드로 남습니다 — 이 실행에서는");
-        println!("        **복원 경로(AttachThreadInput)가 검증되지 않습니다.**");
-        println!("        주입만 확인되며, 복원은 실제 팝업 창이 생긴 뒤 확인해야 합니다.");
+        println!("[3] steal focus: failed");
+        println!("     ⚠️ the target stays in the foreground — in this run");
+        println!("        **the restore path (AttachThreadInput) is NOT verified.**");
+        println!(
+            "        only injection is checked; verify restore once the real popup window exists."
+        );
     }
     std::thread::sleep(std::time::Duration::from_millis(600));
 
@@ -308,21 +314,23 @@ fn spike_paste(args: &[String]) {
     };
     match paste.restore_and_paste(as_) {
         Ok(()) => {
-            println!("[5] 포커스 복원: ok");
-            println!("[6] 키 주입    : ok ({as_:?})");
+            println!("[5] restore    : ok");
+            println!("[6] inject     : ok ({as_:?})");
             println!();
-            println!("✅ 대상 앱에 붙여넣기가 되었는지 확인하세요.");
+            println!("✅ check that the text was pasted into the target app.");
             if !stolen {
-                println!("   ⚠️ 단, [3]이 실패했으므로 **주입만 검증**된 것입니다(복원은 미검증).");
+                println!(
+                    "   ⚠️ [3] failed, so **only injection** is verified (restore unverified)."
+                );
             }
             println!(
-                "   되었으면 K-1 통과 · 안 되었으면 docs/21-manual-test.md 에 증상을 적으세요."
+                "   pasted = K-1 passes · not pasted = record the symptom in docs/21-manual-test.md"
             );
         }
         Err(e) => {
-            println!("[5/6] 실패     : {e:?}");
+            println!("[5/6] failed   : {e:?}");
             println!();
-            println!("❌ K-1 미통과. docs/21-manual-test.md 에 증상과 함께 기록하세요.");
+            println!("❌ K-1 failed. Record the symptom in docs/21-manual-test.md.");
             std::process::exit(1);
         }
     }
