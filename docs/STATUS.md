@@ -12,7 +12,8 @@
 **재실행**(16:32 · 사용자 확인 뒤): **8/8 PASS** · notepad 0 → 0 · 전용 창·nexa-clip 잔존 0 · 붙여넣기(S4) ✓ + 사용자 실기 "정해진 위치에 붙음"(P5-1 ✓).
 **v0.2.1 검토**(개발 세션): **릴리스 권고** — v0.2.0 이후 코드 변경 = `ed494f3`(Windows 붙여넣기 settle) · `bd11001`(영어 CLI) · NSIS 재시도(워크플로) · 형제 저장소 변경 없음 · 절차 = `rustup update` → check-3os → `cargo test --workspace`(V3) → 0.2.1 → 태그.
 **지금**: Debug PID 12276(`15e3c61` 소스) 상주.
-**☐ 결정 대기**: T-74 v0.2.1 릴리스 · T-77 Windows 코드 서명 · choco 답변(2~3일 뒤 페이지 확인). → [journal](journal/2026-10-10.md)
+**🚧 v0.2.1 진행 중**(사용자 지시 "새 버전 릴리즈 및 게시 진행" · 브랜치 `chore/release-0.2.1` · V3 → 태그 → release · [journal 12차](journal/2026-10-10.md)).
+**☐ 결정 대기**: ~~T-74 v0.2.1 릴리스~~(진행 중) · T-77 Windows 코드 서명 · choco 답변(2~3일 뒤 페이지 확인). → [journal](journal/2026-10-10.md)
 
 ---
 
