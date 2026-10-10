@@ -120,6 +120,26 @@ function Read-Notepad($hwnd) {
     Keys "^a"; Start-Sleep -Milliseconds 150; Keys "^c"; Start-Sleep -Milliseconds 500
     try { return (Get-Clipboard -Raw) } catch { return "" }
 }
+# ★ 사용한 메모장 전부 닫기(10-10 사용자 규칙 "테스트에 쓴 노트패드는 모두 닫히게"). Win11 메모장은 기존 프로세스에 **탭**으로 열려
+#   띄운 PID를 죽여도 창이 남고, 미저장 본문은 다음 실행에 복원된다 → 본문을 비우고(Ctrl+A·Del) 탭을 닫아(Ctrl+W · 저장 질문 없음)
+#   그래도 남은 창은 그 프로세스를 종료한다. 대상 = 제목에 우리 표식(e2e)이 있는 메모장 창 + 이 실행 중 시작된 Notepad 프로세스.
+function Close-Notepads([datetime]$Since) {
+    foreach ($w in [W32]::Visible()) {
+        $isNp = ($w.Item2 -like "*메모장*" -or $w.Item2 -like "*Notepad*")
+        if (-not $isNp -or $w.Item2 -notlike "*e2e*") { continue }
+        [void][W32]::SetForegroundWindow($w.Item1); Start-Sleep -Milliseconds 300
+        Keys "^a"; Start-Sleep -Milliseconds 120; Keys "{DEL}"; Start-Sleep -Milliseconds 200
+        Keys "^w"; Start-Sleep -Milliseconds 500
+    }
+    Start-Sleep -Milliseconds 300
+    foreach ($w in [W32]::Visible()) {
+        if (($w.Item2 -like "*메모장*" -or $w.Item2 -like "*Notepad*") -and $w.Item2 -like "*e2e*") {
+            Stop-Process -Id $w.Item3 -Force -ErrorAction SilentlyContinue
+        }
+    }
+    Get-Process Notepad -ErrorAction SilentlyContinue | Where-Object { $_.StartTime -gt $Since } |
+        ForEach-Object { Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue }
+}
 
 # ── 전제: 같은 프로필 인스턴스가 남아 있으면 정리(다른 프로필·설치본은 건드리지 않는다) ──
 Get-CimInstance Win32_Process -Filter "Name='nexa-clip.exe'" | Where-Object { $_.CommandLine -like "*--profile $Profile*" } |
@@ -129,6 +149,7 @@ if ($others.Count -gt 0) { Write-Host ("경고: 다른 nexa-clip {0}개가 떠 �
 $origClip = $null
 try { $origClip = Get-Clipboard -Raw -ErrorAction SilentlyContinue } catch {}
 $notepad = $null; $tray = $null; $settings = $null
+$runStart = Get-Date
 
 try {
     # ── S1 기동 ──
@@ -233,6 +254,8 @@ try {
 }
 finally {
     if ($settings -and -not $settings.HasExited) { Stop-Process -Id $settings.Id -Force -ErrorAction SilentlyContinue }
+    # 메모장 정리(규칙 10-10) — 띄운 PID만이 아니라 우리가 쓴 창 전부(본문 비우기 → 탭 닫기 → 남으면 프로세스 종료).
+    try { Close-Notepads $runStart } catch {}
     if ($notepad -and -not $notepad.HasExited) { Stop-Process -Id $notepad.Id -Force -ErrorAction SilentlyContinue }
     if ($tray -and -not $tray.HasExited) { Stop-Process -Id $tray.Id -Force -ErrorAction SilentlyContinue }
     if ($null -ne $origClip -and $origClip -is [string]) { try { Set-Clipboard -Value $origClip } catch {} }

@@ -766,4 +766,5 @@ Keynote/Pages/Numbers · Word/Excel/PPT(mac) · Safari/Chrome(주소창·본문�
 | P4-5 | `nexa-clip --license status·path·request·install·remove` | status/path/request 종료 0 · 없는 파일 install 종료 1(협업 세션 Windows 스모크 ✅ 10-10) | ✅ 10-10(자동 · 포터블 재확인) | ☐ | ☐ |
 | P4-6 | 발급 왕복(T-72) — 요청 코드 → 발급기(사용자 PC) → `.license` 설치 | 상태 Licensed · 카드 갱신 · [제거]로 Free 복귀 | ☐ | ☐ | ☐ |
 | D1 | **Debug 빌드**로 재시작 | 메인 · 팝업 · 설정 창 제목이 "Nexa Clip (Debug)…" · 릴리스 설치본은 그대로 "Nexa Clip" | ☐ | ☐ | ☐ |
+| P5-1 | 글이 **들어 있는** 메모장·실사용 편집기(VS Code · Word 등)에 커서 → 팝업(Shift+Alt+C) → 항목 Enter | 커서 자리에 붙여넣어짐(10-10 결함 수정 `ed494f3` — 종전엔 글 있는 대상에서 사라짐 · 메모장은 E2E S4 ✅) | 🔶 E2E(메모장) ✅ · 실사용 편집기 ☐ | ☐ | ☐ |
 | W-E2E | `pwsh scripts/win-e2e.ps1`(10-10 · `--profile e2e` 격리) — 기동 · 복사 3건 캡처 · 팝업 · **글이 있는 메모장에 Enter 붙여넣기** · 설정 열기·[닫기] 클릭 · 둘째 인스턴스 · stderr/panic | 8/8 PASS(공식 0.2.0은 붙여넣기 S4 ✗ → 수정) | ✅ 10-10 | — | — |

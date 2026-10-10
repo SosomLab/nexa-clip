@@ -2,6 +2,10 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-10-10 (마감 종합 · win) — ★ 12커밋 · **v0.2.0 릴리스** · 전반 점검(8차 · 기동 105 ms · 유휴 13.5 MB · CPU 0.008 % · E2E 8/8) · ★ Windows 팝업 붙여넣기 결함 수정(`ed494f3` · v0.2.1 후보 T-74) · CI 전부 ✅ · ☐ v0.2.1 여부 · choco · 실기 잔여 → [journal](journal/2026-10-10.md)
+
+## 2026-10-10 (8차 · win) — ★ v0.2.0 전반 점검(포터블 · 기능 · 속도 · 메모리) + 개발 세션 E2E 8/8 · ★ 결함 = Windows 팝업 Enter 붙여넣기가 글 있는 대상에서 사라짐(포그라운드 전환 대기 없음) → 수정 `ed494f3` · ⚠️ `taskkill` 종료 안 됨(판정 대기 · T-75) → [journal](journal/2026-10-10.md)
+
 ## 2026-10-10 (7차 · win) — ★ **v0.2.0 릴리스** — release `37964721378` 1차 ✗(windows-arm64 NSIS 설치 = Chocolatey 피드 504) → 실패 잡 재실행 ✅ · 자산 15 · brew 0.2.0 · pkg.sosomlab.com 0.2.0 · winget·choco guard skip(IsApproved 판정 첫 실전 정상) · ☐ NSIS 재시도 → [journal](journal/2026-10-10.md)
 
 ## 2026-10-10 (종합 · win) — ★ **nexa-ui 전환 · 설정 카드 · 라이선스 · 파일 대화상자 · Debug 제목**(`feat/nexa-ui` 5커밋 → main) — DR-47 · 형제 nexa-ui 192차 · nexa-license push 완료 · test 401 · check-3os ✓ · Release 2.32MB · choco 0.1.5 설치본 = VirusTotal 6~10건(예외 필요) · ☐ 실기 21 §15 · T-72 · T-73 → [journal](journal/2026-10-10.md)
