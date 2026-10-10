@@ -4,6 +4,7 @@
 
 | 브랜치 | 생성 | 병합 | 커밋 수 | 요약 |
 |---|---|---|---:|---|
+| `fix/sync-echo-10-10` | 2026-10-10 | (병합 뒤 다음 차수에 기록) | 4 | ★ T-71 평문 별칭 에코(`history.rs` `canon_format` · 원격 `text/plain;charset=utf-8` ↔ Linux 되읽기 `text/plain`) + ★ T-79 수신 내용 재전파 가드(`dedup.rs` `payload_key` · `tray_cmd.rs` `maybe_broadcast` · 이력 최근 200의 ⇄ 항목과 같은 내용이면 전파 안 함 · 사용자 신고 = Windows(릴레이) → mac·Linux 뒤 mac↔Linux 한 번씩 더) + `scripts/dev-restart.sh`(이 트리 Debug만 종료 · 직전 로그 보관) + `scripts/linux-sync-e2e.sh` 신설(같은 PC 두 인스턴스 S1~S3) · 커밋 = 소스 1 + 문서 1 · V3 ✓(Linux · test 412) · journal 10-10 13차 · 미배포(v0.2.2 후보) · 삭제 = 병합 뒤 |
 | `feat/nexa-ui` | 2026-10-10 | 2026-10-10 → main(ff · 24ef462 · 삭제) | 6 | ★ nexa-ui 전환(DR-47) · 설정 카드 개편(14 §7) · 라이선스 `nclip-license` + 파일 대화상자 nexa-dlg · Debug 창 제목 · 21 §15 실기 표 — `566c541` · `c240402` · `f224b05` · `9fe5d52` · `fa37a03` · 형제 nexa-ui 192차 · nexa-license 먼저 push |
 | `chore/release-0.1.9` | 2026-10-05 | 2026-10-05 | 2 | ★ v0.1.9 릴리스 — 버전 0.1.8→0.1.9(`73525c9`) + 24·25차 문서 + CLAUDE.md 현 단계 · .rpm 첫 포함 · V3 생략(로컬 빌드 금지 · Rust 소스 = V3 통과분) · journal 10-05 25~26차 · 병합 `274273f` · push `98ab8f0..274273f` · CI `37263990461` ✅ · 태그 `v0.1.9` · release `37264209908` ✅ · pkg dnf 저장소 첫 발행 |
 | `feat/release-rpm` | 2026-10-05 | 2026-10-05 | 1 | ★ `.rpm` 산출물 — `packaging/linux/nexa-clip.spec` · `release.yml` "Linux 설치본(.rpm)" 스텝(러너 `rpmbuild` · 사전 배포 `-`→`~`) · 릴리스 노트 표 · packaging/README · journal 10-05 25차 · 병합 `5e62933`(커밋 `c9c3d8b`) |

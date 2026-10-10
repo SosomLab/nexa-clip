@@ -239,6 +239,17 @@ fn ignored_format(fmt: &str) -> bool {
     is_volatile_format(fmt) || is_synthesized_format(fmt)
 }
 
+/// ★ 평문 표현 이름 정규화(T-71 · 10-10) — Linux 감시는 되읽은 글을 `text/plain`으로 보고하는데
+/// 우리가 합성하는 평문(원격 수신·경로만·편집 — `plain_text_reps`)은 `text/plain;charset=utf-8`로
+/// 들어온다. 이름을 정확 일치로 비교하면 **같은 바이트의 같은 글**이 에코·부분집합으로 안 잡혀
+/// (가상 머신 다리가 우리 게시를 되쓴 뒤) 새 항목이 됐다. 동일성·부분집합·지문은 이 이름으로 잰다.
+fn canon_format(fmt: &str) -> &str {
+    match fmt {
+        "text/plain;charset=utf-8" => "text/plain",
+        other => other,
+    }
+}
+
 /// ★ 원격 수신 출처(09-04) — `⇄ `로 시작하는 출처 = 다른 기기가 보낸 항목. 같은 내용이라도
 /// **보낸 기기별로 별도 항목**(사용자 "송신 Peer별로 표시"). 로컬(None·앱명)끼리는 종전대로 한 항목.
 fn remote_origin(src: Option<&str>) -> Option<&str> {
@@ -249,7 +260,7 @@ fn fingerprint(reps: &[RawRep]) -> u64 {
     let mut sorted: Vec<(&str, &[u8])> = reps
         .iter()
         .filter(|r| !ignored_format(&r.format))
-        .map(|r| (r.format.as_str(), r.data.as_slice()))
+        .map(|r| (canon_format(&r.format), r.data.as_slice()))
         .collect();
     sorted.sort();
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
@@ -269,12 +280,14 @@ fn fingerprint(reps: &[RawRep]) -> u64 {
 }
 
 /// `sub`의 표현 전부가 `sup`에 같은 이름·같은 바이트로 있는가(에코 판정 — 게시한 것만 돌아온다).
+/// 이름은 [`canon_format`]으로 잰다(평문 별칭 — T-71).
 fn is_subset(sub: &[RawRep], sup: &[RawRep]) -> bool {
     let core: Vec<&RawRep> = sub.iter().filter(|r| !ignored_format(&r.format)).collect();
     !core.is_empty()
-        && core
-            .iter()
-            .all(|r| sup.iter().any(|s| s.format == r.format && s.data == r.data))
+        && core.iter().all(|r| {
+            sup.iter()
+                .any(|s| canon_format(&s.format) == canon_format(&r.format) && s.data == r.data)
+        })
 }
 
 fn same_content(a: &[RawRep], b: &[RawRep]) -> bool {
@@ -283,7 +296,7 @@ fn same_content(a: &[RawRep], b: &[RawRep]) -> bool {
         let mut v: Vec<_> = s
             .iter()
             .filter(|r| !ignored_format(&r.format))
-            .map(|r| (r.format.clone(), r.data.clone()))
+            .map(|r| (canon_format(&r.format).to_string(), r.data.clone()))
             .collect();
         v.sort();
         v
@@ -752,6 +765,36 @@ mod tests {
 
     fn push(h: &mut History, s: &ClipSnapshot, label: &str) -> Pushed {
         h.push(s, ClipKind::Text, label.into(), None)
+    }
+
+    /// ★ T-71(10-10 Linux) — 원격에서 받은 글은 합성 이름 `text/plain;charset=utf-8`로 들어가고,
+    /// 우리 게시를 가상 머신 다리가 되쓴 것을 감시가 `text/plain`으로 되읽는다. 이름이 달라도
+    /// 같은 바이트면 에코(원본 승격)여야 한다 — 종전엔 새 항목이 하나 더 생겼다.
+    #[test]
+    fn plain_alias_counts_as_echo() {
+        let mut h = History::new(10);
+        let remote = snap("⇄ mac", &[("text/plain;charset=utf-8", b"hello")]);
+        assert_eq!(push(&mut h, &remote, "hello"), Pushed::New);
+        h.expect_echo(0);
+        let reread = snap("vmware-user", &[("text/plain", b"hello")]);
+        assert_eq!(push(&mut h, &reread, "hello"), Pushed::Promoted);
+        assert_eq!(h.len(), 1, "같은 글이 두 항목이 되면 안 된다");
+        assert_eq!(h.get(0).map(|i| i.copies), Some(2));
+        assert_eq!(
+            h.get(0).and_then(|i| i.source_app.clone()).as_deref(),
+            Some("⇄ mac"),
+            "원격 출처 표식이 남는다(승격이지 교체가 아니다)"
+        );
+        // 지문도 별칭을 같은 이름으로 잰다 — 로컬끼리 재복사 승격(②)이 이름 철자에 흔들리지 않는다.
+        let a = snap("App", &[("text/plain;charset=utf-8", b"x")]);
+        let b = snap("App", &[("text/plain", b"x")]);
+        assert_eq!(fingerprint(&a.reps), fingerprint(&b.reps));
+        assert_eq!(push(&mut h, &a, "x"), Pushed::New);
+        assert_eq!(push(&mut h, &b, "x"), Pushed::Promoted);
+        assert_eq!(h.len(), 2);
+        // 다른 바이트는 여전히 다른 항목.
+        let c = snap("App", &[("text/plain", b"y")]);
+        assert_eq!(push(&mut h, &c, "y"), Pushed::New);
     }
 
     /// ★ 같은 내용 재복사 = 승격(횟수 +1) — 목록이 도배되지 않는다.

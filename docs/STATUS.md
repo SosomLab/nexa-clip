@@ -4,6 +4,22 @@
 
 ---
 
+## 2026-10-10 (13차 · linux) — Linux v0.2.1 첫 Debug 빌드 · ★ T-71 수정(받은 글 한 번 더 New) · ★ T-79 수신 항목 재전파 차단 · 같은 PC 전파 시험 · dev-restart.sh 개선
+
+**세션 시작**: 로컬 main `f3a6781` → `8eeb15b` ff(27커밋) · `../nexa-ui` `a29102a` · `../nexa-license` `bcf6830`(v0.2.1 기준).
+**Linux 첫 nexa-ui Debug 빌드** ✓(2m 28s · 경고 0) · 트레이·감시 정상 · 설치본(0.1.9)과 공존(잠금 = 데이터 폴더 기준).
+**T-71**: 원인 = 원격 글(`text/plain;charset=utf-8`)과 Linux 되읽기(`text/plain`)를 이름 정확 일치로 비교 → 에코로 안 잡힘 · 수정 = `history.rs` `canon_format()`(개발 세션) · V0 history 16 ✓ · P1 `-p nclip-core -p nexa-clip` 221 ✓ · clippy ✓ · Debug PID 172857.
+**실기**: 1차 판정 보류 — Debug ↔ 설치본 LAN 연결은 됐으나 양쪽 미승인이라 전파 0 · Debug 쪽은 `devices.txt` 승인(A) 처리 완료 · 설치본 쪽 승인은 사용자 결정 대기.
+**★ T-79**(사용자 신고 — Windows(릴레이)에서 복사 → mac·Linux 수신 뒤 mac↔Linux가 한 번씩 더 주고받음): 종전 가드는 바이트 일치에서만 막음 → `dedup.rs` `payload_key()` + `tray_cmd.rs` 가드 = 같은 내용의 수신(⇄) 항목이 이력 최근 200에 있으면 전파 안 함(개발 세션) · test 222 ✓ · clippy ✓ · Debug PID 178679.
+**같은 PC 전파 시험**: `scripts/linux-sync-e2e.sh`(S1 글 x11 · S2 글 wayland · S3 그림 · 표식 문자열 + 로그 키워드 + 오프셋/시각 자르기) · 하네스 실측 ✓(승인 전이라 FAIL = 예상) · 🔴 설치본이 시험 표식을 실기기 mac으로 전파함 → 경고 지표 추가.
+**dev-restart.sh**: 이 트리 Debug만 종료(설치본 보존 · `--all` 예외) · 직전 로그 보관.
+**V3**(`[V3 · 핵심]` · Linux · 커밋 전): fmt ✓ · clippy ✓ · test `--workspace` 412 / 0 / 무시 8 · check-3os ✓ · Release 5.08MB · 유휴 RSS 8.2MB.
+**커밋**: 브랜치 `fix/sync-echo-10-10`(소스 + 문서) → main 병합 → push(개발 세션 · 사용자 지시 10-10) — 해시는 다음 차수에 기록 · 미배포(**v0.2.2 후보** = T-71 · T-79).
+**☐ 결정 대기**: 설치본에서 `kiros33@lin.debug` 승인 · 시험 중 mac 유출 수용 여부(수용 / mac 앱 끄기 / 설치본 mac 연결 일시 해제).
+**☐ 남은 것**: S1~S3 실행 · mac · Windows 실기(T-71 · T-79) · 설치본 0.1.9 → 0.2.1(사용자 sudo) · v0.2.2 릴리스 판단. → [journal](journal/2026-10-10.md)
+
+---
+
 ## 2026-10-10 (3차 마감 · win) — choco T-76 완료 · 🔴 E2E 사고·수정 · 재실행 8/8 · v0.2.1 검토
 
 **커밋**: `a734abd..95c24cc` **7건** — `bcccbd8` · `fdfa500` · `5936661`(문서) · `7a62590`(E2E 전용 대상 창) · `a6056d1`(키 전송 `Send-To` — 우리 창이 포그라운드일 때만) · `15e3c61`(사고 기록) · `95c24cc`(재실행 결과) · CI 전부 ✅.
