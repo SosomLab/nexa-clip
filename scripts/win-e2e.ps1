@@ -74,6 +74,7 @@ public static class W32 {
         }, IntPtr.Zero);
         return list;
     }
+    public static IntPtr Fg() { return GetForegroundWindow(); }
     public static string FgTitle() {
         var sb = new StringBuilder(512); GetWindowTextW(GetForegroundWindow(), sb, 512); return sb.ToString();
     }
@@ -120,7 +121,19 @@ function Mark([string]$Step, [bool]$Ok, [string]$Note) {
     $tag = if ($Ok) { "PASS" } else { "FAIL" }
     Write-Host ("[{0}] {1} — {2}" -f $tag, $Step, $Note)
 }
-function Keys([string]$s) { [System.Windows.Forms.SendKeys]::SendWait($s) }
+# ★ 키는 **우리 창이 포그라운드일 때만** 보낸다(10-10 협업 세션 제안 · 사고 후속): SetForegroundWindow가 거부되면(포그라운드 잠금 ·
+#   사용자가 그 순간 다른 창을 쓰는 중) SendKeys는 그때 앞에 있는 창(= 사용자 창)으로 가므로, 확인 실패 = **입력 없이 예외**(그 단계 FAIL·중단).
+#   스크립트의 모든 키 전송은 이 함수 하나를 거친다(맨 SendWait 호출 금지).
+function Send-To([IntPtr]$Hwnd, [string]$KeysText, [int]$WaitMs = 1500) {
+    [void][W32]::SetForegroundWindow($Hwnd)
+    $deadline = (Get-Date).AddMilliseconds($WaitMs)
+    while ([W32]::Fg() -ne $Hwnd -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 50 }
+    if ([W32]::Fg() -ne $Hwnd) {
+        throw ("키 전송 중단 — 대상 창(hwnd {0})이 포그라운드가 아님(지금 '{1}') · 입력을 보내지 않았다" -f $Hwnd, [W32]::FgTitle())
+    }
+    Start-Sleep -Milliseconds 120
+    [System.Windows.Forms.SendKeys]::SendWait($KeysText)
+}
 # ── 붙여넣기 대상 창(10-10 사고 뒤 재설계 · 머리말 🔴) ──
 $script:targetProc = $null; $script:targetHwnd = [IntPtr]::Zero; $script:targetText = ""
 # 대상 창을 띄우고 HWND를 돌려준다. own = scripts/win-e2e-target.ps1(전용 WinForms 창 · HWND·PID를 파일로 보고) · notepad = 우리가 띄운 뒤 생긴 PID의 창만.
@@ -154,9 +167,8 @@ function Read-Target {
         Start-Sleep -Milliseconds 500
         try { return (Get-Content $script:targetText -Raw -ErrorAction Stop) } catch { return "" }
     }
-    [void][W32]::SetForegroundWindow($script:targetHwnd)
-    Start-Sleep -Milliseconds 400
-    Keys "^a"; Start-Sleep -Milliseconds 150; Keys "^c"; Start-Sleep -Milliseconds 500
+    Send-To $script:targetHwnd "^a"; Start-Sleep -Milliseconds 150
+    Send-To $script:targetHwnd "^c"; Start-Sleep -Milliseconds 500
     try { return (Get-Clipboard -Raw) } catch { return "" }
 }
 # 대상 정리(규칙 10-10 "쓴 창은 모두 닫는다") — **우리가 띄운 프로세스만**. own = 그 pwsh 종료(자동 저장·복원 없음) ·
@@ -166,9 +178,9 @@ function Close-Target {
     if ($Target -eq 'notepad') {
         if ($script:targetHwnd -ne [IntPtr]::Zero) {
             try {
-                [void][W32]::SetForegroundWindow($script:targetHwnd); Start-Sleep -Milliseconds 300
-                Keys "^a"; Start-Sleep -Milliseconds 120; Keys "{DEL}"; Start-Sleep -Milliseconds 200
-                Keys "^w"; Start-Sleep -Milliseconds 500
+                Send-To $script:targetHwnd "^a"; Start-Sleep -Milliseconds 120
+                Send-To $script:targetHwnd "{DEL}"; Start-Sleep -Milliseconds 200
+                Send-To $script:targetHwnd "^w"; Start-Sleep -Milliseconds 500
             } catch {}
         }
         Get-Process notepad -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue }
@@ -220,20 +232,18 @@ try {
 
     # ── S3 팝업 — 대상 창(기본 = 스크립트 전용 창) 앞에 두고 Shift+Alt+C → Enter ──
     $tgt = Start-Target "nexa-clip e2e target $stamp"
-    [void][W32]::SetForegroundWindow($tgt)
-    Start-Sleep -Milliseconds 600
-    Keys "e2e: "
+    Send-To $tgt "e2e: "
     Start-Sleep -Milliseconds 600
     $metrics.fg_before_hotkey = [W32]::FgTitle()
     $tPop0 = Get-Date
-    Keys "+%c" # 기본 Shift+Alt+C(설정이 다르면 이 줄을 맞춘다)
+    Send-To $tgt "+%c" # 기본 Shift+Alt+C(설정이 다르면 이 줄을 맞춘다) — 대상 창이 앞에 있을 때만 누른다
     $popup = Find-Window @("Nexa Clip*[$Profile]*", "Nexa Clip*") 5
     $tPop = ((Get-Date) - $tPop0).TotalSeconds
     $metrics.popup_show_sec = [math]::Round($tPop, 2)
     Mark "S3 팝업(Shift+Alt+C)" ($null -ne $popup) ("창 '{0}' · {1:N2}s · 직전 포그라운드 '{2}'" -f $popup.Item2, $tPop, $metrics.fg_before_hotkey)
     if ($popup) {
         Start-Sleep -Milliseconds 800
-        Keys "{ENTER}"
+        Send-To $popup.Item1 "{ENTER}"
         Start-Sleep -Milliseconds 300
         $metrics.fg_after_enter = [W32]::FgTitle()
     }
@@ -256,9 +266,7 @@ try {
     if ($sw) {
         Start-Sleep -Milliseconds 800
         $metrics.mem_settings = Mem $settings.Id
-        [void][W32]::SetForegroundWindow($sw.Item1)
-        Start-Sleep -Milliseconds 300
-        Keys "theme"
+        Send-To $sw.Item1 "theme"
         Start-Sleep -Milliseconds 800
         # [닫기] = 하단 줄 오른쪽 끝(settings.rs layout: 우측 여백 PAD 12 · 폭 90 · 하단 줄 44 — 논리 px × DPI 배율).
         $cr = New-Object W32+RECT; [void][W32]::GetClientRect($sw.Item1, [ref]$cr)
@@ -270,7 +278,7 @@ try {
         [W32]::Click($cx, $cy)
         $exited = $settings.WaitForExit(4000)
         if (-not $exited) {
-            [void][W32]::SetForegroundWindow($sw.Item1); Keys "{ESC}"
+            try { Send-To $sw.Item1 "{ESC}" } catch { Write-Host $_.Exception.Message }
             $escExited = $settings.WaitForExit(3000)
             Mark "S5b [닫기] 클릭 → 종료" $false ("클릭({0},{1}) 뒤 4초 안 종료 안 함 · Esc 종료={2}" -f $cx, $cy, $escExited)
         } else {
@@ -283,7 +291,7 @@ try {
     $secondExited = $second.WaitForExit(8000)
     Mark "S6 둘째 인스턴스(열기 위임)" $secondExited ("8초 안 종료={0}" -f $secondExited)
     $mw = Find-Window @("Nexa Clip*[$Profile]*") 3
-    if ($mw) { [void][W32]::SetForegroundWindow($mw.Item1); Start-Sleep -Milliseconds 300; Keys "{ESC}" }
+    if ($mw) { try { Send-To $mw.Item1 "{ESC}" } catch { Write-Host $_.Exception.Message } }
 
     # ── S7 메모리·오류 ──
     Start-Sleep -Seconds 2
