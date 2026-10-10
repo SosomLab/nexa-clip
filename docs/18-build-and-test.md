@@ -583,6 +583,8 @@ exa-clip.exe -ArgumentList tray
 
 # ── Windows E2E(10-10) — --profile e2e 격리 · 실제 클립보드는 끝에 원복 · 키 주입 허용 경로 · 다른 인스턴스(Debug)는 먼저 종료(전역 단축키는 한 프로세스만)
 pwsh scripts/win-e2e.ps1                                           # 기동·캡처·팝업·붙여넣기(글 있는 메모장)·설정 [닫기]·둘째 인스턴스 → target\e2e\result-*.json
+#   ★ 대상 = 스크립트 전용 창(scripts/win-e2e-target.ps1 · 기본 -Target own) — 사용자 메모장·문서를 건드리지 않는다(10-10 사고 뒤 7a62590)
+#   -Target notepad = 실제 메모장 재현이 꼭 필요할 때만 · notepad.exe가 하나라도 떠 있으면 시작하지 않음(exit 2) · 실행 중엔 PC를 쓰지 않는다(SendKeys)
 
 # ── 디버그 빌드 재시작(개발 반복) — Linux는 scripts/dev-restart.sh · Windows는 아래 두 줄
 taskkill //F //IM nexa-clip.exe; cargo build -p nexa-clip && ./target/debug/nexa-clip.exe tray
