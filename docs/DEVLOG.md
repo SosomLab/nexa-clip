@@ -2,6 +2,8 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-10-10 (13차 · linux) — Linux에서 v0.2.1(nexa-ui path 의존) 첫 Debug 빌드 ✓ · ★ T-71 수정(원격 글 `text/plain;charset=utf-8` ↔ 되읽기 `text/plain` 이름 정규화 `canon_format` · test 221 ✓) · dev-restart.sh 설치본 보존·로그 보관(실검증 ✓) · ★ T-79 수신 항목 재전파 차단(이력 내용 가드 `payload_key` · test 222 ✓) · 같은 PC 전파 시험 `linux-sync-e2e.sh`(하네스 ✓ · mac 유출 관찰) · V3 412 ✓ · 커밋 = 브랜치 `fix/sync-echo-10-10` → main 병합 · push · 미배포(v0.2.2 후보) · ☐ 설치본 승인·mac 유출 결정 대기 · 실기 → [journal](journal/2026-10-10.md)
+
 ## 2026-10-10 (12차 · win) — ★ **v0.2.1 릴리스**(Windows 팝업 붙여넣기 settle · CLI·릴리스 노트 영어화 · NSIS 재시도) — 태그 `596e968` · V3 test 403 · release `38035574119` 1차 ✅ · 자산 15 · 릴리스 노트 영어 · brew 0.2.1 · pkg.sosomlab.com 0.2.1(APT·RPM) · winget·choco guard skip · ★ choco `nexa-clip-portable` 0.1.5 **승인**(moderator Windos) · 설치본 0.1.5는 검수 중 → [journal](journal/2026-10-10.md)
 
 ## 2026-10-10 (3차 마감 · win) — choco T-76 ✅(두 패키지 댓글 → Responded) · 🔴 E2E가 사용자 미저장 메모장 문서를 건드린 사고 → 전용 대상 창(`7a62590`) · 포그라운드 확인 키 전송(`a6056d1`) · 재실행 8/8(notepad 0→0) · v0.2.1 = 릴리스 권고(결정 대기 T-74) → [journal 10차](journal/2026-10-10.md) · [11차](journal/2026-10-10.md)
