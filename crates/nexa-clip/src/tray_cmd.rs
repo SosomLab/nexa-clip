@@ -1718,6 +1718,15 @@ impl Shell {
         if crate::xfer::all_cache_paths(&nclip_core::paths_of(&snap.reps)) {
             return;
         }
+        // ★ 받은 내용은 되돌려 보내지 않는다(10-10 사용자 — 회사 Windows → mac·Linux 전파 뒤 mac ↔ Linux가 한 번씩
+        //   더 주고받음). 종전 가드 둘(맨 앞 ⇄ 항목 · 페이로드 지문 10초)은 **되읽은 것이 받은 것과 바이트까지
+        //   같을 때**만 맞는다 — CRLF↔LF · 표현 이름(OS 철자) · 가상 머신 다리의 되쓰기 · 10초 뒤 되읽기에서는
+        //   새 로컬 항목이 되어 상대에게 갔다. 여기서는 **이력을 내용으로** 본다: 같은 내용의 수신(⇄) 항목이
+        //   이력에 있으면 어느 기기에서 왔든 전파하지 않는다(상대들은 이미 그 내용을 가졌다).
+        if let Some(from) = self.received_same_content(snap) {
+            println!("동기화: 전파 안 함 — 같은 내용을 {from}에서 받은 항목이 이력에 있음(되돌려 보내지 않음)");
+            return;
+        }
         // ★ 페이로드 생성(DIB→PNG 인코드 등)은 **워커 스레드**에서 — UI 스레드는 표현 복제만(09-04 사용자:
         //   "네트워크 처리가 프로그램을 멈추거나 지연시키지 않게").
         let reps = snap.reps.clone();
@@ -1751,6 +1760,56 @@ impl Shell {
                     println!("동기화: 항목 전파 → 기기 {n}대");
                 }
             });
+    }
+
+    /// ★ 이 캡처와 **같은 내용**의 수신(⇄) 항목이 이력에 있는가 → 보낸 기기 이름(10-10).
+    ///   열쇠 = `dedup::payload_key`(글 = 정규화 평문 · 그림 = PNG 바이트 · 파일 = 경로). 최근 `RECV_SCAN`개만 본다.
+    ///   본문이 내려간 항목(지연 로드)은 라벨이 같을 때만 올려서 비교한다(디스크 읽기 최소화 · DR-41).
+    fn received_same_content(&mut self, snap: &ClipSnapshot) -> Option<String> {
+        const RECV_SCAN: usize = 200;
+        let formats: Vec<&str> = snap.reps.iter().map(|r| r.format.as_str()).collect();
+        let kind = nclip_core::capture::classify(&formats);
+        let plain = crate::main_win::plain_of(&snap.reps);
+        let key = crate::dedup::payload_key(kind, &snap.reps, plain.as_deref())?;
+        let (_, line) = summarize(snap);
+        let label = clip_text(&line, MENU_LABEL_CHARS);
+        // 1차: 적재된 ⇄ 항목은 바로 비교 · 미적재는 라벨이 같은 것만 후보로.
+        let mut lazy: Vec<u64> = Vec::new();
+        for i in 0..self.history.len().min(RECV_SCAN) {
+            let Some(it) = self.history.get(i) else { break };
+            let Some(from) = it
+                .source_app
+                .as_deref()
+                .and_then(|s| s.strip_prefix(REMOTE_MARK))
+            else {
+                continue;
+            };
+            if it.is_loaded() {
+                let p = crate::main_win::plain_of(&it.reps);
+                if crate::dedup::payload_key(it.kind, &it.reps, p.as_deref()) == Some(key) {
+                    return Some(from.to_string());
+                }
+            } else if it.label == label {
+                lazy.push(it.id);
+            }
+        }
+        for id in lazy {
+            if !self.ensure_loaded(id) {
+                continue;
+            }
+            let Some(it) = self.history.get_by_id(id) else {
+                continue;
+            };
+            let p = crate::main_win::plain_of(&it.reps);
+            if crate::dedup::payload_key(it.kind, &it.reps, p.as_deref()) == Some(key) {
+                return it
+                    .source_app
+                    .as_deref()
+                    .and_then(|s| s.strip_prefix(REMOTE_MARK))
+                    .map(str::to_string);
+            }
+        }
+        None
     }
 
     /// ★ 원격 항목 적용(09-04) — 이력 등재(출처 = 기기명) + **클립보드 게시**(다른 기기에서

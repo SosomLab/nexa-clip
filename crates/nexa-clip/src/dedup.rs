@@ -66,6 +66,56 @@ pub(crate) fn content_key_of(item: &HistoryItem, plain: Option<&str>) -> u64 {
     h.finish()
 }
 
+/// ★ 전파용 **내용 열쇠**(10-10 사용자 — "수신받은 내용은 전달되지 않도록") — 표현 이름·OS 철자와 무관하게
+/// "같은 내용"을 가른다: 글 = 평문(CR 제거 · 끝 공백 제거) · 그림/개체 = PNG(없으면 DIB) 바이트 · 파일 = 경로 목록.
+/// 이력 항목과 캡처 스냅숏 **양쪽에 같은 함수**를 써서 받은 것과 되읽은 것이 같은 열쇠가 되게 한다.
+/// `None` = 내용을 뽑을 수 없음(비교 불가 → 가드는 통과시킨다).
+pub(crate) fn payload_key(
+    kind: ClipKind,
+    reps: &[nclip_core::RawRep],
+    plain: Option<&str>,
+) -> Option<u64> {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::hash::DefaultHasher::new();
+    match kind {
+        ClipKind::Image | ClipKind::Object => {
+            let r = reps
+                .iter()
+                .find(|r| {
+                    matches!(r.format.as_str(), "PNG" | "public.png" | "image/png")
+                        && !r.data.is_empty()
+                })
+                .or_else(|| {
+                    reps.iter().find(|r| {
+                        matches!(r.format.as_str(), "CF_DIB" | "CF_DIBV5" | "image/bmp")
+                            && !r.data.is_empty()
+                    })
+                })?;
+            "img".hash(&mut h);
+            r.data.hash(&mut h);
+        }
+        ClipKind::Files => {
+            let paths = nclip_core::paths_of(reps);
+            if paths.is_empty() {
+                return None;
+            }
+            "files".hash(&mut h);
+            paths.hash(&mut h);
+        }
+        _ => {
+            let t = plain?;
+            let norm = t.replace('\r', "");
+            let norm = norm.trim_end();
+            if norm.is_empty() {
+                return None;
+            }
+            "txt".hash(&mut h);
+            norm.hash(&mut h);
+        }
+    }
+    Some(h.finish())
+}
+
 /// ★ 받은 항목이 **지금 맨 앞 항목의 평문판**인가(10-04) — 그렇다면 클립보드에 게시하지 않는다.
 ///
 /// 이 PC에서 서식 글을 복사하면 상대 기기(또는 가상 머신 클립보드 다리를 거친 상대)가 같은 글을
@@ -253,5 +303,54 @@ mod tests {
         assert_eq!(k[1].copies, 5);
         assert!(!k[1].remote);
         assert!(k[0].remote, "수신만 있는 묶음은 수신");
+    }
+
+    /// ★ 전파 내용 열쇠(10-10) — Windows CRLF 글 ↔ Linux/mac LF 글 · 끝 개행 차이 · 표현 이름 차이는 같은 열쇠,
+    /// 글이 다르면 다른 열쇠 · 그림은 PNG 바이트 · 내용을 못 뽑으면 None.
+    #[test]
+    fn payload_key_ignores_line_endings_and_format_names() {
+        let reps = |f: &str, d: &[u8]| {
+            vec![nclip_core::RawRep {
+                format: f.into(),
+                data: d.to_vec(),
+            }]
+        };
+        let a = payload_key(
+            ClipKind::Text,
+            &reps("CF_UNICODETEXT", b"x"),
+            Some("hello\r\nworld\r\n"),
+        );
+        let b = payload_key(
+            ClipKind::Text,
+            &reps("text/plain", b"x"),
+            Some("hello\nworld"),
+        );
+        let c = payload_key(
+            ClipKind::RichText,
+            &reps("text/html", b"<b>"),
+            Some("hello\nworld"),
+        );
+        assert!(a.is_some() && a == b, "CRLF·끝 개행만 다른 글 = 같은 열쇠");
+        assert_eq!(a, c, "서식 여부는 열쇠에 안 들어간다(같은 글)");
+        assert_ne!(a, payload_key(ClipKind::Text, &[], Some("hello world")));
+        assert_eq!(
+            payload_key(ClipKind::Text, &[], Some("  \r\n")),
+            None,
+            "빈 글은 비교 불가"
+        );
+        let png1 = payload_key(ClipKind::Image, &reps("image/png", b"\x89PNG1"), None);
+        let png2 = payload_key(ClipKind::Image, &reps("PNG", b"\x89PNG1"), None);
+        assert!(
+            png1.is_some() && png1 == png2,
+            "그림 = PNG 바이트(이름 무관)"
+        );
+        assert_ne!(
+            png1,
+            payload_key(ClipKind::Image, &reps("PNG", b"\x89PNG2"), None)
+        );
+        assert_eq!(
+            payload_key(ClipKind::Image, &reps("CF_BITMAP", b"x"), None),
+            None
+        );
     }
 }
