@@ -4,6 +4,18 @@
 
 ---
 
+## 2026-10-12 (1차 · win) — 🔴 choco 설치본 `nexa-clip` 0.1.5 = 재스캔 뒤 VirusTotal 10건 초과 → "Waiting for Maintainer" · ★ 포터블 0.2.1 승인(10-11)
+
+**세션 시작**: 로컬 main `8eeb15b` → `f559b9c` ff(6커밋 · 10-10 13차 `fix/sync-echo-10-10` 병합 `3de050a`) · 점검·기록·커밋·push = 개발 세션 nexa-clip-45(사용자 직접 지시) · 협업 세션 nexa-clip-8e에 docs/ 보류 통보.
+**choco 설치본 0.1.5**(페이지 상태 문구 + 댓글 전문 · 13:45 KST): 배너 *"Waiting for Maintainer to take corrective action"* · T-76 예외 요청 댓글(10-10 06:57 UTC) 뒤 모더레이터 **TheCakeIsNaOH**가 *"detections are climbing, rerunning scanner"*(14:55 UTC) → chocolatey-ops 재스캔 = **VirusTotal 10건 초과**(14:56 UTC · *"provide an updated package, or send a message in the package review box"*) → **예외 거부 셈 · 우리 차례로 멈춤**(10-10 12차 "검수 중 · 예외 대기"에서 악화) · Validation·Verification은 Passed · 플래그 = `nexa-clip-0.1.5-windows-x64-setup.exe`(미서명 NSIS) · CPMR0041(projectSourceUrl) Guideline 반복.
+**★ choco 포터블 0.2.1 승인**(*"approved by moderator Windos on 11 Oct 2026"* · 제출 10-10 07:56 UTC → 약 1일 · Scan 0~5건 주의만) · 버전 이력 0.1.5·0.2.1 Approved → 포터블은 guard 패키지별 판정(`c7fb80d`)대로 다음 릴리스 자동.
+**winget 0.1.6**: #446464·#446465 OPEN · Validation-Completed · 모더레이터 대기 그대로(8일째).
+**판정**: 0.1.5 설치본은 그대로 두면 진전 없음 → ⓐ 0.2.x 설치본 재제출(같은 미서명 NSIS면 재검출 가능성 큼) / **ⓑ Windows 코드 서명(T-77 · P2 → P1) 먼저**(권장) · 어느 쪽이든 0.1.5 리뷰 박스에 철회·대체 메시지 + unlist 권고.
+**문서**: journal 10-12 1차 · TODO T-78(🔴 유지관리자 조치 대기) · T-77 P1 · T-76 결과 · MILESTONES v0.2.1 · BRANCHES(`fix/sync-echo-10-10` 병합 `3de050a` 보충 · `docs/progress-10-12`) · CLAUDE.md 현 단계 · 커밋 = `docs/progress-10-12` → main 병합 → push(해시는 다음 차수).
+**☐ 결정 대기(사용자)**: T-77 코드 서명(ⓑ) 또는 ⓐ 재제출 · 0.1.5 unlist + 리뷰 박스 메시지 · 10-10 13차 ☐(설치본 `kiros33@lin.debug` 승인 · mac 유출 · S1~S3 · T-71·T-79 실기 · v0.2.2). → [journal](journal/2026-10-12.md)
+
+---
+
 ## 2026-10-10 (13차 · linux) — Linux v0.2.1 첫 Debug 빌드 · ★ T-71 수정(받은 글 한 번 더 New) · ★ T-79 수신 항목 재전파 차단 · 같은 PC 전파 시험 · dev-restart.sh 개선
 
 **세션 시작**: 로컬 main `f3a6781` → `8eeb15b` ff(27커밋) · `../nexa-ui` `a29102a` · `../nexa-license` `bcf6830`(v0.2.1 기준).
