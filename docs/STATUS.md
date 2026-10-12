@@ -11,7 +11,7 @@
 **★ choco 포터블 0.2.1 승인**(*"approved by moderator Windos on 11 Oct 2026"* · 제출 10-10 07:56 UTC → 약 1일 · Scan 0~5건 주의만) · 버전 이력 0.1.5·0.2.1 Approved → 포터블은 guard 패키지별 판정(`c7fb80d`)대로 다음 릴리스 자동.
 **winget 0.1.6**: #446464·#446465 OPEN · Validation-Completed · 모더레이터 대기 그대로(8일째).
 **판정**: 0.1.5 설치본은 그대로 두면 진전 없음 → ⓐ 0.2.x 설치본 재제출(같은 미서명 NSIS면 재검출 가능성 큼) / **ⓑ Windows 코드 서명(T-77 · P2 → P1) 먼저**(권장) · 어느 쪽이든 0.1.5 리뷰 박스에 철회·대체 메시지 + unlist 권고.
-**문서**: journal 10-12 1차 · TODO T-78(🔴 유지관리자 조치 대기) · T-77 P1 · T-76 결과 · MILESTONES v0.2.1 · BRANCHES(`fix/sync-echo-10-10` 병합 `3de050a` 보충 · `docs/progress-10-12`) · CLAUDE.md 현 단계 · 커밋 = `docs/progress-10-12` → main 병합 → push(해시는 다음 차수).
+**문서**: journal 10-12 1차 · TODO T-78(🔴 유지관리자 조치 대기) · T-77 P1 · T-76 결과 · MILESTONES v0.2.1 · BRANCHES(`fix/sync-echo-10-10` 병합 `3de050a` 보충 · `docs/progress-10-12`) · CLAUDE.md 현 단계 · 커밋 = `docs/progress-10-12` `619f35c` → main 병합 `3fc0f05` → push `f559b9c..3fc0f05` · ✅ CI `38206781732`(check 3-OS) · 후속 커밋 = BRANCHES 해시(협업 세션 작성) + 이 줄.
 **☐ 결정 대기(사용자)**: T-77 코드 서명(ⓑ) 또는 ⓐ 재제출 · 0.1.5 unlist + 리뷰 박스 메시지 · 10-10 13차 ☐(설치본 `kiros33@lin.debug` 승인 · mac 유출 · S1~S3 · T-71·T-79 실기 · v0.2.2). → [journal](journal/2026-10-12.md)
 
 ---
