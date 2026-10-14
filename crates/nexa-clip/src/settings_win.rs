@@ -830,10 +830,11 @@ impl App {
                 "sync.retry",
                 "sync.test",
                 "sync.disconnect",
+                "sync.refresh",
                 "sync.devices",
             ]
         } else if !identity_ok {
-            &["sync.test", "sync.disconnect"]
+            &["sync.test", "sync.disconnect", "sync.refresh"]
         } else if relay_none {
             // ★ 릴레이 None(09-04 사용자) — 서버가 없으니 포트·Test·Disconnect는 의미가 없다.
             &["sync.port", "sync.test", "sync.disconnect"]
@@ -1241,6 +1242,12 @@ impl App {
                     }
                     println!("동기화: 기기 {}… {verb}", &hex[..hex.len().min(8)]);
                     self.devices_text.clear(); // 목록 재구성
+                                               // ★ 승인 목록이 바뀌었다(10-15 · T-80) — 살아 있는 승인된 세션에 다시 알린다
+                                               //   (새 기기는 내 다른 기기들을, 다른 기기들은 새 기기를 힌트로 안다).
+                    if verb == "approve" {
+                        let n = crate::sync_cmd::announce_peers();
+                        println!("동기화: 승인 목록 재알림 → 세션 {n}개");
+                    }
                 }
                 continue; // 값 키가 아니다 — 아래 핸들러는 무관
             }
@@ -1370,6 +1377,24 @@ impl App {
             // ★ 연결 해제(09-03) — **즉시** 끊고 Connected 자리(sync.test)에 표시.
             if key == "sync.disconnect" && val == "run" {
                 self.sync_drop_now(); // 버튼은 연결 중에만 활성 — 별도 안내 노트 없음(09-03).
+            }
+            // ★ 기기 목록 갱신(10-15 사용자 · T-80) — 알려진 기기·힌트 즉시 다이얼 · 랑데부 1회 강제 ·
+            //   LAN 비콘 즉시. 결과는 세션이 서면 목록 폴링이 그린다 — 여기서는 요청만 넣고 노트를 띄운다.
+            if key == "sync.refresh" && val == "run" {
+                let (known, hints) = crate::sync_cmd::request_rescan();
+                let mut inv = Invalidations::default();
+                self.widget.set_row_note_toned(
+                    "sync.refresh",
+                    &nclip_core::tf(
+                        nclip_core::Msg::StSyncRefreshing,
+                        &[&known.to_string(), &hints.to_string()],
+                    ),
+                    nclip_ui::NoteTone::Info,
+                    &mut inv,
+                );
+                self.devices_text.clear(); // 목록 재구성
+                self.redraw();
+                println!("동기화: 기기 목록 갱신 요청 — 알려진 {known} · 힌트 {hints}");
             }
             // ★ Dock 아이콘(T-12e mac · 09-03 사용자) — 끔 = Accessory(메뉴 막대 전용).
             //   즉시 반영 · 다음 시작은 셸이 기동 때 적용. 다른 OS no-op.

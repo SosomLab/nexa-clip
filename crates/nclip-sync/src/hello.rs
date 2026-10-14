@@ -12,6 +12,17 @@ use crate::name::DisplayName;
 const TAG_HELLO: &[u8; 4] = b"NCH1";
 const TAG_PING: &[u8; 4] = b"NCP1";
 const TAG_PONG: &[u8; 4] = b"NCQ1";
+/// ★ 기기 목록 교환(10-15 · T-80 "3대 이상이면 릴레이 경유 새 기기를 못 만난다"):
+/// 내가 **승인한** 기기의 PeerId를 승인된 상대에게 알린다. 받는 쪽은 모르는 PeerId를 **힌트**로 두고
+/// 기기 키 RID로 다이얼한다(핸들+암호 랑데부는 "최신 등록자"에게만 이어져 3대째부터 막힌다).
+/// 힌트는 신뢰가 아니다 — 세션이 서면 여느 새 기기처럼 **승인 대기**로 뜬다(docs/09 §6-3).
+///
+/// ```text
+/// Peers = "NCL1" ‖ count u8 ‖ PeerId(32B) × count
+/// ```
+const TAG_PEERS: &[u8; 4] = b"NCL1";
+/// 한 프레임에 싣는 PeerId 상한(u8 · 실제 기기 수는 한 자리).
+pub const PEERS_MAX: usize = 64;
 /// ★ 클립보드 항목 조각(09-04) — 페이로드는 앱의 휴대 형식 · Noise 64KB 한계로 청킹.
 const TAG_ITEM: &[u8; 4] = b"NCI1";
 /// 조각 크기(Noise 상한 65535 − 태그·헤더·MAC 여유).
@@ -92,6 +103,8 @@ pub enum PeerMsg {
     Hello(Hello),
     Ping,
     Pong,
+    /// ★ 내가 승인한 기기 목록(10-15) — 받는 쪽은 모르는 것만 힌트로 다이얼.
+    Peers(Vec<crate::PeerId>),
     /// 클립보드 항목 조각 — `seq`로 묶고 `idx/total`로 맞춘다.
     Item {
         seq: u32,
@@ -150,6 +163,16 @@ impl PeerMsg {
             }
             PeerMsg::Ping => TAG_PING.to_vec(),
             PeerMsg::Pong => TAG_PONG.to_vec(),
+            PeerMsg::Peers(list) => {
+                let list = &list[..list.len().min(PEERS_MAX)];
+                let mut v = Vec::with_capacity(5 + list.len() * crate::PeerId::LEN);
+                v.extend_from_slice(TAG_PEERS);
+                v.push(list.len() as u8); // ≤ PEERS_MAX(64)
+                for p in list {
+                    v.extend_from_slice(p.as_bytes());
+                }
+                v
+            }
             PeerMsg::Item {
                 seq,
                 idx,
@@ -244,6 +267,21 @@ impl PeerMsg {
         match tag {
             t if t == TAG_PING => Some(PeerMsg::Ping),
             t if t == TAG_PONG => Some(PeerMsg::Pong),
+            t if t == TAG_PEERS => {
+                let (n, rest) = rest.split_first()?;
+                let n = usize::from(*n);
+                if n > PEERS_MAX || rest.len() < n * crate::PeerId::LEN {
+                    return None;
+                }
+                let list = rest
+                    .as_chunks::<{ crate::PeerId::LEN }>()
+                    .0
+                    .iter()
+                    .take(n)
+                    .map(|c| crate::PeerId::from_bytes(*c))
+                    .collect();
+                Some(PeerMsg::Peers(list))
+            }
             t if t == TAG_ITEM => {
                 let (seq, rest) = rest.split_at_checked(4)?;
                 let (idx, rest) = rest.split_at_checked(2)?;
@@ -400,6 +438,27 @@ mod tests {
             PeerMsg::decode(&PeerMsg::Pong.encode()),
             Some(PeerMsg::Pong)
         );
+    }
+
+    /// ★ 기기 목록 교환(10-15) — 왕복 · 빈 목록 · 상한 초과는 잘라 싣기 · 짧은 프레임은 거부.
+    #[test]
+    fn peers_roundtrip_and_bounds() {
+        let a = crate::PeerId::from_bytes([0xa1; 32]);
+        let b = crate::PeerId::from_bytes([0xb2; 32]);
+        let m = PeerMsg::Peers(vec![a, b]);
+        assert_eq!(PeerMsg::decode(&m.encode()), Some(m.clone()));
+        assert_eq!(
+            PeerMsg::decode(&PeerMsg::Peers(Vec::new()).encode()),
+            Some(PeerMsg::Peers(Vec::new()))
+        );
+        let many = PeerMsg::Peers(vec![a; PEERS_MAX + 5]);
+        match PeerMsg::decode(&many.encode()) {
+            Some(PeerMsg::Peers(l)) => assert_eq!(l.len(), PEERS_MAX, "상한에서 잘라 싣는다"),
+            other => panic!("예상 밖: {other:?}"),
+        }
+        let mut short = m.encode();
+        short.truncate(short.len() - 1);
+        assert_eq!(PeerMsg::decode(&short), None, "선언 수보다 짧으면 거부");
     }
 
     #[test]

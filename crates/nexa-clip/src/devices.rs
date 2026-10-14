@@ -33,6 +33,59 @@ pub(crate) struct DeviceEntry {
 
 static DEVICES: Mutex<Vec<DeviceEntry>> = Mutex::new(Vec::new());
 
+/// ★ 힌트(10-15 · T-80 "3대 이상이면 릴레이 경유 새 기기를 못 만난다"): 승인된 기기가 `Peers`로 알려 준
+/// "같은 사용자의 다른 기기" PeerId — **비영속 · 목록에 안 뜸 · 신뢰 아님**. 알려진 기기 다이얼 루프가
+/// 힌트도 건다(타이브레이크 없이 — 상대가 구버전이면 나만 알 수 있다). 세션이 서서 Hello를 받으면
+/// 정식 항목(승인 대기)이 되고 힌트에서 빠진다. 값 = (hex, 알려 준 기기 이름).
+static HINTS: Mutex<Vec<(String, String)>> = Mutex::new(Vec::new());
+const HINTS_MAX: usize = 64;
+
+/// 힌트 추가 — 나·이미 아는 기기·중복은 거른다. 반환 = 새로 들어간 수.
+pub(crate) fn add_hints<I: IntoIterator<Item = String>>(hexes: I, from: &str, me: &str) -> usize {
+    let known: Vec<String> = known_hex();
+    let Ok(mut g) = HINTS.lock() else {
+        return 0;
+    };
+    let mut n = 0;
+    for hex in hexes {
+        if hex == me || known.contains(&hex) || g.iter().any(|(h, _)| *h == hex) {
+            continue;
+        }
+        if g.len() >= HINTS_MAX {
+            break;
+        }
+        g.push((hex, from.to_string()));
+        n += 1;
+    }
+    n
+}
+
+/// 힌트 PeerId 16진 목록(다이얼 대상 · 알려진 기기 다음).
+pub(crate) fn hint_hex() -> Vec<String> {
+    HINTS
+        .lock()
+        .map(|g| g.iter().map(|(h, _)| h.clone()).collect())
+        .unwrap_or_default()
+}
+
+/// 힌트 수(갱신 버튼 노트).
+pub(crate) fn hint_count() -> usize {
+    HINTS.lock().map(|g| g.len()).unwrap_or(0)
+}
+
+/// 내가 승인한 기기 PeerId 16진 목록 — `Peers`로 승인된 상대에게 알린다(10-15).
+pub(crate) fn approved_hex() -> Vec<String> {
+    DEVICES
+        .lock()
+        .map(|g| {
+            g.iter()
+                .filter(|d| d.approved)
+                .map(|d| d.hex.clone())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 fn now_secs() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -74,6 +127,10 @@ pub(crate) fn is_online(hex: &str) -> bool {
 /// 세션 성립 + 인사 수신 — 있으면 갱신, 없으면 추가. 반환 = 새 기기였는가.
 pub(crate) fn upsert_online(hex: &str, name: &str, os: &str, via: &str) -> bool {
     let now = now_secs();
+    // 만났다 = 더는 힌트가 아니다(10-15).
+    if let Ok(mut h) = HINTS.lock() {
+        h.retain(|(x, _)| x != hex);
+    }
     let Ok(mut g) = DEVICES.lock() else {
         return false;
     };
@@ -256,8 +313,12 @@ pub(crate) fn save(path: &std::path::Path) -> std::io::Result<()> {
 mod tests {
     use super::*;
 
+    /// 전역 레지스트리를 쓰는 시험은 한 번에 하나만(`load`가 목록을 통째로 바꾼다).
+    static SERIAL: Mutex<()> = Mutex::new(());
+
     #[test]
     fn roundtrip_file_keeps_name_with_spaces() {
+        let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
         let dir = std::env::temp_dir().join(format!("nclip-devices-{}", std::process::id()));
         let path = dir.join("devices.txt");
         let hex = "ab".repeat(32);
@@ -283,5 +344,26 @@ mod tests {
         load(&path);
         assert!(is_approved(&hex));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// ★ 힌트(10-15) — 나·아는 기기·중복은 거르고, 세션이 서면 힌트에서 빠진다.
+    #[test]
+    fn hints_skip_me_and_known_and_clear_on_meet() {
+        let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        let me = "cc".repeat(32);
+        let known = "dd".repeat(32);
+        let new = "ee".repeat(32);
+        assert!(upsert_online(&known, "known", "linux", "relay"));
+        let n = add_hints(
+            vec![me.clone(), known.clone(), new.clone(), new.clone()],
+            "mac",
+            &me,
+        );
+        assert_eq!(n, 1, "새 것 하나만");
+        assert!(hint_hex().contains(&new));
+        assert!(upsert_online(&new, "new", "windows", "relay"), "새 기기");
+        assert!(!hint_hex().contains(&new), "만나면 힌트에서 빠진다");
+        remove(&known);
+        remove(&new);
     }
 }

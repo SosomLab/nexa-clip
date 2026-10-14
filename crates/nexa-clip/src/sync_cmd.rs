@@ -170,6 +170,8 @@ const PEER_DEAD: Duration = Duration::from_secs(45);
 pub(crate) enum PeerCmd {
     Item(std::sync::Arc<Vec<u8>>),
     Hello,
+    /// ★ 승인 목록 재알림(10-15 · T-80) — 승인된 상대에게만 실제로 나간다(세션 스레드가 판정).
+    Peers,
     /// ★ 파일 전송 프레임(09-12 · DR-30) — 요청/데이터/끝/오류/취소. 합치지 않고 순서대로 보낸다.
     File(nclip_sync::hello::PeerMsg),
 }
@@ -230,6 +232,41 @@ pub(crate) fn announce_name() -> usize {
     g.iter()
         .filter(|(_, tx)| tx.send(PeerCmd::Hello).is_ok())
         .count()
+}
+
+/// ★ 승인 목록 재알림(10-15) — 기기를 승인한 직후 살아 있는 세션 전부에(승인된 상대만 실제 송신).
+///   새로 승인된 기기는 내 다른 기기들을, 다른 기기들은 새 기기를 힌트로 알게 된다.
+pub(crate) fn announce_peers() -> usize {
+    let Ok(g) = PEER_TX.lock() else {
+        return 0;
+    };
+    g.iter()
+        .filter(|(_, tx)| tx.send(PeerCmd::Peers).is_ok())
+        .count()
+}
+
+/// ★ 기기 다시 찾기 요청(10-15 · 설정 "기기 목록 갱신" · T-80) — 릴레이 러너는 다음 틱(≤1s)에
+///   알려진 기기·힌트 백오프를 비우고 바로 걸며 페어링 랑데부도 1회 강제로 연다 · LAN은 비콘 즉시.
+///   반환 = (알려진 기기 수, 힌트 수) — 노트용.
+static RESCAN_REQ: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub(crate) fn request_rescan() -> (usize, usize) {
+    RESCAN_REQ.store(true, std::sync::atomic::Ordering::Relaxed);
+    crate::lan::probe_now();
+    (
+        crate::devices::known_hex().len(),
+        crate::devices::hint_count(),
+    )
+}
+
+/// 내 승인 목록 프레임(상대는 제외) — 비어도 보낸다(상대가 "교환 지원"을 안다).
+fn peers_frame(except: &str) -> nclip_sync::hello::PeerMsg {
+    let list = crate::devices::approved_hex()
+        .iter()
+        .filter(|h| h.as_str() != except)
+        .filter_map(|h| nclip_sync::relay::parse_peer_hex(h))
+        .collect();
+    nclip_sync::hello::PeerMsg::Peers(list)
 }
 
 fn wake(proxy: &winit::event_loop::EventLoopProxy<crate::tray_cmd::ShellEvent>) {
@@ -380,7 +417,32 @@ pub(crate) fn run_peer(
                             );
                         }
                         greeted = true;
+                        // ★ 기기 목록 교환(10-15 · T-80) — 승인된 상대에게 내 승인 목록을 알린다.
+                        if crate::devices::is_approved(&hex)
+                            && s.send(&peers_frame(&hex).encode()).is_err()
+                        {
+                            break;
+                        }
                         wake(&proxy);
+                    }
+                    // ★ 상대가 알려 준 "같은 사용자의 다른 기기"(10-15) — 승인된 상대 것만 힌트로.
+                    //   힌트는 다이얼 대상일 뿐이다 — 세션이 서면 여느 새 기기처럼 승인 대기로 뜬다.
+                    Some(PeerMsg::Peers(list)) => {
+                        if crate::devices::is_approved(&hex) {
+                            let me_hex = nclip_sync::relay::peer_hex(&me);
+                            let n = crate::devices::add_hints(
+                                list.iter().map(nclip_sync::relay::peer_hex),
+                                &peer_name,
+                                &me_hex,
+                            );
+                            if n > 0 {
+                                println!(
+                                    "동기화: {peer_name}이(가) 알려 준 기기 {n}개 — 힌트로 다이얼 예정",
+                                );
+                                RESCAN_REQ.store(true, std::sync::atomic::Ordering::Relaxed);
+                                crate::lan::probe_now();
+                            }
+                        }
                     }
                     Some(PeerMsg::Ping) => {
                         if s.send(&PeerMsg::Pong.encode()).is_err() {
@@ -443,6 +505,7 @@ pub(crate) fn run_peer(
         let mut latest = None;
         let mut skipped = 0usize;
         let mut reintroduce = false;
+        let mut repeers = false;
         let mut files = Vec::new();
         while let Ok(cmd) = rx.try_recv() {
             match cmd {
@@ -453,6 +516,7 @@ pub(crate) fn run_peer(
                     latest = Some(payload);
                 }
                 PeerCmd::Hello => reintroduce = true,
+                PeerCmd::Peers => repeers = true,
                 PeerCmd::File(m) => files.push(m),
             }
         }
@@ -460,6 +524,13 @@ pub(crate) fn run_peer(
             if s.send(&m.encode()).is_err() {
                 break 'session;
             }
+        }
+        // ★ 승인 목록 재알림(10-15) — 승인된 상대에게만.
+        if repeers
+            && crate::devices::is_approved(&hex)
+            && s.send(&peers_frame(&hex).encode()).is_err()
+        {
+            break 'session;
         }
         // ★ 전송 중엔 폴링을 촘촘히(09-12) — 블록 요청이 채널에 앉아 있는 시간이 곧 처리량 상한이다.
         //   평소 250ms(상주 비용 최소) · 전송 중 20ms.
@@ -786,6 +857,8 @@ fn run(
                     std::collections::HashMap::new();
                 let mut pair_fail = 0u32;
                 let mut pair_next = std::time::Instant::now();
+                // ★ 갱신 요청(10-15)이 랑데부를 1회 강제한다(온라인 기기가 있어도).
+                let mut force_pair = false;
                 loop {
                     if let Some(inc) = client.accept_incoming(Duration::from_secs(1)) {
                         if INBOUND_HS.load(std::sync::atomic::Ordering::Relaxed) >= INBOUND_MAX {
@@ -833,17 +906,37 @@ fn run(
                                 }
                             });
                     }
+                    // ★ 갱신 요청(10-15 · 설정 "기기 목록 갱신" · 힌트 도착) — 백오프를 전부 비우고
+                    //   지금 걸며, 페어링 랑데부도 1회 강제로 연다.
+                    if RESCAN_REQ.swap(false, std::sync::atomic::Ordering::Relaxed) {
+                        dial_next.clear();
+                        last_dial = std::time::Instant::now() - DIAL_EVERY;
+                        pair_next = std::time::Instant::now();
+                        pair_fail = 0;
+                        force_pair = true;
+                        println!(
+                            "동기화: 기기 다시 찾기 — 알려진 {} · 힌트 {} 즉시 다이얼 · 랑데부 1회 강제",
+                            crate::devices::known_hex().len(),
+                            crate::devices::hint_count()
+                        );
+                    }
                     if last_dial.elapsed() >= DIAL_EVERY {
                         last_dial = std::time::Instant::now();
                         let now = std::time::Instant::now();
                         // 알려진 기기 — 오프라인이고 **내 키가 작은 쪽**만 건다(글레어 회피 타이브레이크).
                         //   ★ 기기별 지수 백오프(10s → … → 5분) — 꺼진 기기에 매 10초 릴레이 Open을 던지지 않는다.
-                        for hex in crate::devices::known_hex() {
+                        // ★ 힌트(10-15 · T-80) — 승인된 기기가 알려 준 PeerId는 **타이브레이크 없이** 건다
+                        //   (상대가 구버전이면 나만 안다 · 글레어는 run_peer의 중복 세션 폐기가 흡수).
+                        let targets = crate::devices::known_hex()
+                            .into_iter()
+                            .map(|h| (h, true))
+                            .chain(crate::devices::hint_hex().into_iter().map(|h| (h, false)));
+                        for (hex, known) in targets {
                             if crate::devices::is_online(&hex) {
                                 dial_next.remove(&hex); // 붙었다 = 백오프 초기화
                                 continue;
                             }
-                            if me >= hex {
+                            if known && me >= hex {
                                 continue;
                             }
                             // 기기별 실패 횟수 → 정책 대기(성공 = 목록 초기화).
@@ -883,17 +976,26 @@ fn run(
                                 None
                             });
                         }
-                        // 페어링 랑데부 — 아직 아무와도 안 붙었을 때만 만남 지점을 연다
-                        //   (서버는 최신 등록자에게 잇고, 내가 등록자면 "대상 없음"으로 돌아온다).
+                        // 페어링 랑데부 — 만남 지점을 연다(서버는 최신 등록자에게 잇고, 내가 등록자면
+                        //   "대상 없음"으로 돌아온다). 아무와도 안 붙었으면 지수 백오프로 자주 ·
+                        //   ★ 누군가 붙어 있어도 **정책 상한 주기**(normal 5분)로 계속 연다(10-15 · T-80 —
+                        //   3대째 기기가 지점에 서 있을 수 있다 · 아는 기기에 걸리면 run_peer가 중복으로 버린다) ·
+                        //   갱신 요청은 1회 즉시.
                         let any_online = crate::devices::list().iter().any(|d| d.online);
                         if any_online {
                             pair_fail = 0; // 누군가 붙어 있으면 다음 탐색은 처음부터
                         }
                         // ★ 페어링 탐색도 같은 정책 — 상대가 없을 때 릴레이에 Open을 연타하지 않는다.
                         let pair_due = std::time::Instant::now() >= pair_next;
-                        if !pair_rids.is_empty() && !any_online && pair_due {
-                            pair_fail += 1;
-                            pair_next = std::time::Instant::now() + policy().wait(pair_fail);
+                        let forced = std::mem::take(&mut force_pair);
+                        if !pair_rids.is_empty() && (pair_due || forced) {
+                            pair_next = std::time::Instant::now()
+                                + if any_online {
+                                    policy().wait(u32::MAX) // = 상한(±지터)
+                                } else {
+                                    pair_fail += 1;
+                                    policy().wait(pair_fail)
+                                };
                             let (c, i, p, d) =
                                 (client.clone(), id.clone(), proxy.clone(), dir.to_path_buf());
                             let rids = pair_rids.clone();

@@ -36,6 +36,13 @@ pub(crate) fn bump() {
     LAN_GEN.fetch_add(1, Ordering::Relaxed);
 }
 
+/// ★ 즉시 탐색 요청(10-15 · 설정 "기기 목록 갱신") — 비콘을 바로 쏘고 기기별 다이얼 백오프를 비운다.
+static PROBE_REQ: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub(crate) fn probe_now() {
+    PROBE_REQ.store(true, Ordering::Relaxed);
+}
+
 /// LAN 태그 [어제, 오늘, 내일] — 도메인 분리 해시는 nclip-sync 몫.
 fn lan_tags(handle: &str, pass: &str) -> Vec<[u8; 16]> {
     nclip_sync::rid::lan_tags(handle, pass).to_vec()
@@ -193,6 +200,13 @@ pub(crate) fn spawn(
                 } else {
                     BEACON_EVERY
                 };
+                // ★ 갱신 요청(10-15) — 비콘 즉시 + 백오프·본 기록 초기화(바로 다시 걸 수 있게).
+                if PROBE_REQ.swap(false, Ordering::Relaxed) {
+                    last_send = Instant::now() - every;
+                    dial_next.clear();
+                    seen.clear();
+                    println!("LAN 직결: 갱신 요청 — 비콘 즉시 송신 · 백오프 초기화");
+                }
                 if last_send.elapsed() >= every {
                     for t in &targets {
                         if let Err(e) = sock.send_to(&my_beacon, t) {
