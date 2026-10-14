@@ -10,7 +10,8 @@
 **V3(배포 전)**: rustc 1.99.0 (b940084d7 2026-09-28)(`rustup update stable` = unchanged) · `cargo test --workspace` **407 통과 / 실패 0 / 무시 3** · clippy `--workspace --all-targets -D warnings` ✓ · `cargo fmt --all --check` ✓ · `scripts/check-3os.sh` ✓(호스트 · x86_64-apple-darwin · x86_64-unknown-linux-gnu) · Release `nexa-clip.exe` **2,448,896 B(2.34 MB · ≤ 10 MB ✓)** · `nclip-imgdec.exe` 513,024 B · `--version` = **nexa-clip 0.2.2** ✓ · 253초 · 유휴 메모리(참고 · 실행 중 Debug 14056 = T-80 소스 · 기동 15분) WS 8.0 MB / Private 6.3 MB / Peak 82.7 MB(⚠️ 피크가 활동 상한 96 MB에 가까움 — 이 구간에 사용자 사용·동기화가 있었는지는 미확인) · E2E ⏸ 보류(사용자 문서 창 열림).
 **예상 게시**: brew · pkg.sosomlab.com ✓ · choco 포터블 0.2.2 go · 설치본 skip(T-78) · winget skip(0.1.6 PR 열림).
 **릴리스**: 태그 `v0.2.2` = `7e39178`(커밋 `64fa6ea`) · release `38603822443` **1차 ✅** · 자산 15 · 노트 영어 · brew `734a585` 0.2.2 · pkg.sosomlab.com 0.2.2(linux-repo `38604356769`) · winget skip · choco 설치본 skip · **choco 포터블 0.2.2 제출**(pushed · 검수 큐 Pending).
-**☐ 다음**: 사용자 실기 — 3대 기기 목록 · [기기 목록 갱신](mac도 0.2.2 필요) · 설치본 0.2.2 교체 · E2E 사후 실행(사용자 창 정리 뒤 · 선택). → [journal](journal/2026-10-15.md)
+**설치본**: 0.2.2로 교체(PID 30068 · SHA 일치 · dev-install-win).
+**☐ 다음**: 사용자 실기 — 3대 기기 목록 · [기기 목록 갱신](mac도 0.2.2 필요) · E2E 사후 실행(사용자 창 정리 뒤 · 선택). → [journal](journal/2026-10-15.md)
 
 ---
 
