@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-10-15 (1차 · win) — 동기화: 3대 이상에서 릴레이 경유 기기 발견 안 됨 — 원인 확인 · 수정 착수(T-80)
+
+**신고**: 다른 PC(dyty-p53g-dpav)가 이 PC 기기 목록에 안 뜸(토폴로지 = dyty ↔ mac LAN · mac ↔ 이 PC 릴레이).
+**원인**: 새 기기 발견 = 페어링 랑데부뿐 · `!any_online`일 때만 열림 · 릴레이 Open은 RID 최신 등록자에게 → 설계상 2대 페어링까지 · beep 서버·와이어 무관.
+**수정 중**(개발 세션 · `feat/sync-peer-hints-10-15`): `Peers` 힌트 메시지(승인된 기기 목록 교환 → 다이얼 → "승인 필요" 등재) · [기기 목록 갱신] 버튼 `sync.refresh` · 랑데부 느린 주기 상시.
+**진행**: 코드 완료(소스 7 · V0 ✓) → Debug 재시작 PID 14056(설치본 종료 · 릴레이 연결됨) → V2 ✓(test 407 · clippy · fmt · check-3os · Release 2.34 MB).
+**☐ 다음**: 사용자 실기 — 3대(dyty · mac · 이 PC) 서로 목록에 뜨는지 · "승인 필요" 표시 · [기기 목록 갱신] 버튼(⚠️ mac도 새 빌드 필요 · Debug는 설치본과 다른 신원) · 배포 = v0.2.2 후보(T-71·T-79와 함께). → [journal](journal/2026-10-15.md)
+
+---
+
 ## 2026-10-12 (1차 · win) — 🔴 choco 설치본 `nexa-clip` 0.1.5 = 재스캔 뒤 VirusTotal 10건 초과 → "Waiting for Maintainer" · ★ 포터블 0.2.1 승인(10-11)
 
 **세션 시작**: 로컬 main `8eeb15b` → `f559b9c` ff(6커밋 · 10-10 13차 `fix/sync-echo-10-10` 병합 `3de050a`) · 점검·기록·커밋·push = 개발 세션 nexa-clip-45(사용자 직접 지시) · 협업 세션 nexa-clip-8e에 docs/ 보류 통보.

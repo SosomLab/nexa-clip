@@ -2,6 +2,8 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-10-15 (1차 · win) — 동기화 3대 이상 릴레이 경유 기기 발견 안 됨(dyty가 이 PC 목록에 없음) — 원인 = 페어링 랑데부가 온라인 기기 없을 때만 · RID 최신 등록자 연결 → 2대 한계 · 수정 착수 = `Peers` 힌트 · 기기 목록 갱신 버튼 · 랑데부 상시(T-80) → [journal](journal/2026-10-15.md)
+
 ## 2026-10-12 (1차 · win) — 🔴 choco 설치본 `nexa-clip` 0.1.5 = T-76 예외 요청 뒤 모더레이터 재스캔 → **VirusTotal 10건 초과 · "Waiting for Maintainer"**(예외 거부 셈 · 우리 차례) · ★ 포터블 0.2.1 **승인**(10-11 · Windos · 약 1일) · winget 0.1.6 PR 2건 대기 그대로 · 판정 = T-77 코드 서명 P1(권장) 또는 0.2.x 재제출 · 0.1.5 unlist 권고 · 문서만(V3 없음) → [journal](journal/2026-10-12.md)
 
 ## 2026-10-10 (13차 · linux) — Linux에서 v0.2.1(nexa-ui path 의존) 첫 Debug 빌드 ✓ · ★ T-71 수정(원격 글 `text/plain;charset=utf-8` ↔ 되읽기 `text/plain` 이름 정규화 `canon_format` · test 221 ✓) · dev-restart.sh 설치본 보존·로그 보관(실검증 ✓) · ★ T-79 수신 항목 재전파 차단(이력 내용 가드 `payload_key` · test 222 ✓) · 같은 PC 전파 시험 `linux-sync-e2e.sh`(하네스 ✓ · mac 유출 관찰) · V3 412 ✓ · 커밋 = 브랜치 `fix/sync-echo-10-10` → main 병합 · push · 미배포(v0.2.2 후보) · ☐ 설치본 승인·mac 유출 결정 대기 · 실기 → [journal](journal/2026-10-10.md)

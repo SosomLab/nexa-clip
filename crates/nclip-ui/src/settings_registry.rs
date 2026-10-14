@@ -672,6 +672,16 @@ pub(crate) const REGISTRY: &[Entry] = &[
         },
         "sync.disconnect",
     ),
+    // ★ 기기 목록 갱신(10-15 사용자 · T-80) — 알려진 기기 재다이얼 · 랑데부 강제 · LAN 비콘 즉시.
+    e(
+        Msg::CatSync,
+        Msg::SyncRefresh,
+        Msg::SyncRefreshDesc,
+        SettingKind::Action {
+            verb: Msg::SyncRefreshVerb,
+        },
+        "sync.refresh",
+    ),
     // ★ 기기 목록(09-03 사용자) — 만난 기기(인증된 PeerId + 표시 이름)를 읽기 전용으로.
     e(
         Msg::CatSync,

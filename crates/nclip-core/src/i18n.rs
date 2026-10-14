@@ -723,6 +723,14 @@ pub enum Msg {
     SyncDisconnectVerb,
     /// 상태: 해제됨.
     StSyncDisconnected,
+    /// ★ 기기 목록 갱신 라벨(10-15 · T-80).
+    SyncRefresh,
+    /// 기기 목록 갱신 설명.
+    SyncRefreshDesc,
+    /// 기기 목록 갱신 버튼 동사.
+    SyncRefreshVerb,
+    /// 상태: 탐색 중(`{}` = 알려진 기기 수 · `{}` = 힌트 수).
+    StSyncRefreshing,
     /// ★ 상태: 핸들·암호 미설정(09-04) — 접속 불가.
     StSyncNeedIdentity,
     /// 상태: 연결 안 됨.
@@ -2216,6 +2224,25 @@ impl Msg {
                 "現在のリレーセッションを切断（次回起動時に再接続）",
             ],
             Msg::SyncDisconnectVerb => ["Disconnect", "해제", "断开", "切断"],
+            Msg::SyncRefresh => [
+                "Refresh device list",
+                "기기 목록 갱신",
+                "刷新设备列表",
+                "デバイス一覧を更新",
+            ],
+            Msg::SyncRefreshDesc => [
+                "Look for devices again right now — redial known devices, reopen the pairing rendezvous and send a LAN beacon. Devices learned from an approved device are dialed too.",
+                "지금 바로 기기를 다시 찾습니다 — 알려진 기기 재다이얼 · 페어링 랑데부 다시 열기 · LAN 비콘 송신. 승인된 기기가 알려 준 다른 기기도 함께 겁니다.",
+                "立即重新查找设备——重拨已知设备、重新打开配对会合点并发送局域网信标。也会拨打已批准设备告知的其他设备。",
+                "今すぐデバイスを再検索します — 既知デバイスの再ダイヤル・ペアリング待ち合わせの再開・LAN ビーコン送信。承認済みデバイスが教えた他のデバイスにも接続を試みます。",
+            ],
+            Msg::SyncRefreshVerb => ["Refresh", "갱신", "刷新", "更新"],
+            Msg::StSyncRefreshing => [
+                "Searching — known {} · hinted {} (new devices appear below within a minute)",
+                "탐색 중 — 알려진 기기 {} · 힌트 {} (새 기기는 1분 안에 아래 목록에 뜹니다)",
+                "正在搜索——已知 {} · 提示 {}（新设备将在一分钟内出现在下方列表）",
+                "検索中 — 既知 {} · ヒント {}（新しいデバイスは1分以内に下の一覧に表示）",
+            ],
             Msg::StSyncNeedIdentity => [
                 "Handle and pairing passphrase are both required — nothing connects until both are set",
                 "핸들과 페어링 암호가 모두 있어야 합니다 — 둘 다 채우기 전엔 접속하지 않습니다",
@@ -2461,7 +2488,7 @@ mod tests {
     use super::*;
 
     /// 카탈로그 전수 — 새 `Msg`를 더하면 여기도 더한다(빈칸 검사가 그걸 강제한다).
-    const ALL_MSG: [Msg; 422] = [
+    const ALL_MSG: [Msg; 426] = [
         Msg::AppName,
         Msg::SearchPlaceholder,
         Msg::EmptyHistory,
@@ -2831,6 +2858,10 @@ mod tests {
         Msg::SyncDisconnectDesc,
         Msg::SyncDisconnectVerb,
         Msg::StSyncDisconnected,
+        Msg::SyncRefresh,
+        Msg::SyncRefreshDesc,
+        Msg::SyncRefreshVerb,
+        Msg::StSyncRefreshing,
         Msg::StSyncNeedIdentity,
         Msg::StSyncNotConnected,
         Msg::SetSyncRelayDesc,
