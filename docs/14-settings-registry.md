@@ -180,8 +180,8 @@ General 안내문 그대로:
 | `cap.files` | Checkbox | on | **파일·폴더 저장** | M |
 | `cap.rich` | Checkbox | on | ★ **서식(HTML/RTF) 저장** | N |
 | `cap.native_formats` | Checkbox | on | ★ **원본 포맷 보존**(Word·PPT·Excel) → [12](12-clipboard-formats.md) | N |
-| `cap.max_rep_mb` | RadioInput | 8 | 표현 1개 상한(MB) | N |
-| `cap.max_item_mb` | RadioInput | 32 | 항목 전체 상한(MB) | N |
+| `cap.max_rep_mb` | RadioInput | 8 | 표현 1개 상한(MB) — 미구현(D-34) | N |
+| `cap.max_item_mb` | Number(MB) · 프리셋 8/16/32/64 | 32 | 항목 전체 상한(MB) — **고급** · 넘으면 필수가 아닌 표현을 큰 것부터 버림 · 글·HTML·RTF·파일은 항상 유지 · 0 = 무제한 · ★ **10-17 구현**(T-81 · 코드 키 동일) | N |
 | `cap.dedup` | Checkbox | on | 같은 내용 재복사 시 최신으로 승격 | B |
 | `cap.poll_ms` | RadioInput | 적응형 | (macOS 전용) 폴링 주기 | N |
 | `cap.thumb_px` | RadioInput | 96 | ★ **썸네일 긴 변(px)** — 목록 미리보기 품질 ↔ 디스크 → [§3-12](#3-12-시간모션-motion--사용자-요청-08-26) | N |
@@ -482,9 +482,9 @@ General 안내문 그대로:
 
 - **그룹 행을 누르면 그룹 전체**(카테고리 제목을 달고 이어서) · 검색 중에는 일치 수 표시.
 
-### 7-4. 고급(`ADVANCED`) — 9키
+### 7-4. 고급(`ADVANCED`) — 10키
 
-`cap.cell_pic_rows` · `cap.cell_pic_cols` · `cap.cell_pic_cells` · `cap.native_formats` · `sync.files_max` · `sync.file_bg_kbps` · `sync.file_cache_mb` · `sync.file_max_mb` · `adv.log`
+`cap.cell_pic_rows` · `cap.cell_pic_cols` · `cap.cell_pic_cells` · `cap.native_formats` · `cap.max_item_mb`(10-17 · T-81) · `sync.files_max` · `sync.file_bg_kbps` · `sync.file_cache_mb` · `sync.file_max_mb` · `adv.log`
 
 - 스위치 = `ui.prefs_advanced`(HIDDEN · beep·sql과 같은 이름) · 끄면 카테고리에 **"고급 N개 숨김" 배너**.
 - 고급에 넣지 않은 것: `sync.port` · `sync.retry` · `sync.file_dir` · `sync.file_auto_mb` · `find.hangul_compose` — **사용자가 만지는 값**이라 일반에 둔다.

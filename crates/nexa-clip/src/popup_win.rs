@@ -59,6 +59,9 @@ pub(crate) enum PopupAction {
     SearchMode(&'static str),
     /// ★ 설정 창 열기(09-07 사용자 — `Ctrl+,` · mac `⌘,` · docs/04 §2-1 키맵) — 셸이 팝업을 닫고 설정 창을 띄운다.
     OpenSettings,
+    /// ★ 핀 지정/해제(10-17 사용자 — "붙여넣기 팝업 상태에서 Pin 지정/해제") — 값 = 항목 id. `key.pin`(Ctrl+P ·
+    ///   mac ⌘P) 또는 거터(핀 점 자리) 클릭. 셸이 이력·저장소에 반영하고 팝업은 **열린 채** 같은 항목을 다시 고른다.
+    TogglePin(u64),
     /// ★ 붙여넣기 스택(09-03 ③ — Ditto 화법): 담은 순서대로 **순차** 붙여넣기.
     ///   09-08 사용자: 원본/평문 × 항목 사이 줄바꿈(`Alt+Enter` · `Shift+Alt+Enter`).
     PickStack {
@@ -779,6 +782,7 @@ impl Popup {
             return;
         }
         self.search.set_text("");
+        self.clear_preedit();
         self.search.set_focused(true);
         self.scroll = 0;
         self.marked.clear();
@@ -845,7 +849,34 @@ impl Popup {
         self.window = Some(win);
     }
 
+    /// ★ 조합 중 글자 비움(10-17 사용자 신고 — 다른 Windows PC에서 **검색어에 한글 1글자가 닫았다 열어도 남음**):
+    ///   조합(preedit) 중에 팝업이 닫히면 입력기가 `Ime::Preedit("")`를 주지 않을 수 있고, `set_text("")`는 본문만
+    ///   갈아 끼워 `preedit`가 그대로 남는다 → `display_text()`에 그 글자가 살아 필터까지 걸었다. 열 때·닫을 때 비운다.
+    fn clear_preedit(&mut self) {
+        let mut inv = Invalidations::default();
+        self.search.set_preedit("", &mut inv);
+    }
+
+    /// ★ 이력 변경 뒤 **같은 항목을 다시 고른다**(10-17 — 팝업 핀 토글: 핀 구획으로 옮겨 가도 선택이 따라간다).
+    pub(crate) fn on_history_changed_keep(&mut self, hist: &History, id: u64) {
+        self.refresh(hist);
+        self.sel = self
+            .rows
+            .iter()
+            .position(|r| r.id == id)
+            .or_else(|| self.rows.iter().position(|r| r.hist_index == 0))
+            .unwrap_or(0);
+        self.ensure_visible();
+        self.redraw();
+    }
+
+    /// 거터 폭(핀·수신 점 자리) — 이 안의 클릭은 붙여넣기가 아니라 핀 토글(10-17).
+    fn gutter_w(&self) -> i32 {
+        (18.0 * self.scale).round() as i32
+    }
+
     pub(crate) fn close(&mut self) {
+        self.clear_preedit();
         self.surface = None;
         self.ctx = None;
         self.window = None;
@@ -1189,6 +1220,15 @@ impl Popup {
                         return PopupAction::None;
                     }
                     if let Some(vi) = self.row_at(x, y) {
+                        // ★ 거터(핀 점 자리) 클릭 = 핀 지정/해제(10-17 사용자) — 붙여넣기와 구분되는 좁은 띠.
+                        if x < self.gutter_w() && !self.ctrl {
+                            self.sel = vi;
+                            self.redraw();
+                            return match self.rows.get(vi) {
+                                Some(row) => PopupAction::TogglePin(row.id),
+                                None => PopupAction::None,
+                            };
+                        }
                         // ★ Ctrl+클릭 = 스택 토글(09-03 ③ — 즉시 붙여넣기 대신 선택만).
                         if self.ctrl {
                             self.sel = vi;
@@ -1288,6 +1328,13 @@ impl Popup {
                 ) {
                     if self.keymap.is("key.settings", c) {
                         return PopupAction::OpenSettings;
+                    }
+                    // ★ 핀 지정/해제(10-17 사용자) — 선택 행 · 창은 열린 채(셸이 반영 뒤 같은 항목을 다시 고른다).
+                    if self.keymap.is("key.pin", c) {
+                        return match self.rows.get(self.sel) {
+                            Some(row) => PopupAction::TogglePin(row.id),
+                            None => PopupAction::None,
+                        };
                     }
                     // ★ 번호 선택(09-07 사용자 확정 · FR-P-8) — **보이는 순서** N번째(필터 후 · 핀 구획 포함)를
                     //   **원본 그대로**. 수식 키를 쥔 채 치므로 "Ctrl = 개체" 변형은 적용하지 않는다(Maccy `⌘n`).
@@ -1655,21 +1702,25 @@ fn draw(
             }
             pin_divider_done = true;
         }
+        // ★ 핀·수신 점 자리(10-17 사용자 신고 — "수신(초록) + 핀(파랑)이 팝업 숫자를 가림"): Rich 보기는 거터 번호가
+        //   같은 줄(y+6 · x=pad)에 있어 두 점이 번호를 덮었다 → 메인창 Rich와 같이 **번호 아래(y+22)** 에 · 다른 보기는 종전
+        //   (좌측 3px · y+11 · 번호 없음).
+        let (dot_x0, dot_y, dot_gap) = if view == ViewMode::Rich {
+            (pad, y + px(22.0), px(8.0))
+        } else {
+            (px(3.0), y + px(11.0), px(7.0))
+        };
         // 핀 점 — 좌측 거터(행 clip 안일 때만).
-        if row.pinned {
-            let dot_y = y + px(11.0);
-            if dot_y >= clip.y && dot_y + px(6.0) <= clip.y + clip.h {
-                dc.fill_round_rect(
-                    Rect::new(px(3.0), dot_y, px(5.0), px(5.0)),
-                    px(2.5),
-                    th.accent,
-                );
-            }
+        if row.pinned && dot_y >= clip.y && dot_y + px(6.0) <= clip.y + clip.h {
+            dc.fill_round_rect(
+                Rect::new(dot_x0, dot_y, px(5.0), px(5.0)),
+                px(2.5),
+                th.accent,
+            );
         }
         // ★ 수신 점(09-04 — 메인창과 동일): 핀 점 옆(점 5 + 간격 2) · 상태줄 릴레이 녹색.
         if row.remote {
-            let dot_y = y + px(11.0);
-            let dot_x = if row.pinned { px(10.0) } else { px(3.0) };
+            let dot_x = if row.pinned { dot_x0 + dot_gap } else { dot_x0 };
             if dot_y >= clip.y && dot_y + px(6.0) <= clip.y + clip.h {
                 dc.fill_round_rect(
                     Rect::new(dot_x, dot_y, px(5.0), px(5.0)),
@@ -1915,6 +1966,13 @@ fn draw(
             ),
             Some(ClipKind::Image | ClipKind::Object) => with_key(tr(lang, Msg::HintImage), &pick),
             _ => with_key(tr(lang, Msg::HintDefault), &pick),
+        };
+        // ★ 핀 키(10-17) — 설정에서 지웠으면(빈 표기) 안 붙인다.
+        let pin = km.label("key.pin");
+        let hint = if pin.is_empty() {
+            hint
+        } else {
+            format!("{hint} · {}", with_key(tr(lang, Msg::HintPin), &pin))
         };
         dc.text(pad, fy + px(5.0), full, &hint, th.text_dim);
     } else {

@@ -4,12 +4,23 @@
 
 ---
 
+## 2026-10-17 (1차 · win) — 개발·협업 세션 재편 · T-75 세션 종료 마감 · T-82 사용자 지시 4건(팝업 핀 · 한글 잔존 · 거터 점 · 트레이 순번 배지) · T-81 메모리 피크 1차(상한 `cap.max_item_mb` 32 · Windows 2단 읽기 · settle 1벌 · push 이동) · choco 포터블 0.2.2 승인 · 설치본 Peak 336 MB 관찰 · 미배포(다음 태그 후보)
+
+**범위**: T-75 Windows `WM_QUERYENDSESSION`/`WM_ENDSESSION` 저장 마감 + 기동 안내 정정 · T-82 팝업 `Ctrl+P`·거터 클릭 핀 토글 · open/close preedit 비움 · Rich 보기 점을 번호 아래로 · 트레이 메뉴 아이콘 칸 순번 배지(3-OS) · T-81 `select_reps` 연결(항목 상한 `cap.max_item_mb` 32 · 고급) · Windows 2단 읽기 · settle 지문 1벌 · `push_owned` → [journal 10-17](journal/2026-10-17.md) 2~5차.
+**스토어(10-17)**: choco 포터블 0.2.2 ✅ 승인(10-16 · virtualex) · 설치본 0.1.5 = "Waiting for Maintainer" 변화 없음(T-78) · winget 0.1.6 PR 대기 13일째.
+**관찰**: 설치본 0.2.2(PID 1960 · 19시간) **Peak WS 336.3 MB**(활동 상한 96 MB의 3.5배) → T-81 · Debug 1차 수정본 유휴 1시간 Peak 25.2 MB(유휴라 감소 증명 아님) · 사용 중 diag "용량 상한 — 표현 1개 건너뜀(16000 KB · CF_DIBV5)" 4회 확인.
+**V3(커밋 전 · 핵심)**: rustc 1.99.1 (58cf8f9c3 2026-10-13)(`rustup update stable` 1.99.0 → 1.99.1) · `cargo test --workspace` **411 통과 / 실패 0 / 무시 4** · clippy `--workspace --all-targets -D warnings` ✓ · `cargo fmt --all --check` ✓ · `scripts/check-3os.sh` ✓(호스트 · x86_64-apple-darwin · x86_64-unknown-linux-gnu) · Release `nexa-clip.exe` **2,465,280 B(2.35 MB · v0.2.2 대비 +16,384)** · `--version` "nexa-clip 0.2.2" · nexa-ui `7dd0b50`(nexa-sys macOS open_files·IOSurface) pull 뒤 check-3os ✓ + test 411/0/4 재확인 · 유휴 Debug 8분 WS 15.8 MB · Peak 25.2 MB
+**E2E**: 세션 종료 `scripts/win-endsession-e2e.ps1` ✓(QUERYENDSESSION→1 · ENDSESSION 112 ms · 종료 196 ms · `설정 저장:` 줄 포함 = 설정 변경 상태 저장 확인) · `win-e2e.ps1` ⏸ 보류(설치본 1960 단축키 점유 · 사용자 PC 사용 중) · 팝업 변경분은 사용자 실기 K23~K27
+**☐ 다음**: 사용자 실기 — 실제 로그오프 1회(T-75) · [21 §12-2](21-manual-test.md) K23~K27(T-82 · mac·Linux 메뉴 배지 포함) · 큰 Excel 범위·PPT 슬라이드 복사 Peak(T-81) · D-34 확정 · T-78/T-77 결정.
+
+---
+
 ## 2026-10-15 (2차 · win) — ★ v0.2.2 릴리스 ✓
 
 **범위**: T-80 기기 목록 교환·[기기 목록 갱신](`c64df1b` → 병합 `b7fb13d`) · T-71 평문 별칭 에코 · T-79 수신 항목 재전파 차단(10-10 `3de050a` · 미배포분).
 **V3(배포 전)**: rustc 1.99.0 (b940084d7 2026-09-28)(`rustup update stable` = unchanged) · `cargo test --workspace` **407 통과 / 실패 0 / 무시 3** · clippy `--workspace --all-targets -D warnings` ✓ · `cargo fmt --all --check` ✓ · `scripts/check-3os.sh` ✓(호스트 · x86_64-apple-darwin · x86_64-unknown-linux-gnu) · Release `nexa-clip.exe` **2,448,896 B(2.34 MB · ≤ 10 MB ✓)** · `nclip-imgdec.exe` 513,024 B · `--version` = **nexa-clip 0.2.2** ✓ · 253초 · 유휴 메모리(참고 · 실행 중 Debug 14056 = T-80 소스 · 기동 15분) WS 8.0 MB / Private 6.3 MB / Peak 82.7 MB(⚠️ 피크가 활동 상한 96 MB에 가까움 — 이 구간에 사용자 사용·동기화가 있었는지는 미확인) · E2E ⏸ 보류(사용자 문서 창 열림).
 **예상 게시**: brew · pkg.sosomlab.com ✓ · choco 포터블 0.2.2 go · 설치본 skip(T-78) · winget skip(0.1.6 PR 열림).
-**릴리스**: 태그 `v0.2.2` = `7e39178`(커밋 `64fa6ea`) · release `38603822443` **1차 ✅** · 자산 15 · 노트 영어 · brew `734a585` 0.2.2 · pkg.sosomlab.com 0.2.2(linux-repo `38604356769`) · winget skip · choco 설치본 skip · **choco 포터블 0.2.2 제출**(pushed · 검수 큐 Pending).
+**릴리스**: 태그 `v0.2.2` = `7e39178`(커밋 `64fa6ea`) · release `38603822443` **1차 ✅** · 자산 15 · 노트 영어 · brew `734a585` 0.2.2 · pkg.sosomlab.com 0.2.2(linux-repo `38604356769`) · winget skip · choco 설치본 skip · **choco 포터블 0.2.2 제출 → ✅ 승인됨(10-16 · moderator virtualex · 10-17 확인)**.
 **설치본**: 0.2.2로 교체(PID 30068 · SHA 일치 · dev-install-win).
 **☐ 다음**: 사용자 실기 — 3대 기기 목록 · [기기 목록 갱신](mac도 0.2.2 필요) · E2E 사후 실행(사용자 창 정리 뒤 · 선택). → [journal](journal/2026-10-15.md)
 

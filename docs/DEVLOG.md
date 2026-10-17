@@ -2,6 +2,8 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-10-17 (1차 · win) — 개발·협업 세션 재편 · T-75 세션 종료 마감 · T-82 사용자 지시 4건(팝업 핀 · 한글 잔존 · 거터 점 · 트레이 순번 배지) · T-81 메모리 피크 1차(상한 `cap.max_item_mb` 32 · Windows 2단 읽기 · settle 1벌 · push 이동) · choco 포터블 0.2.2 승인 · 설치본 Peak 336 MB 관찰 · 미배포(다음 태그 후보) — V3 `cargo test --workspace` **411 통과 / 실패 0 / 무시 4** · [journal](journal/2026-10-17.md)
+
 ## 2026-10-15 (2차 · win) — ★ **v0.2.2 릴리스 ✓**(태그 `7e39178` · release `38603822443` 1차 ✅ · 자산 15 · brew `734a585` · pkg.sosomlab.com 0.2.2 · choco 포터블 0.2.2 제출 · 설치본·winget skip) — T-80 기기 목록 교환 + 갱신 버튼 · T-71 · T-79(동기화 에코) · V3 = test 407 · check-3os ✓ · Release 2.34 MB · E2E ⏸ 보류(사용자 문서 창 열림) · 예상 = choco 포터블 go · 설치본·winget skip → [journal](journal/2026-10-15.md)
 
 ## 2026-10-15 (1차 · win) — 동기화 3대 이상 릴레이 경유 기기 발견 안 됨(dyty가 이 PC 목록에 없음) — 원인 = 페어링 랑데부가 온라인 기기 없을 때만 · RID 최신 등록자 연결 → 2대 한계 · 수정 착수 = `Peers` 힌트 · 기기 목록 갱신 버튼 · 랑데부 상시(T-80) → [journal](journal/2026-10-15.md)

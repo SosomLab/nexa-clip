@@ -206,9 +206,124 @@ pub fn downscale_rgba(w: u32, h: u32, data: &[u8], max_edge: u32) -> Option<(u32
     Some((tw, th, out))
 }
 
+/// ★ RGBA → PNG(무압축 · 10-17) — 트레이 메뉴 순번 배지처럼 **작은 그림을 바이트로 건네야 하는 곳**용
+/// (Linux dbusmenu `icon-data`). 외부 crate 0(DR-8): zlib **stored 블록**(압축 없음)이라 크기 = 원본 + 수십 B.
+/// 큰 그림에는 쓰지 않는다(상한 256×256 — 초과·치수 불일치는 `None`). 디코더는 어디서나 읽는다(표준 PNG).
+#[must_use]
+pub fn png_encode_rgba(w: u32, h: u32, rgba: &[u8]) -> Option<Vec<u8>> {
+    const SIDE_MAX: u32 = 256;
+    if w == 0 || h == 0 || w > SIDE_MAX || h > SIDE_MAX {
+        return None;
+    }
+    let (wu, hu) = (w as usize, h as usize);
+    if rgba.len() != wu * hu * 4 {
+        return None;
+    }
+    // 필터 바이트(0 = None) + 행 — zlib stored 블록(최대 65535B)으로 감싼다.
+    let stride = wu * 4 + 1;
+    let mut raw = Vec::with_capacity(stride * hu);
+    for row in rgba.chunks_exact(wu * 4) {
+        raw.push(0);
+        raw.extend_from_slice(row);
+    }
+    let mut z = vec![0x78, 0x01]; // CMF·FLG(무압축 수준)
+    let mut chunks = raw.chunks(65535).peekable();
+    while let Some(blk) = chunks.next() {
+        let last = u8::from(chunks.peek().is_none());
+        let len = blk.len() as u16;
+        z.push(last);
+        z.extend_from_slice(&len.to_le_bytes());
+        z.extend_from_slice(&(!len).to_le_bytes());
+        z.extend_from_slice(blk);
+    }
+    z.extend_from_slice(&adler32(&raw).to_be_bytes());
+
+    let mut out = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
+    let mut ihdr = Vec::with_capacity(13);
+    ihdr.extend_from_slice(&w.to_be_bytes());
+    ihdr.extend_from_slice(&h.to_be_bytes());
+    ihdr.extend_from_slice(&[8, 6, 0, 0, 0]); // 8비트 · RGBA · deflate · 필터 0 · 비인터레이스
+    png_chunk(&mut out, b"IHDR", &ihdr);
+    png_chunk(&mut out, b"IDAT", &z);
+    png_chunk(&mut out, b"IEND", &[]);
+    Some(out)
+}
+
+/// PNG 청크 하나(길이 · 종류 · 데이터 · CRC32(종류+데이터)).
+fn png_chunk(out: &mut Vec<u8>, kind: &[u8; 4], data: &[u8]) {
+    out.extend_from_slice(&(data.len() as u32).to_be_bytes());
+    let start = out.len();
+    out.extend_from_slice(kind);
+    out.extend_from_slice(data);
+    let crc = crc32(&out[start..]);
+    out.extend_from_slice(&crc.to_be_bytes());
+}
+
+/// CRC-32(IEEE · PNG) — 표 없이 비트 단위(작은 입력 전용).
+#[must_use]
+pub fn crc32(data: &[u8]) -> u32 {
+    let mut c = 0xFFFF_FFFFu32;
+    for &b in data {
+        c ^= u32::from(b);
+        for _ in 0..8 {
+            c = if c & 1 != 0 {
+                0xEDB8_8320 ^ (c >> 1)
+            } else {
+                c >> 1
+            };
+        }
+    }
+    !c
+}
+
+/// Adler-32(zlib 꼬리).
+fn adler32(data: &[u8]) -> u32 {
+    let (mut a, mut b) = (1u32, 0u32);
+    for &x in data {
+        a = (a + u32::from(x)) % 65521;
+        b = (b + a) % 65521;
+    }
+    (b << 16) | a
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// ★ 무압축 PNG 인코더(10-17) — 서명·IHDR 치수·청크 CRC·stored 블록 길이·adler가 규격대로.
+    #[test]
+    fn png_encode_stored_is_well_formed() {
+        assert_eq!(crc32(b"IEND"), 0xAE42_6082, "IEND 청크의 알려진 CRC");
+        let (w, h) = (3u32, 2u32);
+        let rgba: Vec<u8> = (0..(w * h * 4) as u8).collect();
+        let png = png_encode_rgba(w, h, &rgba).expect("인코드");
+        assert_eq!(png_dimensions(&png), Some((w, h)));
+        // IDAT = 길이(4) 종류(4) zlib CRC(4): zlib = 헤더 2 + 블록 머리 5 + raw + adler 4.
+        let raw_len = (w as usize * 4 + 1) * h as usize;
+        let idat_off = 8 + 4 + 4 + 13 + 4;
+        let len = u32::from_be_bytes(png[idat_off..idat_off + 4].try_into().unwrap()) as usize;
+        assert_eq!(len, 2 + 5 + raw_len + 4);
+        assert_eq!(&png[idat_off + 4..idat_off + 8], b"IDAT");
+        let z = &png[idat_off + 8..idat_off + 8 + len];
+        assert_eq!(z[2], 1, "마지막 stored 블록");
+        assert_eq!(u16::from_le_bytes([z[3], z[4]]) as usize, raw_len);
+        assert_eq!(u16::from_le_bytes([z[5], z[6]]), !(raw_len as u16));
+        let crc = u32::from_be_bytes(
+            png[idat_off + 8 + len..idat_off + 12 + len]
+                .try_into()
+                .unwrap(),
+        );
+        assert_eq!(crc, crc32(&png[idat_off + 4..idat_off + 8 + len]));
+        assert!(
+            png.ends_with(&[0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82]),
+            "IEND"
+        );
+        assert!(png_encode_rgba(2, 2, &[0; 3]).is_none(), "치수 불일치 거절");
+        assert!(
+            png_encode_rgba(300, 1, &[0; 1200]).is_none(),
+            "상한 초과 거절"
+        );
+    }
 
     fn png_header(w: u32, h: u32) -> Vec<u8> {
         let mut d = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];

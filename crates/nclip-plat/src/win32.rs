@@ -76,3 +76,31 @@ extern "system" {
 extern "system" {
     pub(crate) fn GetModuleHandleW(name: *const u16) -> HANDLE;
 }
+
+/// `BITMAPINFOHEADER` — emf(EMF 래스터)와 tray(메뉴 배지 DIB)가 함께 쓴다(10-17 · 겹침 방지로 여기로).
+#[repr(C)]
+pub(crate) struct BitmapInfoHeader {
+    pub(crate) bi_size: u32,
+    pub(crate) bi_width: i32,
+    pub(crate) bi_height: i32,
+    pub(crate) bi_planes: u16,
+    pub(crate) bi_bit_count: u16,
+    pub(crate) bi_compression: u32,
+    pub(crate) bi_size_image: u32,
+    pub(crate) bi_x_ppm: i32,
+    pub(crate) bi_y_ppm: i32,
+    pub(crate) bi_clr_used: u32,
+    pub(crate) bi_clr_important: u32,
+}
+
+#[link(name = "gdi32")]
+extern "system" {
+    pub(crate) fn CreateDIBSection(
+        hdc: HANDLE,
+        bmi: *const BitmapInfoHeader,
+        usage: u32,
+        bits: *mut *mut core::ffi::c_void,
+        section: HANDLE,
+        offset: u32,
+    ) -> HANDLE;
+}

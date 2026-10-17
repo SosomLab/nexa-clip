@@ -46,6 +46,11 @@ pub enum TrayEvent {
     Quit,
     /// ★ 설정 창 열기(메뉴 "설정" — 09-01 사용자 요청).
     Settings,
+    /// ★ OS가 세션을 끝낸다(Windows 로그오프·시스템 종료 `WM_ENDSESSION` · 10-17 T-75) — 되돌릴 수 없는 통지.
+    ///   호스트는 **지금 이 자리에서** 설정·저장소를 마감하고 [`end_session_done`]을 부른다. 트레이 스레드가 그동안
+    ///   wndproc 안에서 짧게 기다리므로(OS는 wndproc가 돌아오면 바로 프로세스를 끝낼 수 있다) 루프 종료 뒤 코드에
+    ///   미루면 안 된다. 다른 OS는 보내지 않는다.
+    EndSession,
 }
 
 /// 트레이 표시 내용 — 호스트가 만들어 넘긴다(이 모듈은 앱 도메인을 모른다).
@@ -68,6 +73,12 @@ pub struct TrayContent {
     pub quit_label: String,
     /// ★ "설정" 라벨(i18n — 호스트 주입).
     pub settings_label: String,
+    /// ★ 최근 항목 순번 배지(10-17 사용자 — "순번도 같이 · 이미지 공간 활용") — `recent`와 같은 순서의
+    ///   정사각 RGBA(straight · 한 변 [`Self::badge_side`]). 호스트가 그려 넘기고 OS 어댑터가 메뉴 아이콘 칸에
+    ///   붙인다(Windows `hbmpItem` · mac `NSMenuItem.image` · Linux dbusmenu `icon-data`). 비면 배지 없음.
+    pub recent_badges: Vec<Vec<u8>>,
+    /// 배지 한 변(px) — Windows는 메뉴 DPI 실측 크기 · mac·Linux는 셸이 줄여 그린다(32 권장).
+    pub badge_side: u32,
     /// ★ 최근 항목 라벨(0 = 최신 · T-18e) — 클릭 시 [`TrayEvent::Recent`]로 돌아온다.
     ///   개수·글자수 절단은 호스트 몫(이 모듈은 목록 정책을 모른다).
     pub recent: Vec<String>,
@@ -99,6 +110,69 @@ pub fn take_activation_token() -> Option<String> {
     #[cfg(not(target_os = "linux"))]
     {
         None
+    }
+}
+
+/// ★ 세션 종료 랑데부(10-17 · T-75) — [`TrayEvent::EndSession`]을 받은 호스트가 저장을 마쳤다고 알린다.
+///
+/// Windows: 트레이 스레드가 `WM_ENDSESSION` 처리 안에서 이 신호를 **상한 시간까지** 기다린 뒤 OS에 돌아간다
+/// (돌아가면 프로세스가 끝날 수 있다 — 저장은 그 전에). 다른 OS에서는 부르더라도 아무 일도 없다.
+pub fn end_session_done() {
+    endsession::done();
+}
+
+/// 세션 종료 랑데부 구현 — 플래그 + 조건 변수(외부 crate 0 · DR-8). 프로세스당 한 번만 의미 있다.
+mod endsession {
+    use std::sync::{Condvar, Mutex};
+    use std::time::{Duration, Instant};
+
+    static DONE: Mutex<bool> = Mutex::new(false);
+    static CV: Condvar = Condvar::new();
+
+    pub(super) fn done() {
+        if let Ok(mut g) = DONE.lock() {
+            *g = true;
+        }
+        CV.notify_all();
+    }
+
+    /// 호스트의 저장 완료를 `timeout`까지 기다린다 — 반환 = 시간 안에 왔는가.
+    /// 상한을 두는 이유: UI 스레드가 막혀 있어도 OS 종료를 붙잡지 않는다(끝내지 못한 저장은 포기).
+    #[cfg_attr(not(windows), allow(dead_code))]
+    pub(super) fn wait(timeout: Duration) -> bool {
+        let deadline = Instant::now() + timeout;
+        let Ok(mut g) = DONE.lock() else {
+            return false;
+        };
+        while !*g {
+            let now = Instant::now();
+            if now >= deadline {
+                return false;
+            }
+            match CV.wait_timeout(g, deadline - now) {
+                Ok((guard, _)) => g = guard,
+                Err(_) => return false,
+            }
+        }
+        true
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        /// 신호 전에는 상한까지 기다리다 false · 신호 뒤에는 바로 true(다른 스레드에서 와도).
+        #[test]
+        fn wait_times_out_then_wakes_on_done() {
+            let t0 = Instant::now();
+            assert!(!wait(Duration::from_millis(30)), "신호 전 = 시간 초과");
+            assert!(t0.elapsed() >= Duration::from_millis(30));
+            let waiter = std::thread::spawn(|| wait(Duration::from_secs(5)));
+            std::thread::sleep(Duration::from_millis(20));
+            super::super::end_session_done();
+            assert!(waiter.join().expect("스레드"), "신호 뒤 = 깨어남");
+            assert!(wait(Duration::from_millis(1)), "한 번 끝났으면 즉시 true");
+        }
     }
 }
 
@@ -320,6 +394,14 @@ mod sni {
                 if let Some(label) = c.recent.get(idx) {
                     // dbusmenu는 `_`를 니모닉으로 먹는다 — `__`로 이스케이프.
                     put("label", ov(label.replace('_', "__")));
+                }
+                // ★ 순번 배지(10-17) — `icon-data`(PNG 바이트 · 셸이 자기 아이콘 크기로 줄인다).
+                if let Some(png) = c
+                    .recent_badges
+                    .get(idx)
+                    .and_then(|b| nclip_core::img::png_encode_rgba(c.badge_side, c.badge_side, b))
+                {
+                    put("icon-data", ov(png));
                 }
             }
             _ => {}
@@ -796,9 +878,10 @@ mod win {
 
     // ★ 겹치는 Win32 선언은 [`crate::win32`] 한 곳에만 — 핸들 규약도 `isize`로 통일.
     use crate::win32::{
-        CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, GetModuleHandleW,
-        PostMessageW, PostQuitMessage, RegisterClassW, SetForegroundWindow, TranslateMessage,
-        HANDLE, HWND, LPARAM, LRESULT, MSG, WNDCLASSW, WPARAM,
+        BitmapInfoHeader, CreateDIBSection, CreateWindowExW, DefWindowProcW, DispatchMessageW,
+        GetMessageW, GetModuleHandleW, PostMessageW, PostQuitMessage, RegisterClassW,
+        SetForegroundWindow, TranslateMessage, HANDLE, HWND, LPARAM, LRESULT, MSG, WNDCLASSW,
+        WPARAM,
     };
 
     #[repr(C)]
@@ -827,6 +910,23 @@ mod win {
         balloon_icon: HANDLE,
     }
 
+    /// `MENUITEMINFOW` — 메뉴 항목 비트맵(`hbmpItem`) 지정용(10-17 순번 배지).
+    #[repr(C)]
+    struct MenuItemInfoW {
+        cb_size: u32,
+        f_mask: u32,
+        f_type: u32,
+        f_state: u32,
+        w_id: u32,
+        h_submenu: HANDLE,
+        hbmp_checked: HANDLE,
+        hbmp_unchecked: HANDLE,
+        dw_item_data: usize,
+        dw_type_data: *mut u16,
+        cch: u32,
+        hbmp_item: HANDLE,
+    }
+
     #[repr(C)]
     struct IconInfo {
         f_icon: i32,
@@ -852,6 +952,8 @@ mod win {
             rect: *const core::ffi::c_void,
         ) -> i32;
         fn DestroyMenu(menu: HANDLE) -> i32;
+        fn SetMenuItemInfoW(menu: HANDLE, item: u32, by_pos: i32, mii: *const MenuItemInfoW)
+            -> i32;
         fn GetCursorPos(pt: *mut Point) -> i32;
         fn RegisterWindowMessageW(name: *const u16) -> u32;
         fn CreateIconIndirect(info: *const IconInfo) -> HANDLE;
@@ -882,6 +984,13 @@ mod win {
     const WM_RBUTTONUP: u32 = 0x0205;
     const WM_DESTROY: u32 = 0x0002;
     const WM_HOTKEY: u32 = 0x0312;
+    /// ★ 세션 종료(10-17 · T-75) — 로그오프·시스템 종료는 GUI 프로세스에 콘솔 신호가 아니라 **이 두 메시지**로 온다
+    ///   (`SetConsoleCtrlHandler`의 LOGOFF/SHUTDOWN은 콘솔 프로세스 몫 · 이 앱은 `windows` 서브시스템).
+    ///   메시지 전용 창(`HWND_MESSAGE`)은 브로드캐스트를 못 받으므로 보이지 않는 **일반 창**인 트레이 창이 맡는다.
+    const WM_QUERYENDSESSION: u32 = 0x0011;
+    const WM_ENDSESSION: u32 = 0x0016;
+    /// `WM_ENDSESSION` 안에서 호스트 저장 완료를 기다리는 상한 — OS가 "응답 없음"으로 보기 전(5초 안팎)에 돌아간다.
+    const ENDSESSION_WAIT: std::time::Duration = std::time::Duration::from_secs(3);
     /// ★ 전역 단축키(09-04 설정 배선) — 목록은 [`super::hotkeys`] · id = 동작 id(1..=8) · 재등록은 `WM_APP_HOTKEY`.
     const HOTKEY_ID_MAX: i32 = 8;
     /// 재등록 방지(Windows 10 1607+) — 키 반복으로 이벤트가 쏟아지지 않게.
@@ -901,6 +1010,8 @@ mod win {
     const MF_STRING: u32 = 0x0000;
     const MF_GRAYED: u32 = 0x0001;
     const MF_SEPARATOR: u32 = 0x0800;
+    /// `MENUITEMINFOW.fMask` — `hbmpItem`만 바꾼다(10-17 순번 배지).
+    const MIIM_BITMAP: u32 = 0x0080;
     const TPM_RETURNCMD: u32 = 0x0100;
     const TPM_RIGHTBUTTON: u32 = 0x0002;
     const CMD_OPEN: usize = 1;
@@ -1057,18 +1168,64 @@ mod win {
     }
 
     /// 우클릭 메뉴 — 이름 헤더(비활성) · ★ **최근 항목**(T-18e) · 열기 · 종료.
+    /// ★ 순번 배지 RGBA(straight) → 메뉴 항목용 32bpp **DIB 섹션**(톱다운 · 프리멀티플라이드 BGRA — Vista+ 메뉴가
+    ///   알파를 그대로 그리는 조건 · 10-17). 실패 = 0. 호출자가 메뉴를 지운 뒤 `DeleteObject`.
+    fn badge_bitmap(side: u32, rgba: &[u8]) -> HANDLE {
+        let n = (side as usize) * (side as usize);
+        if side == 0 || side > 256 || rgba.len() != n * 4 {
+            return 0;
+        }
+        let bmi = BitmapInfoHeader {
+            bi_size: core::mem::size_of::<BitmapInfoHeader>() as u32,
+            bi_width: side as i32,
+            bi_height: -(side as i32), // 톱다운.
+            bi_planes: 1,
+            bi_bit_count: 32,
+            bi_compression: 0, // BI_RGB.
+            bi_size_image: 0,
+            bi_x_ppm: 0,
+            bi_y_ppm: 0,
+            bi_clr_used: 0,
+            bi_clr_important: 0,
+        };
+        let mut bits: *mut core::ffi::c_void = core::ptr::null_mut();
+        // SAFETY: 구조체는 완전 초기화 · 출력 포인터는 로컬 · 실패는 0/널.
+        let bmp = unsafe {
+            CreateDIBSection(0, &bmi, 0 /* DIB_RGB_COLORS */, &mut bits, 0, 0)
+        };
+        if bmp == 0 || bits.is_null() {
+            if bmp != 0 {
+                // SAFETY: 방금 만든 핸들.
+                unsafe { DeleteObject(bmp) };
+            }
+            return 0;
+        }
+        let mut out = Vec::with_capacity(n * 4);
+        for px in rgba.chunks_exact(4) {
+            let a = u32::from(px[3]);
+            let pm = |c: u8| ((u32::from(c) * a + 127) / 255) as u8;
+            out.extend_from_slice(&[pm(px[2]), pm(px[1]), pm(px[0]), px[3]]);
+        }
+        // SAFETY: DIB 섹션 메모리는 side² × 4 바이트 — 같은 길이로 채운다.
+        unsafe { core::ptr::copy_nonoverlapping(out.as_ptr(), bits.cast::<u8>(), n * 4) };
+        bmp
+    }
+
     fn show_menu(hwnd: HWND) {
         let Some(state) = STATE.get() else { return };
-        let (name, open_label, settings_label, quit_label, recent) = match state.lock() {
-            Ok(g) => (
-                g.name.clone(),
-                g.open_label.clone(),
-                g.settings_label.clone(),
-                g.quit_label.clone(),
-                g.recent.clone(),
-            ),
-            Err(_) => return,
-        };
+        let (name, open_label, settings_label, quit_label, recent, badges, badge_side) =
+            match state.lock() {
+                Ok(g) => (
+                    g.name.clone(),
+                    g.open_label.clone(),
+                    g.settings_label.clone(),
+                    g.quit_label.clone(),
+                    g.recent.clone(),
+                    g.recent_badges.clone(),
+                    g.badge_side,
+                ),
+                Err(_) => return,
+            };
         let name_w = wide(&name);
         let open_w = wide(&open_label);
         let settings_w = wide(&settings_label);
@@ -1087,9 +1244,36 @@ mod win {
                 AppendMenuW(menu, MF_SEPARATOR, 0, core::ptr::null());
             }
             // ★ 최근 항목 — 최신이 위(0). 클릭 = 그 항목을 클립보드로.
+            //   ★ 순번 배지(10-17 사용자) — 아이콘 칸(`hbmpItem`)에 호스트가 그린 번호 그림. 메뉴를 지운 뒤 비트맵도 지운다.
+            let mut bitmaps: Vec<HANDLE> = Vec::new();
             if !recent_w.is_empty() {
+                let first_pos = if name.is_empty() { 0u32 } else { 2 };
                 for (i, w) in recent_w.iter().enumerate() {
                     AppendMenuW(menu, MF_STRING, CMD_RECENT_BASE + i, w.as_ptr());
+                    let Some(rgba) = badges.get(i) else { continue };
+                    let bmp = badge_bitmap(badge_side, rgba);
+                    if bmp == 0 {
+                        continue;
+                    }
+                    let mii = MenuItemInfoW {
+                        cb_size: core::mem::size_of::<MenuItemInfoW>() as u32,
+                        f_mask: MIIM_BITMAP,
+                        f_type: 0,
+                        f_state: 0,
+                        w_id: 0,
+                        h_submenu: 0,
+                        hbmp_checked: 0,
+                        hbmp_unchecked: 0,
+                        dw_item_data: 0,
+                        dw_type_data: core::ptr::null_mut(),
+                        cch: 0,
+                        hbmp_item: bmp,
+                    };
+                    if SetMenuItemInfoW(menu, first_pos + i as u32, 1, &mii) == 0 {
+                        DeleteObject(bmp);
+                    } else {
+                        bitmaps.push(bmp);
+                    }
                 }
                 AppendMenuW(menu, MF_SEPARATOR, 0, core::ptr::null());
             }
@@ -1108,6 +1292,9 @@ mod win {
                 core::ptr::null(),
             );
             DestroyMenu(menu);
+            for b in bitmaps {
+                DeleteObject(b);
+            }
             match cmd as usize {
                 CMD_OPEN => emit(TrayEvent::Open),
                 CMD_SETTINGS => emit(TrayEvent::Settings),
@@ -1197,6 +1384,23 @@ mod win {
             }
             WM_APP_BALLOON => {
                 show_balloon(hwnd);
+                0
+            }
+            // ★ 로그오프·종료 문의 — 막지 않는다(TRUE). 실제 마감은 WM_ENDSESSION에서.
+            WM_QUERYENDSESSION => 1,
+            // ★ 세션이 정말 끝난다(wParam ≠ 0) — 호스트에 알리고 저장 완료를 짧게 기다린 뒤 돌아간다.
+            //   wParam == 0(취소됨)이면 아무 일도 없다. 이 뒤 OS가 프로세스를 끝내므로 루프 종료 뒤 코드는 믿지 않는다.
+            WM_ENDSESSION => {
+                if w != 0 {
+                    emit(TrayEvent::EndSession);
+                    let saved = super::endsession::wait(ENDSESSION_WAIT);
+                    if !saved {
+                        eprintln!(
+                            "세션 종료: 저장 마감 대기 {}초 초과 — 그대로 종료합니다",
+                            ENDSESSION_WAIT.as_secs()
+                        );
+                    }
+                }
                 0
             }
             WM_DESTROY => {
@@ -1442,7 +1646,8 @@ mod mac {
     );
 
     /// RGBA(straight) → NSImage(18×18pt 표시 · 원본 해상도 유지 = 레티나 2x).
-    fn image_from_rgba(rgba: &[u8], side: u32) -> Option<Retained<NSImage>> {
+    /// RGBA(straight · 한 변 `side`px) → `NSImage`(표시 크기 `pt`pt — 상태 막대 18 · 메뉴 배지 16 · 10-17).
+    fn image_from_rgba(rgba: &[u8], side: u32, pt: f64) -> Option<Retained<NSImage>> {
         if side == 0 || rgba.len() != (side as usize) * (side as usize) * 4 {
             return None;
         }
@@ -1466,7 +1671,7 @@ mod mac {
                 return None;
             }
             std::ptr::copy_nonoverlapping(rgba.as_ptr(), data, rgba.len());
-            let img = NSImage::initWithSize(NSImage::alloc(), NSSize::new(18.0, 18.0));
+            let img = NSImage::initWithSize(NSImage::alloc(), NSSize::new(pt, pt));
             img.addRepresentation(&rep);
             Some(img)
         }
@@ -1479,6 +1684,7 @@ mod mac {
         title: &str,
         action: objc2::runtime::Sel,
         tag: isize,
+        image: Option<Retained<NSImage>>,
     ) -> Retained<NSMenuItem> {
         let it = NSMenuItem::new(mtm);
         unsafe {
@@ -1486,6 +1692,10 @@ mod mac {
             it.setAction(Some(action));
             it.setTarget(Some(target));
             let _: () = msg_send![&*it, setTag: tag];
+            // ★ 순번 배지(10-17) — 최근 항목만 그림을 단다.
+            if let Some(img) = image {
+                it.setImage(Some(&img));
+            }
         }
         it
     }
@@ -1494,7 +1704,7 @@ mod mac {
     fn apply(mtm: MainThreadMarker, state: &State, content: &TrayContent) {
         unsafe {
             if let Some(btn) = state.item.button(mtm) {
-                if let Some(img) = image_from_rgba(&content.rgba, content.side) {
+                if let Some(img) = image_from_rgba(&content.rgba, content.side, 18.0) {
                     btn.setImage(Some(&img));
                 }
                 btn.setToolTip(Some(&NSString::from_str(&content.tooltip)));
@@ -1508,12 +1718,17 @@ mod mac {
             menu.addItem(&NSMenuItem::separatorItem(mtm));
             for (i, label) in content.recent.iter().enumerate() {
                 let Ok(tag) = isize::try_from(i) else { break };
+                let badge = content
+                    .recent_badges
+                    .get(i)
+                    .and_then(|b| image_from_rgba(b, content.badge_side, 16.0));
                 menu.addItem(&menu_item(
                     mtm,
                     &state.target,
                     label,
                     sel!(nclipTrayRecent:),
                     tag,
+                    badge,
                 ));
             }
             if !content.recent.is_empty() {
@@ -1525,6 +1740,7 @@ mod mac {
                 &content.open_label,
                 sel!(nclipTrayOpen:),
                 0,
+                None,
             ));
             menu.addItem(&menu_item(
                 mtm,
@@ -1532,6 +1748,7 @@ mod mac {
                 &content.settings_label,
                 sel!(nclipTraySettings:),
                 0,
+                None,
             ));
             menu.addItem(&NSMenuItem::separatorItem(mtm));
             menu.addItem(&menu_item(
@@ -1540,6 +1757,7 @@ mod mac {
                 &content.quit_label,
                 sel!(nclipTrayQuit:),
                 0,
+                None,
             ));
         }
     }

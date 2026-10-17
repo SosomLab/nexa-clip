@@ -222,6 +222,9 @@ pub(crate) enum ShellEvent {
     SystemTheme,
     /// ★ 트레이 메뉴 "설정"(09-01) — 메인창 거치지 않고 바로 설정 창.
     OpenSettings,
+    /// ★ OS 세션 종료(Windows 로그오프·시스템 종료 — 10-17 T-75) — 트레이 스레드가 `WM_ENDSESSION` 안에서
+    ///   기다리는 동안 **여기서** 저장을 마감하고 `end_session_done()`을 부른다(루프 종료 뒤 코드는 못 돌 수 있다).
+    EndSession,
 }
 
 /// 툴팁 문자열 — 보관 수를 함께 보여 준다(감시가 실제로 도는 것이 보인다).
@@ -293,8 +296,19 @@ enum Corner {
 ///
 /// 녹·파랑이 함께 = 릴레이와 LAN 직결이 둘 다 살아 있다. 종전에는 LAN 직결만으로는 아무 점도 없어
 /// "동기화되는데 표시가 없다"(10-03 사용자)였고, 좌하단 파랑은 파일 전송 표식이었다(우하단 주황으로 옮김).
-fn content(held: usize, recent: Vec<String>, sync_on: bool, lan_on: bool) -> TrayContent {
+fn content(
+    font: &nexa_gfx::Font,
+    badge_side: u32,
+    held: usize,
+    recent: Vec<String>,
+    sync_on: bool,
+    lan_on: bool,
+) -> TrayContent {
     let lang = current_lang();
+    // ★ 순번 배지(10-17 사용자) — 최근 항목 수만큼(1부터) · 메뉴 아이콘 칸에 붙는다(`badge.rs`).
+    let recent_badges = (1..=recent.len())
+        .map(|n| crate::badge::render(font, n, badge_side))
+        .collect();
     let mut rgba = icon_rgba();
     if sync_on {
         overlay_dot(
@@ -342,6 +356,8 @@ fn content(held: usize, recent: Vec<String>, sync_on: bool, lan_on: bool) -> Tra
         quit_label: tr(lang, Msg::TrayQuit).to_string(),
         settings_label: tr(lang, Msg::TraySettings).to_string(),
         recent,
+        recent_badges,
+        badge_side,
     }
 }
 
@@ -507,6 +523,10 @@ struct Shell {
     /// ★ 원격 항목 에코 차단(09-04) — 방금 적용한 항목의 페이로드 지문·시각. 감시가 우리
     ///   게시를 다시 잡아 승격시켜도 **되돌려 보내지 않는다**(핑퐁 방지).
     sync_skip: Option<(u64, std::time::Instant)>,
+    /// ★ 종료 마감을 이미 했는가(10-17 · T-75) — 세션 종료 경로에서 먼저 했으면 루프 종료 뒤 한 번 더 하지 않는다.
+    persisted: bool,
+    /// ★ 트레이 메뉴 순번 배지 한 변(px · 10-17) — 기동 때 주 모니터 배율로 정한다(`badge::side_for`).
+    badge_side: u32,
     /// 루프에 되돌려 보내는 통로(`PasteAfterClose`).
     proxy: winit::event_loop::EventLoopProxy<ShellEvent>,
     /// ★ 창 레벨(최상위)이 지금 창 백엔드에서 실제로 먹는가 — Wayland 네이티브 창이면
@@ -553,6 +573,18 @@ fn cached_reps(local: &[String], as_: PasteAs) -> Vec<RawRep> {
 
 /// ★ Excel 셀 범위 그림 상한(10-04 사용자 — "설정으로 추가") — 설정 3키를 코어에 넘긴다.
 /// 못 읽는 값·0은 기본값으로(그림을 통째로 끄는 스위치가 아니다).
+/// ★ 항목 용량 상한(T-81 · 10-17) — 설정 `cap.max_item_mb`(기본 32 · 0 = 무제한)를 core 전역에 싣는다.
+///   Windows 감시의 2단 읽기(복사 전 판정)와 셸의 [`nclip_core::capture::select_reps`]가 같은 값을 본다.
+fn apply_item_cap(conf: &Settings) -> u64 {
+    let mb: u64 = conf
+        .state
+        .get("cap.max_item_mb")
+        .parse()
+        .unwrap_or(nclip_core::capture::ITEM_CAP_DEFAULT_MB);
+    nclip_core::capture::set_item_cap_bytes(mb << 20);
+    mb
+}
+
 fn apply_cell_picture_limits(conf: &Settings) {
     use nclip_core::capture::{set_cell_picture_limits, CellPictureLimits};
     let def = CellPictureLimits::default();
@@ -682,9 +714,53 @@ fn publish_remote(reps: Vec<RawRep>) {
 }
 
 impl Shell {
+    /// ★ 종료 마감(한 번만) — 설정 강제 수거 + `sec.clear_on_quit`. 정상 종료는 루프가 끝난 뒤, OS 세션 종료
+    ///   (T-75)는 `WM_ENDSESSION` 처리 중에 부른다 — 어느 쪽이 먼저든 두 번째는 아무 일도 하지 않는다.
+    ///   (저장소 레코드는 `add`/`touch`/`remove` 때마다 동기 기록이라 따로 마감할 것이 없다.)
+    fn finish_persist(&mut self) {
+        if self.persisted {
+            return;
+        }
+        self.persisted = true;
+        // ★ 종료 직전 강제 수거 — "바꾸고 바로 종료하면 안 저장됨"을 막는다.
+        if self.app.conf.flush() {
+            println!("설정 저장: {}", self.app.conf.path().display());
+        }
+        // ★ `sec.clear_on_quit` — 켜져 있으면 종료 때 기록을 지운다(세그먼트·blob 실파일).
+        if self.app.conf.state.get("sec.clear_on_quit") == "on" {
+            self.store.wipe();
+            println!("기록 비움: sec.clear_on_quit = on");
+        }
+    }
+
+    /// ★ 핀 지정/해제(메인창 · 10-17부터 팝업도) — 이력 플래그 · 섬네일 캐시 보존 · 저장소 재기록. 반환 = 바뀜.
+    fn toggle_pin(&mut self, id: u64) -> bool {
+        let now = self
+            .history
+            .get_by_id(id)
+            .map(|it| !it.pinned)
+            .unwrap_or(false);
+        if !self.history.set_pinned(id, now) {
+            return false;
+        }
+        // ★ 고정 = 섬네일 캐시 축출 제외(DR-42 ①).
+        self.thumbs.borrow_mut().set_keep(id, now);
+        // ★ 핀 영속 = 같은 id Add 재기록(재생 시 교체 — docs/28 §4).
+        if self.history.get_by_id(id).is_some() {
+            self.store_add(id);
+        }
+        true
+    }
+
     /// 이력이 변했다 — 트레이 메뉴·툴팁을 새 내용으로.
     fn refresh_tray(&self) {
         self.tray.update(content(
+            &self.font,
+            if self.badge_side == 0 {
+                crate::badge::side_for(1.0)
+            } else {
+                self.badge_side
+            },
             self.history.len(),
             self.history.recent_labels(self.tray_n),
             self.sync_on == Some(true),
@@ -1498,6 +1574,34 @@ impl Shell {
         //   (게이트·상한·메뉴 개수·자동 붙여넣기 — 재시작 불요).
         self.gate = Gate::from_state(&self.app.conf);
         apply_cell_picture_limits(&self.app.conf);
+        // ★ 항목 용량 상한(T-81 · docs/27 §7 C-1~C-3) — Windows는 감시가 읽기 전에 이미 걸렀고, mac·Linux·수신 항목은
+        //   여기가 첫 적용. 필수(대표·HTML·RTF·평문·파일·썸네일 원천)는 남기고 큰 것부터 버린다 · 버린 사실은 로그에
+        //   (C-3 항목 표시는 D-34 확정과 함께 · 후속).
+        {
+            let cap_mb = apply_item_cap(&self.app.conf);
+            let sel = nclip_core::capture::select_reps(&snap.reps, cap_mb << 20);
+            if !sel.dropped.is_empty() {
+                let names: Vec<&str> = sel
+                    .dropped
+                    .iter()
+                    .map(|&i| snap.reps[i].format.as_str())
+                    .collect();
+                println!(
+                    "캡처: 용량 상한 {cap_mb}MB — 표현 {}개 생략({} KB · {:?}){}",
+                    sel.dropped.len(),
+                    sel.dropped_bytes >> 10,
+                    names,
+                    if sel.over_budget {
+                        " · 필수만으로도 초과(그대로 둠)"
+                    } else {
+                        ""
+                    }
+                );
+                for &i in sel.dropped.iter().rev() {
+                    snap.reps.remove(i);
+                }
+            }
+        }
         self.history.set_cap(
             self.app
                 .conf
@@ -1618,7 +1722,9 @@ impl Shell {
         }
         // ★ 재적재로 되돌아온 우리 게시도 여기로 온다 — 승격(맨 위로)이
         //   곧 에코 처리다(항목이 늘지 않는다).
-        let pushed: Pushed = self.history.push(&snap, kind, label, thumb);
+        // ★ 소유권째 넘긴다(T-81) — 표현 바이트 복제 0(종전 `push(&snap)`은 한 벌을 더 만들었다).
+        let n_reps = snap.reps.len();
+        let pushed: Pushed = self.history.push_owned(*snap, kind, label, thumb);
         self.index_front();
         // ★ push 판정 가시화(09-04 mac 실기 "더블클릭 승격 안 됨" 진단) — 에코가
         //   승격(Promoted)으로 흡수됐는지 새 항목(New)으로 늘었는지 로그로 판정한다.
@@ -1627,7 +1733,7 @@ impl Shell {
                 "이력: {:?} — {} (표현 {}개)",
                 pushed,
                 log_item(front.kind, &front.label),
-                snap.reps.len()
+                n_reps
             );
         }
         // ★ 파일 내용 공유(09-12 · DR-30) — 내 파일 항목은 서빙 가능 경로로 제안하고,
@@ -1696,14 +1802,29 @@ impl Shell {
                 .as_deref()
                 .is_some_and(|s| s.starts_with(REMOTE_MARK))
         });
-        if remote.is_none() && !front_remote {
-            self.maybe_broadcast(&snap);
+        // ★ 전파용 스냅숏(T-81) — `push_owned`가 표현을 이력으로 옮겼으니 **맨 앞 항목에서 다시 꾸린다**. 피어가 있을
+        //   때만(대부분의 복사는 여기서 끝) · 승격된 옛 항목은 냉 본문이 내려가 있을 수 있어 먼저 적재한다 · 복제는 종전
+        //   (워커에 넘기던 한 벌)과 같은 한 번.
+        if remote.is_none() && !front_remote && crate::sync_cmd::has_peers() {
+            if let Some(fid) = self.history.get(0).map(|f| f.id) {
+                if self.ensure_loaded(fid) {
+                    if let Some(front) = self.history.get(0) {
+                        let view = ClipSnapshot {
+                            reps: front.reps.clone(),
+                            source_app: front.source_app.clone(),
+                            concealed: false,
+                            seq: 0,
+                        };
+                        self.maybe_broadcast(view);
+                    }
+                }
+            }
         }
     }
 
     /// ★ 전파(DR-6) — 릴레이에 붙어 있고 승인된 기기가 있을 때, 휴대 페이로드로 보낸다.
     ///   방금 원격에서 받아 게시한 항목의 에코(같은 페이로드 지문)는 보내지 않는다.
-    fn maybe_broadcast(&mut self, snap: &ClipSnapshot) {
+    fn maybe_broadcast(&mut self, snap: ClipSnapshot) {
         // 릴레이 연결 여부로 막지 않는다(09-04 LAN 직결) — 승인·온라인 피어가 없으면 broadcast가 0을 돌려준다.
         if !crate::sync_cmd::has_peers() {
             return; // 보낼 곳이 없으면 워커도 띄우지 않는다(대부분의 복사).
@@ -1723,13 +1844,13 @@ impl Shell {
         //   같을 때**만 맞는다 — CRLF↔LF · 표현 이름(OS 철자) · 가상 머신 다리의 되쓰기 · 10초 뒤 되읽기에서는
         //   새 로컬 항목이 되어 상대에게 갔다. 여기서는 **이력을 내용으로** 본다: 같은 내용의 수신(⇄) 항목이
         //   이력에 있으면 어느 기기에서 왔든 전파하지 않는다(상대들은 이미 그 내용을 가졌다).
-        if let Some(from) = self.received_same_content(snap) {
+        if let Some(from) = self.received_same_content(&snap) {
             println!("동기화: 전파 안 함 — 같은 내용을 {from}에서 받은 항목이 이력에 있음(되돌려 보내지 않음)");
             return;
         }
-        // ★ 페이로드 생성(DIB→PNG 인코드 등)은 **워커 스레드**에서 — UI 스레드는 표현 복제만(09-04 사용자:
-        //   "네트워크 처리가 프로그램을 멈추거나 지연시키지 않게").
-        let reps = snap.reps.clone();
+        // ★ 페이로드 생성(DIB→PNG 인코드 등)은 **워커 스레드**에서 — UI 스레드는 표현을 **옮기기만**(09-04 사용자:
+        //   "네트워크 처리가 프로그램을 멈추거나 지연시키지 않게" · T-81: 복제 대신 이동).
+        let reps = snap.reps;
         let skip = self.sync_skip;
         // ★ 파일 경로 전파 정책(09-12)은 **여기(UI 스레드)**서 읽는다 — 설정 맵 조회는 값싸고,
         //   워커에 값으로 넘기면 설정 창에서 방금 바꾼 값이 다음 복사부터 바로 산다.
@@ -2459,19 +2580,7 @@ impl ApplicationHandler<ShellEvent> for Shell {
                     }
                 }
                 MainAction::TogglePin(id) => {
-                    let now = self
-                        .history
-                        .get_by_id(id)
-                        .map(|it| !it.pinned)
-                        .unwrap_or(false);
-                    if self.history.set_pinned(id, now) {
-                        // ★ 고정 = 섬네일 캐시 축출 제외(DR-42 ①).
-                        self.thumbs.borrow_mut().set_keep(id, now);
-                        // ★ 핀 영속 = 같은 id Add 재기록(재생 시 교체 — docs/28 §4).
-                        if let Some(it) = self.history.get_by_id(id) {
-                            let __sid = it.id;
-                            self.store_add(__sid);
-                        }
+                    if self.toggle_pin(id) {
                         self.main.on_history_changed(&self.history);
                     }
                 }
@@ -2491,6 +2600,13 @@ impl ApplicationHandler<ShellEvent> for Shell {
                     self.open_settings(el);
                 }
                 PopupAction::Pick { index, as_ } => self.pick(index, as_),
+                // ★ 팝업 핀 토글(10-17 사용자) — 창은 열린 채 같은 항목을 다시 고른다 · 메인창이 떠 있으면 함께 갱신.
+                PopupAction::TogglePin(pid) => {
+                    if self.toggle_pin(pid) {
+                        self.popup.on_history_changed_keep(&self.history, pid);
+                        self.main.on_history_changed(&self.history);
+                    }
+                }
                 PopupAction::PickStack { ids, as_, newline } => {
                     self.close_popup();
                     let _ = self
@@ -2536,6 +2652,14 @@ impl ApplicationHandler<ShellEvent> for Shell {
             ShellEvent::OpenSettings => self.open_settings(el),
             ShellEvent::Quit => {
                 self.save_main_geom();
+                el.exit();
+            }
+            // ★ OS 세션 종료(T-75) — 트레이 스레드가 기다리는 동안 저장을 끝내고 신호한 뒤 루프를 닫는다.
+            ShellEvent::EndSession => {
+                self.save_main_geom();
+                self.finish_persist();
+                nclip_plat::tray::end_session_done();
+                println!("세션 종료 신호(로그오프/시스템 종료) — 저장 마감 완료 · 종료합니다");
                 el.exit();
             }
             ShellEvent::Hotkey(id) => match id {
@@ -2622,6 +2746,12 @@ impl ApplicationHandler<ShellEvent> for Shell {
 
     fn about_to_wait(&mut self, el: &ActiveEventLoop) {
         ApplicationHandler::about_to_wait(&mut self.app, el);
+        // ★ 순번 배지 실측 배율(10-17) — 첫 박동에 한 번: 주 모니터 배율로 크기를 정하고 트레이 메뉴를 다시 그린다.
+        if self.badge_side == 0 {
+            self.badge_side =
+                crate::badge::side_for(el.primary_monitor().map_or(1.0, |m| m.scale_factor()));
+            self.refresh_tray();
+        }
         // ★ 동기화 재기동(09-03) — 설정 창 Test 성공이 러너 (재)접속을 요청한다.
         if self.app.take_sync_respawn() {
             crate::sync_cmd::spawn_if_enabled(&self.app.conf, self.proxy.clone());
@@ -2844,8 +2974,19 @@ pub(crate) fn run() {
     // 트레이 — 이벤트는 프록시로 메인 루프에 되돌린다(beep 호스트 문법).
     //   ★ 복원을 먼저 끝내 첫 우클릭부터 최근이 보인다(09-01 D1 — 예전엔 빈 메뉴로 떴다).
     let proxy = el.create_proxy();
+    // ★ 순번 배지 크기(10-17) — Windows 메뉴 비트맵은 1:1이라 주 모니터 배율을 따라야 하는데 `EventLoop`에서는 모니터를
+    //   못 묻는다(winit 0.30 — `ActiveEventLoop`만) → 기동은 1.0 기준으로 그리고 첫 박동(`about_to_wait`)에서 실측
+    //   배율로 한 번 다시 그린다(`badge_side == 0` = 아직 실측 전).
+    let badge_side = crate::badge::side_for(1.0);
     let Some(tray) = spawn(
-        content(history.len(), history.recent_labels(tray_n), false, false),
+        content(
+            &font,
+            badge_side,
+            history.len(),
+            history.recent_labels(tray_n),
+            false,
+            false,
+        ),
         move |ev| {
             let _ = proxy.send_event(match ev {
                 TrayEvent::Quit => ShellEvent::Quit,
@@ -2854,6 +2995,7 @@ pub(crate) fn run() {
                 TrayEvent::HotkeyStatus(ok) => ShellEvent::HotkeyStatus(ok),
                 TrayEvent::Open | TrayEvent::OpenTarget(_) => ShellEvent::Open,
                 TrayEvent::Settings => ShellEvent::OpenSettings,
+                TrayEvent::EndSession => ShellEvent::EndSession,
             });
         },
     ) else {
@@ -2942,9 +3084,17 @@ pub(crate) fn run() {
             "앱 종료 (설정 '창을 닫아도 트레이에 남기'를 켜면 숨김)"
         }
     );
+    // ★ 안내 문구는 OS별 실제 경로대로(10-17 · T-75) — Windows GUI 프로세스는 `taskkill /PID`(= WM_CLOSE)로
+    //   끝나지 않는다(창 닫기 = 트레이 숨김과 같은 길) · 로그오프/시스템 종료는 WM_ENDSESSION에서 저장 뒤 종료.
+    #[cfg(windows)]
+    println!(
+        "종료: 트레이 메뉴 \"종료\"{} · Windows 로그오프/시스템 종료(저장 마감 뒤) — 정상 종료(설정 저장 포함) · taskkill /PID는 창 닫기 신호라 종료되지 않음(강제 = /F · 저장 없음)",
+        if quit_hooked { " · 터미널 Ctrl+C" } else { "" }
+    );
+    #[cfg(not(windows))]
     if quit_hooked {
         println!(
-            "종료: 트레이 메뉴 \"종료\" 또는 Ctrl+C·종료 신호 — 둘 다 정상 종료(설정 저장 포함)"
+            "종료: 트레이 메뉴 \"종료\" 또는 Ctrl+C·종료 신호(SIGTERM) — 둘 다 정상 종료(설정 저장 포함)"
         );
     } else {
         println!("종료: 트레이 메뉴 \"종료\" — 정상 종료(설정 저장 포함 · 이 환경은 종료 신호를 못 받습니다)");
@@ -2953,6 +3103,8 @@ pub(crate) fn run() {
     let paste_auto = conf.state.get("paste.auto") == "on";
     let gate = Gate::from_state(&conf);
     apply_cell_picture_limits(&conf);
+    // ★ 항목 용량 상한(T-81) — 첫 캡처(Windows 2단 읽기)부터 설정값이 살도록 기동 때 한 번.
+    let _ = apply_item_cap(&conf);
 
     // 팝업은 자기 폰트를 따로 든다(mmap 정적 데이터라 값싸다 — App이 font를 소유해서).
     let popup_font = font.clone();
@@ -3007,6 +3159,8 @@ pub(crate) fn run() {
         last_local: None,
         own_image: None,
         sync_skip: None,
+        persisted: false,
+        badge_side: 0,
         proxy: el.create_proxy(),
         atop_effective,
         last_gc: Instant::now(),
@@ -3034,15 +3188,8 @@ pub(crate) fn run() {
         eprintln!("이벤트 루프 오류: {e}");
     }
     // single_guard는 여기까지 살아 있다 — 프로세스 수명만큼 인스턴스 소유 유지.
-    // ★ 종료 직전 강제 수거 — "바꾸고 바로 종료하면 안 저장됨"을 막는다.
-    if shell.app.conf.flush() {
-        println!("설정 저장: {}", shell.app.conf.path().display());
-    }
-    // ★ `sec.clear_on_quit` — 켜져 있으면 종료 때 기록을 지운다(세그먼트·blob 실파일).
-    if shell.app.conf.state.get("sec.clear_on_quit") == "on" {
-        shell.store.wipe();
-        println!("기록 비움: sec.clear_on_quit = on");
-    }
+    // ★ 종료 마감(설정 강제 수거 · clear_on_quit) — 세션 종료 경로에서 이미 했으면 건너뛴다(T-75).
+    shell.finish_persist();
     println!("종료합니다 — 이번 상주에서 {}개 보관.", shell.history.len());
 }
 
