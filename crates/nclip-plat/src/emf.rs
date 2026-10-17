@@ -50,20 +50,8 @@ struct EnhMetaHeader {
     szl_millimeters: Sizel,
 }
 
-#[repr(C)]
-struct BitmapInfoHeader {
-    bi_size: u32,
-    bi_width: i32,
-    bi_height: i32,
-    bi_planes: u16,
-    bi_bit_count: u16,
-    bi_compression: u32,
-    bi_size_image: u32,
-    bi_x_ppm: i32,
-    bi_y_ppm: i32,
-    bi_clr_used: u32,
-    bi_clr_important: u32,
-}
+// ★ `BITMAPINFOHEADER`·`CreateDIBSection`은 [`crate::win32`] 공용(10-17 — 트레이 메뉴 배지와 겹침 방지).
+use crate::win32::{BitmapInfoHeader, CreateDIBSection};
 
 #[link(name = "gdi32")]
 extern "system" {
@@ -72,14 +60,6 @@ extern "system" {
     fn DeleteEnhMetaFile(hemf: Handle) -> i32;
     fn PlayEnhMetaFile(hdc: Handle, hemf: Handle, rect: *const Rect) -> i32;
     fn CreateCompatibleDC(hdc: Handle) -> Handle;
-    fn CreateDIBSection(
-        hdc: Handle,
-        bmi: *const BitmapInfoHeader,
-        usage: u32,
-        bits: *mut *mut core::ffi::c_void,
-        section: Handle,
-        offset: u32,
-    ) -> Handle;
     fn SelectObject(hdc: Handle, obj: Handle) -> Handle;
     fn DeleteObject(obj: Handle) -> i32;
     fn DeleteDC(hdc: Handle) -> i32;

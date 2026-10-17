@@ -314,6 +314,25 @@ static CELL_LIMIT_COLS: std::sync::atomic::AtomicU32 =
 static CELL_LIMIT_CELLS: std::sync::atomic::AtomicU32 =
     std::sync::atomic::AtomicU32::new(CELL_PICTURE_MAX_CELLS);
 
+/// ★ 항목 용량 상한 기본값(MB · T-81 · 10-17) — [docs/12 D-34](../../../docs/12-clipboard-formats.md) 초안 "항목 32MB"를
+///   그대로 기본으로 둔다(실측 뒤 확정). 설정 `cap.max_item_mb` · 0 = 무제한.
+pub const ITEM_CAP_DEFAULT_MB: u64 = 32;
+
+static ITEM_CAP_BYTES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(ITEM_CAP_DEFAULT_MB << 20);
+
+/// 항목 용량 상한(바이트 · 0 = 무제한)을 바꾼다 — 호스트가 설정을 읽어 넘긴다. 감시 어댑터(Windows 2단 읽기)와
+/// 셸([`select_reps`] 적용)이 같은 값을 본다.
+pub fn set_item_cap_bytes(bytes: u64) {
+    ITEM_CAP_BYTES.store(bytes, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// 지금 적용 중인 항목 용량 상한(바이트 · 0 = 무제한).
+#[must_use]
+pub fn item_cap_bytes() -> u64 {
+    ITEM_CAP_BYTES.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// 셀 범위 그림 상한을 바꾼다 — 호스트가 설정(`cap.cell_pic_*`)을 읽어 넘긴다. 다음 복사부터 산다.
 pub fn set_cell_picture_limits(l: CellPictureLimits) {
     use std::sync::atomic::Ordering::Relaxed;

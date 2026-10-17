@@ -515,11 +515,24 @@ impl History {
         }
     }
 
-    /// 스냅숏 하나를 이력에 반영한다. 내용 없음 걸러내기(민감·제외 앱 포함)와
-    /// 썸네일 생성은 **호출자 몫**이다 — 이력은 정책도 디코더도 모른다.
+    /// 스냅숏 하나를 이력에 반영한다(참조 · **표현을 복제**한다). 셸의 실제 경로는 [`Self::push_owned`] —
+    /// 여기는 시험·소량용으로 남긴다(T-81 · 10-17).
     pub fn push(
         &mut self,
         snap: &ClipSnapshot,
+        kind: ClipKind,
+        label: String,
+        thumb: Option<(u32, u32, Vec<u8>)>,
+    ) -> Pushed {
+        self.push_owned(snap.clone(), kind, label, thumb)
+    }
+
+    /// 스냅숏 하나를 이력에 반영한다 — **소유권째** 받아 표현 바이트를 옮긴다(복제 0 · T-81: Office 한 번 복사가
+    /// 수십 MB라 복제 한 번이 곧 피크 메모리다). 내용 없음 걸러내기(민감·제외 앱 포함)와 썸네일 생성은
+    /// **호출자 몫**이다 — 이력은 정책도 디코더도 모른다.
+    pub fn push_owned(
+        &mut self,
+        snap: ClipSnapshot,
         kind: ClipKind,
         label: String,
         thumb: Option<(u32, u32, Vec<u8>)>,
@@ -542,8 +555,8 @@ impl History {
                     label,
                     fingerprint: fingerprint(&snap.reps),
                     bytes: reps_bytes(&snap.reps),
-                    reps: snap.reps.clone(),
-                    source_app: snap.source_app.clone(),
+                    reps: snap.reps,
+                    source_app: snap.source_app,
                     copies,
                     thumb,
                     thumb_ref: None,
@@ -597,8 +610,8 @@ impl History {
             label,
             fingerprint: fp,
             bytes: reps_bytes(&snap.reps),
-            reps: snap.reps.clone(),
-            source_app: snap.source_app.clone(),
+            reps: snap.reps,
+            source_app: snap.source_app,
             copies: 1,
             thumb,
             thumb_ref: None,

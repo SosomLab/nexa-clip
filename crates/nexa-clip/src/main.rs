@@ -22,6 +22,7 @@ pub(crate) const APP_TITLE: &str = if cfg!(debug_assertions) {
 };
 
 mod about;
+mod badge;
 mod cliptext;
 mod conf;
 mod dedup;

@@ -192,6 +192,54 @@ fn read_concealed() -> bool {
 
 // ───────────────────────────── 읽기
 
+/// 1단 읽기용 — 이름과 크기만(T-81). [`nclip_core::capture::RepInfo`]로 상한 판정에 들어간다.
+struct SizeOnly {
+    name: String,
+    bytes: u64,
+}
+
+impl nclip_core::capture::RepInfo for SizeOnly {
+    fn format(&self) -> &str {
+        &self.name
+    }
+    fn bytes(&self) -> u64 {
+        self.bytes
+    }
+}
+
+impl nclip_core::capture::RepInfo for &SizeOnly {
+    fn format(&self) -> &str {
+        &self.name
+    }
+    fn bytes(&self) -> u64 {
+        self.bytes
+    }
+}
+
+/// 포맷 하나의 바이트 크기 — **복사 없이**(HGLOBAL = `GlobalSize` · EMF = 바이트 수 조회 · 핸들 포맷 = 0).
+///
+/// # Safety
+/// 클립보드가 열려 있어야 한다.
+unsafe fn format_size(fmt: u32) -> u64 {
+    unsafe {
+        if fmt == 14 {
+            let h = GetClipboardData(14);
+            if h == NULL_HANDLE {
+                return 0;
+            }
+            return u64::from(GetEnhMetaFileBits(h, 0, core::ptr::null_mut()));
+        }
+        if is_handle_format(fmt) {
+            return 0;
+        }
+        let h = GetClipboardData(fmt);
+        if h == NULL_HANDLE {
+            return 0;
+        }
+        GlobalSize(h) as u64
+    }
+}
+
 /// `HGLOBAL` 포맷의 날바이트. 실패하면 `None`(빈 벡터와 구분한다).
 ///
 /// # Safety
@@ -330,7 +378,11 @@ pub fn read_snapshot() -> Option<ClipSnapshot> {
             let (id, _) = formats.iter().find(|(_, n)| n == want)?;
             read_hglobal(*id)
         });
-        let mut reps = Vec::new();
+        // ★ 1단 — **크기만** 묻는다(T-81 · 10-17): 전엔 모든 포맷을 통째로 복사한 뒤에야 상한을 볼 수 있었다 — Office
+        //   한 번 복사(HTML·RTF·DIB·DIBV5·EMF·Embed Source…)는 수십~수백 MB라 그 복사 자체가 피크 메모리였다.
+        //   HGLOBAL은 `GlobalSize` · EMF는 `GetEnhMetaFileBits(…, 0, null)` · 핸들 포맷은 0(안 읽는다).
+        //   `GetClipboardData`는 지연 렌더링을 일으키지만 복사는 아니다(렌더 비용은 종전과 같다).
+        let mut plan: Vec<(u32, SizeOnly)> = Vec::new();
         for (fmt, name) in &formats {
             let fmt = *fmt;
             // ★ Excel 행·열 전체 복사 — 그림 표현을 청하면 Excel이 "그림이 너무 커서
@@ -343,6 +395,40 @@ pub fn read_snapshot() -> Option<ClipSnapshot> {
                 ));
                 continue;
             }
+            plan.push((
+                fmt,
+                SizeOnly {
+                    name: name.clone(),
+                    bytes: format_size(fmt),
+                },
+            ));
+        }
+        // ★ 항목 용량 상한(docs/27 §7 C-1·C-2 · `cap.max_item_mb`) — 필수(대표·HTML·RTF·평문·파일·썸네일 원천)는
+        //   남기고 **큰 것부터** 버린다 · 버린 것은 **읽지도 않는다**. 셸도 같은 규칙을 한 번 더 적용한다(mac·Linux 공통).
+        let infos: Vec<&SizeOnly> = plan.iter().map(|(_, i)| i).collect();
+        let sel = nclip_core::capture::select_reps(&infos, nclip_core::capture::item_cap_bytes());
+        if !sel.dropped.is_empty() {
+            let names: Vec<&str> = sel
+                .dropped
+                .iter()
+                .map(|&i| infos[i].name.as_str())
+                .collect();
+            diag(&format!(
+                "용량 상한 — 표현 {}개 건너뜀({} KB · {:?}){}",
+                sel.dropped.len(),
+                sel.dropped_bytes >> 10,
+                names,
+                if sel.over_budget {
+                    " · 필수만으로도 초과"
+                } else {
+                    ""
+                }
+            ));
+        }
+        let mut reps = Vec::with_capacity(sel.keep.len());
+        for &i in &sel.keep {
+            let (fmt, info) = &plan[i];
+            let fmt = *fmt;
             // ⚠️ 핸들 포맷은 바이트를 읽지 않는다 — 이름만 담는다.
             //   ★ 예외: EMF(14)는 GetEnhMetaFileBits로 실바이트를 뽑는다(09-02).
             let data = if fmt == 14 {
@@ -353,7 +439,7 @@ pub fn read_snapshot() -> Option<ClipSnapshot> {
                 read_hglobal(fmt).unwrap_or_default()
             };
             reps.push(RawRep {
-                format: name.clone(),
+                format: info.name.clone(),
                 data,
             });
         }
@@ -393,30 +479,47 @@ fn diag(msg: &str) {
 /// 여러 항목이 된다(Linux 결함 ⑥의 Windows판). **두 번 연속 같게 읽힐 때까지**
 /// 잠깐 기다렸다 다시 읽는다(30ms × 최대 4회 — 전용 감시 스레드라 UI 무관).
 fn read_settled() -> Option<ClipSnapshot> {
+    // ★ 한 벌만 든다(T-81 · 10-17) — 종전엔 직전 스냅숏과 새 스냅숏을 **둘 다** 들고 바이트를 견줬다(큰 복사면 피크 2배).
+    //   직전 것은 **지문**(포맷 · 길이 · FNV-1a)만 남기고 바이트는 버린다. 재읽기에 실패하면 `None` → 호출자의
+    //   재시도 타이머(200ms)가 다시 읽는다(클립보드 내용은 그대로라 잃지 않는다).
     let mut cur = read_snapshot()?;
+    let mut fp = snap_fingerprint(&cur);
     for _ in 0..4 {
+        let n_prev = cur.reps.len();
+        drop(cur);
         std::thread::sleep(std::time::Duration::from_millis(30));
         let Some(next) = read_snapshot() else {
-            // 재읽기 실패(다른 앱이 잠깐 잡음) — 지금 것을 쓴다(없는 것보다 낫다).
-            return Some(cur);
+            diag("안정화 재읽기 실패(다른 앱이 잠깐 잡음) — 재시도에 맡김");
+            return None;
         };
-        let same = cur.reps.len() == next.reps.len()
-            && cur
-                .reps
-                .iter()
-                .zip(&next.reps)
-                .all(|(a, b)| a.format == b.format && a.data == b.data);
-        if same {
+        let nfp = snap_fingerprint(&next);
+        if nfp == fp {
             return Some(next);
         }
         diag(&format!(
             "표현이 아직 변함({}개 → {}개) — 재확인",
-            cur.reps.len(),
+            n_prev,
             next.reps.len()
         ));
+        fp = nfp;
         cur = next;
     }
     Some(cur)
+}
+
+/// 스냅숏 지문 — 표현마다 (포맷, 길이, FNV-1a 64). 바이트 전체 비교와 같은 판정을 **바이트를 들지 않고** 한다.
+fn snap_fingerprint(s: &ClipSnapshot) -> Vec<(String, usize, u64)> {
+    s.reps
+        .iter()
+        .map(|r| {
+            let mut h = 0xcbf2_9ce4_8422_2325u64;
+            for &b in &r.data {
+                h ^= u64::from(b);
+                h = h.wrapping_mul(0x0100_0000_01b3);
+            }
+            (r.format.clone(), r.data.len(), h)
+        })
+        .collect()
 }
 
 /// 스냅숏을 읽어 콜백에 넘긴다. **클립보드를 열지 못했으면 `false`**.

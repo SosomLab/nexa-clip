@@ -205,6 +205,9 @@ pub enum Msg {
     /// 총용량 상한(T-13 · 09-01).
     SetMaxTotal,
     SetMaxTotalDesc,
+    /// ★ 항목 용량 상한(T-81 · 10-17).
+    SetItemMaxMb,
+    SetItemMaxMbDesc,
     /// 시스템 기본 글꼴.
     SystemDefaultFont,
     /// 설정 카테고리: 일반.
@@ -742,6 +745,8 @@ pub enum Msg {
     HintRich,
     HintImage,
     HintDefault,
+    /// ★ 팝업 푸터 — 핀 지정/해제 키 안내(10-17 사용자 — 팝업에서도 핀).
+    HintPin,
     CtxSelectAll,
     CtxCopy,
     CtxCut,
@@ -1829,6 +1834,13 @@ impl Msg {
                 "超出时从最旧的未固定项开始删除（单位：MB）",
                 "超過時は古い未固定項目から削除（単位：MB）",
             ],
+            Msg::SetItemMaxMb => ["Per-item size limit (MB)", "항목 용량 상한(MB)", "单项大小上限(MB)", "項目サイズ上限(MB)"],
+            Msg::SetItemMaxMbDesc => [
+                "Over the limit, non-essential formats (duplicate bitmaps, metafiles) are dropped largest first; text, HTML, RTF and files are always kept (0 = unlimited)",
+                "넘으면 필수가 아닌 표현(중복 비트맵·메타파일)을 큰 것부터 버립니다 · 글·HTML·RTF·파일은 항상 남깁니다(0 = 무제한)",
+                "超出时先丢弃非必需格式（重复位图、图元文件），文本、HTML、RTF 和文件始终保留（0 = 不限）",
+                "超過時は必須でない表現（重複ビットマップ・メタファイル）を大きい順に捨てます · テキスト・HTML・RTF・ファイルは常に保持（0 = 無制限）",
+            ],
             Msg::TrayOpen => ["Open", "열기", "打开", "開く"],
             Msg::TrayQuit => ["Quit", "종료", "退出", "終了"],
             Msg::TraySettings => ["Settings", "설정", "设置", "設定"],
@@ -2305,6 +2317,7 @@ impl Msg {
             ],
             Msg::HintImage => ["{} original · Esc close", "{} 원본 · Esc 닫기", "{} 原始 · Esc 关闭", "{} 原本 · Esc 閉じる"],
             Msg::HintDefault => ["{} paste · Esc close", "{} 붙여넣기 · Esc 닫기", "{} 粘贴 · Esc 关闭", "{} 貼り付け · Esc 閉じる"],
+            Msg::HintPin => ["{} pin", "{} 고정", "{} 固定", "{} 固定"],
             Msg::CtxSelectAll => ["Select All", "전체 선택", "全选", "すべて選択"],
             Msg::CtxCopy => ["Copy", "복사", "复制", "コピー"],
             Msg::CtxCut => ["Cut", "잘라내기", "剪切", "切り取り"],
@@ -2488,7 +2501,7 @@ mod tests {
     use super::*;
 
     /// 카탈로그 전수 — 새 `Msg`를 더하면 여기도 더한다(빈칸 검사가 그걸 강제한다).
-    const ALL_MSG: [Msg; 426] = [
+    const ALL_MSG: [Msg; 429] = [
         Msg::AppName,
         Msg::SearchPlaceholder,
         Msg::EmptyHistory,
@@ -2543,6 +2556,8 @@ mod tests {
         Msg::SetMaxAgeDesc,
         Msg::SetMaxTotal,
         Msg::SetMaxTotalDesc,
+        Msg::SetItemMaxMb,
+        Msg::SetItemMaxMbDesc,
         Msg::SystemDefaultFont,
         Msg::CatGeneral,
         Msg::CatShortcuts,
@@ -2870,6 +2885,7 @@ mod tests {
         Msg::HintRich,
         Msg::HintImage,
         Msg::HintDefault,
+        Msg::HintPin,
         Msg::CtxSelectAll,
         Msg::CtxCopy,
         Msg::CtxCut,

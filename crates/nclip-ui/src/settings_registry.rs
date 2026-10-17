@@ -208,6 +208,17 @@ pub(crate) const REGISTRY: &[Entry] = &[
         SettingKind::Toggle,
         "cap.native_formats",
     ),
+    // ★ 항목 용량 상한(T-81 · 10-17 · docs/27 §7 · D-34 초안 32MB · 0 = 무제한).
+    e(
+        Msg::CatCapture,
+        Msg::SetItemMaxMb,
+        Msg::SetItemMaxMbDesc,
+        SettingKind::Number {
+            presets: &["8", "16", "32", "64"],
+            suffix: "MB",
+        },
+        "cap.max_item_mb",
+    ),
     // ★ Excel 셀 범위 그림 상한(10-04 사용자 — "설정으로 추가") — 기본 200행 · 50열 · 5,000셀.
     e(
         Msg::CatCapture,

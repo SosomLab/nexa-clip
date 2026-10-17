@@ -136,6 +136,8 @@ pub const ADVANCED: &[&str] = &[
     "cap.cell_pic_cells",
     // 네이티브 포맷 보관.
     "cap.native_formats",
+    // ★ 항목 용량 상한(T-81) — 실측으로 정할 구현값.
+    "cap.max_item_mb",
     // 파일 동기화 상한·대역.
     "sync.files_max",
     "sync.file_bg_kbps",
@@ -513,6 +515,8 @@ const RADIO_DEFAULTS: &[(&str, &str)] = &[
     ("cap.cell_pic_rows", "200"),
     ("cap.cell_pic_cols", "50"),
     ("cap.cell_pic_cells", "5000"),
+    // ★ 항목 용량 상한(T-81 · 10-17) — nclip_core::capture::ITEM_CAP_DEFAULT_MB 와 같은 값(D-34 초안).
+    ("cap.max_item_mb", "32"),
     ("store.max_items", "1000"),
     // ★ T-13(09-01 확정): 기간 무제한(0) + 총용량 500MB.
     ("store.max_age_days", "0"),
