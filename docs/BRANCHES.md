@@ -4,7 +4,8 @@
 
 | 브랜치 | 생성 | 병합 | 커밋 수 | 요약 |
 |---|---|---|---:|---|
-| `docs/release-0.2.4-followup` | 2026-10-17 | 2026-10-17 → main 병합 | 1 | v0.2.4 릴리스 결과 기록(journal 8차 ④ · STATUS · DEVLOG · MILESTONES ✅ · TODO · CLAUDE.md §1) |
+| `docs/progress-10-17-mac` | 2026-10-17 | 2026-10-17 → main 병합 | 1 | 10-17 9차 진행사항 최신화(journal · STATUS · DEVLOG · BRANCHES 해시 보충) |
+| `docs/release-0.2.4-followup` | 2026-10-17 | 2026-10-17 → main 병합 `b51ff99`(커밋 `295c123` · push `dc3c83c..b51ff99`) · CI `39039077448` ✓ | 1 | v0.2.4 릴리스 결과 기록(journal 8차 ④ · STATUS · DEVLOG · MILESTONES ✅ · TODO · CLAUDE.md §1) |
 | `chore/release-0.2.4` | 2026-10-17 | 2026-10-17 → main 병합 `dc3c83c`(커밋 `c62130c`) · 태그 `v0.2.4` · CI `39038558061` ✓ · release `39038702701` ✓ | 1 | v0.2.4 버전 올림(Cargo.toml · lock) + 릴리스 문서(journal 10-17 8차) + CLAUDE.md §1 · `--version` "nexa-clip 0.2.4" · Release(macOS x64) 2,350,480 B |
 | `fix/tray-n-copy-flash-10-17` | 2026-10-17 | 2026-10-17 → main 병합 `a7a0d54`(`--no-ff` · 커밋 `4d69dd7`) | 1 | T-83 `ui.tray_recent_n` 즉시 반영 · 설정 키 복사 순간 메시지(nexa-ctl `Flash`) · test 413/0/2 · check-3os ✓ |
 | `chore/release-0.2.3` | 2026-10-17 | 2026-10-17 → main 병합 `9995ff2`(커밋 `a4af452`) · 태그 `v0.2.3` · CI `39035146637` ✓ · release `39035319191` ✓ | 1 | v0.2.3 버전 올림(Cargo.toml · lock) + 릴리스 문서(journal 10-17 6차) + CLAUDE.md §1 · `--version` "nexa-clip 0.2.3" · Release 2,464,768 B · V3 = `7ff64c5` 기록 |
