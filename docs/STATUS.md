@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-10-17 (2차 · win) — ★ v0.2.3 릴리스 진행 — T-75 Windows 세션 종료 저장 마감 · T-82 팝업 핀 토글·한글 잔존·거터 점·트레이 순번 배지 · T-81 메모리 피크 1차(`cap.max_item_mb` 32)
+
+**범위**: main `7ff64c5`(v0.2.2 이후 = T-75 · T-82 · T-81 1차) · beep 영향 없음.
+**배포 전**: 같은 소스(`7ff64c5`) V3 통과 기록 = rustc 1.99.1 · `cargo test --workspace` 411/0/4 · clippy · fmt · check-3os ✓ · nexa-ui `7dd0b50` · main CI `39034381561` ✓ → 전수 재실행 생략([33 §5-7](33-collab-session-operation.md) 4번 단서) · Release `cargo build --release -p nexa-clip` 34초 · `nexa-clip.exe` **2,464,768 B(2.35 MB)** · `--version` = **"nexa-clip 0.2.3"** · `cargo check --workspace` ✓(lock 정합 · Cargo.lock 워크스페이스 크레이트 8개 버전만).
+**예상 게시**: GitHub Release · brew · pkg.sosomlab.com ✓ · choco 포터블 0.2.3 go · 설치본 skip(T-78) · winget skip(0.1.6 PR 열림).
+**릴리스**: ☐ 태그 `v0.2.3` · release · 게시 결과 보충.
+**☐ 다음**: 사용자 실기(로그오프 1회 · [21 §12-2](21-manual-test.md) K23~K27 · 큰 Excel 복사 Peak) · 설치본 0.2.3 교체 여부.
+
+---
+
 ## 2026-10-17 (1차 · win) — 개발·협업 세션 재편 · T-75 세션 종료 마감 · T-82 사용자 지시 4건(팝업 핀 · 한글 잔존 · 거터 점 · 트레이 순번 배지) · T-81 메모리 피크 1차(상한 `cap.max_item_mb` 32 · Windows 2단 읽기 · settle 1벌 · push 이동) · choco 포터블 0.2.2 승인 · 설치본 Peak 336 MB 관찰 · 미배포(다음 태그 후보)
 
 **범위**: T-75 Windows `WM_QUERYENDSESSION`/`WM_ENDSESSION` 저장 마감 + 기동 안내 정정 · T-82 팝업 `Ctrl+P`·거터 클릭 핀 토글 · open/close preedit 비움 · Rich 보기 점을 번호 아래로 · 트레이 메뉴 아이콘 칸 순번 배지(3-OS) · T-81 `select_reps` 연결(항목 상한 `cap.max_item_mb` 32 · 고급) · Windows 2단 읽기 · settle 지문 1벌 · `push_owned` → [journal 10-17](journal/2026-10-17.md) 2~5차.
