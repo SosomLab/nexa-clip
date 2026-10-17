@@ -9,7 +9,8 @@
 **범위**: main `a7a0d54`(v0.2.3 이후 = T-83 · 커밋 `4d69dd7`) · beep 영향 없음 · nexa-ui·nexa-license 변경 없음.
 **배포 전**: rustup rustc 1.99.1(⚠️ PATH의 Homebrew rustc 1.98.1이 앞서 있으면 check-3os 교차 타깃 실패) · `cargo test --workspace` 413/0/2 · check-3os ✓ · Release(macOS x64) 2,350,480 B · `--version` "nexa-clip 0.2.4".
 **릴리스**: 태그 `v0.2.4` = `dc3c83c`(커밋 `c62130c` · main CI `39038558061` ✓) · release `39038702701` 1차 ✅ · 자산 15 · brew `b5b1008` 0.2.4 · pkg.sosomlab.com 0.2.4(linux-repo `39038940997`) · winget skip · choco 설치본 skip · **choco 포터블 skip**(0.2.3 Pending automated review) → [journal 10-17 8차](journal/2026-10-17.md).
-**☐ 다음**: 사용자 실기(개수 변경 → 트레이 · 키 클릭 메시지 위치) · choco 포터블 0.2.3 검수.
+**스토어(9차 재확인)**: choco 포터블 0.2.3 Pending automated review(변화 없음) · 설치본 0.1.5 Waiting for Maintainer · winget 0.1.6 PR OPEN.
+**☐ 다음**: 사용자 실기(T-83 — 개수 변경 → 트레이 · 키 클릭 메시지 위치) · 설치본 0.2.4 교체 · choco 포터블 0.2.3 승인 뒤 다음 태그에서 포터블 자동 제출 · ⚠️ 이 Mac은 Homebrew rustc가 PATH 앞([18 §7](18-build-and-test.md#7-흔한-실패와-처방) 재발).
 
 ---
 
