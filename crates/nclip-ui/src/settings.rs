@@ -276,6 +276,9 @@ const PW_EYE_SIDE: u32 = 96;
 /// [생성][미리보기(눈)] 순서로, 버튼 크기 = 상자 높이 · 간격 = 높이/8(절반 간격).
 /// 생성 버튼 무장 유지 시간(09-03 사용자 — "2초 내에 다시 누르지 않으면 원복").
 const PW_ARM_WINDOW: std::time::Duration = std::time::Duration::from_secs(2);
+/// 키 복사 순간 메시지 — 그대로 보이는 시간 · 녹아 사라지는 시간(ms · 10-17).
+const COPY_FLASH_HOLD_MS: u64 = 1200;
+const COPY_FLASH_FADE_MS: u64 = 600;
 
 /// ★ 기기 목록 한 행(09-04) — 텍스트 + [승인|해제] + [삭제]. `me` 행은 버튼이 없다.
 pub struct DevRow {
@@ -1094,6 +1097,11 @@ pub struct SettingsWidget {
     /// ★ 생성 2단 확인(09-03 사용자) — 첫 클릭 = 무장(빨강) · 2초 안 재클릭 = 생성 ·
     ///   지나면 원복. 호스트 시계에 안 기대고 자체 Instant(유휴 뒤 첫 클릭 오판 방지).
     pw_arm: Option<std::time::Instant>,
+    /// ★ 키 복사 순간 메시지(10-17 사용자 요청) — 복사한 키 이름을 그 키 글자 **위**에 띄운다
+    ///   (`Flash::place` = 앵커를 덮지 않는 자리). 앵커는 행 순서가 아니라 **키**로 기억한다
+    ///   (검색·카테고리로 행이 재구성돼도 맞는 행을 찾는다). `paint(&self)`라 `RefCell`.
+    copy_flash: std::cell::RefCell<nexa_ctl::controls::Flash>,
+    copy_flash_key: Option<&'static str>,
 }
 
 /// 행 노트의 시각 톤(08-22 — "검증됨"이 눈에 띄어야 한다는 사용자 요청).
@@ -1166,6 +1174,8 @@ impl SettingsWidget {
             pw_eye: std::cell::RefCell::new(None),
             pw_regen: std::cell::RefCell::new(None),
             pw_arm: None,
+            copy_flash: std::cell::RefCell::new(nexa_ctl::controls::Flash::new()),
+            copy_flash_key: None,
         };
         let mut inv = Invalidations::default();
         w.rebuild(&mut inv);
@@ -1906,6 +1916,18 @@ impl SettingsWidget {
             }
         }
         dirty |= self.btn_file.tick(now_ms) | self.btn_close.tick(now_ms);
+        // ★ 키 복사 순간 메시지 — 보이는 동안 프레임을 요청한다(끝나면 스스로 지워져 한 번 더 그려 지운다).
+        if self.copy_flash.borrow().active() {
+            let alive = self
+                .copy_flash
+                .borrow_mut()
+                .strength_at(std::time::Instant::now())
+                .is_some();
+            if !alive {
+                self.copy_flash_key = None;
+            }
+            dirty = true;
+        }
         dirty
     }
 
@@ -2698,6 +2720,13 @@ impl Widget for SettingsWidget {
                     .map(|r| registry()[r.idx].key)
                 {
                     self.changes.push(("prefs.copy_key", key.to_string()));
+                    self.copy_flash.borrow_mut().show(
+                        nclip_core::tf(Msg::StKeyCopied, &[key]),
+                        nexa_ctl::controls::FlashTone::Ok,
+                        COPY_FLASH_HOLD_MS,
+                        COPY_FLASH_FADE_MS,
+                    );
+                    self.copy_flash_key = Some(key);
                     inv.push(self.bounds);
                     return;
                 }
@@ -3359,6 +3388,22 @@ impl Widget for SettingsWidget {
         self.adv_switch.paint(ctx, theme);
         self.btn_file.paint(ctx, theme);
         self.btn_close.paint(ctx, theme);
+        // ★ 키 복사 순간 메시지(10-17) — 키 글자를 가리지 않게 그 위(모자라면 아래)에 · 카드·밴드보다 위 층.
+        //   행이 스크롤로 화면 밖이면(앵커가 비면) 그리지 않는다.
+        if let Some(key) = self.copy_flash_key {
+            let anchor = self
+                .rows
+                .iter()
+                .find(|r| registry()[r.idx].key == key)
+                .map(|r| r.key_rect.get())
+                .filter(|r| r.w > 0 && r.h > 0);
+            if let Some(anchor) = anchor {
+                ctx.select_font(FontSlot::Status, false);
+                let mut f = self.copy_flash.borrow_mut();
+                f.set_radius(self.s(4));
+                f.paint(ctx, theme, anchor, self.right_viewport());
+            }
+        }
         // 텍스트 필드 우클릭 메뉴 — 진짜 최상위(고정 밴드보다도 위 · 08-13 실기:
         // 프로필에서 형제 위젯이 메뉴를 덮던 것과 같은 z순서 계열).
         self.search.paint_popup(ctx, theme);
@@ -3767,6 +3812,10 @@ mod card_tests {
             ch_.iter().any(|(k, v)| *k == "prefs.copy_key" && v == key0),
             "{ch_:?}"
         );
+        // ★ 순간 메시지(10-17) — 복사한 키를 띄우고, 보이는 동안 틱이 다시 그리기를 요청한다.
+        assert_eq!(w.copy_flash_key, Some(key0));
+        assert!(w.copy_flash.borrow().text().contains(key0));
+        assert!(w.tick(0), "메시지가 보이는 동안 = 재그리기");
     }
 }
 

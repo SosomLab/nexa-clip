@@ -2767,6 +2767,19 @@ impl ApplicationHandler<ShellEvent> for Shell {
         if self.popup.set_search_mode(mode) {
             self.popup.on_history_changed(&self.history);
         }
+        // ★ 트레이 최근 개수 동기(10-17 사용자 신고) — 전에는 다음 캡처 때만 다시 읽어 설정을 바꿔도
+        //   메뉴가 옛 개수로 남았다. 바뀌면 바로 메뉴를 다시 짓는다(다음 클릭에 반영).
+        let tray_n: usize = self
+            .app
+            .conf
+            .state
+            .get("ui.tray_recent_n")
+            .parse()
+            .unwrap_or(8);
+        if tray_n != self.tray_n {
+            self.tray_n = tray_n;
+            self.refresh_tray();
+        }
         // ★ 뷰포트 섬네일 디코드 요청 처리(09-04 · 30 §4).
         self.pump_thumbs();
         // ★ 메모리 GC(09-04 · DR-42) — 30초 주기 · 상한 초과 즉시.
