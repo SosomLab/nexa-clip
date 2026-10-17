@@ -2,7 +2,7 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
-## 2026-10-17 (3차 · mac) — ★ **v0.2.4 릴리스** — T-83 `ui.tray_recent_n` 즉시 반영(셸 설정 동기) · 설정 키 복사 순간 메시지(nexa-ctl `Flash` · 키 글자를 덮지 않는 자리) — test 413/0/2 · check-3os ✓ · `--version` "nexa-clip 0.2.4" · [journal](journal/2026-10-17.md)
+## 2026-10-17 (3차 · mac) — ★ **v0.2.4 릴리스 ✓**(태그 `dc3c83c` · release `39038702701` 1차 ✅ · 자산 15 · brew `b5b1008` · pkg.sosomlab.com 0.2.4 · choco·winget guard skip — 포터블 0.2.3 검수 대기) — T-83 `ui.tray_recent_n` 즉시 반영(셸 설정 동기) · 설정 키 복사 순간 메시지(nexa-ctl `Flash` · 키 글자를 덮지 않는 자리) — test 413/0/2 · check-3os ✓ · `--version` "nexa-clip 0.2.4" · [journal](journal/2026-10-17.md)
 
 ## 2026-10-17 (2차 · win) — ★ **v0.2.3 릴리스 ✓**(태그 `9995ff2` · release `39035319191` 1차 ✅ · 자산 15 · brew `8a839c7` · pkg.sosomlab.com 0.2.3 · choco 포터블 0.2.3 제출 · 설치본·winget skip) — T-75 Windows 세션 종료 저장 마감 · T-82 팝업 핀 토글·한글 잔존·거터 점·트레이 순번 배지 · T-81 메모리 피크 1차(`cap.max_item_mb` 32) — `--version` "nexa-clip 0.2.3" · V3 = 7ff64c5 기록(411/0/4) · [journal](journal/2026-10-17.md)
 
