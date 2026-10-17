@@ -4,12 +4,12 @@
 
 ---
 
-## 2026-10-17 (2차 · win) — ★ v0.2.3 릴리스 진행 — T-75 Windows 세션 종료 저장 마감 · T-82 팝업 핀 토글·한글 잔존·거터 점·트레이 순번 배지 · T-81 메모리 피크 1차(`cap.max_item_mb` 32)
+## 2026-10-17 (2차 · win) — ★ v0.2.3 릴리스 ✓ — T-75 Windows 세션 종료 저장 마감 · T-82 팝업 핀 토글·한글 잔존·거터 점·트레이 순번 배지 · T-81 메모리 피크 1차(`cap.max_item_mb` 32)
 
 **범위**: main `7ff64c5`(v0.2.2 이후 = T-75 · T-82 · T-81 1차) · beep 영향 없음.
 **배포 전**: 같은 소스(`7ff64c5`) V3 통과 기록 = rustc 1.99.1 · `cargo test --workspace` 411/0/4 · clippy · fmt · check-3os ✓ · nexa-ui `7dd0b50` · main CI `39034381561` ✓ → 전수 재실행 생략([33 §5-7](33-collab-session-operation.md) 4번 단서) · Release `cargo build --release -p nexa-clip` 34초 · `nexa-clip.exe` **2,464,768 B(2.35 MB)** · `--version` = **"nexa-clip 0.2.3"** · `cargo check --workspace` ✓(lock 정합 · Cargo.lock 워크스페이스 크레이트 8개 버전만).
 **예상 게시**: GitHub Release · brew · pkg.sosomlab.com ✓ · choco 포터블 0.2.3 go · 설치본 skip(T-78) · winget skip(0.1.6 PR 열림).
-**릴리스**: ☐ 태그 `v0.2.3` · release · 게시 결과 보충.
+**릴리스**: 태그 `v0.2.3` = `9995ff2`(커밋 `a4af452` · main CI `39035146637` ✓) · release `39035319191` **1차 ✅** · 자산 15 · 노트 영어 · brew `8a839c7` 0.2.3 · pkg.sosomlab.com 0.2.3(linux-repo `39035556238`) · winget skip · choco 설치본 skip · **choco 포터블 0.2.3 제출 → Pending automated review**.
 **☐ 다음**: 사용자 실기(로그오프 1회 · [21 §12-2](21-manual-test.md) K23~K27 · 큰 Excel 복사 Peak) · 설치본 0.2.3 교체 여부.
 
 ---
