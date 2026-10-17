@@ -4,7 +4,8 @@
 
 | 브랜치 | 생성 | 병합 | 커밋 수 | 요약 |
 |---|---|---|---:|---|
-| `chore/release-0.2.4` | 2026-10-17 | 2026-10-17 → main 병합(push 뒤 보충) · 태그 `v0.2.4` | 1 | v0.2.4 버전 올림(Cargo.toml · lock) + 릴리스 문서(journal 10-17 8차) + CLAUDE.md §1 · `--version` "nexa-clip 0.2.4" · Release(macOS x64) 2,350,480 B |
+| `docs/release-0.2.4-followup` | 2026-10-17 | 2026-10-17 → main 병합 | 1 | v0.2.4 릴리스 결과 기록(journal 8차 ④ · STATUS · DEVLOG · MILESTONES ✅ · TODO · CLAUDE.md §1) |
+| `chore/release-0.2.4` | 2026-10-17 | 2026-10-17 → main 병합 `dc3c83c`(커밋 `c62130c`) · 태그 `v0.2.4` · CI `39038558061` ✓ · release `39038702701` ✓ | 1 | v0.2.4 버전 올림(Cargo.toml · lock) + 릴리스 문서(journal 10-17 8차) + CLAUDE.md §1 · `--version` "nexa-clip 0.2.4" · Release(macOS x64) 2,350,480 B |
 | `fix/tray-n-copy-flash-10-17` | 2026-10-17 | 2026-10-17 → main 병합 `a7a0d54`(`--no-ff` · 커밋 `4d69dd7`) | 1 | T-83 `ui.tray_recent_n` 즉시 반영 · 설정 키 복사 순간 메시지(nexa-ctl `Flash`) · test 413/0/2 · check-3os ✓ |
 | `chore/release-0.2.3` | 2026-10-17 | 2026-10-17 → main 병합 `9995ff2`(커밋 `a4af452`) · 태그 `v0.2.3` · CI `39035146637` ✓ · release `39035319191` ✓ | 1 | v0.2.3 버전 올림(Cargo.toml · lock) + 릴리스 문서(journal 10-17 6차) + CLAUDE.md §1 · `--version` "nexa-clip 0.2.3" · Release 2,464,768 B · V3 = `7ff64c5` 기록 |
 | `feat/popup-pin-tray-badge-10-17` | 2026-10-17 | 2026-10-17 → main 병합 `7ff64c5`(`--no-ff` · 커밋 `46dbb4f` 소스 · `bae11ed` 문서 · push `48e399f..7ff64c5`) · CI `39034381561` ✓ 3잡 | 2 | T-75 Windows 세션 종료 저장 마감 · T-82 사용자 지시 4건(팝업 핀 토글 · 한글 잔존 · 거터 점 · 트레이 순번 배지) · T-81 메모리 피크 1차(`cap.max_item_mb` 32 · 2단 읽기 · settle 1벌 · `push_owned`) — 소스 1 + 문서 1 · V3 `cargo test --workspace` **411 통과 / 실패 0 / 무시 4** · E2E 세션 종료 ✓ · `win-e2e.ps1` ⏸ 보류(설치본 1960 단축키 점유 · 사용자 PC 사용 중) · 팝업 변경분은 사용자 실기 K23~K27 |
