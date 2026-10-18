@@ -5,6 +5,8 @@
 | 브랜치 | 생성 | 병합 | 커밋 수 | 요약 |
 |---|---|---|---:|---|
 | `docs/qa-tray-guard-10-17` | 2026-10-17 | 2026-10-17 → main 병합 | 1 | 사용자 문의 2건 정리(트레이 메뉴 항목 수 설정 위치 · 검수 대기 시 보류 = 기존 guard 확인) · journal 10-17 10차 · DEVLOG · 7차·9차 해시 보충 |
+| `docs/progress-10-18` | 2026-10-18 | 2026-10-18 → main 병합 | 1 | 10-18 진행사항 최신화(journal 10-18 신설 · STATUS · DEVLOG · BRANCHES) · nexa-ui `65f8aaa` 확인 |
+| `docs/toolchain-fix-10-18` | 2026-10-18 | 2026-10-18 → 로컬 병합 `f564610`(커밋 `f5e306c`) → 원격 병합 `7578c8f` · push `9e2cc7e..7578c8f` · CI `39101716993` ✓ | 1 | 툴체인 함정 해소 기록(Homebrew rust 제거) · journal 10-17 9차 정정 · STATUS |
 | `docs/progress-10-17-mac` | 2026-10-17 | 2026-10-17 → main 병합 `c178387`(커밋 `26b2d2e`) | 1 | 10-17 9차 진행사항 최신화(journal · STATUS · DEVLOG · BRANCHES 해시 보충) |
 | `docs/release-0.2.4-followup` | 2026-10-17 | 2026-10-17 → main 병합 `b51ff99`(커밋 `295c123` · push `dc3c83c..b51ff99`) · CI `39039077448` ✓ | 1 | v0.2.4 릴리스 결과 기록(journal 8차 ④ · STATUS · DEVLOG · MILESTONES ✅ · TODO · CLAUDE.md §1) |
 | `chore/release-0.2.4` | 2026-10-17 | 2026-10-17 → main 병합 `dc3c83c`(커밋 `c62130c`) · 태그 `v0.2.4` · CI `39038558061` ✓ · release `39038702701` ✓ | 1 | v0.2.4 버전 올림(Cargo.toml · lock) + 릴리스 문서(journal 10-17 8차) + CLAUDE.md §1 · `--version` "nexa-clip 0.2.4" · Release(macOS x64) 2,350,480 B |
