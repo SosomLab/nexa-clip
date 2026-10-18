@@ -2,6 +2,8 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-10-17 (5차 · win) — 사용자 문의 정리: 트레이 메뉴 항목 수 = 설정 › 모양(`ui.tray_recent_n` · 기본 8 · 3~20 · v0.2.4부터 다음 트레이 클릭에 즉시 반영) · "직전 검수 대기면 새 버전 보류" = 기존 `guard` 잡(winget 열린 PR · choco 패키지별)으로 이미 적용 확인(v0.2.4 포터블 skip이 실례) · 7차·9차 해시 보충 · 코드 변경 없음 · [journal](journal/2026-10-17.md) 10차
+
 ## 2026-10-17 (4차 · mac) — 진행사항 최신화(BRANCHES 후속 병합 해시 `b51ff99` 보충 · 스토어 재확인 = choco 포터블 0.2.3 검수 대기 · winget PR OPEN) · [journal](journal/2026-10-17.md) 9차
 
 ## 2026-10-17 (3차 · mac) — ★ **v0.2.4 릴리스 ✓**(태그 `dc3c83c` · release `39038702701` 1차 ✅ · 자산 15 · brew `b5b1008` · pkg.sosomlab.com 0.2.4 · choco·winget guard skip — 포터블 0.2.3 검수 대기) — T-83 `ui.tray_recent_n` 즉시 반영(셸 설정 동기) · 설정 키 복사 순간 메시지(nexa-ctl `Flash` · 키 글자를 덮지 않는 자리) — test 413/0/2 · check-3os ✓ · `--version` "nexa-clip 0.2.4" · [journal](journal/2026-10-17.md)
