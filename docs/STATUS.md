@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-10-18 (mac) — 툴체인 함정 해소 · nexa-ui 214·215차 반영 확인 · choco 포터블 0.2.3 자동 검수 통과
+
+**툴체인**: Homebrew `rust` 1.98.1 제거 → rustup 1.99.1만 · 기본 셸 check-3os ✓.
+**형제 저장소**: nexa-ui `65f8aaa`(214차 `Toasts::paint_in` · 215차 콤보 팝업 폭 = 가장 긴 행) · clip 소스 변경 없음 · check-3os ✓ · test 413/0/2.
+**스토어**: choco 포터블 0.2.3 Validation·Verification Passed · Scan Resulted · 승인 대기(`IsApproved=false`) · 설치본 0.1.5 Waiting for Maintainer · winget 0.1.6 PR OPEN.
+**☐ 다음**: 사용자 실기(T-83 · 설정 콤보 팝업 폭) · 설치본 0.2.4 교체 · 포터블 0.2.3 승인 → 다음 태그에서 포터블 자동 제출 → [journal 10-18](journal/2026-10-18.md).
+
+---
+
 ## 2026-10-17 (3차 · mac) — ★ v0.2.4 릴리스 ✓ — T-83 트레이 최근 개수 즉시 반영 · 설정 키 복사 순간 메시지
 
 **범위**: main `a7a0d54`(v0.2.3 이후 = T-83 · 커밋 `4d69dd7`) · beep 영향 없음 · nexa-ui·nexa-license 변경 없음.
