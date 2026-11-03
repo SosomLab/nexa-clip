@@ -9,6 +9,7 @@
 **설정 화면**(`ec57847` · `693169a` · 하단 줄 = nexa-dir와 동일 `74a8139`·`577457a` — [고급][변경] …… [내보내기…][가져오기…][JSON 편집…][닫기]): 변경된 설정만(비영속) · PageUp/Down/Home/End · 사이드바 휠 = 트리 · **모양 › 알림·움직임** 14키(토스트 · 플래시 · 고속 스크롤 ×N HUD — 메인·팝업·설정) · 토스트 호스트 · JSON 가져오기/내보내기/편집(`settings.json` 감시) · 설정 파일 열기 = 고급 카드 · V0 nclip-core 153 · nclip-ui 56 · clippy ✓.
 **VT 오탐 보조**(`02ada89` · T-77 보조): exe 버전·아이콘·매니페스트 리소스(영어) · NSIS 메타 + lzma → zlib · 기능 API(SendInput 등)는 유지 · 근본 = T-77 서명. **LICENSE.md 머리 영어**(`e341740` · NSIS 라이선스 페이지).
 **툴체인**: 이 PC에 없었음 → 사용자 승인 · rustup 1.29.2 · rustc 1.99.1 msvc · VS Build Tools 14.44 · SDK 10.0.26100. P0 54 s · 버전 리소스 ✓ · Debug PID **16972**(`--profile dev` 격리 · 실제 설정 아님).
+**이 PC 2(LAPTOP-V3NOGHF6 · D: clone · 12차)**: 최신화 ✓ main `b1fa71b` · nexa-ui `5169a3f` · nexa-license `f33ebef` · 툴체인 1.99.1 기존 · `cargo check --workspace` ✓ 경고 0 · CI `41599546329` ✓ · 설치본 0.2.4 PID 14972 · Debug 재시작 = 진행 중(협업).
 **스토어**: release·brew·APT·RPM 0.2.4 ✓ · choco 포터블 0.2.3 승인(0.2.4 미제출) · 🔴 choco 설치본 0.1.5 = 10-30 자동 경고 → **≈11-14 자동 반려** · 🔴 winget PR 2건 Needs-Author-Feedback(1.28.0 요구 → 틀 수정 `fe20dc7` · PR 갱신 T-85).
 **☐ 다음**: 사용자 실기 [21 §15](21-manual-test.md) P2-11~14 · T-78 결정(11-14 전) · T-85 · CLAUDE.md §4 영어 규칙 문안 승인 → [journal 11-03](journal/2026-11-03.md).
 
