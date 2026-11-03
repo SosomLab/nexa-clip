@@ -2112,7 +2112,7 @@ impl SettingsWidget {
             let pad = self.s(PAD);
             let gap = self.s(8);
             let cy = bottom_top + (self.bottom_h() - ctl_h) / 2;
-            let sw_w = self.s(150);
+            let sw_w = self.s(128); // 기본 폭 760에서 버튼 넷과 함께 들어가게(11-03 캡처 보정)
             self.adv_switch.set_scale(self.scale);
             self.adv_switch
                 .set_bounds(Rect::new(b.x + pad, cy, sw_w, ctl_h), inv);
@@ -2121,7 +2121,7 @@ impl SettingsWidget {
                 .set_bounds(Rect::new(b.x + pad + sw_w + gap, cy, sw_w, ctl_h), inv);
             // 오른쪽 끝부터 왼쪽으로 쌓는다.
             let mut x = b.right() - pad;
-            let (close_w, json_w, io_w) = (self.s(90), self.s(120), self.s(110));
+            let (close_w, json_w, io_w) = (self.s(84), self.s(112), self.s(100));
             x -= close_w;
             self.btn_close.set_scale(self.scale);
             self.btn_close
