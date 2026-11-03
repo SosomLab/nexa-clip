@@ -1,0 +1,43 @@
+// nclip-imgdec.rc — 이미지 격리 디코드 워커의 Windows 리소스(아이콘 + 버전 정보 + 매니페스트 · T-77 보조 · 11-03).
+// crates/nclip-imgdec/build.rs(본체 packaging/windows/winres.rs)가 컴파일해 링크한다 — nexa-clip.rc와 같은 규약.
+// 콘솔 없는 보조 실행 파일은 버전 정보가 비면 휴리스틱 검사가 "드로퍼"로 의심한다 — 본체와 같은 메타를 채운다.
+#ifndef NCLIP_VER_MAJOR
+#define NCLIP_VER_MAJOR 0
+#define NCLIP_VER_MINOR 0
+#define NCLIP_VER_PATCH 0
+#define NCLIP_VER_STR "0.0.0"
+#endif
+#ifndef NCLIP_MANIFEST
+#define NCLIP_MANIFEST "nclip-imgdec.manifest"
+#endif
+
+1 ICON "../branding/nexa-clip.ico"
+
+1 24 NCLIP_MANIFEST
+
+1 VERSIONINFO
+FILEVERSION     NCLIP_VER_MAJOR,NCLIP_VER_MINOR,NCLIP_VER_PATCH,0
+PRODUCTVERSION  NCLIP_VER_MAJOR,NCLIP_VER_MINOR,NCLIP_VER_PATCH,0
+FILEOS          0x40004L
+FILETYPE        0x1L
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "040904B0"
+    BEGIN
+      VALUE "CompanyName",      "SosomLab\0"
+      VALUE "FileDescription",  "Nexa Clip image decode helper (sandboxed worker)\0"
+      VALUE "FileVersion",      NCLIP_VER_STR "\0"
+      VALUE "InternalName",     "nclip-imgdec\0"
+      VALUE "LegalCopyright",   "Copyright (c) 2026 SosomLab - PolyForm Noncommercial 1.0.0\0"
+      VALUE "OriginalFilename", "nclip-imgdec.exe\0"
+      VALUE "ProductName",      "Nexa Clip\0"
+      VALUE "ProductVersion",   NCLIP_VER_STR "\0"
+      VALUE "Comments",         "Open source: https://github.com/SosomLab/nexa-clip\0"
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x409, 1200
+  END
+END
