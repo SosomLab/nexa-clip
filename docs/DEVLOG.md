@@ -2,6 +2,8 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-11-03 (3차 · win) — 세션 마감 정리: 후속 커밋 `6d0f26c`(winget 1.28.0 schema header 6파일 + 릴리스 기록 · CI ✓) · `da96be7`(해시 보충 · CI `41628620456` ✓) · "추가로 진행할 내용?" = 자동 이어갈 일 없음 → 결정 3(T-78 ≈11-14 · T-85 PR · 설치본 0.2.5 교체) · 실기(P2-11~14 · T-82·T-83 · T-80) · 착수 후보 2(T-81 ④ · T-84) · §12 2행(P1 취소 교차 · perl UTF-8 깨짐) · [journal](journal/2026-11-03.md) 14차
+
 ## 2026-11-03 (2차 · win) — ★ **v0.2.5 릴리스 ✓**(태그 `8edfead` · release `41626658783` 11/12 ✓ · 자산 15 · brew `bac709b` · pkg.sosomlab.com 0.2.5 · ★ choco 포터블 0.2.5 제출 → Pending automated review · 설치본·winget guard skip) — 코드 변경 없음(11-03 1~11차 첫 배포 · `Cargo.toml` 0.2.5) · V3 이 PC 첫 전수 417/0/4 · Release 2.43 MB · `--version` "nexa-clip 0.2.5" · 🔴 winget 잡 ✗ = 1.28.0 매니페스트 `winget validate` "Schema header not found" 경고(검증 단계는 guard 무관 · 게시 영향 0 · 템플릿 schema header 주석 처방) · [journal](journal/2026-11-03.md) 12·13차
 
 ## 2026-11-03 (win) — 설정 화면 개선(변경된 설정만 · 키보드·사이드바 스크롤 · 알림·움직임 14키 · 고속 스크롤 ×N HUD · JSON 가져오기/내보내기/편집) · VT 오탐 보조(버전·매니페스트 리소스 · NSIS zlib) · winget 1.28.0 · LICENSE 영어 · 협업 규칙 이식 · 이 PC 툴체인 설치(rustc 1.99.1 · VS BT 14.44) · main 병합 `592fb8b` + 하단 줄 라벨·간격·순서 nexa-dir와 동일(`74a8139` · `577457a` · main 직접) · V2 417/0/4 · check-3os ✓ · **push `bd03ab4` · CI `41599081199` ✓** · 🔴 choco 설치본 ≈11-14 자동 반려 · **12차 = 두 번째 Windows PC(LAPTOP-V3NOGHF6 · D: clone) 최신화 `b1fa71b` · check ✓ · CI `41599546329` ✓** · [journal](journal/2026-11-03.md)
