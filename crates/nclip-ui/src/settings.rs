@@ -2112,7 +2112,7 @@ impl SettingsWidget {
             let pad = self.s(PAD);
             let gap = self.s(8);
             let cy = bottom_top + (self.bottom_h() - ctl_h) / 2;
-            let sw_w = self.s(128); // 기본 폭 760에서 버튼 넷과 함께 들어가게(11-03 캡처 보정)
+            let sw_w = self.s(96); // 라벨이 "고급"/"변경"으로 짧아져(사용자 11-03) 스위치 칸도 줄인다
             self.adv_switch.set_scale(self.scale);
             self.adv_switch
                 .set_bounds(Rect::new(b.x + pad, cy, sw_w, ctl_h), inv);

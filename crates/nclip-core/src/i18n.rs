@@ -1160,7 +1160,8 @@ impl Msg {
                 "跟随系统语言",
                 "システムの言語に従う",
             ],
-            Msg::PrefsAdvanced => ["Advanced settings", "고급 설정", "高级设置", "詳細設定"],
+            // 하단 줄 스위치 라벨 — 짧게(사용자 11-03 · nexa-dir와 동일 "고급"/"변경").
+            Msg::PrefsAdvanced => ["Advanced", "고급", "高级", "詳細"],
             Msg::PrefsAdvancedHidden => [
                 "{} advanced settings hidden — turn on Advanced to show them",
                 "고급 설정 {}개 숨김 — 고급 설정을 켜면 보입니다",
@@ -1315,7 +1316,7 @@ impl Msg {
             Msg::ValFlashMsRange => ["Enter 0-30000 ms.", "0~30000 ms 사이로 입력하세요.", "请输入 0~30000 ms。", "0~30000 ms の範囲で入力してください。"],
             Msg::ValScrollMsRange => ["Enter 20-10000 ms.", "20~10000 ms 사이로 입력하세요.", "请输入 20~10000 ms。", "20~10000 ms の範囲で入力してください。"],
             // ── 설정 창 "변경" 보기 · JSON · 가져오기/내보내기(11-03) ──
-            Msg::PrefsChangedOnly => ["Changed only", "변경된 설정만", "仅已更改", "変更のみ"],
+            Msg::PrefsChangedOnly => ["Changed", "변경", "已更改", "変更"],
             Msg::PrefsNoChanged => [
                 "No settings differ from their defaults.",
                 "기본값과 다른 설정이 없습니다.",
