@@ -25,15 +25,20 @@ OutFile "nexa-clip-${VERSION}-${SLUG}-setup.exe"
 InstallDir "$LOCALAPPDATA\Programs\NexaClip"
 InstallDirRegKey HKCU "Software\${COMPANY}\NexaClip" "InstallDir"
 RequestExecutionLevel user
-SetCompressor /SOLID lzma
+; ★ 11-03: /SOLID lzma → zlib — 솔리드 LZMA 포장은 휴리스틱 검사(VirusTotal · T-77/T-78)가 "패커"로 보는 흔한 신호. 크기 몇백 KB 차이는 감수한다.
+SetCompressor zlib
 
-VIProductVersion "0.0.0.0"
+; ★ 11-03: 버전 리소스 전부 기입(영어 · 실제 버전) — 공란·0.0.0.0은 검수자·스캐너가 보는 첫 의심 신호.
+VIProductVersion "${VERSION}.0"
 VIAddVersionKey "ProductName"     "${APPNAME}"
 VIAddVersionKey "CompanyName"     "${COMPANY}"
-VIAddVersionKey "FileDescription" "3-OS 동일 화면 클립보드 매니저"
+VIAddVersionKey "FileDescription" "Nexa Clip Setup - cross-platform clipboard manager"
 VIAddVersionKey "FileVersion"     "${VERSION}"
 VIAddVersionKey "ProductVersion"  "${VERSION}"
-VIAddVersionKey "LegalCopyright"  "PolyForm Noncommercial 1.0.0"
+VIAddVersionKey "LegalCopyright"  "Copyright (c) 2026 SosomLab - PolyForm Noncommercial 1.0.0"
+VIAddVersionKey "InternalName"    "nexa-clip-setup"
+VIAddVersionKey "OriginalFilename" "nexa-clip-${VERSION}-${SLUG}-setup.exe"
+VIAddVersionKey "Comments"        "Open source: https://github.com/SosomLab/nexa-clip"
 
 !define MUI_ICON   "nexa-clip.ico"
 !define MUI_UNICON "nexa-clip.ico"
@@ -52,7 +57,7 @@ VIAddVersionKey "LegalCopyright"  "PolyForm Noncommercial 1.0.0"
 !insertmacro MUI_LANGUAGE "Korean"
 !insertmacro MUI_LANGUAGE "English"
 
-Section "설치"
+Section "Install"
   SetOutPath "$INSTDIR"
   File "${EXENAME}"
   File "nclip-imgdec.exe" ; 이미지 격리 디코드 워커 — 없으면 PNG 썸네일·이미지 전파 변환이 빠진다

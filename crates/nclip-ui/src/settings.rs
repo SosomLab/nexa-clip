@@ -55,7 +55,7 @@ const FONT_SIZE_DEFAULT: &str = "16";
 /// 설정 **화면에는 없지만** 영속되는 키(M3-17 프로필 화면이 쓴다) — 기본 빈 문자열.
 /// ⚠ 이메일·전화는 PII다 — 평문 settings.cfg 보관은 잠정이며 M2-5b(암호화 저장)로
 /// 이관 후보(journal 08-11 명기).
-const HIDDEN_KEYS: &[&str] = &[
+pub(crate) const HIDDEN_KEYS: &[&str] = &[
     // 화면에는 없지만 영속되는 키 — 창 위치·크기 기억.
     "ui.win_x",
     "ui.win_y",
@@ -102,7 +102,7 @@ pub const CATEGORY_TREE: &[(Msg, &[Msg])] = &[
             Msg::CatPrivacy,
         ],
     ),
-    (Msg::GrpAppearance, &[Msg::CatAppearance]),
+    (Msg::GrpAppearance, &[Msg::CatAppearance, Msg::CatNotify]),
     (Msg::GrpSync, &[Msg::CatSync]),
     (Msg::GrpAdvanced, &[Msg::CatAdvanced, Msg::CatAbout]),
 ];
@@ -145,6 +145,9 @@ pub const ADVANCED: &[&str] = &[
     "sync.file_max_mb",
     // 진단 로그.
     "adv.log",
+    // ★ 고속 스크롤 구현 상수(11-03 · nexa-sql HIDDEN 짝) — 연속 판정 간격·HUD 유지.
+    "scroll.fast_window_ms",
+    "scroll.fast_hud_hold_ms",
 ];
 
 /// 고급 설정인가(설정 창 스위치가 꺼져 있으면 숨기고 수만 센다).
@@ -196,6 +199,14 @@ pub const DEPENDS: &[(&str, &str, Dep)] = &[
     ("cap.cell_pic_rows", "cap.rich", Dep::On),
     ("cap.cell_pic_cols", "cap.rich", Dep::On),
     ("cap.cell_pic_cells", "cap.rich", Dep::On),
+    // ★ 고속 스크롤(11-03) — 끄면 가속·HUD 항목 잠금 · HUD 끄면 자리·시간 잠금.
+    ("scroll.fast_speed", "scroll.fast", Dep::On),
+    ("scroll.fast_hud", "scroll.fast", Dep::On),
+    ("scroll.fast_window_ms", "scroll.fast", Dep::On),
+    ("scroll.fast_hud_pos", "scroll.fast_hud", Dep::On),
+    ("scroll.fast_hud_fade_ms", "scroll.fast_hud", Dep::On),
+    ("scroll.fast_hud_hold_ms", "scroll.fast_hud", Dep::On),
+    // 토스트 남은 시간 막대를 끄면 — 없음 · 플래시 모양 none이면 — 없음(값은 독립).
 ];
 
 /// 이 키의 종속(부모 키, 조건) — 없으면 `None`.
@@ -277,8 +288,17 @@ const PW_EYE_SIDE: u32 = 96;
 /// 생성 버튼 무장 유지 시간(09-03 사용자 — "2초 내에 다시 누르지 않으면 원복").
 const PW_ARM_WINDOW: std::time::Duration = std::time::Duration::from_secs(2);
 /// 키 복사 순간 메시지 — 그대로 보이는 시간 · 녹아 사라지는 시간(ms · 10-17).
+/// ★ 11-03부터 **기본값**이다 — 실제 값은 `ui.flash_hold_ms`·`ui.flash_ms`([`SettingsWidget::apply_flash_prefs`]).
 const COPY_FLASH_HOLD_MS: u64 = 1200;
 const COPY_FLASH_FADE_MS: u64 = 600;
+
+/// ms 설정 값 파싱(빈 값·비숫자 = 기본값).
+fn parse_ms(v: &str, default: u64) -> u64 {
+    v.trim().parse().unwrap_or(default)
+}
+
+/// 플래시 둥근 모서리 반지름(px · `ui.flash_shape` = rounded).
+const FLASH_RADIUS: i32 = 6;
 
 /// ★ 기기 목록 한 행(09-04) — 텍스트 + [승인|해제] + [삭제]. `me` 행은 버튼이 없다.
 pub struct DevRow {
@@ -526,6 +546,17 @@ const RADIO_DEFAULTS: &[(&str, &str)] = &[
     ("store.max_total_mb", "500"),
     ("store.sort", "recent"),
     ("find.mode", "fuzzy"), // ★ 기본 = 유사(09-04 사용자 — 띄어쓴 단어 전부 · 순서 무관)
+    // ★ 알림·움직임(11-03) — 토스트 3초·85%(nexa-ctl Toasts 기본) · 플래시 1.2초+0.6초(10-17 키 복사 상수) ·
+    //   고속 스크롤 fast(nexa-ctl 기본 5/8) · HUD 우상단 · 600/250/160ms(nexa-ctl FastScroll 기본).
+    ("ui.toast_ms", "3000"),
+    ("ui.toast_alpha", "85"),
+    ("ui.flash_hold_ms", "1200"),
+    ("ui.flash_ms", "600"),
+    ("scroll.fast_speed", "fast"),
+    ("scroll.fast_hud_pos", "tr"),
+    ("scroll.fast_hud_fade_ms", "600"),
+    ("scroll.fast_hud_hold_ms", "250"),
+    ("scroll.fast_window_ms", "160"),
 ];
 
 /// 항목 종류 — 우측 패널이 이 열거를 읽어 컨트롤을 동적 생성한다(새 설정 = Entry 1줄).
@@ -673,7 +704,15 @@ impl Entry {
                 vec![(self.key, if on { "on" } else { "off" }.to_string())]
             }
             SettingKind::Color { default } => vec![(self.key, default.to_string())],
-            SettingKind::PositionGrid => vec![(self.key, "bl".to_string())],
+            // 위치 격자 — 예외 표에 있으면 그 값(HUD 자리 = 우상단), 없으면 좌하(팝업 위치 선례).
+            SettingKind::PositionGrid => vec![(
+                self.key,
+                RADIO_DEFAULTS
+                    .iter()
+                    .find(|(k, _)| *k == self.key)
+                    .map_or("bl", |(_, v)| *v)
+                    .to_string(),
+            )],
             SettingKind::FontFace { family_key } => vec![(family_key, String::new())],
             SettingKind::Text { .. } => vec![(self.key, String::new())],
             // 정보 행 — 값 키 없음(영속 파일에 실리지 않는다 · 호스트가 set_info로 채운다).
@@ -703,7 +742,7 @@ fn hotkey_label(value: &str, lang: Lang) -> String {
 /// 입력 검증 규칙(08-20 — 확정 시 즉시 검사): `Ok` = 적용 · `Err(경고 Msg)` =
 /// 호스트가 경고를 띄우고 컨트롤은 **직전 확정값으로 원복**([`Control::last_value`]).
 /// 새 규칙은 여기 한 곳에만 추가한다(검증·경고·원복 배선은 공용).
-fn validate(key: &str, value: &str) -> Result<(), Msg> {
+pub(crate) fn validate(key: &str, value: &str) -> Result<(), Msg> {
     /// 숫자 + 범위 — 어긋나면 호스트가 경고하고 **직전 확정값으로 원복**한다.
     fn range(value: &str, lo: u64, hi: u64, err: Msg) -> Result<(), Msg> {
         if value.parse::<u64>().is_ok_and(|v| (lo..=hi).contains(&v)) {
@@ -726,6 +765,13 @@ fn validate(key: &str, value: &str) -> Result<(), Msg> {
             } else {
                 Err(Msg::ValMinutesRange)
             }
+        }
+        // ★ 알림·움직임(11-03) — nexa-sql 범위 그대로.
+        "ui.toast_ms" => range(value, 100, 60_000, Msg::ValToastMsRange),
+        "ui.toast_alpha" => range(value, 30, 100, Msg::ValPctRange),
+        "ui.flash_hold_ms" | "ui.flash_ms" => range(value, 0, 30_000, Msg::ValFlashMsRange),
+        "scroll.fast_hud_fade_ms" | "scroll.fast_hud_hold_ms" | "scroll.fast_window_ms" => {
+            range(value, 20, 10_000, Msg::ValScrollMsRange)
         }
         _ => Ok(()),
     }
@@ -805,7 +851,19 @@ impl SettingsState {
         let (Some(k), Some(kind)) = (found, kind) else {
             return false;
         };
-        let valid = match kind {
+        let valid = value_valid(kind, value);
+        if valid {
+            self.values.insert(k, value.to_string());
+        }
+        true // 아는 키다 — 값이 무효여도 미지 키로 보존하지 않는다(기본값 유지).
+    }
+}
+
+/// 값이 항목 종류에 맞는가(파일·JSON에서 온 값 검사 — [`SettingsState::set_by_name`]·JSON 가져오기 공용 · 11-03 분리).
+/// 범위는 [`validate`]가 따로 본다.
+pub(crate) fn value_valid(kind: SettingKind, value: &str) -> bool {
+    {
+        match kind {
             SettingKind::Radio(opts) => opts.iter().any(|(v, _)| *v == value),
             // 직접 입력 허용 — 빈 값만 거른다(빈 문자열은 기본값 의미가 아니다).
             SettingKind::RadioInput(..) => !value.is_empty(),
@@ -825,11 +883,7 @@ impl SettingsState {
             SettingKind::Hotkey { .. } => {
                 value.trim().is_empty() || nclip_core::hotkey::Hotkey::parse(value).is_some()
             }
-        };
-        if valid {
-            self.values.insert(k, value.to_string());
         }
-        true // 아는 키다 — 값이 무효여도 미지 키로 보존하지 않는다(기본값 유지).
     }
 }
 
@@ -1046,10 +1100,21 @@ pub struct SettingsWidget {
     advanced: bool,
     /// 지금 보기에서 숨긴 고급 항목 수(밴드 배너).
     adv_hidden: usize,
-    /// 하단 줄 컨트롤 — 고급 스위치 · \[설정 파일 열기…\] · \[닫기\].
+    /// 하단 줄 컨트롤 — 고급 스위치 · 변경 스위치 · \[가져오기…\]\[내보내기…\]\[JSON 편집…\] · \[닫기\].
     adv_switch: Switch,
-    btn_file: Button,
+    /// ★ "변경" 스위치(11-03 · nexa-sql 10-11 차용) — 켜면 **기본값에서 바뀐 설정만**(고급·트리 선택 무관 · 검색과는 AND) ·
+    ///   비영속(창을 열 때마다 꺼짐 — 점검용 보기).
+    chg_switch: Switch,
+    /// "변경"을 켠 시점의 바뀐 키 집합 — 켠 동안 \[초기화\]로 기본값이 돼도 **사라지지 않게** 고정(되돌리기 다음 동작이
+    /// 끊기지 않게) · 껐다 켜면 다시 셈. `Some` = 변경 보기 켜짐.
+    changed_keys: Option<std::collections::HashSet<&'static str>>,
+    btn_import: Button,
+    btn_export: Button,
+    btn_json: Button,
     btn_close: Button,
+    /// ★ 플래시(순간 메시지) 유지·사라짐 시간(ms · `ui.flash_hold_ms`·`ui.flash_ms` · 11-03 · nexa-sql 차용).
+    flash_hold_ms: u64,
+    flash_fade_ms: u64,
     /// 읽기 전용 정보 행 본문(`SettingKind::Info` — 호스트 `set_info`).
     infos: HashMap<&'static str, String>,
     /// 콤보 옵션 **표시 라벨 덮어쓰기**((키, 값) → 라벨 · 10-10 사용자 "시스템 (현재 설정)" — beep `set_option_label` 동일):
@@ -1150,8 +1215,14 @@ impl SettingsWidget {
             advanced,
             adv_hidden: 0,
             adv_switch: Switch::new(tr(lang, Msg::PrefsAdvanced), advanced),
-            btn_file: Button::new(tr(lang, Msg::BtnOpenSettingsFile)),
+            chg_switch: Switch::new(tr(lang, Msg::PrefsChangedOnly), false),
+            changed_keys: None,
+            btn_import: Button::new(tr(lang, Msg::BtnImportSettings)),
+            btn_export: Button::new(tr(lang, Msg::BtnExportSettings)),
+            btn_json: Button::new(tr(lang, Msg::BtnEditJson)),
             btn_close: Button::new(tr(lang, Msg::BtnClose)),
+            flash_hold_ms: parse_ms(state.get("ui.flash_hold_ms"), COPY_FLASH_HOLD_MS),
+            flash_fade_ms: parse_ms(state.get("ui.flash_ms"), COPY_FLASH_FADE_MS),
             infos: HashMap::new(),
             option_labels: HashMap::new(),
             history,
@@ -1179,7 +1250,48 @@ impl SettingsWidget {
         };
         let mut inv = Invalidations::default();
         w.rebuild(&mut inv);
+        w.apply_flash_prefs(state);
         w
+    }
+
+    /// ★ 플래시(순간 메시지) 설정 반영(11-03) — `ui.flash_hold_ms` · `ui.flash_ms` · `ui.flash_shape`(rounded/rect/none).
+    /// 열 때와 그 키가 바뀔 때 호스트가 부른다. 진행 중인 플래시는 원래 값으로 끝난다(다음 표시부터 적용).
+    pub fn apply_flash_prefs(&mut self, state: &SettingsState) {
+        self.flash_hold_ms = parse_ms(state.get("ui.flash_hold_ms"), COPY_FLASH_HOLD_MS);
+        self.flash_fade_ms = parse_ms(state.get("ui.flash_ms"), COPY_FLASH_FADE_MS);
+        let mut f = self.copy_flash.borrow_mut();
+        match state.get("ui.flash_shape") {
+            "none" => f.set_background(false),
+            "rect" => {
+                f.set_background(true);
+                f.set_radius(0);
+            }
+            _ => {
+                f.set_background(true);
+                f.set_radius(FLASH_RADIUS);
+            }
+        }
+    }
+
+    /// ★ "변경" 보기 켜기/끄기(11-03 · nexa-sql 10-11 차용) — 켜는 순간의 바뀐 키 집합을 고정하고 행을 다시 만든다 · 스크롤 맨 위.
+    pub fn set_changed_only(&mut self, on: bool, inv: &mut Invalidations) {
+        self.chg_switch.set_on(on);
+        self.changed_keys = on.then(|| {
+            registry()
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| self.is_modified(*i))
+                .map(|(_, e)| e.key)
+                .collect()
+        });
+        self.scroll = 0;
+        self.rebuild(inv);
+    }
+
+    /// "변경" 보기가 켜져 있는가.
+    #[must_use]
+    pub fn changed_only(&self) -> bool {
+        self.changed_keys.is_some()
     }
 
     /// 선택 복사(① 08-13) — 포커스된 텍스트 입력(검색·글꼴명)에서만 나온다.
@@ -1478,12 +1590,16 @@ impl SettingsWidget {
                 .map_or(Vec::new(), |(_, c)| c.to_vec()),
             TreeSel::Cat(ci) => cats.get(ci).map(|(c, _)| *c).into_iter().collect(),
         };
+        // ★ "변경" 보기(11-03) = 트리 선택과 무관하게 **바뀐 키 전부**(검색어와는 AND).
+        let changed = self.changed_keys.as_ref();
         registry()
             .iter()
             .enumerate()
             .filter(|(_, e)| !hidden_on_this_os(e.key))
             .filter(|(_, e)| {
-                if searching {
+                if let Some(set) = changed {
+                    set.contains(e.key) && (!searching || entry_matches(e, &toks))
+                } else if searching {
                     entry_matches(e, &toks)
                 } else {
                     allowed.contains(&e.cat)
@@ -1498,7 +1614,10 @@ impl SettingsWidget {
         let mut hits: Vec<usize> = self
             .candidate_indices()
             .into_iter()
-            .filter(|&i| self.advanced || !is_advanced(registry()[i].key))
+            // "변경" 보기는 고급 여부와 무관(바뀐 것은 다 보여야 점검이 된다).
+            .filter(|&i| {
+                self.changed_keys.is_some() || self.advanced || !is_advanced(registry()[i].key)
+            })
             .collect();
         hits.sort_by_key(|&i| display_order(i));
         hits
@@ -1560,8 +1679,9 @@ impl SettingsWidget {
         self.rows.clear();
         let visible = self.visible_indices();
         self.adv_hidden = candidates.saturating_sub(visible.len());
-        // 여러 카테고리가 한 목록에 섞이는 보기(그룹 선택·검색)는 카테고리 경계에 제목을 붙인다.
-        let multi_cat = searching || matches!(self.selected, TreeSel::Group(_));
+        // 여러 카테고리가 한 목록에 섞이는 보기(그룹 선택·검색·변경)는 카테고리 경계에 제목을 붙인다.
+        let multi_cat =
+            searching || matches!(self.selected, TreeSel::Group(_)) || self.changed_keys.is_some();
         for idx in visible {
             let e = &registry()[idx];
             let ctl = match e.kind {
@@ -1860,11 +1980,26 @@ impl SettingsWidget {
     fn crumb_h(&self) -> i32 {
         self.s(CRUMB_CAT_H)
             + self.s(CRUMB_SUB_H)
-            + if self.adv_hidden > 0 {
+            + if self.banner_text().is_some() {
                 self.s(BANNER_H)
             } else {
                 0
             }
+    }
+    /// 밴드 셋째 줄 안내(11-03) — 고급 숨김 수(변경 보기 꺼짐) · 변경 보기인데 바뀐 설정 없음.
+    fn banner_text(&self) -> Option<String> {
+        if self.changed_keys.is_some() {
+            self.rows
+                .is_empty()
+                .then(|| tr(current_lang(), Msg::PrefsNoChanged).to_string())
+        } else if self.adv_hidden > 0 {
+            Some(nclip_core::tf(
+                Msg::PrefsAdvancedHidden,
+                &[&self.adv_hidden.to_string()],
+            ))
+        } else {
+            None
+        }
     }
     /// 우측 패널 뷰포트(사이드바 제외 · **고정 밴드 아래**부터 · 하단 줄 위까지).
     fn right_viewport(&self) -> Rect {
@@ -1915,7 +2050,10 @@ impl SettingsWidget {
                 dirty |= b.tick(now_ms);
             }
         }
-        dirty |= self.btn_file.tick(now_ms) | self.btn_close.tick(now_ms);
+        dirty |= self.btn_import.tick(now_ms)
+            | self.btn_export.tick(now_ms)
+            | self.btn_json.tick(now_ms)
+            | self.btn_close.tick(now_ms);
         // ★ 키 복사 순간 메시지 — 보이는 동안 프레임을 요청한다(끝나면 스스로 지워져 한 번 더 그려 지운다).
         if self.copy_flash.borrow().active() {
             let alive = self
@@ -1967,31 +2105,39 @@ impl SettingsWidget {
             Rect::new(b.x, tree_top, sw, (bottom_top - tree_top).max(0)),
             inv,
         );
-        // ── 하단 줄(10-10): [고급 스위치] ………… [설정 파일 열기…][닫기] ──
+        // ── 하단 줄(10-10 · 11-03 개편): [고급 스위치][변경 스위치] …… [가져오기…][내보내기…][JSON 편집…][닫기] ──
+        //   (설정 파일 열기는 고급 › 설정 파일 카드로 옮겼다 — 줄 하나에 다 들어가게.)
         {
             let ctl_h = self.s(CTL_H);
             let pad = self.s(PAD);
+            let gap = self.s(8);
             let cy = bottom_top + (self.bottom_h() - ctl_h) / 2;
+            let sw_w = self.s(128); // 기본 폭 760에서 버튼 넷과 함께 들어가게(11-03 캡처 보정)
             self.adv_switch.set_scale(self.scale);
             self.adv_switch
-                .set_bounds(Rect::new(b.x + pad, cy, self.s(190), ctl_h), inv);
-            let close_w = self.s(90);
-            let file_w = self.s(150);
+                .set_bounds(Rect::new(b.x + pad, cy, sw_w, ctl_h), inv);
+            self.chg_switch.set_scale(self.scale);
+            self.chg_switch
+                .set_bounds(Rect::new(b.x + pad + sw_w + gap, cy, sw_w, ctl_h), inv);
+            // 오른쪽 끝부터 왼쪽으로 쌓는다.
+            let mut x = b.right() - pad;
+            let (close_w, json_w, io_w) = (self.s(84), self.s(112), self.s(100));
+            x -= close_w;
             self.btn_close.set_scale(self.scale);
-            self.btn_close.set_bounds(
-                Rect::new(b.right() - pad - close_w, cy, close_w, ctl_h),
-                inv,
-            );
-            self.btn_file.set_scale(self.scale);
-            self.btn_file.set_bounds(
-                Rect::new(
-                    b.right() - pad - close_w - self.s(8) - file_w,
-                    cy,
-                    file_w,
-                    ctl_h,
-                ),
-                inv,
-            );
+            self.btn_close
+                .set_bounds(Rect::new(x, cy, close_w, ctl_h), inv);
+            x -= gap + json_w;
+            self.btn_json.set_scale(self.scale);
+            self.btn_json
+                .set_bounds(Rect::new(x, cy, json_w, ctl_h), inv);
+            x -= gap + io_w;
+            self.btn_export.set_scale(self.scale);
+            self.btn_export
+                .set_bounds(Rect::new(x, cy, io_w, ctl_h), inv);
+            x -= gap + io_w;
+            self.btn_import.set_scale(self.scale);
+            self.btn_import
+                .set_bounds(Rect::new(x, cy, io_w, ctl_h), inv);
         }
         let rx = b.x + sw; // 우측 패널 시작
         let rw = (b.w - sw).max(0);
@@ -2390,6 +2536,38 @@ impl SettingsWidget {
 
     /// ★ 목록이 키를 받을 상태(포커스·편집)인가 — 이 때 ↑↓가 사이드바로 샐면
     /// 메뉴가 움직인다(09-01 사용자 실기).
+    /// 글 입력 중인가(검색 · 콤보 직접 입력 · 글꼴명 · 목록 편집) — 키보드 스크롤은 이때 양보한다.
+    fn any_text_editing(&self) -> bool {
+        self.search.is_focused()
+            || self.any_list_editing()
+            || self.any_list_wants_keys()
+            || self.any_family_focused()
+            || self.rows.iter().any(|r| match &r.ctl {
+                RowCtl::Combo(c) => c.editing_input_ref().is_some(),
+                RowCtl::Font { size, .. } => size.editing_input_ref().is_some(),
+                _ => false,
+            })
+    }
+    /// PageUp/PageDown(`dir` = -1/+1 · 한 화면 − 한 줄) · Home · End — 우측 패널 스크롤(막대는 잠깐 보인다).
+    fn scroll_keys(&mut self, home: bool, end: bool, dir: i32, inv: &mut Invalidations) {
+        let vp = self.right_viewport();
+        let max = (self.content_h - vp.h).max(0);
+        let page = (vp.h - self.s(CTL_H)).max(self.s(40));
+        let ny = if home {
+            0
+        } else if end {
+            max
+        } else {
+            self.scroll + dir * page
+        }
+        .clamp(0, max);
+        if ny != self.scroll {
+            self.scroll = ny;
+            self.bars.show();
+            self.layout(inv);
+            inv.push(self.bounds);
+        }
+    }
     fn any_list_wants_keys(&self) -> bool {
         self.rows
             .iter()
@@ -2534,8 +2712,16 @@ impl Widget for SettingsWidget {
                 )
             {
                 self.adv_switch.on_event(ev, inv);
-                self.btn_file.on_event(ev, inv);
+                self.chg_switch.on_event(ev, inv);
+                self.btn_import.on_event(ev, inv);
+                self.btn_export.on_event(ev, inv);
+                self.btn_json.on_event(ev, inv);
                 self.btn_close.on_event(ev, inv);
+                if let Some(on) = self.chg_switch.take_toggled() {
+                    self.set_changed_only(on, inv);
+                    inv.push(self.bounds);
+                    return;
+                }
                 if let Some(on) = self.adv_switch.take_toggled() {
                     self.advanced = on;
                     self.changes.push((
@@ -2551,10 +2737,17 @@ impl Widget for SettingsWidget {
                     inv.push(self.bounds);
                     return;
                 }
-                if self.btn_file.take_clicked() {
-                    self.changes.push(("settings.open_file", "run".to_string()));
-                    inv.push(self.bounds);
-                    return;
+                // ★ 가져오기·내보내기·JSON 편집(11-03) — 파일·외부 프로그램은 호스트 몫(sync.test = run 문법).
+                for (btn, key) in [
+                    (&mut self.btn_import, "settings.import"),
+                    (&mut self.btn_export, "settings.export"),
+                    (&mut self.btn_json, "settings.edit_json"),
+                ] {
+                    if btn.take_clicked() {
+                        self.changes.push((key, "run".to_string()));
+                        inv.push(self.bounds);
+                        return;
+                    }
                 }
                 if in_bar {
                     inv.push(self.bounds);
@@ -2643,6 +2836,14 @@ impl Widget for SettingsWidget {
             }
         }
 
+        // ★ 사이드바 위 휠은 트리로(11-03) — 휠에는 좌표가 없어 마지막 마우스 위치로 판정
+        //   (종전엔 우측이 넘치면 패널 스크롤바가 휠을 먹어 트리가 한 번도 못 받았다).
+        if matches!(*ev, InputEvent::Wheel { .. }) && self.tree.bounds().contains(self.last_mouse) {
+            self.tree.on_event(ev, inv);
+            inv.push(self.bounds);
+            return;
+        }
+
         // ── 우측 패널 오버레이 스크롤(세로 전용) — 콤보 열림 중에는 위 캡처가 우선 ──
         {
             let vp = self.right_viewport();
@@ -2723,8 +2924,8 @@ impl Widget for SettingsWidget {
                     self.copy_flash.borrow_mut().show(
                         nclip_core::tf(Msg::StKeyCopied, &[key]),
                         nexa_ctl::controls::FlashTone::Ok,
-                        COPY_FLASH_HOLD_MS,
-                        COPY_FLASH_FADE_MS,
+                        self.flash_hold_ms,
+                        self.flash_fade_ms,
                     );
                     self.copy_flash_key = Some(key);
                     inv.push(self.bounds);
@@ -2780,6 +2981,7 @@ impl Widget for SettingsWidget {
                     self.hist_pos = None;
                     self.query.clear();
                     self.search.set_text("");
+                    self.scroll = 0; // ★ 카테고리를 바꾸면 맨 위부터(11-03 — 종전엔 옛 오프셋이 남아 중간부터 보였다)
                     self.rebuild(inv);
                     return;
                 }
@@ -2961,6 +3163,11 @@ impl Widget for SettingsWidget {
                     }
                     self.drain_changes(inv);
                     inv.push(self.bounds);
+                }
+                // ★ 키보드 스크롤(11-03 · 사용자 "스크롤 등") — 글 입력·목록 편집 중이 아니면 PageUp/Down·Home/End = 우측 패널.
+                Key::PageUp | Key::PageDown | Key::Home | Key::End if !self.any_text_editing() => {
+                    let dir = if matches!(key, Key::PageUp) { -1 } else { 1 };
+                    self.scroll_keys(matches!(key, Key::Home), matches!(key, Key::End), dir, inv);
                 }
                 Key::Left | Key::Right | Key::Up | Key::Down
                     if self
@@ -3363,8 +3570,8 @@ impl Widget for SettingsWidget {
                 );
             }
         }
-        // 고급 숨김 배너(밴드 셋째 줄 · 10-10) — "고급 설정 N개 숨김 — 고급 설정을 켜면 보입니다".
-        if self.adv_hidden > 0 {
+        // 배너(밴드 셋째 줄 · 10-10) — "고급 설정 N개 숨김 — 고급 설정을 켜면 보입니다" · 변경 보기 = "바뀐 설정 없음".
+        if let Some(banner) = self.banner_text() {
             ctx.select_font(FontSlot::Status, false);
             let th = ctx.text_height();
             let bh = self.s(BANNER_H);
@@ -3373,7 +3580,7 @@ impl Widget for SettingsWidget {
                 crumb.x + self.s(PAD),
                 by + (bh - th) / 2,
                 crumb,
-                &nclip_core::tf(Msg::PrefsAdvancedHidden, &[&self.adv_hidden.to_string()]),
+                &banner,
                 theme.text_dim,
             );
         }
@@ -3386,7 +3593,10 @@ impl Widget for SettingsWidget {
         ctx.fill_rect(bar, theme.chrome_bg);
         ctx.fill_rect(Rect::new(bar.x, bar.y, bar.w, 1), theme.border);
         self.adv_switch.paint(ctx, theme);
-        self.btn_file.paint(ctx, theme);
+        self.chg_switch.paint(ctx, theme);
+        self.btn_import.paint(ctx, theme);
+        self.btn_export.paint(ctx, theme);
+        self.btn_json.paint(ctx, theme);
         self.btn_close.paint(ctx, theme);
         // ★ 키 복사 순간 메시지(10-17) — 키 글자를 가리지 않게 그 위(모자라면 아래)에 · 카드·밴드보다 위 층.
         //   행이 스크롤로 화면 밖이면(앵커가 비면) 그리지 않는다.
@@ -3774,6 +3984,84 @@ mod card_tests {
         assert!(entry_matches(e, &tokens("theme")));
         assert!(entry_matches(e, &tokens("ui.theme")), "키 이름도 검색 대상");
         assert!(!entry_matches(e, &tokens("ㅍㅍㅍ")));
+    }
+
+    /// ★ "변경" 보기(11-03): 켜면 바뀐 키만 · 트리 선택 무관 · 켠 동안 초기화해도 행이 남는다 · 끄면 원래 보기.
+    #[test]
+    fn changed_only_view_lists_modified_keys_and_pins_them() {
+        let _g = crate::lang_test_lock();
+        let mut st = SettingsState::with_defaults();
+        st.set("ui.toast_ms", "5000".into());
+        st.set("ui.tray_recent_n", "12".into());
+        let mut w = SettingsWidget::new(&st);
+        let mut inv = Invalidations::default();
+        w.set_bounds(Rect::new(0, 0, 900, 600), &mut inv);
+        assert!(!w.changed_only());
+        w.set_changed_only(true, &mut inv);
+        let keys: Vec<&str> = w.rows.iter().map(|r| registry()[r.idx].key).collect();
+        assert_eq!(
+            keys,
+            vec!["ui.tray_recent_n", "ui.toast_ms"],
+            "바뀐 키만 · 표시 순서"
+        );
+        assert_eq!(w.adv_hidden, 0);
+        assert!(w.banner_text().is_none());
+        // 켠 동안 값이 기본값으로 돌아가도 행은 남는다(고정 집합).
+        w.values.insert("ui.toast_ms", "3000".into());
+        w.rebuild(&mut inv);
+        assert_eq!(w.rows.len(), 2);
+        w.set_changed_only(false, &mut inv);
+        assert!(!w.changed_only());
+        assert!(w.rows.len() > 2, "원래 보기로 복귀");
+        // 바뀐 것이 없으면 안내 배너.
+        let w2 = {
+            let mut w2 = SettingsWidget::new(&SettingsState::with_defaults());
+            w2.set_changed_only(true, &mut inv);
+            w2
+        };
+        assert!(w2.rows.is_empty());
+        assert!(w2.banner_text().is_some());
+    }
+
+    /// 고속 스크롤 HUD 자리는 우상단이 기본(PositionGrid 기본 `bl` 예외) · 플래시 시간은 설정값을 읽는다.
+    #[test]
+    fn notify_defaults_and_flash_prefs() {
+        let _g = crate::lang_test_lock();
+        let st = SettingsState::with_defaults();
+        assert_eq!(st.get("scroll.fast_hud_pos"), "tr");
+        assert_eq!(st.get("ui.flash_hold_ms"), "1200");
+        let mut st2 = SettingsState::with_defaults();
+        st2.set("ui.flash_hold_ms", "2500".into());
+        st2.set("ui.flash_ms", "900".into());
+        let w = SettingsWidget::new(&st2);
+        assert_eq!((w.flash_hold_ms, w.flash_fade_ms), (2500, 900));
+    }
+
+    /// PageDown/End/Home 키보드 스크롤(11-03) — 글 입력 중이 아닐 때만.
+    #[test]
+    fn keyboard_scrolls_right_panel() {
+        let _g = crate::lang_test_lock();
+        let st = SettingsState::with_defaults();
+        let mut w = SettingsWidget::new(&st);
+        let mut inv = Invalidations::default();
+        w.set_bounds(Rect::new(0, 0, 900, 300), &mut inv);
+        // 그룹 보기(여러 카테고리)로 콘텐츠를 넘치게.
+        w.selected = TreeSel::Group(1);
+        w.rebuild(&mut inv);
+        w.layout(&mut inv);
+        assert!(w.content_h > w.right_viewport().h, "넘쳐야 시험이 된다");
+        let key = |k: Key| InputEvent::Key {
+            key: k,
+            shift: false,
+            primary: false,
+        };
+        w.on_event(&key(Key::End), &mut inv);
+        let max = w.content_h - w.right_viewport().h;
+        assert_eq!(w.scroll, max);
+        w.on_event(&key(Key::Home), &mut inv);
+        assert_eq!(w.scroll, 0);
+        w.on_event(&key(Key::PageDown), &mut inv);
+        assert!(w.scroll > 0 && w.scroll <= max);
     }
 
     #[test]

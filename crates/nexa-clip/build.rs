@@ -2,8 +2,11 @@
 //! git 커밋(짧은 SHA · 작업트리 변경 시 `+dirty`)과 빌드 시각을 `env!`로 박는다.
 //! 정보 화면(설정 → 정보)이 실행 파일 SHA-256과 함께 보여 준다. git이 없는 소스 아카이브 빌드는 `unknown`.
 //! 외부 crate 0 — `git` 명령과 표준 라이브러리만.
+//!
+//! ★ 11-03: Windows 아이콘·버전·매니페스트 리소스(`packaging/windows/winres.rs` · nclip-imgdec과 공용 · 원본 nexa-sql T-62)도
+//!   여기서 링크한다 — VirusTotal 휴리스틱 보조(T-77 · 서명 없는 PE의 버전 정보 공란을 없앤다). rc 도구 없으면 조용히 건너뛴다.
 
-use std::process::Command;
+include!("../../packaging/windows/winres.rs"); // `std::process::Command` 등 use는 여기서 온다
 
 fn git(args: &[&str]) -> Option<String> {
     let out = Command::new("git").args(args).output().ok()?;
@@ -16,6 +19,7 @@ fn git(args: &[&str]) -> Option<String> {
 }
 
 fn main() {
+    embed_windows_resources("nexa-clip.rc", "nexa-clip");
     let sha = git(&["rev-parse", "--short=10", "HEAD"]).unwrap_or_else(|| "unknown".into());
     // `git status --porcelain`이 비어 있지 않으면 작업트리에 변경이 있다(개발 빌드 식별).
     let dirty = git(&["status", "--porcelain", "--untracked-files=no"]).is_some();

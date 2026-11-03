@@ -19,4 +19,4 @@ Installers:
     InstallerUrl: https://github.com/SosomLab/nexa-clip/releases/download/v@VERSION@/nexa-clip-@VERSION@-windows-arm64-setup.exe
     InstallerSha256: @SHA_WIN_ARM64_SETUP@
 ManifestType: installer
-ManifestVersion: 1.6.0
+ManifestVersion: 1.28.0

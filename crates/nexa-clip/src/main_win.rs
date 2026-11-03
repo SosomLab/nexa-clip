@@ -264,6 +264,8 @@ pub(crate) struct MainWin {
     scroll: i32,
     /// 휠 소수 델타 누적기 — 패드의 0.1노치도 쌓여서 움직인다(절단 0 방지).
     wheel_frac: f32,
+    /// ★ 고속 스크롤 가속기(11-03 · `scroll.fast` · nexa-ctl 전역 설정을 그때그때 읽는다).
+    accel: nexa_ctl::ScrollAccel,
     /// ★ 행 시작 y 누적합(len = rows+1 · 마지막 = 총 높이) — Rich 가변 행(09-02 CopyQ 화법).
     row_offs: Vec<i32>,
     /// ★ 목록 오버레이 스크롤바(설정창과 동일 부품 · 자동 숨김 — 09-02 사용자 요청).
@@ -390,6 +392,7 @@ impl MainWin {
             sel: 0,
             scroll: 0,
             wheel_frac: 0.0,
+            accel: nexa_ctl::ScrollAccel::new(),
             row_offs: Vec::new(),
             bars: ScrollBars::new(),
             cursor: (0, 0),
@@ -1652,7 +1655,10 @@ impl MainWin {
                 let d = self.wheel_frac as i32;
                 if d != 0 && !self.rows.is_empty() {
                     self.wheel_frac -= d as f32;
-                    self.scroll += d; // 상한은 paint에서 죈다(rows 길이×행 높이).
+                    // ★ 고속 스크롤(11-03 · scroll.fast) — 같은 방향 틱이 빨리 이어지면 배수 · ×N HUD는 스크롤바가 그린다.
+                    let k = self.accel.factor_cfg(d.signum(), &self.bars.fast_cfg());
+                    self.bars.note_fast(k);
+                    self.scroll += d * k; // 상한은 paint에서 죈다(rows 길이×행 높이).
                     self.bars.show();
                     self.redraw();
                 }

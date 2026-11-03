@@ -2882,6 +2882,7 @@ pub(crate) fn run() {
     // ★ 설정을 먼저 — UI 글꼴(`ui.font_family`)이 폰트 선택을 좌우한다(09-01 "JetBrains Mono").
     let mut conf = Settings::load();
     crate::conf::apply_lang(&conf);
+    crate::conf::apply_fast_scroll(&conf); // ★ 11-03 — 설정 창 뜨기 전부터 메인·팝업 목록에 적용
     let Some(font) = crate::conf::load_ui_font(&conf) else {
         eprintln!("시스템 UI 폰트를 찾지 못했습니다.");
         std::process::exit(1);

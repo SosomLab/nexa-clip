@@ -19,6 +19,8 @@
 use nclip_ui::license_win::{license_view, state_text, LicAction, LicenseWidget};
 use nclip_ui::picker_win::{new_picker, FilePicker, PickFilter, PickerAction, PickerMode};
 use nclip_ui::SettingsWidget;
+use nexa_ctl::controls::toast::ToastCorner;
+use nexa_ctl::controls::{ToastKind, Toasts};
 use nexa_ctl::draw::DrawCtx;
 use nexa_ctl::event::{InputEvent, Key as CtlKey, WHEEL_DELTA};
 use nexa_ctl::geom::Rect;
@@ -101,6 +103,21 @@ pub(crate) struct App {
     machine_code: String,
     /// ★ 위젯 [닫기]/Esc 요청(10-10 사용자 "닫기 버튼이 동작하지 않아" — `take_back`을 호스트가 소비하지 않았다) → `about_to_wait`가 `request_close`.
     close_pending: bool,
+    /// ★ 토스트(11-03 · nexa-ctl `Toasts` · 설정 `ui.toast_*`) — 가져오기 결과·검증 실패·JSON 감시 결과.
+    toasts: Toasts,
+    /// ★ settings.json 감시(11-03 · nexa-sql `json_watch` 차용): (경로, 마지막 mtime) · 1초 폴링(`json_next`) · [JSON 편집…] 뒤에만.
+    json_watch: Option<(std::path::PathBuf, Option<std::time::SystemTime>)>,
+    json_next: Instant,
+    /// 파일 선택기가 무엇을 위해 열렸는가(라이선스 · 설정 가져오기 · 내보내기).
+    picker_op: PickerOp,
+}
+
+/// 파일 선택기 용도(11-03) — 확정·취소 뒤 돌아갈 곳이 다르다.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PickerOp {
+    License,
+    Import,
+    Export,
 }
 
 /// 캡처 오버레이 상태.
@@ -156,9 +173,14 @@ impl App {
             view: View::Settings,
             machine_code,
             close_pending: false,
+            toasts: Toasts::new(),
+            json_watch: None,
+            json_next: Instant::now(),
+            picker_op: PickerOp::License,
         };
         app.refresh_license_info();
         app.refresh_system_option_labels();
+        app.apply_toast_prefs();
         app
     }
 
@@ -1147,15 +1169,27 @@ impl App {
     fn drain_changes(&mut self) {
         let now = Instant::now();
         for (key, val) in self.widget.take_changes() {
+            self.apply_change(key, val, now);
+        }
+        // ★ 검증 실패 경고(11-03) — 종전엔 아무도 꺼내지 않아 값만 조용히 원복됐다 → 토스트로 알린다.
+        for w in self.widget.take_warnings() {
+            let body = nclip_core::tf(nclip_core::Msg::StSettingRejected, &[nclip_core::t(w)]);
+            self.toast(ToastKind::Warn, body);
+        }
+    }
+
+    /// 설정 변경 1건 적용(즉시 적용 계약 · 11-03 분리) — 위젯 변경 · JSON 가져오기 · settings.json 감시가 **같은 길**을 쓴다.
+    fn apply_change(&mut self, key: &'static str, val: String, now: Instant) {
+        {
             // ★ 단축키 행 클릭(09-04) — 값이 아니라 캡처 오버레이를 연다.
             if key.starts_with("key.") && val == "run" {
                 self.begin_capture(key);
-                continue;
+                return;
             }
             // ★ 라이선스 화면(10-10 P4 · 정보 › [라이선스…]).
             if key == "license.open" && val == "run" {
                 self.open_license(None);
-                continue;
+                return;
             }
             // ★ 설정 파일 열기(10-10 P2 · 하단 [설정 파일 열기…]) — OS 기본 프로그램으로.
             if key == "settings.open_file" && val == "run" {
@@ -1171,13 +1205,22 @@ impl App {
                 } else {
                     println!("설정 파일: {}", path.display());
                 }
-                continue;
+                return;
+            }
+            // ★ 가져오기·내보내기·JSON 편집(11-03 · 하단 줄 — nexa-sql 차용).
+            if matches!(
+                key,
+                "settings.import" | "settings.export" | "settings.edit_json"
+            ) && val == "run"
+            {
+                self.settings_io(key);
+                return;
             }
             // ★ 키 이름 복사(10-10 P2 · 카드의 키 이름/⧉ 클릭).
             if key == "prefs.copy_key" {
                 crate::cliptext::set_text(&val);
                 println!("{}", nclip_core::tf(nclip_core::Msg::StKeyCopied, &[&val]));
-                continue;
+                return;
             }
             // ★ 즉시 적용 계약 — 값은 바로 반영하고, **파일 쓰기는 미룬다**
             //   (조용해진 뒤 1초 · 늦어도 10초 — [`crate::conf`]).
@@ -1190,6 +1233,16 @@ impl App {
             }
             if key == "ui.theme" {
                 self.apply_theme();
+            }
+            // ★ 고속 스크롤·플래시(11-03) — 즉시 반영(전역 설정 · 위젯 플래시 시간·모양).
+            if key.starts_with("scroll.") {
+                crate::conf::apply_fast_scroll(&self.conf);
+            }
+            if key.starts_with("ui.flash_") {
+                self.widget.apply_flash_prefs(&self.conf.state);
+            }
+            if key.starts_with("ui.toast_") {
+                self.apply_toast_prefs();
             }
             // ★ 언어 즉시 반영(09-02 "재시작 최소화") — 전역 언어 + 설정 위젯 재구성.
             //   셸(트레이·메인·팝업)은 take_ui_refresh로 알아채 갱신한다.
@@ -1249,7 +1302,7 @@ impl App {
                         println!("동기화: 승인 목록 재알림 → 세션 {n}개");
                     }
                 }
-                continue; // 값 키가 아니다 — 아래 핸들러는 무관
+                return; // 값 키가 아니다 — 아래 핸들러는 무관
             }
             // ★ 재시도 정책(09-04) — 즉시 반영(다음 실패부터 새 대기).
             if key == "sync.retry" {
@@ -1269,7 +1322,7 @@ impl App {
                     Ok(_) => println!("정보: 빌드 정보 복사 — {} 줄", text.lines().count()),
                     Err(e) => eprintln!("정보: 복사 실패 — {e}"),
                 }
-                continue;
+                return;
             }
             // ★ 파일 내용 공유 정책(09-12) — 5키 어느 것이든 바뀌면 관리자에 즉시(다음 블록부터 새 속도·상한).
             if key.starts_with("sync.file_") {
@@ -1425,6 +1478,189 @@ impl App {
         }
     }
 
+    /// 토스트 설정 반영(`ui.toast_ms` · `ui.toast_alpha` · `ui.toast_progress`) — 열 때와 그 키가 바뀔 때.
+    fn apply_toast_prefs(&mut self) {
+        let st = &self.conf.state;
+        let n = |k: &str, d: i64| st.get(k).trim().parse::<i64>().unwrap_or(d);
+        let (ms, alpha) = (n("ui.toast_ms", 3000), n("ui.toast_alpha", 85));
+        let progress = st.get("ui.toast_progress") != "off";
+        self.toasts.configure(ms, alpha);
+        self.toasts.configure_progress(progress, 35, 30);
+    }
+
+    /// 토스트 한 장(제목 = "설정") + 다시 그리기.
+    fn toast(&mut self, kind: ToastKind, body: String) {
+        self.toasts
+            .push(kind, nclip_core::t(nclip_core::Msg::ToastSettings), body);
+        self.redraw();
+    }
+
+    /// ★ 설정 가져오기·내보내기·JSON 편집(11-03 · 하단 줄 · nexa-sql `edit_settings_json` 차용).
+    fn settings_io(&mut self, key: &str) {
+        match key {
+            // settings.json으로 내보내고 OS 연결 프로그램으로 연 뒤 저장을 감시한다(1초 폴링).
+            "settings.edit_json" => {
+                let path = crate::conf::data_dir().join("settings.json");
+                if let Err(e) = std::fs::write(&path, nclip_ui::to_json(&self.conf.state)) {
+                    let body = nclip_core::tf(nclip_core::Msg::StJsonError, &[&e.to_string()]);
+                    self.toast(ToastKind::Error, body);
+                    return;
+                }
+                let mtime = std::fs::metadata(&path).and_then(|m| m.modified()).ok();
+                self.json_next = Instant::now() + Duration::from_millis(1000);
+                self.json_watch = Some((path.clone(), mtime));
+                let shown = path.display().to_string();
+                if nclip_plat::launch::open_path(&path) {
+                    println!("설정 JSON 편집: {shown}");
+                    let body = nclip_core::tf(nclip_core::Msg::StJsonOpened, &[&shown]);
+                    self.toast(ToastKind::Info, body);
+                } else {
+                    let body = nclip_core::tf(nclip_core::Msg::StJsonError, &[&shown]);
+                    self.toast(ToastKind::Error, body);
+                }
+            }
+            "settings.export" => self.open_settings_picker(PickerMode::Save, PickerOp::Export),
+            "settings.import" => self.open_settings_picker(PickerMode::Open, PickerOp::Import),
+            _ => {}
+        }
+    }
+
+    /// 설정 JSON 파일 선택기(저장 = 내보내기 · 열기 = 가져오기 · 시작 = 데이터 폴더).
+    fn open_settings_picker(&mut self, mode: PickerMode, op: PickerOp) {
+        let start = crate::conf::data_dir();
+        let mut p = new_picker(
+            mode,
+            Some(&start),
+            PickFilter::Json,
+            "nexa-clip-settings.json",
+            false,
+        );
+        p.set_scale(self.scale);
+        self.picker_op = op;
+        self.view = View::Picker(Box::new(p));
+        self.laid_out = (0, 0);
+        self.redraw();
+    }
+
+    /// 파일 선택기 확정 — 용도별 분기.
+    fn picker_confirm(&mut self, p: &std::path::Path) {
+        match self.picker_op {
+            PickerOp::License => self.license_install(p),
+            PickerOp::Export => self.export_settings_to(p),
+            PickerOp::Import => self.import_settings_from(p),
+        }
+    }
+
+    /// 현재 설정을 JSON 파일로(확장자 없으면 .json).
+    fn export_settings_to(&mut self, path: &std::path::Path) {
+        let path = if path.extension().is_none() {
+            path.with_extension("json")
+        } else {
+            path.to_path_buf()
+        };
+        self.back_to_settings();
+        let shown = path.display().to_string();
+        match std::fs::write(&path, nclip_ui::to_json(&self.conf.state)) {
+            Ok(()) => {
+                println!("설정 내보내기: {shown}");
+                let body = nclip_core::tf(nclip_core::Msg::StExported, &[&shown]);
+                self.toast(ToastKind::Info, body);
+            }
+            Err(e) => {
+                let body = nclip_core::tf(nclip_core::Msg::StJsonError, &[&e.to_string()]);
+                self.toast(ToastKind::Error, body);
+            }
+        }
+    }
+
+    /// JSON 파일에서 설정 가져오기 — 있는 키만 병합 · 바뀐 키 즉시 적용 · 결과 토스트.
+    fn import_settings_from(&mut self, path: &std::path::Path) {
+        self.back_to_settings();
+        match std::fs::read_to_string(path) {
+            Ok(text) => self.apply_json_text(&text, nclip_core::Msg::StImported),
+            Err(e) => {
+                let body = nclip_core::tf(nclip_core::Msg::StJsonError, &[&e.to_string()]);
+                self.toast(ToastKind::Error, body);
+            }
+        }
+    }
+
+    /// JSON 글을 설정에 적용(가져오기 · settings.json 감시 공용) — 바뀐 키마다 [`Self::apply_change`] · 위젯 재구성 · 결과 토스트.
+    fn apply_json_text(&mut self, text: &str, done: nclip_core::Msg) {
+        match nclip_ui::import_json(&mut self.conf.state, text) {
+            Ok(r) => {
+                let now = Instant::now();
+                for &k in &r.changed {
+                    let v = self.conf.state.get(k).to_string();
+                    self.apply_change(k, v, now);
+                }
+                if !r.changed.is_empty() {
+                    self.rebuild_widget();
+                }
+                let mut note = String::new();
+                if !r.unknown.is_empty() {
+                    note.push_str(&nclip_core::tf(
+                        nclip_core::Msg::StUnknownKeys,
+                        &[&r.unknown.join(",")],
+                    ));
+                }
+                if !r.invalid.is_empty() {
+                    let keys: Vec<&str> = r.invalid.iter().map(|(k, _)| k.as_str()).collect();
+                    note.push_str(&nclip_core::tf(
+                        nclip_core::Msg::StInvalidKeys,
+                        &[&keys.join(",")],
+                    ));
+                }
+                let kind = if note.is_empty() {
+                    ToastKind::Info
+                } else {
+                    ToastKind::Warn
+                };
+                let body = nclip_core::tf(done, &[&r.changed.len().to_string(), &note]);
+                println!("설정 JSON: {body}");
+                self.toast(kind, body);
+            }
+            Err(e) => {
+                let body = nclip_core::tf(nclip_core::Msg::StJsonError, &[&e]);
+                self.toast(ToastKind::Error, body);
+            }
+        }
+    }
+
+    /// 값이 코드로 바뀐 뒤 위젯 스냅숏을 다시 만든다(언어 변경과 같은 길).
+    fn rebuild_widget(&mut self) {
+        self.widget = SettingsWidget::new(&self.conf.state);
+        let mut inv2 = Invalidations::default();
+        self.widget.set_scale(self.scale, &mut inv2);
+        self.laid_out = (0, 0);
+        self.ui_refresh = true;
+        self.refresh_license_info();
+        self.refresh_system_option_labels();
+        self.redraw();
+    }
+
+    /// settings.json 저장 감시 — 바뀌었으면 다시 읽어 바뀐 키만 반영(1초 폴링 · 열어 둔 뒤에만).
+    fn json_tick(&mut self, now: Instant) {
+        let Some((path, last)) = self.json_watch.clone() else {
+            return;
+        };
+        if now < self.json_next {
+            return;
+        }
+        self.json_next = now + Duration::from_millis(1000);
+        let mtime = std::fs::metadata(&path).and_then(|m| m.modified()).ok();
+        if mtime.is_some() && mtime != last {
+            self.json_watch = Some((path.clone(), mtime));
+            match std::fs::read_to_string(&path) {
+                Ok(text) => self.apply_json_text(&text, nclip_core::Msg::StJsonReloaded),
+                Err(e) => {
+                    let body = nclip_core::tf(nclip_core::Msg::StJsonError, &[&e.to_string()]);
+                    self.toast(ToastKind::Error, body);
+                }
+            }
+        }
+    }
+
     fn paint(&mut self) {
         let (Some(win), Some(surface)) = (self.window.clone(), self.surface.as_mut()) else {
             return;
@@ -1466,6 +1702,15 @@ impl App {
                 View::License(lw) => lw.paint(&mut dc, &self.theme),
                 View::Picker(fp) => fp.paint(&mut dc, &self.theme),
             }
+            // ★ 토스트(11-03) — 맨 위 층 · 모서리 = `ui.toast_position`.
+            let corner = ToastCorner::parse(self.conf.state.get("ui.toast_position"));
+            self.toasts.paint_in(
+                &mut dc,
+                &self.theme,
+                Rect::new(0, 0, iw, ih),
+                corner,
+                self.scale,
+            );
         }
         let _ = buf.present();
     }
@@ -1562,6 +1807,7 @@ impl App {
     }
     /// 라이선스 파일 선택기(nexa-dlg · `.license` 필터 · 시작 = 데이터 폴더).
     fn open_license_picker(&mut self) {
+        self.picker_op = PickerOp::License;
         let start = crate::conf::data_dir();
         let mut p = new_picker(
             PickerMode::Open,
@@ -1639,14 +1885,17 @@ impl App {
     fn picker_action(&mut self, a: PickerAction) {
         match a {
             PickerAction::None => {}
-            PickerAction::Confirm(p) => self.license_install(&p),
+            PickerAction::Confirm(p) => self.picker_confirm(&p),
             PickerAction::ConfirmMany(v) => {
                 if let Some(p) = v.first() {
                     let p = p.clone();
-                    self.license_install(&p);
+                    self.picker_confirm(&p);
                 }
             }
-            PickerAction::Cancel => self.open_license(None),
+            PickerAction::Cancel => match self.picker_op {
+                PickerOp::License => self.open_license(None),
+                PickerOp::Import | PickerOp::Export => self.back_to_settings(),
+            },
             PickerAction::CopyText(s) => crate::cliptext::set_text(&s),
         }
     }
@@ -1793,6 +2042,14 @@ impl ApplicationHandler for App {
 
             WindowEvent::MouseInput { state, button, .. } => {
                 let (x, y) = self.cursor;
+                // ★ 토스트 클릭 = 닫기(11-03) — 카드 위 클릭은 아래로 흘리지 않는다.
+                if button == winit::event::MouseButton::Left
+                    && state == ElementState::Pressed
+                    && self.toasts.click(nexa_ctl::geom::Point { x, y })
+                {
+                    self.redraw();
+                    return;
+                }
                 // ★ 우클릭 = 텍스트 입력 편집 메뉴(09-03) — 위젯이 포커스된 입력 안일 때만 연다.
                 if button == winit::event::MouseButton::Right {
                     if state == ElementState::Pressed {
@@ -1942,12 +2199,14 @@ impl ApplicationHandler for App {
         self.fire_lan_respawn(); // ★ 릴레이 None 자동 재기동(09-05) — 디바운스 만료 시 셸에 요청.
         self.poll_sync_test(); // ★ 동기화 테스트 결과 소비(09-03).
         self.poll_sync_status(); // ★ 러너 상태 → 노트(자동 Test 표시).
-        let animating = self.widget.tick(now) | self.view_tick(now);
+        let animating =
+            self.widget.tick(now) | self.view_tick(now) | self.toasts.tick(Instant::now());
         if animating {
             self.redraw();
         }
         // ★ 저장 판정 — 값 변경 때가 아니라 **여기서** 한다(연속 변경을 한 번으로 합친다).
         let wall = Instant::now();
+        self.json_tick(wall); // ★ settings.json 저장 감시(11-03 · 열어 둔 뒤에만 · 1초)
         if self.conf.tick(wall) {
             println!("설정 저장: {}", self.conf.path().display());
         }
@@ -1961,10 +2220,11 @@ impl ApplicationHandler for App {
             None
         };
         // ★ 자동 재기동 예약이 있으면 그 만료에도 깨어난다(Wait만 두면 타이머가 영영 안 돈다).
-        let deadline = match (self.sync_respawn_at, self.name_announce_at) {
-            (Some(a), Some(b)) => Some(a.min(b)),
-            (a, b) => a.or(b),
-        };
+        let json_at = self.json_watch.as_ref().map(|_| self.json_next);
+        let deadline = [self.sync_respawn_at, self.name_announce_at, json_at]
+            .into_iter()
+            .flatten()
+            .min();
         let next = match (next, deadline) {
             (Some(d), Some(at)) => Some(d.min(at.saturating_duration_since(wall))),
             (None, Some(at)) => Some(at.saturating_duration_since(wall)),
@@ -1982,6 +2242,7 @@ impl ApplicationHandler for App {
 pub(crate) fn run() {
     let conf_probe = Settings::load();
     crate::conf::apply_lang(&conf_probe);
+    crate::conf::apply_fast_scroll(&conf_probe);
     let Some(font) = crate::conf::load_ui_font(&conf_probe) else {
         eprintln!("시스템 UI 폰트를 찾지 못했습니다.");
         std::process::exit(1);

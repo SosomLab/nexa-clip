@@ -1,0 +1,48 @@
+// nexa-clip.rc — Windows 실행 파일 리소스(아이콘 + 버전 정보 + 매니페스트 · T-77 보조 · 11-03).
+// crates/nexa-clip/build.rs(본체 packaging/windows/winres.rs · 원본 nexa-sql T-62)가 rc.exe(MSVC) 또는 windres(GNU/mingw)로 컴파일해 링크한다 — 외부 crate 0.
+// 도구가 없으면 build.rs가 조용히 건너뛴다(아이콘·버전 없는 exe · 기능 동일).
+// 버전은 build.rs가 OUT_DIR에 만든 래퍼 .rc(#define NCLIP_VER_* → #include 이 파일)로 넘긴다(CARGO_PKG_VERSION · 단일 원천 = Cargo.toml).
+// 이 파일을 rc/windres로 직접 컴파일하면 아래 기본값(0.0.0 · 템플릿 매니페스트)이 쓰인다.
+// ★ 문자열은 전부 영어 — 패키지 검수자·탐색기 속성·SmartScreen이 보는 값(CLAUDE.md §4 영어 규칙).
+#ifndef NCLIP_VER_MAJOR
+#define NCLIP_VER_MAJOR 0
+#define NCLIP_VER_MINOR 0
+#define NCLIP_VER_PATCH 0
+#define NCLIP_VER_STR "0.0.0"
+#endif
+#ifndef NCLIP_MANIFEST
+#define NCLIP_MANIFEST "nexa-clip.manifest"
+#endif
+
+// 탐색기가 보여 주는 파일 아이콘 = 가장 낮은 ID의 ICON 리소스. branding SSOT(.ico = PNG 프레임 16·24·32·48·256).
+1 ICON "../branding/nexa-clip.ico"
+
+// 응용 프로그램 매니페스트(RT_MANIFEST = 24 · ID 1 = exe) — asInvoker · supportedOS · PerMonitorV2 DPI · longPathAware.
+1 24 NCLIP_MANIFEST
+
+1 VERSIONINFO
+FILEVERSION     NCLIP_VER_MAJOR,NCLIP_VER_MINOR,NCLIP_VER_PATCH,0
+PRODUCTVERSION  NCLIP_VER_MAJOR,NCLIP_VER_MINOR,NCLIP_VER_PATCH,0
+FILEOS          0x40004L
+FILETYPE        0x1L
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "040904B0"
+    BEGIN
+      VALUE "CompanyName",      "SosomLab\0"
+      VALUE "FileDescription",  "Nexa Clip - cross-platform clipboard manager\0"
+      VALUE "FileVersion",      NCLIP_VER_STR "\0"
+      VALUE "InternalName",     "nexa-clip\0"
+      VALUE "LegalCopyright",   "Copyright (c) 2026 SosomLab - PolyForm Noncommercial 1.0.0\0"
+      VALUE "OriginalFilename", "nexa-clip.exe\0"
+      VALUE "ProductName",      "Nexa Clip\0"
+      VALUE "ProductVersion",   NCLIP_VER_STR "\0"
+      VALUE "Comments",         "Open source: https://github.com/SosomLab/nexa-clip\0"
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x409, 1200
+  END
+END

@@ -469,6 +469,26 @@ pub(crate) fn apply_lang(conf: &Settings) {
     nclip_core::set_lang(resolve_lang(conf.state.get("app.lang")));
 }
 
+/// ★ 고속 스크롤 설정 → nexa-ctl 전역 [`nexa_ctl::set_fast_scroll`](11-03 · nexa-sql `apply_fast_scroll` 차용) —
+/// 설정 창·메인·팝업의 `ScrollBars`·`ScrollAccel`·HUD가 그때그때 읽는다. 부팅과 `scroll.*` 변경 때.
+pub(crate) fn apply_fast_scroll(conf: &Settings) {
+    let st = &conf.state;
+    let ms = |k: &str, lo: u64, hi: u64, d: u64| {
+        st.get(k).trim().parse::<u64>().unwrap_or(d).clamp(lo, hi)
+    };
+    let (step, max) = nclip_ui::scroll_speed_params(st.get("scroll.fast_speed"));
+    nexa_ctl::set_fast_scroll(nexa_ctl::FastScroll {
+        enabled: st.get("scroll.fast") != "off",
+        step,
+        max,
+        window_ms: ms("scroll.fast_window_ms", 20, 2_000, 160),
+        hud: st.get("scroll.fast_hud") != "off",
+        hud_pos: nexa_ctl::HudPos::parse(st.get("scroll.fast_hud_pos")),
+        hud_hold_ms: ms("scroll.fast_hud_hold_ms", 0, 10_000, 250),
+        hud_fade_ms: ms("scroll.fast_hud_fade_ms", 50, 10_000, 600),
+    });
+}
+
 /// `app.lang` 값 → 언어(10-10 · beep D-33-4): `system`(기본) = **OS 표시 언어**(nexa-sys locale · 부팅마다 판정 ·
 /// 미지원·판정 불가 = 영어) · 그 밖은 코드 그대로(미지 코드 = 영어).
 pub(crate) fn resolve_lang(value: &str) -> nclip_core::Lang {
