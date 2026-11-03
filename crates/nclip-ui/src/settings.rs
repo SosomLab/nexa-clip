@@ -2105,21 +2105,26 @@ impl SettingsWidget {
             Rect::new(b.x, tree_top, sw, (bottom_top - tree_top).max(0)),
             inv,
         );
-        // ── 하단 줄(10-10 · 11-03 개편): [고급 스위치][변경 스위치] …… [가져오기…][내보내기…][JSON 편집…][닫기] ──
+        // ── 하단 줄(10-10 · 11-03 개편): [고급][변경] …… [내보내기…][가져오기…][JSON 편집…][닫기] ──
         //   (설정 파일 열기는 고급 › 설정 파일 카드로 옮겼다 — 줄 하나에 다 들어가게.)
         {
             let ctl_h = self.s(CTL_H);
             let pad = self.s(PAD);
-            let gap = self.s(8);
+            let gap = self.s(12);
             let cy = bottom_top + (self.bottom_h() - ctl_h) / 2;
-            let sw_w = self.s(96); // 라벨이 "고급"/"변경"으로 짧아져(사용자 11-03) 스위치 칸도 줄인다
+            // ★ 스위치 칸 = 트랙 + 짧은 라벨(사용자 11-03 "nexa-dir처럼 간격 좁게") — 라벨이 긴 영어만 조금 넓힌다.
+            let sw_w = self.s(if current_lang().code() == "en" {
+                104
+            } else {
+                72
+            });
             self.adv_switch.set_scale(self.scale);
             self.adv_switch
                 .set_bounds(Rect::new(b.x + pad, cy, sw_w, ctl_h), inv);
             self.chg_switch.set_scale(self.scale);
             self.chg_switch
                 .set_bounds(Rect::new(b.x + pad + sw_w + gap, cy, sw_w, ctl_h), inv);
-            // 오른쪽 끝부터 왼쪽으로 쌓는다.
+            // 오른쪽 끝부터 왼쪽으로 쌓는다 — 순서 = nexa-dir와 동일 [내보내기…][가져오기…][JSON 편집…][닫기].
             let mut x = b.right() - pad;
             let (close_w, json_w, io_w) = (self.s(84), self.s(112), self.s(100));
             x -= close_w;
@@ -2131,12 +2136,12 @@ impl SettingsWidget {
             self.btn_json
                 .set_bounds(Rect::new(x, cy, json_w, ctl_h), inv);
             x -= gap + io_w;
-            self.btn_export.set_scale(self.scale);
-            self.btn_export
-                .set_bounds(Rect::new(x, cy, io_w, ctl_h), inv);
-            x -= gap + io_w;
             self.btn_import.set_scale(self.scale);
             self.btn_import
+                .set_bounds(Rect::new(x, cy, io_w, ctl_h), inv);
+            x -= gap + io_w;
+            self.btn_export.set_scale(self.scale);
+            self.btn_export
                 .set_bounds(Rect::new(x, cy, io_w, ctl_h), inv);
         }
         let rx = b.x + sw; // 우측 패널 시작
