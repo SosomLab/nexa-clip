@@ -5,7 +5,7 @@
 | 브랜치 | 생성 | 병합 | 커밋 수 | 요약 |
 |---|---|---|---:|---|
 | `chore/release-0.2.5` | 2026-11-03 | 2026-11-03 → main `--no-ff` 병합 `8edfead`(커밋 `eaa34ff` · push `b1fa71b..8edfead`) · 태그 `v0.2.5` = `8edfead`(태그 객체 `64ff9b2`) · CI `41626235190` ✓ · release `41626658783` 11/12 ✓(winget 잡 ✗ · 게시 영향 0) | 1 | v0.2.5 버전 올림(Cargo.toml · lock 9크레이트) + 11-03 12차 문서(journal · STATUS · DEVLOG) · `--version` "nexa-clip 0.2.5" · Release(win x64) 2,551,296 B · V3 417/0/4(이 PC 첫 전수) |
-| (main 직접) | 2026-11-03 | — | 4 | `e8c0768` 11-03 기록(docs 7 · journal · CLAUDE.md) · `74a8139` 하단 스위치 라벨 [고급][변경] · `e300ab0` docs/14·21 표기 · `577457a` 하단 줄 간격·순서(nexa-dir와 동일) |
+| (main 직접) | 2026-11-03 | — | 5 | `e8c0768` 11-03 기록(docs 7 · journal · CLAUDE.md) · `74a8139` 하단 스위치 라벨 [고급][변경] · `e300ab0` docs/14·21 표기 · `577457a` 하단 줄 간격·순서(nexa-dir와 동일) · **`6d0f26c`** winget 1.28.0 schema header 주석(6파일) + v0.2.5 릴리스 기록(docs 7 · CLAUDE.md §1) · push `8edfead..6d0f26c` · CI `41628167541` |
 | `feat/settings-upgrade-11-03` | 2026-11-03 | 2026-11-03 → main 병합 `592fb8b`(push 전) | 7 | VT 오탐 보조 `02ada89` · winget 1.28.0 `fe20dc7` · LICENSE 영어 `e341740` · docs/33·18·16 `3083678` · build.rs E0252 `0d75a14` · 설정 화면 개선 `ec57847` · 하단 줄 폭 `693169a` |
 | `docs/qa-tray-guard-10-17` | 2026-10-17 | 2026-10-17 → main 병합 | 1 | 사용자 문의 2건 정리(트레이 메뉴 항목 수 설정 위치 · 검수 대기 시 보류 = 기존 guard 확인) · journal 10-17 10차 · DEVLOG · 7차·9차 해시 보충 |
 | `docs/progress-10-18` | 2026-10-18 | 2026-10-18 → main 병합 | 1 | 10-18 진행사항 최신화(journal 10-18 신설 · STATUS · DEVLOG · BRANCHES) · nexa-ui `65f8aaa` 확인 |
