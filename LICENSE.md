@@ -3,10 +3,10 @@
 Required Notice: Copyright (c) 2026 SosomLab — Nexa Clip
 (<https://github.com/SosomLab/nexa-clip>)
 
-> **상업적 사용(commercial use)은 별도 유료 라이선스가 필요합니다.**
-> 개인·비상업 용도는 본 라이선스로 무료.
-> 상업 라이선스 문의: **kiros33@sosomlab.com** · <https://sosomlab.com>
-> (정책 배경: docs/13-licensing.md · 한글본: LICENSE.ko.md)
+> **Commercial use requires a separate paid license.**
+> Personal and noncommercial use is free under this license.
+> Commercial licensing: **kiros33@sosomlab.com** · <https://sosomlab.com>
+> (Policy background: docs/13-licensing.md · Korean translation: LICENSE.ko.md)
 
 <https://polyformproject.org/licenses/noncommercial/1.0.0>
 
