@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-11-03 (win) — 설정 화면 개선 · VT 오탐 보조 · winget 1.28.0 · 이 PC 툴체인 설치 · main 병합 `592fb8b`(push 전)
+
+**설정 화면**(`ec57847` · `693169a`): 변경된 설정만(비영속) · PageUp/Down/Home/End · 사이드바 휠 = 트리 · **모양 › 알림·움직임** 14키(토스트 · 플래시 · 고속 스크롤 ×N HUD — 메인·팝업·설정) · 토스트 호스트 · JSON 가져오기/내보내기/편집(`settings.json` 감시) · 설정 파일 열기 = 고급 카드 · V0 nclip-core 153 · nclip-ui 56 · clippy ✓.
+**VT 오탐 보조**(`02ada89` · T-77 보조): exe 버전·아이콘·매니페스트 리소스(영어) · NSIS 메타 + lzma → zlib · 기능 API(SendInput 등)는 유지 · 근본 = T-77 서명. **LICENSE.md 머리 영어**(`e341740` · NSIS 라이선스 페이지).
+**툴체인**: 이 PC에 없었음 → 사용자 승인 · rustup 1.29.2 · rustc 1.99.1 msvc · VS Build Tools 14.44 · SDK 10.0.26100. P0 54 s · 버전 리소스 ✓ · Debug PID 15976(`--profile dev` 격리).
+**스토어**: release·brew·APT·RPM 0.2.4 ✓ · choco 포터블 0.2.3 승인(0.2.4 미제출) · 🔴 choco 설치본 0.1.5 = 10-30 자동 경고 → **≈11-14 자동 반려** · 🔴 winget PR 2건 Needs-Author-Feedback(1.28.0 요구 → 틀 수정 `fe20dc7` · PR 갱신 T-85).
+**☐ 다음**: 사용자 실기 [21 §15](21-manual-test.md) P2-11~14 · push(사용자 지시) · T-78 결정(11-14 전) · T-85 · CLAUDE.md §4 영어 규칙 문안 승인 → [journal 11-03](journal/2026-11-03.md).
+
+---
+
 ## 2026-10-18 (mac) — 툴체인 함정 해소 · nexa-ui 214·215차 반영 확인 · choco 포터블 0.2.3 자동 검수 통과
 
 **툴체인**: Homebrew `rust` 1.98.1 제거 → rustup 1.99.1만 · 기본 셸 check-3os ✓.

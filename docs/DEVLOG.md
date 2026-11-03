@@ -2,6 +2,8 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-11-03 (win) — 설정 화면 개선(변경된 설정만 · 키보드·사이드바 스크롤 · 알림·움직임 14키 · 고속 스크롤 ×N HUD · JSON 가져오기/내보내기/편집) · VT 오탐 보조(버전·매니페스트 리소스 · NSIS zlib) · winget 1.28.0 · LICENSE 영어 · 협업 규칙 이식 · 이 PC 툴체인 설치(rustc 1.99.1 · VS BT 14.44) · main 병합 `592fb8b`(push 전) · 🔴 choco 설치본 ≈11-14 자동 반려 · [journal](journal/2026-11-03.md)
+
 ## 2026-10-17 (5차 · win) — 사용자 문의 정리: 트레이 메뉴 항목 수 = 설정 › 모양(`ui.tray_recent_n` · 기본 8 · 3~20 · v0.2.4부터 다음 트레이 클릭에 즉시 반영) · "직전 검수 대기면 새 버전 보류" = 기존 `guard` 잡(winget 열린 PR · choco 패키지별)으로 이미 적용 확인(v0.2.4 포터블 skip이 실례) · 7차·9차 해시 보충 · 코드 변경 없음 · [journal](journal/2026-10-17.md) 10차
 
 ## 2026-10-18 (mac) — 툴체인 함정 해소(Homebrew rust 제거 · rustup 1.99.1만) · nexa-ui 214·215차 pull 뒤 check-3os ✓ · test 413/0/2 · choco 포터블 0.2.3 자동 검수 통과(승인 대기) · [journal](journal/2026-10-18.md)

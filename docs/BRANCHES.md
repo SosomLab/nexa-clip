@@ -4,6 +4,7 @@
 
 | 브랜치 | 생성 | 병합 | 커밋 수 | 요약 |
 |---|---|---|---:|---|
+| `feat/settings-upgrade-11-03` | 2026-11-03 | 2026-11-03 → main 병합 `592fb8b`(push 전) | 7 | VT 오탐 보조 `02ada89` · winget 1.28.0 `fe20dc7` · LICENSE 영어 `e341740` · docs/33·18·16 `3083678` · build.rs E0252 `0d75a14` · 설정 화면 개선 `ec57847` · 하단 줄 폭 `693169a` |
 | `docs/qa-tray-guard-10-17` | 2026-10-17 | 2026-10-17 → main 병합 | 1 | 사용자 문의 2건 정리(트레이 메뉴 항목 수 설정 위치 · 검수 대기 시 보류 = 기존 guard 확인) · journal 10-17 10차 · DEVLOG · 7차·9차 해시 보충 |
 | `docs/progress-10-18` | 2026-10-18 | 2026-10-18 → main 병합 | 1 | 10-18 진행사항 최신화(journal 10-18 신설 · STATUS · DEVLOG · BRANCHES) · nexa-ui `65f8aaa` 확인 |
 | `docs/toolchain-fix-10-18` | 2026-10-18 | 2026-10-18 → 로컬 병합 `f564610`(커밋 `f5e306c`) → 원격 병합 `7578c8f` · push `9e2cc7e..7578c8f` · CI `39101716993` ✓ | 1 | 툴체인 함정 해소 기록(Homebrew rust 제거) · journal 10-17 9차 정정 · STATUS |

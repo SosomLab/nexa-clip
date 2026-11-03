@@ -216,6 +216,7 @@ status          : Local only
 | Linux에서 창 관련 링크 오류 | X11/Wayland 개발 패키지 부재 | [§4-2](#4-2-크레이트만-골라-검사)로 코어만 검사 |
 | ★ CI만 clippy 빨강(로컬 통과) · 새 린트 이름 | **로컬 stable이 CI보다 낡음** — CI는 `rust-toolchain.toml` `channel = "stable"`(버전 고정 없음)이라 최신 stable로 돈다(10-05: 로컬 1.98 ↔ CI 1.99 `suspicious_runtime_symbol_definitions`) | V2 전에 `rustup update stable` · `rustc -V`를 회신에 적는다 · 재현만 하려면 `rustup toolchain install <버전>` 후 `cargo +<버전> clippy …`(⚠️ 설치가 기본 도구 체인을 바꿀 수 있다 → `rustup default stable`로 확인) |
 | ★ mac `check-3os`가 다른 타깃에서 `E0463 can't find crate for std`(타깃은 `rustup target add` 해 둠) | **Homebrew `cargo`/`rustc`(`/usr/local/bin` · `/opt/homebrew/bin`)가 PATH에서 rustup보다 앞** — Homebrew 도구 체인은 rustup 타깃 std를 못 본다(10-05 mac 개발 세션) | `which cargo`가 `~/.cargo/bin/cargo`인지 확인 · 셸 설정에서 `~/.cargo/bin`을 앞에 두거나 그 자리에서 `PATH="$HOME/.cargo/bin:$PATH" scripts/check-3os.sh` · Homebrew `rust`는 지우는 것을 권장(`brew uninstall rust`) |
+| ★ Windows에서 `cargo: command not found` · `cargo`/`rustc` 명령 자체가 없음(11-03 이 PC) | **Rust 툴체인 미설치**(설치본은 CI 빌드본이라 앱은 돌아도 개발 환경은 없을 수 있다) | 사용자 승인 뒤 winget으로 `Rustlang.Rustup` + VS 2022 Build Tools(VCTools 워크로드 · Windows SDK 포함 — `rc.exe`가 있어야 버전 리소스가 들어감) → 새 셸이 아니면 PATH 앞에 `~/.cargo/bin`(PowerShell `$env:Path = "$env:USERPROFILE\.cargo\bin;$env:Path"` · bash `export PATH="$HOME/.cargo/bin:$PATH"`) · ⚠️ 백그라운드·`tail` 출력은 **종료 코드와 `command not found` 줄을 먼저** 본다([33 §12](33-collab-session-operation.md) 11-03) |
 | 한글이 네모로 | 시스템 UI 폰트 후보 미스 | 실행 시 콘솔의 `폰트:` 줄 확인 → [`nclip-plat/src/font.rs`](../crates/nclip-plat/src/font.rs) 후보 |
 
 ---
