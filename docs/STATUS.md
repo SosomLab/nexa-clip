@@ -10,7 +10,8 @@
 **배포 전(V3 · 이 PC 첫 전수)**: rustc 1.99.1 · `cargo test --workspace` **417/0/4** · Release 52.6 s · 경고 0 · `nexa-clip.exe` **2,551,296 B(2.43 MB)** · `--version` "nexa-clip 0.2.5" · VersionInfo 0.2.5 ✓ · E2E 생략(설치본 공존) · check-3os ✓(개발) · main CI `41626235190` ✓.
 **릴리스**: 태그 `v0.2.5` = `8edfead` · release run **`41626658783`** = 11/12 ✓(**winget 잡만 ✗** · rerun 안 함) · Release 자산 15 · draft/prerelease false · brew `bac709b` 0.2.5 · pkg.sosomlab.com 0.2.5 APT+RPM(linux-repo `41627131558`) · winget skip(PR 0.1.6 OPEN) · choco 설치본 skip(0.1.5) · ★ **choco 포터블 0.2.5 제출 → Pending automated review**.
 **🔴 winget 잡 failure**: 1.28.0 매니페스트(`fe20dc7`)에 `winget validate` 경고 "Schema header not found" ×3 → 비영 종료 → 검증 단계(guard 무관 · 항상 실행) 실패 · 제출은 어차피 guard skip → 게시 영향 0 · 처방 = 템플릿 schema header 주석 추가 → ✅ **winget 템플릿 수정 ✓(6파일 · 로컬 `winget validate` 재현 = 경고 0 · 같은 커밋)** · 규칙 = [packaging/README E](../packaging/README.md) · 남은 일 = T-85 PR 갱신/재제출.
-**☐ 다음**: 설치본 0.2.5 교체(이 PC 0.2.4 PID 14972 · mac도) · 사용자 실기 [21 §15](21-manual-test.md) P2-11~14 · choco 포터블 0.2.5 검수 감시 · winget 템플릿 schema header + T-85 · T-78(≈11-14) → [journal 11-03 13차](journal/2026-11-03.md).
+**후속 커밋**: `6d0f26c`(winget schema header 6파일 + 기록 · CI `41628167541` ✓) · `da96be7`(해시 보충 · CI `41628620456` ✓) · 자동으로 이어갈 일 없음(개발 답 11-03 · [journal 14차](journal/2026-11-03.md)).
+**☐ 다음 — 결정 3(사용자)**: 🔴 T-78 choco 설치본 0.1.5(≈11-14 stale 반려 · ⓐ 0.2.5 재제출 / ⓑ T-77 서명 먼저 권장) · T-85 winget PR #446464·#446465(갱신 또는 닫고 0.2.5 재제출 · 템플릿 준비됨) · 이 PC 설치본 0.2.4(PID 14972) → 0.2.5 교체(mac도). **실기**: [21 §15](21-manual-test.md) P2-11~14(0.2.5 설치본에서) · T-82·T-83 · T-80(3대). **지시 없이 착수 가능 2**: T-81 ④ 텍스트류 GC(D-33)+C-3 표시(D-34) · T-84 설정 창 기동 명령. 다음 세션 시작 = choco 포터블 0.2.5 페이지 규칙 A 확인.
 
 ---
 
