@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-11-03 (2차 · win · LAPTOP-V3NOGHF6) — ★ v0.2.5 릴리스 ✓ — 11-03 설정 화면 개선·VT 오탐 보조·winget 1.28.0·LICENSE 영어 첫 배포 · choco 포터블 0.2.5 제출 · winget 잡 validate 경고(게시 영향 0)
+
+**범위**: main `b1fa71b`(11-03 1~11차 전부) + 버전 올림 `eaa34ff`(브랜치 `chore/release-0.2.5` → 병합 **`8edfead`**) · 코드 변경 없음 · beep 영향 없음 · nexa-ui `5169a3f` · nexa-license `f33ebef` 변경 없음.
+**배포 전(V3 · 이 PC 첫 전수)**: rustc 1.99.1 · `cargo test --workspace` **417/0/4** · Release 52.6 s · 경고 0 · `nexa-clip.exe` **2,551,296 B(2.43 MB)** · `--version` "nexa-clip 0.2.5" · VersionInfo 0.2.5 ✓ · E2E 생략(설치본 공존) · check-3os ✓(개발) · main CI `41626235190` ✓.
+**릴리스**: 태그 `v0.2.5` = `8edfead` · release run **`41626658783`** = 11/12 ✓(**winget 잡만 ✗** · rerun 안 함) · Release 자산 15 · draft/prerelease false · brew `bac709b` 0.2.5 · pkg.sosomlab.com 0.2.5 APT+RPM(linux-repo `41627131558`) · winget skip(PR 0.1.6 OPEN) · choco 설치본 skip(0.1.5) · ★ **choco 포터블 0.2.5 제출 → Pending automated review**.
+**🔴 winget 잡 failure**: 1.28.0 매니페스트(`fe20dc7`)에 `winget validate` 경고 "Schema header not found" ×3 → 비영 종료 → 검증 단계(guard 무관 · 항상 실행) 실패 · 제출은 어차피 guard skip → 게시 영향 0 · 처방 = 템플릿 schema header 주석 추가 → ✅ **winget 템플릿 수정 ✓(6파일 · 로컬 `winget validate` 재현 = 경고 0 · 같은 커밋)** · 규칙 = [packaging/README E](../packaging/README.md) · 남은 일 = T-85 PR 갱신/재제출.
+**☐ 다음**: 설치본 0.2.5 교체(이 PC 0.2.4 PID 14972 · mac도) · 사용자 실기 [21 §15](21-manual-test.md) P2-11~14 · choco 포터블 0.2.5 검수 감시 · winget 템플릿 schema header + T-85 · T-78(≈11-14) → [journal 11-03 13차](journal/2026-11-03.md).
+
+---
+
 ## 2026-11-03 (win) — 설정 화면 개선 · VT 오탐 보조 · winget 1.28.0 · 이 PC 툴체인 설치 · main `577457a`(병합 `592fb8b` + main 직접 3) · **push ✓ `bd03ab4` · CI `41599081199` ✓ 3-OS** · V2 417/0/4
 
 **설정 화면**(`ec57847` · `693169a` · 하단 줄 = nexa-dir와 동일 `74a8139`·`577457a` — [고급][변경] …… [내보내기…][가져오기…][JSON 편집…][닫기]): 변경된 설정만(비영속) · PageUp/Down/Home/End · 사이드바 휠 = 트리 · **모양 › 알림·움직임** 14키(토스트 · 플래시 · 고속 스크롤 ×N HUD — 메인·팝업·설정) · 토스트 호스트 · JSON 가져오기/내보내기/편집(`settings.json` 감시) · 설정 파일 열기 = 고급 카드 · V0 nclip-core 153 · nclip-ui 56 · clippy ✓.
