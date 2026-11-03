@@ -251,6 +251,41 @@ General 안내문 그대로:
 | `hist.clear` | Action | — | ★ **기록 모두 삭제**(09-04 · 고급) — **2단계 확인**: 첫 클릭 = 경고 노트 + 2초 무장 · 그 안의 둘째 클릭 = 고정 제외 전부 삭제(메모리 + 암호화 저장소) · 2초 지나면 자동 해제 · 값 키 없음(행위) | N |
 | `ui.font_mono` | FontFace | (비움) | ★ **고정폭 글꼴**(09-04) — 터미널·코드 리치 런의 Mono 슬롯 · 비우면 Nerd Font → D2Coding → JetBrains Mono → Cascadia → Consolas → Menlo → DejaVu 순 첫 설치본 · 주 글꼴에도 폴백으로 붙어 PUA 아이콘 글리프가 산다 · 재시작 후 적용 | N |
 
+### 3-7b. 알림·움직임 (Notify · `CatNotify`) — ★ 설정 화면 개선 1단계(11-03)
+
+> 트리 = **모양 › 알림·움직임**(`GrpAppearance` 아래 새 카테고리 · [§7-3](#7-3-그룹-트리)). 출처 **S** = nexa-sql 설정 차용. 값 목록은 RadioInput 선택지(직접 입력 가능한 Number는 범위를 적는다).
+
+**토스트**
+
+| key | 종류 | 기본값 | 라벨 | 출처 |
+|---|---|---|---|:--:|
+| `ui.toast_ms` | Number(1500/3000/5000/8000 · 범위 100~60000) | **3000** | 토스트 표시 시간(ms) — [§3-12](#3-12-시간모션-motion--사용자-요청-08-26)의 종전 행을 이 절로 통합 | S |
+| `ui.toast_alpha` | Number(60/75/85/100 · %) | **85** | 토스트 불투명도(%) | S |
+| `ui.toast_progress` | Toggle | **on** | 남은 시간 진행 막대 표시 | S |
+| `ui.toast_position` | Radio(bottom-right/bottom-left/top-right/top-left) | **bottom-right** | 토스트 위치 | S |
+
+**플래시**(순간 메시지 — 10-17 키 복사 메시지 등)
+
+| key | 종류 | 기본값 | 라벨 | 출처 |
+|---|---|---|---|:--:|
+| `ui.flash_hold_ms` | Number(500/1200/2000/3000) | **1200** | 플래시 유지 시간(ms) | S |
+| `ui.flash_ms` | Number(300/600/1000/3000) | **600** | 플래시 사라짐 시간(ms) | S |
+| `ui.flash_shape` | Radio(rounded/rect/none) | **rounded** | 플래시 모양(둥근 상자/사각 상자/글자만) | S |
+
+**고속 스크롤**(nexa-ctl `FastScroll` 전역 — 설정 창 · 메인 · 팝업 목록)
+
+| key | 종류 | 기본값 | 라벨 | 출처 |
+|---|---|---|---|:--:|
+| `scroll.fast` | Toggle | **on** | 고속 스크롤(빠르게 연속 휠 = 배속) | S |
+| `scroll.fast_speed` | Radio(slow/normal/fast/faster) | **fast**(step 5 · max 8) | 가속 세기 | S |
+| `scroll.fast_hud` | Toggle | **on** | 배속 표시(×N HUD) | S |
+| `scroll.fast_hud_pos` | PositionGrid | **tr**(오른쪽 위) | HUD 위치 | S |
+| `scroll.fast_hud_fade_ms` | Number(300/600/1000) | **600** | HUD 사라짐 시간(ms) | S |
+| `scroll.fast_hud_hold_ms` | Number(100/250/500) | **250** | HUD 유지 시간(ms) · **고급** | S |
+| `scroll.fast_window_ms` | Number(100/160/250/400) | **160** | 연속 휠 판정 간격(ms) · **고급** | S |
+
+- **DEPENDS**: `scroll.fast_speed` · `scroll.fast_hud` · `scroll.fast_window_ms` → `scroll.fast` On · `scroll.fast_hud_pos` · `scroll.fast_hud_fade_ms` · `scroll.fast_hud_hold_ms` → `scroll.fast_hud` On([§7-5](#7-5-종속-잠금depends--15쌍)).
+
 ### 3-8. 검색 (Search)
 
 | key | 종류 | 기본값 | 라벨 | 출처 |
@@ -297,6 +332,7 @@ General 안내문 그대로:
 | `adv.log` | Checkbox | off | 진단 로그(로컬만) | B |
 | `adv.cli` | Checkbox | off | CLI 제어 활성 — P2 | N |
 | `adv.reset` | 위험 버튼 | — | 초기화(확인 필요) | B |
+| `settings.open_file` | Action | — | ★ **설정 파일 열기**(11-03 — 하단 줄 버튼에서 고급 카테고리 카드로 이동 · `nclip-plat/src/launch.rs`) | N |
 
 ### 3-11. 정보 (About)
 
@@ -317,7 +353,7 @@ General 안내문 그대로:
 | `ui.popup_ms` | RadioInput | 90 | 팝업 등장(⚠️ 상한 **120ms** — [§3-12-2](#3-12-2--상한은-설정이-아니라-코드에-남긴다)) | N |
 | `ui.state_ms` | RadioInput | 90 | 상태 레이어 전이(선택·포커스) | N |
 | `ui.typeahead_reset_ms` | RadioInput | 800 | 타입어헤드 입력 초기화 대기 | B |
-| `ui.toast_ms` | RadioInput | 3000 | 알림(토스트) 표시 시간 | N |
+| (토스트 표시 시간) | → [§3-7b](#3-7b-알림움직임-notify--catnotify--설정-화면-개선-1단계11-03) `ui.toast_ms` | 3000 | 11-03 알림·움직임으로 통합 | N |
 | (미리보기 지연) | → [§3-7](#3-7-모양-appearance) `ui.preview_delay` | 1500 | 이미 있음 | M |
 
 #### 3-12-1. ★ `ui.motion`이 먼저다 — 개별 수치는 그 아래
@@ -461,9 +497,9 @@ General 안내문 그대로:
 | 층 | 무엇 | clip 값 |
 |---|---|---|
 | **`CATEGORY_TREE`** | 그룹 → 카테고리 2단(트리 좌측) | 7-3 |
-| **`ADVANCED`** | 고급 스위치를 켜야 보이는 키 | 7-4(9키) |
+| **`ADVANCED`** | 고급 스위치를 켜야 보이는 키 | 7-4(12키 · 11-03) |
 | **`HIDDEN`** | 화면에 안 내놓는 키(설정 파일로만) | `ui.prefs_advanced` · `prefs.search` |
-| **`DEPENDS`** | 종속 잠금 — 상위가 꺼지면 하위 카드가 **잠김 + 흐림 + 안내**(값은 유지) | 7-5(9쌍) |
+| **`DEPENDS`** | 종속 잠금 — 상위가 꺼지면 하위 카드가 **잠김 + 흐림 + 안내**(값은 유지) | 7-5(15쌍 · 11-03) |
 | **`SettingKind::Info`** | 읽기 전용 정보 카드 | 정보 카테고리 · (P4′) 라이선스 |
 | **`display_order`** | 카테고리 안 표시 순서 | 있음 |
 | **`RENAMED`** | 키 이름 이관 | **안 함** — clip 키는 이미 2레벨(`<접두>.<이름>`) |
@@ -476,27 +512,29 @@ General 안내문 그대로:
 |---|---|
 | **일반** | 일반 · 단축키 |
 | **클립보드** | 캡처 · 붙여넣기 · 검색 · 보관 · 개인정보 |
-| **모양** | 모양 |
+| **모양** | 모양 · 알림·움직임(11-03 · [§3-7b](#3-7b-알림움직임-notify--catnotify--설정-화면-개선-1단계11-03)) |
 | **동기화** | 동기화 |
 | **고급** | 고급 · 정보 |
 
 - **그룹 행을 누르면 그룹 전체**(카테고리 제목을 달고 이어서) · 검색 중에는 일치 수 표시.
 
-### 7-4. 고급(`ADVANCED`) — 10키
+### 7-4. 고급(`ADVANCED`) — 12키
 
-`cap.cell_pic_rows` · `cap.cell_pic_cols` · `cap.cell_pic_cells` · `cap.native_formats` · `cap.max_item_mb`(10-17 · T-81) · `sync.files_max` · `sync.file_bg_kbps` · `sync.file_cache_mb` · `sync.file_max_mb` · `adv.log`
+`cap.cell_pic_rows` · `cap.cell_pic_cols` · `cap.cell_pic_cells` · `cap.native_formats` · `cap.max_item_mb`(10-17 · T-81) · `sync.files_max` · `sync.file_bg_kbps` · `sync.file_cache_mb` · `sync.file_max_mb` · `adv.log` · `scroll.fast_hud_hold_ms` · `scroll.fast_window_ms`(11-03 · §3-7b)
 
 - 스위치 = `ui.prefs_advanced`(HIDDEN · beep·sql과 같은 이름) · 끄면 카테고리에 **"고급 N개 숨김" 배너**.
 - 고급에 넣지 않은 것: `sync.port` · `sync.retry` · `sync.file_dir` · `sync.file_auto_mb` · `find.hangul_compose` — **사용자가 만지는 값**이라 일반에 둔다.
 - §6 **D-73**(모션 개별 수치 노출 = "고급 접힘")은 이 스위치로 닫을 수 있다(모션 수치를 레지스트리에 올릴 때).
 
-### 7-5. 종속 잠금(`DEPENDS`) — 9쌍
+### 7-5. 종속 잠금(`DEPENDS`) — 15쌍
 
 | 상위(꺼지면) | 하위(잠김 + 흐림 + 안내) |
 |---|---|
 | `sync.files` | `sync.files_max` |
 | `sync.file_contents` | `sync.file_auto_mb` · `sync.file_bg_kbps` · `sync.file_max_mb` · `sync.file_cache_mb` · `sync.file_dir` |
 | `cap.rich` | `cap.cell_pic_rows` · `cap.cell_pic_cols` · `cap.cell_pic_cells` |
+| `scroll.fast`(11-03) | `scroll.fast_speed` · `scroll.fast_hud` · `scroll.fast_window_ms` |
+| `scroll.fast_hud`(11-03) | `scroll.fast_hud_pos` · `scroll.fast_hud_fade_ms` · `scroll.fast_hud_hold_ms` |
 
 - `sync.enabled` = off → 동기화의 나머지 잠금은 **`settings_win`의 `set_disabled`가 이미 한다** — DEPENDS에 중복으로 넣지 않는다(두 잠금의 합집합).
 - `cap.image` · `cap.files` · `paste.auto` 기준의 종속은 **코드 근거가 없어 넣지 않았다**.
@@ -506,7 +544,9 @@ General 안내문 그대로:
 
 - **좌 그룹 트리** + 스플리터 + **우 카드 목록**.
 - **카드 한 장** = 제목 / **키 이름 + ⧉ 복사**(`prefs.copy_key` → 클립보드) / 설명 / 컨트롤(좌하단) / **[초기화]**(기본과 다를 때만) / "기본값:".
-- **하단 줄** = [고급 설정 스위치] … [설정 파일 열기…](`settings.open_file` → `nclip-plat/src/launch.rs` · Windows explorer · mac open · Linux xdg-open) [닫기].
+- **하단 줄**(11-03 개정) = [고급] [변경된 설정만] …… [가져오기…] [내보내기…] [JSON 편집…] [닫기] — 가져오기·내보내기·JSON 편집은 다음 단계 구현. 종전 [설정 파일 열기…]는 **고급 카테고리의 Action 카드**(`settings.open_file` → `nclip-plat/src/launch.rs` · Windows explorer · mac open · Linux xdg-open · §3-10)로 옮겼다.
+- **"변경된 설정만" 스위치** = **비영속**(설정 창을 열 때마다 꺼짐) · 켠 시점의 "기본값과 다른 키" 집합을 고정해 보여 준다(켠 뒤 값을 되돌려도 카드가 바로 사라지지 않음 · nexa-sql 10-11 차용).
+- **스크롤** = 키보드 PageUp/PageDown/Home/End로 카드 목록 스크롤 · 사이드바 위 휠 = 트리 스크롤(카드 목록 아님) · 카테고리를 바꾸면 카드 목록 맨 위로 · 고속 스크롤(×N HUD)은 §3-7b 설정을 따른다.
 - 비밀 값 행(예 `sync.passphrase`)의 버튼은 입력 상자 **오른쪽**.
 - **검색** = 토큰 **AND** + **자모열**(`crates/nclip-ui/src/jamo.rs` 신규 — beep `nbeep-ui/src/jamo.rs` 계승: 글자를 자모열로 펴고 겹모음·겹받침은 둘로 · 글자 경계에서 시작하는 부분열만 인정 · 조합 중 글자도 매치) + **이력 ↑/↓**(Enter로 기록 · `prefs.search` HIDDEN).
 

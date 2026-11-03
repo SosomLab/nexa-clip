@@ -134,6 +134,8 @@ pub(crate) struct Popup {
     scroll: i32,
     /// 휠 소수 델타 누적기(터치패드).
     wheel_frac: f32,
+    /// ★ 고속 스크롤 가속기(11-03 · `scroll.fast` · nexa-ctl 전역 설정을 그때그때 읽는다).
+    accel: nexa_ctl::ScrollAccel,
     /// ★ 목록 오버레이 스크롤바(자동 숨김 · 09-02).
     bars: ScrollBars,
     /// ★ 보기 모드(`ui.popup_view` · 기본 Rich — 09-02 사용자 확정).
@@ -349,6 +351,7 @@ impl Popup {
             sel: 0,
             scroll: 0,
             wheel_frac: 0.0,
+            accel: nexa_ctl::ScrollAccel::new(),
             bars: ScrollBars::new(),
             view: ViewMode::Rich,
             marked: Vec::new(),
@@ -1266,7 +1269,10 @@ impl Popup {
                 let d = self.wheel_frac as i32;
                 if d != 0 {
                     self.wheel_frac -= d as f32;
-                    self.scroll += d; // 상한은 paint에서 죈다.
+                    // ★ 고속 스크롤(11-03 · scroll.fast) — 같은 방향 틱이 빨리 이어지면 배수 · ×N HUD는 스크롤바가 그린다.
+                    let k = self.accel.factor_cfg(d.signum(), &self.bars.fast_cfg());
+                    self.bars.note_fast(k);
+                    self.scroll += d * k; // 상한은 paint에서 죈다.
                     self.bars.show();
                     self.redraw();
                 }

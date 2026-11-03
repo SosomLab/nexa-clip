@@ -50,6 +50,15 @@ pub fn picker_labels() -> PickerLabels {
         menu_copy_name: t(Msg::PkMenuCopyName).into(),
         menu_refresh: t(Msg::PkMenuRefresh).into(),
         multi_selected: t(Msg::PkMultiSelected).into(),
+        // 이름 바꾸기·삭제·되돌리기(nexa-dlg 11-03 필드).
+        menu_rename: t(Msg::PkMenuRename).into(),
+        err_rename: t(Msg::PkErrRename).into(),
+        menu_delete: t(Msg::PkMenuDelete).into(),
+        err_delete: t(Msg::PkErrDelete).into(),
+        perm_delete_ask: t(Msg::PkPermDeleteAsk).into(),
+        menu_undo: t(Msg::PkMenuUndo).into(),
+        menu_redo: t(Msg::PkMenuRedo).into(),
+        err_undo: t(Msg::PkErrUndo).into(),
     }
 }
 
@@ -70,6 +79,8 @@ pub enum PickFilter {
     History,
     /// 라이선스(`.license`).
     License,
+    /// ★ 설정 JSON(11-03 · 가져오기/내보내기).
+    Json,
 }
 
 /// 프로필 사진으로 받는 확장자(종전 자체 피커의 목록 그대로).
@@ -89,6 +100,7 @@ impl PickFilter {
             PickFilter::Image => one(Msg::PkFilterImage, IMAGE_EXTS),
             PickFilter::History => one(Msg::PkFilterHistory, &["seg"]),
             PickFilter::License => one(Msg::PkFilterLicense, &["license"]),
+            PickFilter::Json => one(Msg::PkFilterJson, &["json"]),
         }
     }
 }
@@ -159,6 +171,7 @@ mod tests {
         assert_eq!(PickFilter::Image.filters()[0].exts.len(), IMAGE_EXTS.len());
         assert_eq!(PickFilter::History.filters()[0].exts, ["seg"]);
         assert_eq!(PickFilter::Settings.filters()[0].exts, ["cfg"]);
+        assert_eq!(PickFilter::Json.filters()[0].exts, ["json"]);
         assert_eq!(PickFilter::IdentityKey.filters()[0].exts, ["key"]);
         assert_eq!(PickFilter::All.filters().len(), 1);
         assert_eq!(PickFilter::Folders.filters().len(), 1);

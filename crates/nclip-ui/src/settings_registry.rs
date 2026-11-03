@@ -47,6 +47,41 @@ const SYNC_FILES_OPTS: &[(&str, Msg)] = &[
     ("text", Msg::SyncFilesTextOnly),
 ];
 
+/// ★ 토스트 모서리(11-03 · nexa-ctl `ToastCorner::parse` 값 그대로).
+const CORNER_OPTS: &[(&str, Msg)] = &[
+    ("bottom-right", Msg::ValCornerBr),
+    ("bottom-left", Msg::ValCornerBl),
+    ("top-right", Msg::ValCornerTr),
+    ("top-left", Msg::ValCornerTl),
+];
+
+/// ★ 플래시 메시지 배경 모양(11-03 · nexa-sql `ui.flash_shape`).
+const SHAPE_OPTS: &[(&str, Msg)] = &[
+    ("rounded", Msg::ValShapeRounded),
+    ("rect", Msg::ValShapeRect),
+    ("none", Msg::ValShapeNone),
+];
+
+/// ★ 고속 스크롤 가속 정도(11-03 · nexa-sql `scroll.fast_speed`) — 값 → (step, max)는 [`scroll_speed_params`].
+const SPEED_OPTS: &[(&str, Msg)] = &[
+    ("slow", Msg::ValSpeedSlow),
+    ("normal", Msg::ValSpeedNormal),
+    ("fast", Msg::ValSpeedFast),
+    ("faster", Msg::ValSpeedFaster),
+];
+
+/// `scroll.fast_speed` 값 → nexa-ctl `FastScroll { step, max }` — step = 연속 N틱마다 배수 +1 · max = 배수 상한.
+/// 기본 `fast` = nexa-ctl 부품 기본값(5, 8)과 같다.
+#[must_use]
+pub fn scroll_speed_params(v: &str) -> (u32, i32) {
+    match v {
+        "slow" => (8, 4),
+        "normal" => (6, 6),
+        "faster" => (3, 12),
+        _ => (5, 8),
+    }
+}
+
 /// 테마.
 const THEME_OPTS: &[(&str, Msg)] = &[
     ("system", Msg::ValSystem),
@@ -701,6 +736,141 @@ pub(crate) const REGISTRY: &[Entry] = &[
         SettingKind::DeviceList, // ★ 행별 [승인|해제][삭제] + 대조 코드(09-04 사용자)
         "sync.devices",
     ),
+    // ── ★ 알림·움직임(11-03 · 사용자 요청 "토스트·플래시 설정 + 고속 스크롤" · nexa-sql ui.toast_*/ui.flash_*/scroll.fast_* 차용) ──
+    es(
+        Msg::CatNotify,
+        Msg::SubNotifyToast,
+        Msg::SetToastMs,
+        Msg::SetToastMsDesc,
+        SettingKind::Number {
+            presets: &["1500", "3000", "5000", "8000"],
+            suffix: "ms",
+        },
+        "ui.toast_ms",
+    ),
+    es(
+        Msg::CatNotify,
+        Msg::SubNotifyToast,
+        Msg::SetToastAlpha,
+        Msg::SetToastAlphaDesc,
+        SettingKind::Number {
+            presets: &["60", "75", "85", "100"],
+            suffix: "%",
+        },
+        "ui.toast_alpha",
+    ),
+    es(
+        Msg::CatNotify,
+        Msg::SubNotifyToast,
+        Msg::SetToastProgress,
+        Msg::SetToastProgressDesc,
+        SettingKind::Toggle,
+        "ui.toast_progress",
+    ),
+    es(
+        Msg::CatNotify,
+        Msg::SubNotifyToast,
+        Msg::SetToastPos,
+        Msg::SetToastPosDesc,
+        SettingKind::Radio(CORNER_OPTS),
+        "ui.toast_position",
+    ),
+    es(
+        Msg::CatNotify,
+        Msg::SubNotifyFlash,
+        Msg::SetFlashHoldMs,
+        Msg::SetFlashHoldMsDesc,
+        SettingKind::Number {
+            presets: &["500", "1200", "2000", "3000"],
+            suffix: "ms",
+        },
+        "ui.flash_hold_ms",
+    ),
+    es(
+        Msg::CatNotify,
+        Msg::SubNotifyFlash,
+        Msg::SetFlashMs,
+        Msg::SetFlashMsDesc,
+        SettingKind::Number {
+            presets: &["300", "600", "1000", "3000"],
+            suffix: "ms",
+        },
+        "ui.flash_ms",
+    ),
+    es(
+        Msg::CatNotify,
+        Msg::SubNotifyFlash,
+        Msg::SetFlashShape,
+        Msg::SetFlashShapeDesc,
+        SettingKind::Radio(SHAPE_OPTS),
+        "ui.flash_shape",
+    ),
+    es(
+        Msg::CatNotify,
+        Msg::SubNotifyScroll,
+        Msg::SetScrollFast,
+        Msg::SetScrollFastDesc,
+        SettingKind::Toggle,
+        "scroll.fast",
+    ),
+    es(
+        Msg::CatNotify,
+        Msg::SubNotifyScroll,
+        Msg::SetScrollFastSpeed,
+        Msg::SetScrollFastSpeedDesc,
+        SettingKind::Radio(SPEED_OPTS),
+        "scroll.fast_speed",
+    ),
+    es(
+        Msg::CatNotify,
+        Msg::SubNotifyScroll,
+        Msg::SetScrollFastHud,
+        Msg::SetScrollFastHudDesc,
+        SettingKind::Toggle,
+        "scroll.fast_hud",
+    ),
+    es(
+        Msg::CatNotify,
+        Msg::SubNotifyScroll,
+        Msg::SetScrollFastHudPos,
+        Msg::SetScrollFastHudPosDesc,
+        SettingKind::PositionGrid, // 값 = posgrid 코드(tl…br) · nexa-ctl `HudPos::parse`가 그대로 읽는다
+        "scroll.fast_hud_pos",
+    ),
+    es(
+        Msg::CatNotify,
+        Msg::SubNotifyScroll,
+        Msg::SetScrollFastHudFadeMs,
+        Msg::SetScrollFastHudFadeMsDesc,
+        SettingKind::Number {
+            presets: &["300", "600", "1000"],
+            suffix: "ms",
+        },
+        "scroll.fast_hud_fade_ms",
+    ),
+    // 고급(ADVANCED) — 구현 상수에 가까운 값.
+    es(
+        Msg::CatNotify,
+        Msg::SubNotifyScroll,
+        Msg::SetScrollFastHudHoldMs,
+        Msg::SetScrollFastHudHoldMsDesc,
+        SettingKind::Number {
+            presets: &["100", "250", "500"],
+            suffix: "ms",
+        },
+        "scroll.fast_hud_hold_ms",
+    ),
+    es(
+        Msg::CatNotify,
+        Msg::SubNotifyScroll,
+        Msg::SetScrollFastWindowMs,
+        Msg::SetScrollFastWindowMsDesc,
+        SettingKind::Number {
+            presets: &["100", "160", "250", "400"],
+            suffix: "ms",
+        },
+        "scroll.fast_window_ms",
+    ),
     // ── 고급 ────────────────────────────────────────────────
     e(
         Msg::CatAdvanced,
@@ -718,6 +888,16 @@ pub(crate) const REGISTRY: &[Entry] = &[
             verb: Msg::SetClearHistoryVerb,
         },
         "hist.clear",
+    ),
+    // ★ 설정 파일 열기(11-03 — 하단 줄에서 카드로 이동 · 하단 줄은 [JSON 편집…][내보내기…][가져오기…]).
+    e(
+        Msg::CatAdvanced,
+        Msg::SetOpenSettingsFile,
+        Msg::SetOpenSettingsFileDesc,
+        SettingKind::Action {
+            verb: Msg::BtnOpenSettingsFile,
+        },
+        "settings.open_file",
     ),
     // ── ★ 정보(About · 09-12 사용자) — 버전·빌드·실행 파일 SHA-256(설치본은 두고 실행 파일만 바꿔도 식별) ──
     e(
