@@ -2,7 +2,7 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
-## 2026-11-03 (3차 · win) — 세션 마감 정리: 후속 커밋 `6d0f26c`(winget 1.28.0 schema header 6파일 + 릴리스 기록 · CI ✓) · `da96be7`(해시 보충 · CI `41628620456` ✓) · "추가로 진행할 내용?" = 자동 이어갈 일 없음 → 결정 3(T-78 ≈11-14 · T-85 PR · 설치본 0.2.5 교체) · 실기(P2-11~14 · T-82·T-83 · T-80) · 착수 후보 2(T-81 ④ · T-84) · §12 2행(P1 취소 교차 · perl UTF-8 깨짐) · [journal](journal/2026-11-03.md) 14차
+## 2026-11-03 (3차 · win) — 세션 마감 정리: 후속 커밋 `6d0f26c`(winget 1.28.0 schema header 6파일 + 릴리스 기록 · CI ✓) · `da96be7`(해시 보충 · CI `41628620456` ✓) · "추가로 진행할 내용?" = 자동 이어갈 일 없음 → 결정 3(T-78 ≈11-14 · T-85 PR · 설치본 0.2.5 교체) · 실기(P2-11~14 · T-82·T-83 · T-80) · 착수 후보 2(T-81 ④ · T-84) · §12 2행(P1 취소 교차 · perl UTF-8 깨짐) · 기록 커밋 `3e8c33d` · `de622fa` CI ✓ · 15차 재확인 = 변동 없음 · [journal](journal/2026-11-03.md) 14·15차
 
 ## 2026-11-03 (2차 · win) — ★ **v0.2.5 릴리스 ✓**(태그 `8edfead` · release `41626658783` 11/12 ✓ · 자산 15 · brew `bac709b` · pkg.sosomlab.com 0.2.5 · ★ choco 포터블 0.2.5 제출 → Pending automated review · 설치본·winget guard skip) — 코드 변경 없음(11-03 1~11차 첫 배포 · `Cargo.toml` 0.2.5) · V3 이 PC 첫 전수 417/0/4 · Release 2.43 MB · `--version` "nexa-clip 0.2.5" · 🔴 winget 잡 ✗ = 1.28.0 매니페스트 `winget validate` "Schema header not found" 경고(검증 단계는 guard 무관 · 게시 영향 0 · 템플릿 schema header 주석 처방) · [journal](journal/2026-11-03.md) 12·13차
 
