@@ -6,9 +6,7 @@
 //! ★ 11-03: Windows 아이콘·버전·매니페스트 리소스(`packaging/windows/winres.rs` · nclip-imgdec과 공용 · 원본 nexa-sql T-62)도
 //!   여기서 링크한다 — VirusTotal 휴리스틱 보조(T-77 · 서명 없는 PE의 버전 정보 공란을 없앤다). rc 도구 없으면 조용히 건너뛴다.
 
-include!("../../packaging/windows/winres.rs");
-
-use std::process::Command;
+include!("../../packaging/windows/winres.rs"); // `std::process::Command` 등 use는 여기서 온다
 
 fn git(args: &[&str]) -> Option<String> {
     let out = Command::new("git").args(args).output().ok()?;
