@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-11-04 (2차 · win) — T-81 ④ 텍스트류 GC(D-33 1차 · 브랜치 `feat/text-gc-11-04` · 커밋 전)
+
+**무엇**: 1 MB 이상 텍스트류(평문·HTML·RTF) 표현도 유휴 GC가 이미지처럼 내린다(`TEXT_COLD_MIN` · 종전 = 텍스트류는 크기 무관 상주 → Office HTML 수십 MB가 남음). 기동 복원이 이미 쓰는 미적재 상태를 GC 때 재현 · 설정 키 없음.
+**검증**: V2 test **423/0/4** · check-3os ✓ · Debug PID 22948(`--profile dev` 격리) · 기동 직후는 미적재라 GC 줄 없음(정상) → ☐ 큰 Excel·PPT 복사 Peak 실측 = 사용자 실기 → [journal 11-04 3차](journal/2026-11-04.md).
+
+---
+
 ## 2026-11-04 (win · DESKTOP-BDJGS3G) — GAP-042 winit `TaskbarCreated` 교착 우회 이식(커밋 `7562fdd` · main 병합 `264d830` · push 대기) · choco 포터블 0.2.5 승인
 
 **GAP-042**: RDP 재접속·explorer 재시작 뒤 창이 영구 "응답 없음"이 되는 winit 0.30.13 결함 → 창 4곳에 `TaskbarCreated` 서브클래스 우회(nexa-dir3 이식 · 외부 crate 0 · [DR-48](10-decision-record.md) · 제거 = winit 0.31). V2 test **420/0/4** · Debug PID 21628(`--profile dev` 격리).

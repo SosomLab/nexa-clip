@@ -305,7 +305,7 @@ Material의 상태 전이 90ms보다 11배 길다 — **의도된 예외**다.
 | D-30 | 원본 형식 보관 범위 | [12 §9](12-clipboard-formats.md#9-열린-결정) | 🔴 권장: 상한 내 전부 |
 | D-31 | 기본 붙여넣기 모드 — 원본 vs 평문 | [12 §9](12-clipboard-formats.md#9-열린-결정) | 🔴 권장: 원본 그대로 |
 | D-32 | 크로스 OS 원본 형식 전달 | [12 §9](12-clipboard-formats.md#9-열린-결정) | 🔴 권장: 같은 OS끼리만 |
-| D-33 | 표현별 차등 수명 | [12 §9](12-clipboard-formats.md#9-열린-결정) | 🔴 권장: 도입 |
+| D-33 | 표현별 차등 수명 | [12 §9](12-clipboard-formats.md#9-열린-결정) | 🔴 권장: 도입 · 🔶 1차 구현(11-04 · 1 MB 이상 텍스트류 GC · 임계 = `TEXT_COLD_MIN` · 전면 차등 수명은 D-34 실측 뒤) |
 | D-34 | 크기 상한 실수치(표현 8MB / 항목 32MB 초안) | [12 §9](12-clipboard-formats.md#9-열린-결정) | ☐ 실측 후 |
 | D-35 | ~~i18n 배치~~ | [13 §7](13-ui-reuse-from-beep.md#7-열린-결정) | ✅ **닫힘 → DR-16**(core 동형 · 구현됨) |
 | D-36 | dir2 `grid`/`columns` 이식 여부 | [13 §7](13-ui-reuse-from-beep.md#7-열린-결정) | 🔴 권장: beep `TreeGrid` 우선 |

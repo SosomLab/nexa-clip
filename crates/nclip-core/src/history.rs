@@ -142,11 +142,17 @@ impl HistoryItem {
     /// ★ 냉 본문 내리기(09-04 · 30 §3 · DR-42): blob 참조가 있는 **비텍스트** 표현의 바이트를 비운다 —
     /// 텍스트·HTML·RTF는 목록·미리보기 렌더가 쓰므로 남긴다(작다). 돌려주는 값 = 해제한 바이트.
     /// 참조가 없는(인라인 · 16KB 미만) 표현은 내릴 수 없다(다시 읽을 곳이 없다).
+    /// ★ T-81 ④(11-04 · D-33 표현별 차등 수명 1차): 텍스트류라도 [`TEXT_COLD_MIN`] 이상이면 내린다 — Office 한 번 복사의
+    /// HTML/RTF가 수십 MB라 "텍스트류는 작다"는 전제가 깨진 것이 설치본 Peak 336MB의 네 번째 원인. 기동 복원은 어차피
+    /// 16KB 이상 모든 표현을 미적재로 시작하므로(셸 지연 로드 · 색인은 배경 스레드) 앱은 그 상태를 이미 감당한다 —
+    /// 이 변경은 큰 텍스트류에 한해 그 상태를 GC 때 재현하는 것이다. 작은 텍스트(라벨·평문·보통 HTML)는 종전대로 남는다.
     pub fn unload_cold(&mut self) -> u64 {
         let mut freed = 0u64;
         for (ri, _, _) in &self.blob_refs {
             if let Some(r) = self.reps.get_mut(*ri as usize) {
-                if r.data.is_empty() || is_text_like(&r.format) {
+                if r.data.is_empty()
+                    || (is_text_like(&r.format) && (r.data.len() as u64) < TEXT_COLD_MIN)
+                {
                     continue;
                 }
                 freed += r.data.len() as u64;
@@ -182,7 +188,13 @@ impl HistoryItem {
     }
 }
 
-/// 목록·미리보기 렌더가 직접 읽는 표현(작다) — 내리지 않는다.
+/// ★ 텍스트류 표현을 GC가 내리기 시작하는 크기(T-81 ④ · 11-04 · D-33 1차). 이보다 작은 텍스트·HTML·RTF는 목록·Rich 보기가
+/// 바로 읽으므로 상주시킨다. 이 이상(Office HTML · 거대 RTF)은 blob 참조가 있으면 내리고 붙여넣기·미리보기 전에 셸이 다시
+/// 읽는다(`ensure_loaded` · 수 ms). 이미 그린 Rich 행은 메인창 `rich_cache`(파싱 결과)가 들고 있어 화면이 바뀌지 않는다.
+/// 수치는 초안(D-34 실측 뒤 조정) — 설정 키로 노출하지 않는다(DR-41 최소 처리 · 사용자가 고를 이유가 없는 내부 임계).
+pub const TEXT_COLD_MIN: u64 = 1 << 20;
+
+/// 목록·미리보기 렌더가 직접 읽는 표현(작다) — [`TEXT_COLD_MIN`] 미만이면 내리지 않는다.
 fn is_text_like(fmt: &str) -> bool {
     crate::capture::is_html_format(fmt)
         || crate::capture::is_rtf_format(fmt)
@@ -1049,5 +1061,107 @@ mod budget_tests {
         );
         assert_eq!(r2, Pushed::Promoted, "재방문 재복사 = 승격(토큰 무시)");
         assert_eq!(h.get(0).unwrap().copies, 2);
+    }
+}
+
+#[cfg(test)]
+mod residency_tests {
+    #![allow(clippy::unwrap_used)]
+    use super::*;
+
+    /// blob 참조를 든 복원 항목 — 표현 전부 적재된 상태(`len` = 실제 길이)로 만든다.
+    fn restored_with_refs(reps: &[(&str, usize)]) -> HistoryItem {
+        let reps_v: Vec<RawRep> = reps
+            .iter()
+            .map(|(f, n)| RawRep {
+                format: (*f).to_string(),
+                data: vec![b'x'; *n],
+            })
+            .collect();
+        let refs: Vec<(u32, [u8; 32], u64)> = reps_v
+            .iter()
+            .enumerate()
+            .map(|(i, r)| (i as u32, [i as u8; 32], r.data.len() as u64))
+            .collect();
+        HistoryItem::restored(
+            1,
+            ClipKind::RichText,
+            "r".into(),
+            reps_v,
+            None,
+            1,
+            false,
+            None,
+            None,
+            0,
+            refs,
+        )
+    }
+
+    /// ★ T-81 ④: 큰 HTML(≥ `TEXT_COLD_MIN`)은 내리고, 작은 평문·HTML은 남긴다 · 비텍스트는 크기 무관하게 내린다.
+    #[test]
+    fn unload_cold_drops_large_text_like_but_keeps_small() {
+        let big = TEXT_COLD_MIN as usize;
+        let mut it = restored_with_refs(&[
+            ("CF_UNICODETEXT", 2_000),
+            ("HTML Format", big),
+            ("Rich Text Format", big - 1),
+            ("PNG", 4_000),
+        ]);
+        assert!(it.is_loaded());
+        let before = it.resident_bytes();
+        let freed = it.unload_cold();
+        assert_eq!(freed, (big + 4_000) as u64, "큰 HTML + PNG만");
+        assert_eq!(it.resident_bytes(), before - freed);
+        assert_eq!(it.reps[0].data.len(), 2_000, "평문은 남는다");
+        assert!(it.reps[1].data.is_empty(), "큰 HTML은 내려간다");
+        assert_eq!(it.reps[2].data.len(), big - 1, "임계 미만 RTF는 남는다");
+        assert!(it.reps[3].data.is_empty(), "PNG는 종전대로");
+        assert!(!it.is_loaded(), "참조는 남아 다시 읽을 수 있다");
+        // 두 번 불러도 더 해제되지 않는다.
+        assert_eq!(it.unload_cold(), 0);
+    }
+
+    /// 참조가 없는(인라인) 표현은 크기와 무관하게 내리지 않는다 — 다시 읽을 곳이 없다.
+    #[test]
+    fn unload_cold_never_drops_inline_reps() {
+        let big = TEXT_COLD_MIN as usize + 1;
+        let mut it = HistoryItem::restored(
+            2,
+            ClipKind::RichText,
+            "i".into(),
+            vec![RawRep {
+                format: "HTML Format".into(),
+                data: vec![b'h'; big],
+            }],
+            None,
+            1,
+            false,
+            None,
+            None,
+            0,
+            Vec::new(),
+        );
+        assert_eq!(it.unload_cold(), 0);
+        assert_eq!(it.reps[0].data.len(), big);
+    }
+
+    /// `History::unload_cold_except` — 고정·`keep` 항목은 큰 HTML도 남긴다.
+    #[test]
+    fn history_gc_skips_pinned_and_kept() {
+        let big = TEXT_COLD_MIN as usize;
+        let mut a = restored_with_refs(&[("HTML Format", big)]);
+        a.id = 1;
+        let mut b = restored_with_refs(&[("HTML Format", big)]);
+        b.id = 2;
+        let mut c = restored_with_refs(&[("HTML Format", big)]);
+        c.id = 3;
+        c.pinned = true;
+        let mut h = History::from_items(10, vec![a, b, c]);
+        let freed = h.unload_cold_except(Some(2));
+        assert_eq!(freed, big as u64, "1만 내려간다(2 = keep · 3 = 핀)");
+        assert!(h.get_by_id(1).unwrap().reps[0].data.is_empty());
+        assert_eq!(h.get_by_id(2).unwrap().reps[0].data.len(), big);
+        assert_eq!(h.get_by_id(3).unwrap().reps[0].data.len(), big);
     }
 }
