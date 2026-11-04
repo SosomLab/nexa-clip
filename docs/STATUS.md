@@ -4,10 +4,10 @@
 
 ---
 
-## 2026-11-05 (win · DESKTOP-BDJGS3G) — 진행사항 최신화 · 11-04 두 건 push(브랜치 `docs/progress-11-05` · 커밋 전)
+## 2026-11-05 (win · DESKTOP-BDJGS3G) — 진행사항 최신화 · 11-04 두 건 push ✓ `26c80fd`(병합 · 커밋 `22d29c5`) · CI `41855195900` ✓ 3-OS
 
 **11-04 요약**: GAP-042 winit `TaskbarCreated` 교착 우회(RDP 재접속 뒤 영구 "응답 없음" · `264d830` · DR-48) · T-81 ④ 1 MB 이상 텍스트류 GC(`134fe56` · D-33 1차) · V2 420/0/4 · 423/0/4 · check-3os ✓.
-**push 게이트**: `rustup update stable` unchanged(1.99.1) → check-3os 생략(소스 변경 0) · push · CI = 결과 대기.
+**push 게이트**: `rustup update stable` unchanged(1.99.1) → check-3os 생략(소스 변경 0) · push `b191e9b..26c80fd`(8커밋) · CI `41855195900` = windows ✓ · ubuntu ✓ · macos ✓ 3-OS.
 **☐ 남은 일**: 결정 3(🔴 T-78 choco 설치본 ≈11-14 · T-85 winget PR · 설치본 0.2.5 교체) · 실기([21 §15](21-manual-test.md) P2-11~15 · T-81 큰 Excel·PPT Peak) · 착수 후보 T-42 → T-84 · 미배포분(GAP-042 · 텍스트류 GC) = 다음 태그 → [journal 11-05](journal/2026-11-05.md).
 
 ---

@@ -4,7 +4,7 @@
 
 | 브랜치 | 생성 | 병합 | 커밋 수 | 요약 |
 |---|---|---|---:|---|
-| `docs/progress-11-05` | 2026-11-05 | (커밋 전) | — | 11-05 진행사항 최신화(journal 11-05 신설 · STATUS · DEVLOG · TODO · BRANCHES) · 11-04 두 건 push |
+| `docs/progress-11-05` | 2026-11-05 | 2026-11-05 → main `--no-ff` 병합 `26c80fd`(커밋 `22d29c5` · push `b191e9b..26c80fd` · CI `41855195900` ✓ 3-OS) | 1 | 11-05 진행사항 최신화(journal 11-05 신설 · STATUS · DEVLOG · TODO · BRANCHES) · 11-04 두 건 push |
 | `feat/text-gc-11-04` | 2026-11-04 | 2026-11-04 → main `--no-ff` 병합 `134fe56`(커밋 `005f651` · push 대기) | 1 | T-81 ④ 텍스트류 GC(D-33 1차 · `TEXT_COLD_MIN` 1 MB · `history.rs` · residency_tests 3) |
 | `fix/winit-taskbar-deadlock-11-04` | 2026-11-04 | 2026-11-04 → main `--no-ff` 병합 `264d830`(커밋 `7562fdd` · push 대기) | 1 | GAP-042 winit 0.30.13 `TaskbarCreated` 교착 우회(`wintaskbar.rs` · `taskbar_guard.rs` · 창 4곳) · nexa-dir3 `cd17f2d` 이식 · DR-48 |
 | `docs/progress-11-03-pc2` | 2026-11-03 | 2026-11-03 → main `--no-ff` 병합 `3e8c33d`(커밋 `e156145` · push `da96be7..3e8c33d`) · CI `41654432164` ✓ | 1 | 11-03 14차 세션 마감 정리(journal · STATUS ☐ 다음 = 결정 3 · 실기 · 착수 후보 2 · DEVLOG · TODO T-78·T-85·T-81·T-84 · docs/33 §12 2행) |
