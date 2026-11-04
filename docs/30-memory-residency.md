@@ -79,6 +79,7 @@ GC 틱은 셸 `about_to_wait` 박동(500ms)에 얹되 **유휴 조건**(마지�
 ## 7. 구현 순서(결정 뒤) — 진행
 
 - ✅ **2단계(09-04)**: `HistoryItem::unload_cold`(이미지 blob 표현만 · 텍스트류 유지) · `is_loaded` = 참조가 다 차 있나(참조는 적재 뒤에도 남긴다) · `History::resident_bytes`/`unload_cold_except(keep)` · 셸 `release_body`(복사 · 이미지로 복사 · 미리보기 디코드 뒤) · `gc_memory`(30초 · 96MB 초과 즉시 · 고정·미리보기 제외) · ★ `HistoryStore::add`가 **blob 참조를 돌려줘** 캡처 항목도 내릴 수 있다 · 창 닫힘에 메인/팝업 뷰 캐시 비움.
+- ✅ **2-b(11-04)**: 텍스트류(평문 · HTML · RTF)도 **1 MB 이상이면** `unload_cold`가 내린다(`TEXT_COLD_MIN` · 1 MB 미만·인라인은 그대로 · 고정·미리보기 제외 동일) — 기동 복원의 미적재 상태를 GC 때 재현 · T-81 ④ · D-33 1차 · [journal 11-04 3차](journal/2026-11-04.md).
 - ✅ **3단계(09-04)**: 저장소 `EV_ADD3`(섬네일 태그 2 = PNG blob 참조 · 구본 1/0 계속 읽음) · `StoredItem.thumb_ref/thumb_png` · `AddRefs`(본문·섬네일 참조 반환) · 셸 `store_add`가 RGBA→PNG(격리 워커 인코드)→blob, RGBA는 캐시로 옮기고 항목에서 내림 · **기동 마이그레이션**(구본 인라인 RGBA를 항목에서 즉시 떼고 워커 스레드가 384² PNG로 → `ThumbEncoded` → 재기록 · 오래된 것부터 = 재생 순서 보존) · `thumbs.rs` LRU 캐시(32장 · 고정 제외 · 요청/진행/삽입) · 메인/팝업 `Row`는 치수만(`thumb_dims`) 들고 그릴 때 캐시에서 꺼내며 없으면 요청만 → 셸 `pump_thumbs`(동시 4 · blob 읽기 → 워커 스레드 디코드 → `ThumbReady`) · GC가 상한 초과 시 캐시 8장으로 · `THUMB_SIDE` 384.
 - ✅ **4단계(09-04)**: 디코드 대기 **자리표시**(흐린 상자 · 행 높이 불변) · **리치 런 파싱 캐시**(`rich_cache`: id + 내용 열쇠 → refresh마다 재파싱 중단 · 사라진 항목은 정리 · 창 닫힘에 비움) · 마이그레이션 완료 즉시 **인덱스 압축**(`HistoryStore::compact_now`) · DR-9 수치 확정(40/96MB) · [21 §8](21-manual-test.md) M1~M7.
 

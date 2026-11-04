@@ -1213,6 +1213,7 @@ impl Shell {
 
     /// ★ 메모리 GC(09-04 · 30 §3 · DR-42): 30초마다, 또는 상주가 활동 상한(96MB)을 넘으면 즉시 —
     ///   고정·미리보기 중 항목을 뺀 냉 본문을 내린다. 드롭뿐이라 UI를 막지 않는다.
+    ///   ★ 11-04(T-81 ④): 냉 본문 = 비텍스트 + **1MB 이상 텍스트류**(`nclip_core::history::TEXT_COLD_MIN` · Office HTML).
     fn gc_memory(&mut self, force: bool) {
         const ACTIVE_CAP: u64 = 96 << 20;
         let resident = self.history.resident_bytes();

@@ -2,6 +2,9 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-11-04 (2차 · win) — T-81 ④ 텍스트류 GC(D-33 1차 · 1 MB 이상 평문·HTML·RTF도 유휴 GC가 내림 · `TEXT_COLD_MIN`) · V2 test 423/0/4 · check-3os ✓ · [journal](journal/2026-11-04.md) 3차
+- Release note (EN): Memory: large text/HTML/RTF representations (≥1 MB) are now unloaded by the idle GC like images — Office clipboard payloads no longer stay resident (T-81 ④).
+
 ## 2026-11-04 (win) — GAP-042 우회 이식(winit 0.30.13 `TaskbarCreated` 교착 · 창 4곳 서브클래스 · nexa-dir3 이식 · 외부 crate 0 · [DR-48](10-decision-record.md)) · V2 test 420/0/4 · choco 포터블 0.2.5 승인 · [journal](journal/2026-11-04.md)
 - Release note (EN): Fix: window could hang permanently after RDP reconnect / Explorer restart (winit 0.30.13 TaskbarCreated deadlock, worked around in-app).
 
