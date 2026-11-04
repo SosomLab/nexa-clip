@@ -41,6 +41,8 @@ mod search_index;
 mod settings_win;
 mod sync_cmd;
 mod syncitem;
+/// ★ GAP-042 — winit 창 생성 직후 `TaskbarCreated` 교착 우회(11-04 · 모든 `el.create_window` 뒤 1줄).
+mod taskbar_guard;
 mod thumbs;
 mod tray_cmd;
 mod watch_cmd;

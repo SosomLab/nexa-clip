@@ -4,6 +4,7 @@
 
 | 브랜치 | 생성 | 병합 | 커밋 수 | 요약 |
 |---|---|---|---:|---|
+| `fix/winit-taskbar-deadlock-11-04` | 2026-11-04 | (커밋 전) | — | GAP-042 winit 0.30.13 `TaskbarCreated` 교착 우회(`wintaskbar.rs` · `taskbar_guard.rs` · 창 4곳) · nexa-dir3 `cd17f2d` 이식 · DR-48 |
 | `docs/progress-11-03-pc2` | 2026-11-03 | 2026-11-03 → main `--no-ff` 병합 `3e8c33d`(커밋 `e156145` · push `da96be7..3e8c33d`) · CI `41654432164` ✓ | 1 | 11-03 14차 세션 마감 정리(journal · STATUS ☐ 다음 = 결정 3 · 실기 · 착수 후보 2 · DEVLOG · TODO T-78·T-85·T-81·T-84 · docs/33 §12 2행) |
 | `chore/release-0.2.5` | 2026-11-03 | 2026-11-03 → main `--no-ff` 병합 `8edfead`(커밋 `eaa34ff` · push `b1fa71b..8edfead`) · 태그 `v0.2.5` = `8edfead`(태그 객체 `64ff9b2`) · CI `41626235190` ✓ · release `41626658783` 11/12 ✓(winget 잡 ✗ · 게시 영향 0) | 1 | v0.2.5 버전 올림(Cargo.toml · lock 9크레이트) + 11-03 12차 문서(journal · STATUS · DEVLOG) · `--version` "nexa-clip 0.2.5" · Release(win x64) 2,551,296 B · V3 417/0/4(이 PC 첫 전수) |
 | (main 직접) | 2026-11-03 | — | 7 | `e8c0768` 11-03 기록(docs 7 · journal · CLAUDE.md) · `74a8139` 하단 스위치 라벨 [고급][변경] · `e300ab0` docs/14·21 표기 · `577457a` 하단 줄 간격·순서(nexa-dir와 동일) · **`6d0f26c`** winget 1.28.0 schema header 주석(6파일) + v0.2.5 릴리스 기록(docs 7 · CLAUDE.md §1) · push `8edfead..6d0f26c` · CI `41628167541` ✓ · `da96be7` 13차 해시 보충 · CI `41628620456` ✓ · `de622fa` BRANCHES 보충(docs/progress-11-03-pc2 행) · CI `41654892675` ✓ |

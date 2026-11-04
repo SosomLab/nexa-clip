@@ -147,6 +147,8 @@ impl ApplicationHandler for App {
             return;
         };
         let win = Rc::new(win);
+        // ★ GAP-042: winit 0.30.13 TaskbarCreated 교착 우회 — 창 생성 직후(정적 가드 시험이 건수를 대조).
+        let _ = crate::taskbar_guard::guard_taskbar_created(&win);
         self.scale = win.scale_factor() as f32;
         match softbuffer::Context::new(win.clone()) {
             Ok(ctx) => {

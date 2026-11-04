@@ -577,9 +577,7 @@ cargo build --release -p nexa-clip -p nclip-imgdec
 ls -la target/release/nexa-clip* target/release/nclip-imgdec*      # 크기 게이트 ≤ 10MB
 ./target/release/nexa-clip --version                               # 워크스페이스 버전 확인
 ./target/release/nexa-clip tray                                    # 릴리스 바이너리로 상주(데이터는 exe 옆 data/)
-#   Windows(PowerShell): Start-Process .	arget
-elease
-exa-clip.exe -ArgumentList tray
+#   Windows(PowerShell): Start-Process .\target\release\nexa-clip.exe -ArgumentList tray
 
 # ── 라이선스 CLI(10-10 · DR-47 ⑦ · nclip-license) — 데이터 폴더 기준(포터블 = exe 옆 data/license → 기기 공용은 읽기만)
 ./target/release/nexa-clip --license status                       # 상태(Free/Trial/Pro/Org · ID · 파일 · 기기 코드)
