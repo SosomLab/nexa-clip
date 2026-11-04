@@ -4,7 +4,7 @@
 
 ---
 
-## 2026-11-04 (win · DESKTOP-BDJGS3G) — GAP-042 winit `TaskbarCreated` 교착 우회 이식(브랜치 `fix/winit-taskbar-deadlock-11-04` · 커밋 전) · choco 포터블 0.2.5 승인
+## 2026-11-04 (win · DESKTOP-BDJGS3G) — GAP-042 winit `TaskbarCreated` 교착 우회 이식(커밋 `7562fdd` · main 병합 `264d830` · push 대기) · choco 포터블 0.2.5 승인
 
 **GAP-042**: RDP 재접속·explorer 재시작 뒤 창이 영구 "응답 없음"이 되는 winit 0.30.13 결함 → 창 4곳에 `TaskbarCreated` 서브클래스 우회(nexa-dir3 이식 · 외부 crate 0 · [DR-48](10-decision-record.md) · 제거 = winit 0.31). V2 test **420/0/4** · Debug PID 21628(`--profile dev` 격리).
 **스토어**: ✅ choco 포터블 0.2.5 승인(virtualex · 11-03) · winget PR 2건 변화 없음(T-85) · 🔴 choco 설치본 0.1.5 ≈**11-14** 자동 반려(T-78 결정 대기).
