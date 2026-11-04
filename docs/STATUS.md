@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-11-04 (win · DESKTOP-BDJGS3G) — GAP-042 winit `TaskbarCreated` 교착 우회 이식(브랜치 `fix/winit-taskbar-deadlock-11-04` · 커밋 전) · choco 포터블 0.2.5 승인
+
+**GAP-042**: RDP 재접속·explorer 재시작 뒤 창이 영구 "응답 없음"이 되는 winit 0.30.13 결함 → 창 4곳에 `TaskbarCreated` 서브클래스 우회(nexa-dir3 이식 · 외부 crate 0 · [DR-48](10-decision-record.md) · 제거 = winit 0.31). V2 test **420/0/4** · Debug PID 21628(`--profile dev` 격리).
+**스토어**: ✅ choco 포터블 0.2.5 승인(virtualex · 11-03) · winget PR 2건 변화 없음(T-85) · 🔴 choco 설치본 0.1.5 ≈**11-14** 자동 반려(T-78 결정 대기).
+**☐ 다음**: 사용자 실기 [21 §15](21-manual-test.md) P2-11~15(P2-15 = RDP 재접속 뒤 창 응답) · T-78 · T-85 · 이 PC 설치본 0.2.4 → 0.2.5 교체 → [journal 11-04](journal/2026-11-04.md).
+
+---
+
 ## 2026-11-03 (2차 · win · LAPTOP-V3NOGHF6) — ★ v0.2.5 릴리스 ✓ — 11-03 설정 화면 개선·VT 오탐 보조·winget 1.28.0·LICENSE 영어 첫 배포 · choco 포터블 0.2.5 제출 · winget 잡 validate 경고(게시 영향 0)
 
 **범위**: main `b1fa71b`(11-03 1~11차 전부) + 버전 올림 `eaa34ff`(브랜치 `chore/release-0.2.5` → 병합 **`8edfead`**) · 코드 변경 없음 · beep 영향 없음 · nexa-ui `5169a3f` · nexa-license `f33ebef` 변경 없음.

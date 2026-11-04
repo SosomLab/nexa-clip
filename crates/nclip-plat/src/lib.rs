@@ -54,4 +54,7 @@ pub mod watch_mac;
 pub mod watch_win;
 #[cfg(windows)]
 pub(crate) mod win32;
+/// ★ GAP-042 — winit 0.30.13 `TaskbarCreated` 교착 우회(서브클래스 선처리 · 11-04 nexa-dir3 이식).
+#[cfg(windows)]
+pub mod wintaskbar;
 pub mod wlactivate;

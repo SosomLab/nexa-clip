@@ -678,6 +678,8 @@ impl App {
             return;
         };
         let win = Rc::new(win);
+        // ★ GAP-042: winit 0.30.13 TaskbarCreated 교착 우회 — 창 생성 직후(정적 가드 시험이 건수를 대조).
+        let _ = crate::taskbar_guard::guard_taskbar_created(&win);
         // ★ 메인창이 최상위면 설정 창도 최상위(09-04 사용자 — 메인창 뒤로 숨지 않게).
         win.set_window_level(if self.on_top {
             winit::window::WindowLevel::AlwaysOnTop

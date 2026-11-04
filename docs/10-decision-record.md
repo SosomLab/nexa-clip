@@ -255,6 +255,16 @@ Material의 상태 전이 90ms보다 11배 길다 — **의도된 예외**다.
 | ⑦ 라이선스 | **nexa-license 어댑터 `nclip-license`** — Feature 0 · 비상업 = 파일 없이 Free · 폴더 `data_dir()/license` → 기기 공용 · CLI `--license status\|request\|install\|remove\|path` · 설정 정보 › 라이선스 카드 + 라이선스 화면(창 안 보기 전환) · 파일 열기 = nexa-dlg · 전화홈 0(10-10 3차 · beep D-33-6·7과 같음) | PolyForm NC가 상업 = 유료를 정하고 앱은 감지하지 않는다 |
 | ⑥ 설정 체계 | **beep P2(`6f5475d`)와 같은 체계** — 그룹 트리 · 고급(`ADVANCED` 9키) · 종속 잠금(`DEPENDS` 9쌍) · 카드(키 복사 · [초기화] · 기본값) · 자모 검색 + 이력 · `app.lang = system`(10-10 2차 · [14 §7](14-settings-registry.md)) | 계열 공통 설정 화면 — 같은 손에 같은 화면 |
 
+### DR-48 — winit 0.30.13 `TaskbarCreated` 교착(GAP-042)은 **앱 안에서 우회**한다 · winit 0.31에서 제거 (11-04 · 개발 세션 이식 — nexa-dir3 `cd17f2d` · [journal 11-04 2차](journal/2026-11-04.md))
+
+| 결정 | 값 | 왜 |
+| --- | --- | --- |
+| ① 우회 | winit 창 생성 직후 comctl32 서브클래스가 `TaskbarCreated`만 `DefWindowProcW`로 돌린다(`nclip-plat/src/wintaskbar.rs` · `nexa-clip/src/taskbar_guard.rs`) · 대상 = 메인·팝업·설정·demo 창 4곳 · **트레이 창 제외**(아이콘 재등록에 필요) | winit 0.30.13이 창 상태 Mutex를 쥔 채 `AddTab`(동기 SendMessage) → 재진입 교착 → 영구 "응답 없음"(RDP 재접속 · explorer 재시작) · 앱은 `skip_taskbar` 미사용이라 동작 차이 0 |
+| ② 의존 | **외부 crate 0 유지**(순수 `extern "system"` FFI) · §3 원장 행 없음 | DR-8 |
+| ③ 출처 | `../nexa-dir3/docs/27-winit-taskbar-deadlock.md`(자족 문서 · §4 이식 절차) · 상류 수정 = winit PR #4563(0.31) | 재발명 금지 · 계열 공통 우회 |
+| ④ 제거 조건 | **winit 0.31 이상으로 올릴 때** 두 파일과 호출 4줄을 지운다(정적 가드 시험이 호출 수를 대조) | 상류 수정이 들어오면 우회가 불필요 |
+| ⑤ beep 영향 | 없음 — 창 메시지 처리만 · 와이어·서버·공유 규약 변경 0 | — |
+
 ---
 
 ## 2. 열린 결정 (D) — 색인
