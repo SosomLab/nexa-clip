@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-11-05 (win · DESKTOP-BDJGS3G) — 진행사항 최신화 · 11-04 두 건 push(브랜치 `docs/progress-11-05` · 커밋 전)
+
+**11-04 요약**: GAP-042 winit `TaskbarCreated` 교착 우회(RDP 재접속 뒤 영구 "응답 없음" · `264d830` · DR-48) · T-81 ④ 1 MB 이상 텍스트류 GC(`134fe56` · D-33 1차) · V2 420/0/4 · 423/0/4 · check-3os ✓.
+**push 게이트**: `rustup update stable` unchanged(1.99.1) → check-3os 생략(소스 변경 0) · push · CI = 결과 대기.
+**☐ 남은 일**: 결정 3(🔴 T-78 choco 설치본 ≈11-14 · T-85 winget PR · 설치본 0.2.5 교체) · 실기([21 §15](21-manual-test.md) P2-11~15 · T-81 큰 Excel·PPT Peak) · 착수 후보 T-42 → T-84 · 미배포분(GAP-042 · 텍스트류 GC) = 다음 태그 → [journal 11-05](journal/2026-11-05.md).
+
+---
+
 ## 2026-11-04 (2차 · win) — T-81 ④ 텍스트류 GC(D-33 1차 · 커밋 `005f651` · main 병합 `134fe56` · push 대기)
 
 **무엇**: 1 MB 이상 텍스트류(평문·HTML·RTF) 표현도 유휴 GC가 이미지처럼 내린다(`TEXT_COLD_MIN` · 종전 = 텍스트류는 크기 무관 상주 → Office HTML 수십 MB가 남음). 기동 복원이 이미 쓰는 미적재 상태를 GC 때 재현 · 설정 키 없음.
