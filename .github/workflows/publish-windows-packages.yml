@@ -218,8 +218,20 @@ jobs:
           # 매니페스트가 실제로 든 폴더를 찾는다(포터블 식별자는 한 단계 더 깊다 — beep 08-11 교훈).
           find out/winget -name '*.installer.yaml' -exec dirname {} \; | sort -u > dirs.txt
           [ -s dirs.txt ] || { echo "::error::winget 매니페스트를 찾지 못했다"; exit 1; }
+          # ★ 경고만 있는 검증 성공("succeeded with warnings")은 통과로 본다(11-06 v0.2.6 · run 42221069264): 러너 winget이
+          #   1.28.0 schema header URL을 "expected pattern 불일치" 경고로 보고 비영 종료한다 — 로컬 winget 1.29는 경고 0(6d0f26c).
+          #   스키마 오류(검증 실패)는 그대로 실패 · 경고 원문은 ::warning::으로 남긴다.
           while read -r d; do
-            echo "== $d"; winget validate --manifest "$d" || exit 1
+            echo "== $d"
+            rc=0; out=$(winget validate --manifest "$d" 2>&1) || rc=$?
+            echo "$out"
+            if [ "$rc" -ne 0 ]; then
+              if grep -qi "succeeded with warnings" <<<"$out"; then
+                echo "::warning::winget validate 경고(검증 성공) — $d"
+              else
+                exit 1
+              fi
+            fi
           done < dirs.txt
       - uses: actions/upload-artifact@v4
         with:
