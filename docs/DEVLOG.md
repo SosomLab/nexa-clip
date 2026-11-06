@@ -2,6 +2,8 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-11-06 (3차 · win) — ★ **v0.2.6 릴리스 ✓**(태그 `7147976` · release `42221069264` 11/12 ✓ — winget 잡만 ✗ = validate 경고 · 게시 영향 0 · 자산 15 · brew `c7741a1` · pkg.sosomlab.com 0.2.6 · choco 포터블 0.2.6 제출 · 설치본·winget guard skip) — GAP-042 우회 · T-81 ④ 텍스트류 GC · T-87 창 투명도(기본 5/10 사후 확인) 첫 배포 · V3 426/0/4 · [journal](journal/2026-11-06.md) 4차
+
 ## 2026-11-06 (2차 · win) — 진행사항 최신화 · push 게이트(`rustup update stable` unchanged 1.99.1 · check-3os ✓ 11 s(fmt · 호스트 · darwin · linux-gnu clippy · 경고·오류 0)) · push `5c024d4..76c7265`(투명도 `7b8c382`·`51090c1` + 기록) · CI `42220080316` ✓ 3-OS · [journal](journal/2026-11-06.md) 3차
 
 ## 2026-11-06 (win) — 창 투명도 이식(T-87 · nexa-dir3 T-102·T-199·GAP-039 · `ui.transparency` 5 % · `ui.transparency_blur` 10 % · `ui.dialog_keeps_active` · `ui.blur_grace_ms` · 3-OS · 외부 crate 0) · V2 test 426/0/4 · check-3os ✓ · 기본값 사용자 확인 대기 · [journal](journal/2026-11-06.md)

@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-11-06 (2차 · win) — ★ v0.2.6 릴리스 ✓ — GAP-042 우회 · 텍스트류 GC · 창 투명도 첫 배포
+
+**릴리스**: 태그 `v0.2.6` = 병합 `7147976`(커밋 `a83daa0`) · release run `42221069264` 11/12 ✓(winget 잡만 ✗ = validate 경고 · 게시 영향 0 · 처방 `c772d03` → `def3309` = 경고는 통과) · GitHub Release 자산 15 · brew `c7741a1` · pkg.sosomlab.com APT+RPM 0.2.6(linux-repo `42221955155` ✓) · choco 포터블 0.2.6 제출 → Pending automated review · 설치본(0.1.5)·winget(PR OPEN) guard skip.
+**배포 전 V3**: test **426/0/4** · Release ✓ · `nexa-clip.exe` 2,560,000 B · VersionInfo 0.2.6 · E2E 생략.
+**⚠️ 투명도 기본 5/10**: 개발 판정 · 사용자 릴리스 지시로 진행 · 사후 확인 — 업데이트 즉시 5 %(포커스 없으면 10 %) · 끄기 = 설정 › 모양 0.
+**☐ 다음**: 사용자 실기 P2-15·P2-16 · 🔴 T-78(choco 설치본 ≈11-14) · T-85(winget PR + validate 경고) · 이 PC 설치본 0.2.4 → 0.2.6 교체 → [journal 11-06 4차](journal/2026-11-06.md).
+
+---
+
 ## 2026-11-06 (win · DESKTOP-BDJGS3G) — 창 투명도 이식(T-87 · nexa-dir3 · 커밋 `7b8c382` · main 병합 `51090c1` · 기록 `f4b9f8e`) · push ✓ `76c7265` · CI ✓
 
 **세션·저장소**: 개발 `nexa-clip-f1`(Fable) · 협업(Opus) 재편 · pull = nexa-clip +1(`5c024d4`) · nexa-ui +7(`8cc98da`) · nexa-dir3 +16(`2549d72`) · nexa-beep +81(`3edecfe` · 참고) · nexa-license 그대로.
