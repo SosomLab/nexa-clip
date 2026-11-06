@@ -4,7 +4,7 @@
 
 ---
 
-## 2026-11-06 (win · DESKTOP-BDJGS3G) — 창 투명도 이식(T-87 · nexa-dir3 · 브랜치 `feat/transparency-11-06` · 커밋 전)
+## 2026-11-06 (win · DESKTOP-BDJGS3G) — 창 투명도 이식(T-87 · nexa-dir3 · 커밋 `7b8c382` · main 병합 `51090c1` · push 대기)
 
 **무엇**: 설정 › 모양에 `ui.transparency`(포커스 있을 때 · 기본 5 %) · `ui.transparency_blur`(없을 때 · 10 %) · `ui.dialog_keeps_active`(설정 창·팝업 포커스 = 메인 활성 · on) · `ui.blur_grace_ms`(고급 · 150 ms) · 3-OS(Win 레이어드 알파 · mac `setAlphaValue` · X11 `_NET_WM_WINDOW_OPACITY`) · 외부 crate 0.
 **검증**: V2 test **426/0/4** · check-3os ✓ · Debug PID 14936(`--profile dev` 격리) · 메인 창 · 단독 설정 창 alpha 242(= 5 %) 확인 · blur·묶음 = 사용자 실기([21 §15](21-manual-test.md) P2-16).
