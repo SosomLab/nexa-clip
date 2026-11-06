@@ -148,6 +148,8 @@ pub const ADVANCED: &[&str] = &[
     // ★ 고속 스크롤 구현 상수(11-03 · nexa-sql HIDDEN 짝) — 연속 판정 간격·HUD 유지.
     "scroll.fast_window_ms",
     "scroll.fast_hud_hold_ms",
+    // ★ 창 투명도 유예(11-06 · nexa-dir3 `window.blur_grace_ms` HIDDEN 짝) — 느린 창 관리자에서만 만지는 구현 상수.
+    "ui.blur_grace_ms",
 ];
 
 /// 고급 설정인가(설정 창 스위치가 꺼져 있으면 숨기고 수만 센다).
@@ -534,6 +536,10 @@ const RADIO_DEFAULTS: &[(&str, &str)] = &[
     ("sync.file_cache_mb", "2000"),
     ("ui.theme", "system"),
     ("ui.tray_recent_n", "8"),
+    // ★ 창 투명도(11-06 · nexa-dir3 이식) — 포커스 5 % · 포커스 없음 10 %(dir3 11-06 사용자 값) · 유예 150 ms.
+    ("ui.transparency", "5"),
+    ("ui.transparency_blur", "10"),
+    ("ui.blur_grace_ms", "150"),
     // ★ Excel 셀 범위 그림 상한(10-04) — nclip_core::capture::CELL_PICTURE_MAX_* 와 같은 값.
     ("cap.cell_pic_rows", "200"),
     ("cap.cell_pic_cols", "50"),
@@ -769,6 +775,11 @@ pub(crate) fn validate(key: &str, value: &str) -> Result<(), Msg> {
         // ★ 알림·움직임(11-03) — nexa-sql 범위 그대로.
         "ui.toast_ms" => range(value, 100, 60_000, Msg::ValToastMsRange),
         "ui.toast_alpha" => range(value, 30, 100, Msg::ValPctRange),
+        // ★ 창 투명도(11-06) — 0~90(그 이상은 창이 거의 안 보여 되돌릴 수 없다 · dir3 DR-22) · 유예 0~2000 ms.
+        "ui.transparency" | "ui.transparency_blur" => {
+            range(value, 0, 90, Msg::ValTransparencyRange)
+        }
+        "ui.blur_grace_ms" => range(value, 0, 2000, Msg::ValGraceMsRange),
         "ui.flash_hold_ms" | "ui.flash_ms" => range(value, 0, 30_000, Msg::ValFlashMsRange),
         "scroll.fast_hud_fade_ms" | "scroll.fast_hud_hold_ms" | "scroll.fast_window_ms" => {
             range(value, 20, 10_000, Msg::ValScrollMsRange)

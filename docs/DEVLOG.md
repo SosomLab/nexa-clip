@@ -2,6 +2,9 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-11-06 (win) — 창 투명도 이식(T-87 · nexa-dir3 T-102·T-199·GAP-039 · `ui.transparency` 5 % · `ui.transparency_blur` 10 % · `ui.dialog_keeps_active` · `ui.blur_grace_ms` · 3-OS · 외부 crate 0) · V2 test 426/0/4 · check-3os ✓ · 기본값 사용자 확인 대기 · [journal](journal/2026-11-06.md)
+- Release note (EN): Window transparency settings (Appearance): opacity while focused / unfocused, keep the main window active while its own dialogs have focus, and a short delay before dimming — Windows, macOS and X11.
+
 ## 2026-11-05 (win) — 진행사항 최신화 · 11-04 두 건(GAP-042 우회 · T-81 ④ 텍스트류 GC) push · push 게이트 = `rustup update stable` unchanged 1.99.1(check-3os 생략 · 소스 변경 0) · 착수 후보 T-42 → T-84 · [journal](journal/2026-11-05.md)
 
 ## 2026-11-04 (2차 · win) — T-81 ④ 텍스트류 GC(D-33 1차 · 1 MB 이상 평문·HTML·RTF도 유휴 GC가 내림 · `TEXT_COLD_MIN`) · V2 test 423/0/4 · check-3os ✓ · [journal](journal/2026-11-04.md) 3차

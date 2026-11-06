@@ -70,6 +70,10 @@ extern "system" {
     pub(crate) fn PostMessageW(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) -> i32;
     pub(crate) fn PostQuitMessage(code: i32);
     pub(crate) fn SetForegroundWindow(hwnd: HWND) -> i32;
+    // ★ 창 투명도(11-06 · nexa-dir3 T-102 이식 · `opacity.rs`) — 레이어드 창 알파.
+    pub(crate) fn GetWindowLongPtrW(hwnd: HWND, index: i32) -> isize;
+    pub(crate) fn SetWindowLongPtrW(hwnd: HWND, index: i32, value: isize) -> isize;
+    pub(crate) fn SetLayeredWindowAttributes(hwnd: HWND, key: u32, alpha: u8, flags: u32) -> i32;
 }
 
 #[link(name = "kernel32")]

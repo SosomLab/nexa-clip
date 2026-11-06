@@ -546,6 +546,12 @@ struct Shell {
     keymap_sig: String,
     /// ★ 감시 끄기(09-04 사용자 — 툴바 토글): 켜지면 로컬 캡처 사건을 버린다. 세션 한정(재시작 = 켜짐).
     watch_off: bool,
+    /// ★ 창 투명도 설정 서명(11-06 · nexa-dir3 T-102·T-199 이식) — 4키가 바뀔 때만 다시 적용(`hotkey_sig` 관례).
+    transparency_sig: String,
+    /// ★ 포커스 묶음(메인 + 설정 창·팝업 · GAP-039) — 메인창의 포커스별 투명도 판정.
+    focus: crate::transparency::FocusGroup,
+    /// 투명도 미지원 백엔드(Wayland 네이티브) 안내를 세션에 한 번만.
+    transparency_warned: bool,
 }
 
 /// 캐시된 로컬 경로들을 **모드에 맞는 게시 표현**으로(09-13 · 순수 함수라 테스트가 직접 본다).
@@ -866,6 +872,58 @@ impl Shell {
         }
         self.hotkey_sig = sig;
         nclip_plat::tray::set_hotkeys(list, label);
+    }
+
+    /// ★ 창 투명도 설정 동기(11-06 · nexa-dir3 T-102·T-199 이식) — 4키 서명이 바뀌면 새 창용 값을 갱신하고 열린 창에 즉시
+    ///   적용한다(메인 = 포커스 묶음 판정값 · 설정 창·팝업 = 포커스 값). 바뀐 게 없으면 no-op.
+    fn apply_transparency(&mut self, force: bool) {
+        let v = crate::transparency::Values::from_conf(&self.app.conf);
+        let sig = v.sig();
+        if !force && sig == self.transparency_sig {
+            return;
+        }
+        self.transparency_sig = sig;
+        crate::transparency::set_pct(v.focused);
+        self.prune_focus();
+        self.apply_main_transparency(&v);
+        if let Some(w) = self.app.window() {
+            let _ = crate::transparency::apply(w);
+        }
+        if let Some(w) = self.popup.window() {
+            let _ = crate::transparency::apply(w);
+        }
+    }
+
+    /// 메인창에 묶음 판정값을 적용 — 미지원 백엔드(Wayland 네이티브)는 세션에 한 번만 안내(최상위 고정과 같은 결).
+    fn apply_main_transparency(&mut self, v: &crate::transparency::Values) {
+        let pct = v.main_pct(self.focus.active(v.keeps_active));
+        let Some(w) = self.main.window() else {
+            return;
+        };
+        if let Err(e) = crate::transparency::apply_pct(w, pct) {
+            if pct != 0 && !self.transparency_warned {
+                self.transparency_warned = true;
+                println!("창 투명도: 이 창 백엔드에서는 적용되지 않습니다 ({e})");
+            }
+        }
+    }
+
+    /// 닫힌 창의 포커스 기억 정리 — 닫힌 창은 `Focused(false)`를 안 보낼 수 있어 창 존재로 대조한다.
+    fn prune_focus(&mut self) {
+        let popup = self.popup.window_id().map(u64::from);
+        let settings = self.app.window_id().map(u64::from);
+        let main_exists = self.main.window_id().is_some();
+        self.focus
+            .prune(main_exists, |id| popup == Some(id) || settings == Some(id));
+    }
+
+    /// 포커스 사건(메인 · 보조 창) 뒤 묶음 판정 — 활성 = 바로 포커스 값 · 비활성 = 유예 뒤 blur(`about_to_wait`의 tick).
+    fn focus_group_changed(&mut self) {
+        let v = crate::transparency::Values::from_conf(&self.app.conf);
+        self.prune_focus();
+        if self.focus.changed(v.keeps_active, v.grace, Instant::now()) {
+            self.apply_main_transparency(&v);
+        }
     }
 
     /// ★ 창 안 키맵 동기(09-08) — 설정 `key.*`(창 안)가 바뀌면 팝업·메인창에 새 표를 준다. 바뀐 게 없으면 no-op.
@@ -2472,6 +2530,16 @@ impl ApplicationHandler<ShellEvent> for Shell {
     }
 
     fn window_event(&mut self, el: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
+        // ★ 창 투명도 포커스 묶음(11-06 · GAP-039) — 메인 = 포커스별 값 · 설정 창·팝업 = 보조 창(묶음 활성 유지).
+        if let WindowEvent::Focused(on) = &event {
+            if self.main.window_id() == Some(id) {
+                self.focus.set_main(*on);
+                self.focus_group_changed();
+            } else if self.popup.window_id() == Some(id) || self.app.window_id() == Some(id) {
+                self.focus.set_aux(u64::from(id), *on);
+                self.focus_group_changed();
+            }
+        }
         if self.main.window_id() == Some(id) {
             // ★ 이동·크기 변경 때도 기하를 저장한다(09-04 사용자 — 강제 종료·크래시 뒤에도 같은 자리). 최소화(-32000)는 제외.
             if matches!(event, WindowEvent::Moved(_) | WindowEvent::Resized(_)) {
@@ -2816,6 +2884,24 @@ impl ApplicationHandler<ShellEvent> for Shell {
                 std::time::Instant::now() + std::time::Duration::from_millis(rem.max(16)),
             ));
         }
+        // ★ 창 투명도(11-06) — 설정 변경 동기 + 포커스 없을 때 유예 만료 판정(유예 중이면 그 시각에 깨어난다 · 더 이른 예약은 유지).
+        self.apply_transparency(false);
+        let v = crate::transparency::Values::from_conf(&self.app.conf);
+        self.prune_focus();
+        match self.focus.tick(v.keeps_active, Instant::now()) {
+            crate::transparency::Tick::Apply => self.apply_main_transparency(&v),
+            crate::transparency::Tick::WakeAt(at) => {
+                let cur = el.control_flow();
+                if !matches!(cur, ControlFlow::Poll) {
+                    let at = match cur {
+                        ControlFlow::WaitUntil(t) if t < at => t,
+                        _ => at,
+                    };
+                    el.set_control_flow(ControlFlow::WaitUntil(at));
+                }
+            }
+            crate::transparency::Tick::Idle => {}
+        }
     }
 }
 
@@ -3157,6 +3243,8 @@ pub(crate) fn run() {
     let thumbs: crate::thumbs::Thumbs =
         std::rc::Rc::new(std::cell::RefCell::new(crate::thumbs::ThumbCache::new(32)));
     let search_idx = crate::search_index::new_index();
+    // ★ 창 투명도(11-06) — 창을 만들기 전에 새 창용 값(포커스 값)을 기억한다(첫 박동의 `apply_transparency`가 재확인).
+    crate::transparency::set_pct(crate::transparency::Values::from_conf(&conf).focused);
     let mut shell = Shell {
         font: font.clone(),
         app: App::new(font, conf, true),
@@ -3185,6 +3273,9 @@ pub(crate) fn run() {
         hotkey_sig: hk_sig,
         keymap_sig: String::new(),
         watch_off: false,
+        transparency_sig: String::new(),
+        focus: crate::transparency::FocusGroup::new(),
+        transparency_warned: false,
     };
     shell.apply_keymap();
     shell.main.set_mono_font(mono_font.clone());

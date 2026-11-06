@@ -502,6 +502,18 @@ pub enum Msg {
     SetTheme,
     /// 테마 설명.
     SetThemeDesc,
+    /// ★ 창 투명도 — 포커스 있을 때(11-06 · nexa-dir3 T-102·T-199 이식).
+    SetTransparency,
+    SetTransparencyDesc,
+    /// 창 투명도 — 포커스 없을 때(메인만).
+    SetTransparencyBlur,
+    SetTransparencyBlurDesc,
+    /// 자체 창(설정 · 팝업) 포커스 때 메인 활성 유지(GAP-039 묶음).
+    SetDialogKeepsActive,
+    SetDialogKeepsActiveDesc,
+    /// 포커스 없을 때 투명도 적용 유예(ms · 고급).
+    SetBlurGraceMs,
+    SetBlurGraceMsDesc,
     /// 값: 시스템 설정을 따름.
     ValSystem,
     /// 값: 다크.
@@ -866,6 +878,10 @@ pub enum Msg {
     ValPctRange,
     ValFlashMsRange,
     ValScrollMsRange,
+    /// 범위: 창 투명도 0~90 %(11-06).
+    ValTransparencyRange,
+    /// 범위: 흐리기 유예 0~2000 ms(11-06).
+    ValGraceMsRange,
     // ── ★ 설정 창 "변경" 보기 · JSON 편집 · 가져오기/내보내기(11-03 · nexa-sql prefs_win 차용) ──
     PrefsChangedOnly,
     PrefsNoChanged,
@@ -1315,6 +1331,8 @@ impl Msg {
             Msg::ValPctRange => ["Enter 30-100 %.", "30~100 % 사이로 입력하세요.", "请输入 30~100 %。", "30~100 % の範囲で入力してください。"],
             Msg::ValFlashMsRange => ["Enter 0-30000 ms.", "0~30000 ms 사이로 입력하세요.", "请输入 0~30000 ms。", "0~30000 ms の範囲で入力してください。"],
             Msg::ValScrollMsRange => ["Enter 20-10000 ms.", "20~10000 ms 사이로 입력하세요.", "请输入 20~10000 ms。", "20~10000 ms の範囲で入力してください。"],
+            Msg::ValTransparencyRange => ["Enter 0-90 %.", "0~90 % 사이로 입력하세요.", "请输入 0~90 %。", "0~90 % の範囲で入力してください。"],
+            Msg::ValGraceMsRange => ["Enter 0-2000 ms.", "0~2000 ms 사이로 입력하세요.", "请输入 0~2000 ms。", "0~2000 ms の範囲で入力してください。"],
             // ── 설정 창 "변경" 보기 · JSON · 가져오기/내보내기(11-03) ──
             Msg::PrefsChangedOnly => ["Changed", "변경", "已更改", "変更"],
             Msg::PrefsNoChanged => [
@@ -1932,6 +1950,55 @@ impl Msg {
                 "시스템을 따르거나 직접 고릅니다",
                 "跟随系统或手动选择",
                 "システムに従うか手動で選択",
+            ],
+            // ── 창 투명도(11-06 · nexa-dir3 T-102·T-199 이식) ──
+            Msg::SetTransparency => [
+                "Window transparency when focused",
+                "창 투명도 — 포커스 있을 때",
+                "窗口透明度（有焦点时）",
+                "ウィンドウの透明度 — フォーカス時",
+            ],
+            Msg::SetTransparencyDesc => [
+                "How transparent the main window is while it has focus (unit: %, 0 = opaque, up to 90). The settings window and popup use this value too.",
+                "메인창에 포커스가 있는 동안의 투명도(단위: % · 0 = 불투명 · 최대 90). 설정 창과 팝업도 이 값을 씁니다.",
+                "主窗口有焦点时的透明度（单位: %，0 = 不透明，最大 90）。设置窗口和弹出窗口也使用此值。",
+                "メインウィンドウにフォーカスがある間の透明度（単位: % · 0 = 不透明 · 最大 90）。設定ウィンドウとポップアップもこの値を使います。",
+            ],
+            Msg::SetTransparencyBlur => [
+                "Window transparency when not focused",
+                "창 투명도 — 포커스 없을 때",
+                "窗口透明度（无焦点时）",
+                "ウィンドウの透明度 — フォーカスなし",
+            ],
+            Msg::SetTransparencyBlurDesc => [
+                "How transparent the main window becomes when another app has focus (unit: %, 0 = opaque, up to 90). Applied when focus leaves and restored when it returns.",
+                "다른 앱으로 포커스가 가면 메인창이 이만큼 투명해집니다(단위: % · 0 = 불투명 · 최대 90). 포커스가 떠나면 적용되고 돌아오면 복원됩니다.",
+                "焦点转到其他应用时主窗口的透明度（单位: %，0 = 不透明，最大 90）。失去焦点时应用，焦点返回时恢复。",
+                "他のアプリにフォーカスが移るとメインウィンドウがこの値まで透明になります（単位: % · 0 = 不透明 · 最大 90）。フォーカスが離れると適用され、戻ると復元されます。",
+            ],
+            Msg::SetDialogKeepsActive => [
+                "Own windows keep the main window active",
+                "자체 창에 포커스가 있으면 메인창 활성 유지",
+                "自身窗口有焦点时主窗口保持活动",
+                "自アプリのウィンドウにフォーカスがあればメインを活性に保つ",
+            ],
+            Msg::SetDialogKeepsActiveDesc => [
+                "When on, the main window counts as active while the settings window or popup has focus, so it keeps the focused transparency. When off, it uses the unfocused transparency as soon as one of them takes focus.",
+                "켜면 설정 창이나 팝업에 포커스가 있어도 메인창을 활성으로 보아 포커스 있을 때 투명도를 유지합니다. 끄면 그 창으로 포커스가 가는 순간 포커스 없을 때 투명도를 적용합니다.",
+                "开启时，设置窗口或弹出窗口有焦点时主窗口仍视为活动，保持有焦点时的透明度。关闭时，焦点一转到这些窗口就应用无焦点透明度。",
+                "オンにすると、設定ウィンドウやポップアップにフォーカスがあってもメインウィンドウを活性と見てフォーカス時の透明度を保ちます。オフにすると、それらにフォーカスが移った瞬間にフォーカスなしの透明度を適用します。",
+            ],
+            Msg::SetBlurGraceMs => [
+                "Delay before unfocused transparency",
+                "포커스 없을 때 투명도 적용 지연",
+                "无焦点透明度的延迟",
+                "フォーカスなし透明度までの遅延",
+            ],
+            Msg::SetBlurGraceMsDesc => [
+                "Wait this long after focus leaves the main window before applying the unfocused transparency (unit: ms, 0-2000). Bridges the moment between the main window losing focus and the settings window or popup taking it, so the window does not flicker. Raise it on a slow window manager.",
+                "메인창이 포커스를 잃은 뒤 포커스 없을 때 투명도를 적용하기까지 기다리는 시간(단위: ms · 0~2000). 메인창이 포커스를 잃고 설정 창·팝업이 받기까지의 순간을 넘겨 깜빡임을 막습니다. 느린 창 관리자에서는 늘리세요.",
+                "主窗口失去焦点后，等待这么久再应用无焦点透明度（单位: ms，0~2000）。跨过主窗口失去焦点到设置窗口或弹出窗口获得焦点之间的瞬间，避免闪烁。窗口管理器较慢时请增大。",
+                "メインウィンドウがフォーカスを失ってからフォーカスなしの透明度を適用するまでの待ち時間（単位: ms · 0~2000）。メインが失ってから設定ウィンドウやポップアップが受け取るまでの瞬間を越えてちらつきを防ぎます。遅いウィンドウマネージャーでは増やしてください。",
             ],
             Msg::ValSystem => ["System", "시스템", "跟随系统", "システム"],
             Msg::ValDark => ["Dark", "다크", "深色", "ダーク"],
@@ -2743,7 +2810,7 @@ mod tests {
     use super::*;
 
     /// 카탈로그 전수 — 새 `Msg`를 더하면 여기도 더한다(빈칸 검사가 그걸 강제한다).
-    const ALL_MSG: [Msg; 501] = [
+    const ALL_MSG: [Msg; 511] = [
         Msg::AppName,
         Msg::SearchPlaceholder,
         Msg::EmptyHistory,
@@ -2963,6 +3030,14 @@ mod tests {
         Msg::SetViewModeDesc,
         Msg::SetTheme,
         Msg::SetThemeDesc,
+        Msg::SetTransparency,
+        Msg::SetTransparencyDesc,
+        Msg::SetTransparencyBlur,
+        Msg::SetTransparencyBlurDesc,
+        Msg::SetDialogKeepsActive,
+        Msg::SetDialogKeepsActiveDesc,
+        Msg::SetBlurGraceMs,
+        Msg::SetBlurGraceMsDesc,
         Msg::ValSystem,
         Msg::ValDark,
         Msg::ValLight,
@@ -3220,6 +3295,8 @@ mod tests {
         Msg::ValPctRange,
         Msg::ValFlashMsRange,
         Msg::ValScrollMsRange,
+        Msg::ValTransparencyRange,
+        Msg::ValGraceMsRange,
         Msg::PrefsChangedOnly,
         Msg::PrefsNoChanged,
         Msg::BtnEditJson,

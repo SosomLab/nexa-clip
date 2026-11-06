@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-11-06 (win · DESKTOP-BDJGS3G) — 창 투명도 이식(T-87 · nexa-dir3 · 브랜치 `feat/transparency-11-06` · 커밋 전)
+
+**무엇**: 설정 › 모양에 `ui.transparency`(포커스 있을 때 · 기본 5 %) · `ui.transparency_blur`(없을 때 · 10 %) · `ui.dialog_keeps_active`(설정 창·팝업 포커스 = 메인 활성 · on) · `ui.blur_grace_ms`(고급 · 150 ms) · 3-OS(Win 레이어드 알파 · mac `setAlphaValue` · X11 `_NET_WM_WINDOW_OPACITY`) · 외부 crate 0.
+**검증**: V2 test **426/0/4** · check-3os ✓ · Debug PID 14936(`--profile dev` 격리) · 메인 창 · 단독 설정 창 alpha 242(= 5 %) 확인 · blur·묶음 = 사용자 실기([21 §15](21-manual-test.md) P2-16).
+**☐ 결정**: 기본 5/10 = dir3 값 그대로(사용자 clip 확인 대기 — 설치본 업데이트 즉시 5 % 투명) · 그 외 T-78(≈11-14) · T-85 · 설치본 0.2.5 교체 → [journal 11-06](journal/2026-11-06.md).
+
+---
+
 ## 2026-11-05 (win · DESKTOP-BDJGS3G) — 진행사항 최신화 · 11-04 두 건 push ✓ `26c80fd`(병합 · 커밋 `22d29c5`) · CI `41855195900` ✓ 3-OS
 
 **11-04 요약**: GAP-042 winit `TaskbarCreated` 교착 우회(RDP 재접속 뒤 영구 "응답 없음" · `264d830` · DR-48) · T-81 ④ 1 MB 이상 텍스트류 GC(`134fe56` · D-33 1차) · V2 420/0/4 · 423/0/4 · check-3os ✓.
