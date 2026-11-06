@@ -410,6 +410,47 @@ pub(crate) const REGISTRY: &[Entry] = &[
         SettingKind::Radio(THEME_OPTS),
         "ui.theme",
     ),
+    // ★ 창 투명도(11-06 · nexa-dir3 T-102·T-199·GAP-039 이식 · docs/14 §3-7) — 창 전체 OS 합성(Windows 레이어드 알파 ·
+    //   macOS alphaValue · X11 `_NET_WM_WINDOW_OPACITY` · Wayland 네이티브 미지원). 포커스 있을 때 = 메인 · 설정 창 · 팝업 · 새 창 ·
+    //   포커스 없을 때 = 메인만. dir3 `perf.boost` FORCES는 clip에 성능 향상 모드가 없어 생략. 기본 5/10 = dir3 11-06 사용자 값.
+    e(
+        Msg::CatAppearance,
+        Msg::SetTransparency,
+        Msg::SetTransparencyDesc,
+        SettingKind::Number {
+            presets: &["0", "5", "10", "20", "40"],
+            suffix: "%",
+        },
+        "ui.transparency",
+    ),
+    e(
+        Msg::CatAppearance,
+        Msg::SetTransparencyBlur,
+        Msg::SetTransparencyBlurDesc,
+        SettingKind::Number {
+            presets: &["0", "10", "20", "40", "60"],
+            suffix: "%",
+        },
+        "ui.transparency_blur",
+    ),
+    e(
+        Msg::CatAppearance,
+        Msg::SetDialogKeepsActive,
+        Msg::SetDialogKeepsActiveDesc,
+        SettingKind::Toggle,
+        "ui.dialog_keeps_active",
+    ),
+    // 유예(ms) = 구현 상수 → 고급(dir3 HIDDEN 짝 · clip은 nexa-sql HIDDEN을 ADVANCED로 올리는 11-03 관례).
+    e(
+        Msg::CatAppearance,
+        Msg::SetBlurGraceMs,
+        Msg::SetBlurGraceMsDesc,
+        SettingKind::Number {
+            presets: &["0", "150", "300", "600"],
+            suffix: "ms",
+        },
+        "ui.blur_grace_ms",
+    ),
     e(
         Msg::CatAppearance,
         Msg::SetTrayRecent,

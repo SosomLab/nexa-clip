@@ -771,6 +771,11 @@ impl Popup {
         self.window.as_ref().map(|w| w.id())
     }
 
+    /// 창(투명도 적용 · 11-06) — 셸이 `transparency::apply_pct`에 넘긴다.
+    pub(crate) fn window(&self) -> Option<&Window> {
+        self.window.as_deref()
+    }
+
     /// 커서 위치(주면)에서 연다 — 검색·선택은 초기화.
     /// 테마 교체(설정 창과 같은 실효값 — `ui.theme` · OS 선호).
     pub(crate) fn set_theme(&mut self, t: Theme) {
@@ -838,6 +843,8 @@ impl Popup {
         let win = Rc::new(win);
         // ★ GAP-042: winit 0.30.13 TaskbarCreated 교착 우회 — 창 생성 직후(정적 가드 시험이 건수를 대조).
         let _ = crate::taskbar_guard::guard_taskbar_created(&win);
+        // ★ 창 투명도(11-06) — 새 창은 포커스 값(`ui.transparency`)으로 시작한다.
+        let _ = crate::transparency::apply(&win);
         self.scale = win.scale_factor() as f32;
         match softbuffer::Context::new(win.clone()) {
             Ok(ctx) => {

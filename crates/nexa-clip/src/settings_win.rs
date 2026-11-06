@@ -184,6 +184,16 @@ impl App {
         app
     }
 
+    /// 설정 창 id — 셸이 포커스 묶음(창 투명도 · 11-06) 판정에 쓴다.
+    pub(crate) fn window_id(&self) -> Option<WindowId> {
+        self.window.as_ref().map(|w| w.id())
+    }
+
+    /// 설정 창(투명도 적용 · 11-06).
+    pub(crate) fn window(&self) -> Option<&Window> {
+        self.window.as_deref()
+    }
+
     /// UI 전역 변경(언어 등) 1회성 수거 — 셸이 트레이/창 라벨을 새 언어로.
     pub(crate) fn take_ui_refresh(&mut self) -> bool {
         std::mem::take(&mut self.ui_refresh)
@@ -680,6 +690,8 @@ impl App {
         let win = Rc::new(win);
         // ★ GAP-042: winit 0.30.13 TaskbarCreated 교착 우회 — 창 생성 직후(정적 가드 시험이 건수를 대조).
         let _ = crate::taskbar_guard::guard_taskbar_created(&win);
+        // ★ 창 투명도(11-06) — 새 창은 포커스 값(`ui.transparency`)으로 시작한다.
+        let _ = crate::transparency::apply(&win);
         // ★ 메인창이 최상위면 설정 창도 최상위(09-04 사용자 — 메인창 뒤로 숨지 않게).
         win.set_window_level(if self.on_top {
             winit::window::WindowLevel::AlwaysOnTop
@@ -2245,6 +2257,8 @@ pub(crate) fn run() {
     let conf_probe = Settings::load();
     crate::conf::apply_lang(&conf_probe);
     crate::conf::apply_fast_scroll(&conf_probe);
+    // ★ 창 투명도(11-06) — 트레이 없이 뜨는 단독 설정 창도 포커스 값으로(협업 V2 ⑤ 발견 · 트레이 기동은 tray_cmd가 넣는다).
+    crate::transparency::set_pct(crate::transparency::Values::from_conf(&conf_probe).focused);
     let Some(font) = crate::conf::load_ui_font(&conf_probe) else {
         eprintln!("시스템 UI 폰트를 찾지 못했습니다.");
         std::process::exit(1);

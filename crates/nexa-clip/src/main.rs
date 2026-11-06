@@ -44,6 +44,8 @@ mod syncitem;
 /// ★ GAP-042 — winit 창 생성 직후 `TaskbarCreated` 교착 우회(11-04 · 모든 `el.create_window` 뒤 1줄).
 mod taskbar_guard;
 mod thumbs;
+/// ★ 창 투명도(11-06 · nexa-dir3 T-102·T-199 이식) — 적용 지점 + 포커스 묶음 판정.
+mod transparency;
 mod tray_cmd;
 mod watch_cmd;
 /// ★ 파일 내용 전송 관리자(09-12 · DR-30) — 캐시·당겨 받기·이어 받기·진행률.

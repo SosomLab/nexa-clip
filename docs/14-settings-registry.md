@@ -127,7 +127,7 @@ General 안내문 그대로:
 
 ## 3. ★ `registry()` 명세 — nexa-clip
 
-> beep `SettingKind` 어휘를 그대로 쓴다. **출처** 열: `M`=Maccy에서 · `N`=우리 신규 · `B`=beep 설정에서 계승.
+> beep `SettingKind` 어휘를 그대로 쓴다. **출처** 열: `M`=Maccy에서 · `N`=우리 신규 · `B`=beep 설정에서 계승 · `S`=nexa-sql 차용(11-03) · `D`=nexa-dir3 차용(11-06).
 
 ### 3-1. 일반 (General)
 
@@ -231,6 +231,10 @@ General 안내문 그대로:
 | key | 종류 | 기본값 | 라벨 | 출처 |
 |---|---|---|---|:--:|
 | `ui.theme` | Combo | 시스템 | 테마(시스템/라이트/다크) | B |
+| `ui.transparency` | Number(0~90 · %) | **5** | ★ **창 투명도 — 포커스 있을 때**(11-06 · T-87) — 메인 · 설정 창 · 팝업 · 새 창 · 0 = 불투명(레이어드 해제) · Win 레이어드 알파 · mac `setAlphaValue` · X11 `_NET_WM_WINDOW_OPACITY`(Wayland 네이티브 = 미적용) | D |
+| `ui.transparency_blur` | Number(0~90 · %) | **10** | ★ **창 투명도 — 포커스 없을 때**(메인만 · 보조 창은 포커스 값) | D |
+| `ui.dialog_keeps_active` | Toggle | on | ★ **설정 창·팝업이 열려 있을 때 메인 창을 활성으로 유지**(묶음 · 끄면 그때 메인은 포커스 없을 때 투명도) | D |
+| `ui.blur_grace_ms` | Number(0~2000 · ms) | 150 | 포커스 없을 때 투명도가 적용되기까지의 지연(메인 → 설정 창 전환 깜빡임 방지 · **고급**) | D |
 | `ui.popup_at` | Combo | 커서 | **팝업 위치**(커서/화면 중앙/마지막 위치) | M |
 | `ui.view_mode` | Combo | 간략 | ★ **목록 보기**(일반/간략/한 줄) | N |
 | `ui.density` | Combo | 보통 | 밀도 | B |
@@ -497,7 +501,7 @@ General 안내문 그대로:
 | 층 | 무엇 | clip 값 |
 |---|---|---|
 | **`CATEGORY_TREE`** | 그룹 → 카테고리 2단(트리 좌측) | 7-3 |
-| **`ADVANCED`** | 고급 스위치를 켜야 보이는 키 | 7-4(12키 · 11-03) |
+| **`ADVANCED`** | 고급 스위치를 켜야 보이는 키 | 7-4(13키 · 11-06) |
 | **`HIDDEN`** | 화면에 안 내놓는 키(설정 파일로만) | `ui.prefs_advanced` · `prefs.search` |
 | **`DEPENDS`** | 종속 잠금 — 상위가 꺼지면 하위 카드가 **잠김 + 흐림 + 안내**(값은 유지) | 7-5(15쌍 · 11-03) |
 | **`SettingKind::Info`** | 읽기 전용 정보 카드 | 정보 카테고리 · (P4′) 라이선스 |
@@ -518,9 +522,9 @@ General 안내문 그대로:
 
 - **그룹 행을 누르면 그룹 전체**(카테고리 제목을 달고 이어서) · 검색 중에는 일치 수 표시.
 
-### 7-4. 고급(`ADVANCED`) — 12키
+### 7-4. 고급(`ADVANCED`) — 13키
 
-`cap.cell_pic_rows` · `cap.cell_pic_cols` · `cap.cell_pic_cells` · `cap.native_formats` · `cap.max_item_mb`(10-17 · T-81) · `sync.files_max` · `sync.file_bg_kbps` · `sync.file_cache_mb` · `sync.file_max_mb` · `adv.log` · `scroll.fast_hud_hold_ms` · `scroll.fast_window_ms`(11-03 · §3-7b)
+`cap.cell_pic_rows` · `cap.cell_pic_cols` · `cap.cell_pic_cells` · `cap.native_formats` · `cap.max_item_mb`(10-17 · T-81) · `sync.files_max` · `sync.file_bg_kbps` · `sync.file_cache_mb` · `sync.file_max_mb` · `adv.log` · `scroll.fast_hud_hold_ms` · `scroll.fast_window_ms`(11-03 · §3-7b) · `ui.blur_grace_ms`(11-06 · §3-7 · T-87)
 
 - 스위치 = `ui.prefs_advanced`(HIDDEN · beep·sql과 같은 이름) · 끄면 카테고리에 **"고급 N개 숨김" 배너**.
 - 고급에 넣지 않은 것: `sync.port` · `sync.retry` · `sync.file_dir` · `sync.file_auto_mb` · `find.hangul_compose` — **사용자가 만지는 값**이라 일반에 둔다.
