@@ -203,28 +203,52 @@ fn set_server_info(v: Option<ServerSummary>) {
     }
 }
 
+/// 마지막으로 **기록한** 접속 실패 사유(S9 · 11-08 D2) — `STATUS`와 따로 둔다: 재시도 루프가 매번 `Connecting`을 먼저
+/// 넣어 직전 상태와 비교하면 늘 "다르다"가 되어 같은 사유가 재시도마다 쌓였다. 성공·중단·꺼짐에서 비운다.
+static LAST_FAIL: std::sync::Mutex<Option<SyncFail>> = std::sync::Mutex::new(None);
+
+/// 접속 실패를 로그에 남길지 — 직전 기록 사유와 다를 때만(같은 사유의 백오프 재시도는 쌓지 않는다). 남기면 `last`를 갱신.
+fn fail_should_record(last: &mut Option<SyncFail>, now: &SyncFail) -> bool {
+    if last.as_ref() == Some(now) {
+        return false;
+    }
+    *last = Some(now.clone());
+    true
+}
+
 fn set_status(st: SyncStatus) {
     // ★ 로그 기록(S9 · 11-08) — 접속 실패는 **첫 실패 또는 사유가 바뀔 때만**(백오프 재시도마다 쌓지 않는다).
-    if let SyncStatus::Failed(f) = &st {
-        let same = STATUS
-            .lock()
-            .ok()
-            .is_some_and(|g| matches!(&*g, SyncStatus::Failed(prev) if prev.fail == f.fail));
-        if !same {
-            use nclip_core::Msg;
-            let action = match &f.fail {
-                SyncFail::WireMismatch { .. } => Msg::DiagActSyncUpdate,
-                SyncFail::PinMismatch => Msg::DiagActSyncPin,
-                SyncFail::Resolve(_) | SyncFail::Rejected { .. } => Msg::DiagActSyncAddr,
-                _ => Msg::DiagActSyncRetry,
-            };
-            crate::diag::record(
-                nclip_core::diag::Level::Warn,
-                Msg::DiagWhatSync,
-                None,
-                f.log_line(),
-                action,
-            );
+    match &st {
+        SyncStatus::Failed(f) => {
+            let record = LAST_FAIL
+                .lock()
+                .ok()
+                .is_some_and(|mut g| fail_should_record(&mut g, &f.fail));
+            if record {
+                use nclip_core::Msg;
+                let action = match &f.fail {
+                    SyncFail::WireMismatch { .. } => Msg::DiagActSyncUpdate,
+                    SyncFail::PinMismatch => Msg::DiagActSyncPin,
+                    SyncFail::Resolve(_) | SyncFail::Rejected { .. } => Msg::DiagActSyncAddr,
+                    _ => Msg::DiagActSyncRetry,
+                };
+                // 원인은 화면 언어로 · **사유만**(11-08 사소 ② — 종전 `log_line()`은 콘솔용 한국어 고정 · 조치만 i18n이라
+                //   섞여 보였다 · 재시도 꼬리는 첫 실패 값이 영구히 남아 틀린 정보가 되므로 뺀다).
+                crate::diag::record(
+                    nclip_core::diag::Level::Warn,
+                    Msg::DiagWhatSync,
+                    None,
+                    crate::settings_win::sync_fail_reason_text(&f.fail),
+                    action,
+                );
+            }
+        }
+        // 재시도 직전의 `Connecting`은 사유 기억을 건드리지 않는다(그래야 같은 사유가 이어진 것을 안다).
+        SyncStatus::Connecting => {}
+        _ => {
+            if let Ok(mut g) = LAST_FAIL.lock() {
+                *g = None;
+            }
         }
     }
     if let Ok(mut g) = STATUS.lock() {
@@ -1233,6 +1257,24 @@ fn run(
 #[cfg(test)]
 mod backoff_tests {
     use super::*;
+
+    /// ★ D2(11-08) — 같은 사유의 재시도는 한 번만 · 사유가 바뀌면 다시 · 비운 뒤(성공) 같은 사유도 다시.
+    #[test]
+    fn same_failure_is_recorded_once_until_reason_changes_or_reset() {
+        let mut last = None;
+        let io = SyncFail::Io("Connection refused".into());
+        assert!(fail_should_record(&mut last, &io), "첫 실패");
+        assert!(!fail_should_record(&mut last, &io), "같은 사유 재시도");
+        assert!(!fail_should_record(&mut last, &io));
+        let pin = SyncFail::PinMismatch;
+        assert!(fail_should_record(&mut last, &pin), "사유가 바뀜");
+        assert!(!fail_should_record(&mut last, &pin));
+        last = None; // 성공·중단 뒤
+        assert!(
+            fail_should_record(&mut last, &pin),
+            "비운 뒤 같은 사유 = 새 사건"
+        );
+    }
 
     #[test]
     fn doubles_per_failure_and_caps() {
