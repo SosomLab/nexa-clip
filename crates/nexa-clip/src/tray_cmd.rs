@@ -2853,6 +2853,8 @@ impl ApplicationHandler<ShellEvent> for Shell {
         self.pump_thumbs();
         // ★ 메모리 GC(09-04 · DR-42) — 30초 주기 · 상한 초과 즉시.
         self.gc_memory(false);
+        // ★ 진단 로그 상한 회전(11-08 · T-42) — 꺼져 있으면 즉시 반환 · 켜져 있으면 metadata 한 번.
+        crate::conf::maintain_diag_log();
         // ★ 기록 모두 삭제(09-04 사용자 — 설정 고급 · 2단계 확인 통과) — 고정 제외 전부 · 저장소까지.
         if self.app.take_clear_history() {
             let gone = self.history.remove_unpinned();
@@ -2970,6 +2972,7 @@ pub(crate) fn run() {
     let mut conf = Settings::load();
     crate::conf::apply_lang(&conf);
     crate::conf::apply_fast_scroll(&conf); // ★ 11-03 — 설정 창 뜨기 전부터 메인·팝업 목록에 적용
+    crate::conf::apply_diag_log(&conf); // ★ 11-08 T-42 — 설치본(콘솔 없음)의 진단을 diag.log로
     let Some(font) = crate::conf::load_ui_font(&conf) else {
         eprintln!("시스템 UI 폰트를 찾지 못했습니다.");
         std::process::exit(1);
