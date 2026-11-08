@@ -603,6 +603,7 @@ scripts/mac-dev-cert.sh                  # 1회: 자체 서명 신원(TCC는 서
 scripts/dev-install-mac.sh [--debug]     # 빌드 → 종료 → 번들 교체 → 재서명 → 재시작(신원 있으면 그것으로)
 scripts/mac-ppt-e2e.sh                   # PowerPoint 자동 실기 12항(서식 텍스트 · 글상자 2개 — 복사→재게시→붙여넣기 검증)
 scripts/mac-paste-e2e.sh                 # 붙여넣기 자동 실기 3항(설정 단축키로 팝업 Enter·⇧Enter·전역 평문 → TextEdit)
+scripts/settings-cmd-e2e.sh              # ★ 설정 창 기동 명령 자동 시험 9판정(11-08 · T-84 · 3-OS bash · --profile cmd-e2e 격리 · 입력 주입 0) — 명령 표 = crates/nexa-clip/src/settings_win.rs 머리말
 scripts/mac-grant-accessibility.sh       # 주입이 안 붙을 때: TCC 항목 리셋→재시작→토글 ON→검증(토글은 최초 서명에 고착 · 껐다 켜도 무효)
 
 # ── 배포 파이프라인 드라이런(태그 없이 · 초안 릴리스만) — 5타깃 빌드·게이트·매니페스트까지 그대로 돈다

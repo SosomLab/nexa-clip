@@ -2,6 +2,8 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-11-08 (mac · 2) — ★ **T-84 ✅** 설정 창 기동 명령(`NEXA_CLIP_STARTUP_CMD` 13종 · 입력 주입 0 · `efe3c84` → 병합 `0e24415` · push 대기) · [변경] 보고 행 오집계 수정 · `scripts/settings-cmd-e2e.sh` 9/9 · V2 59 + 71/1 · check-3os ✓ · T-42 push `90b5df0..4fd29c1` ci `42454616744` ✓ · [journal](journal/2026-11-08.md) 3·4차
+
 ## 2026-11-08 (mac) — 저장소 최신화(clip +44 → `90b5df0` · ui +12 → `93f2324`) · ★ **T-42 ✅** 진단 로그 파일 싱크(`adv.log` → `diag.log` · dup2/SetStdHandle · 2 MB 회전 · 외부 crate 0 · `cb9f8da` → 병합 `3c0df12` · push 대기) · V1 mac ✓ · V2 47/0 + 71/0/1 · check-3os ✓ · choco 설치본 0.1.5 자동 반려 ≈ 11-14 · Homebrew rust 재설치 함정 · [journal](journal/2026-11-08.md)
 - Release note (EN): Diagnostic log (Advanced): when enabled, the app's log is written to `diag.log` in the data folder (rotated at 2 MB, kept locally only).
 

@@ -4,6 +4,13 @@
 
 ---
 
+## 2026-11-08 (mac · 2) — T-84 설정 창 기동 명령 · main `0e24415`(push 대기 · 로컬 3커밋 앞)
+
+**T-84 ✅**: env `NEXA_CLIP_STARTUP_CMD` 13종(goto·filter·advanced·search·wheel·key·set·export·import·json·dump·sleep·close · 입력 주입 0) · 커밋 `efe3c84` → 병합 `0e24415` · 결함 1 수정([변경]이 보고 행 `about.info`를 셈) · 자동 시험 `scripts/settings-cmd-e2e.sh` 9/9 · V2 59 ✓ + 71 ✓/1 · check-3os ✓.
+**push 대기**: `e8bbc3e`(11-08 3차 기록) · `efe3c84` · `0e24415` + 이 기록 커밋 — 사용자 push 지시 대기.
+
+---
+
 ## 2026-11-08 (mac) — T-42 진단 로그 파일 싱크 · main `3c0df12` · push ✓ · 다음 = T-84
 
 **T-42 ✅**: `adv.log` 켜면 stdout·stderr를 데이터 폴더 `diag.log`로(Unix dup2 · Win SetStdHandle · 2 MB `.1` 회전 · 토글 즉시 반영 · 외부 crate 0) · 커밋 `cb9f8da` → 병합 `3c0df12` · push `90b5df0..4fd29c1` · ci `42454616744` ✓ 3-OS · V1 mac(켬·회전·끔) ✓ · V2 test nclip-plat 47/0 · nexa-clip 71/0/1 · check-3os ✓ · 복사 줄·실행 중 토글 = 사용자 실기 [21 §15](21-manual-test.md) P2-17.
