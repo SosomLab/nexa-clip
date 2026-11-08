@@ -4,10 +4,10 @@
 
 ---
 
-## 2026-11-08 (mac · 2) — T-84 설정 창 기동 명령 · main `0e24415`(push 대기 · 로컬 3커밋 앞)
+## 2026-11-08 (mac · 2) — T-84 설정 창 기동 명령 · main `0e24415` · push ✓ · 다음 = T-47 잔여 키맵
 
 **T-84 ✅**: env `NEXA_CLIP_STARTUP_CMD` 13종(goto·filter·advanced·search·wheel·key·set·export·import·json·dump·sleep·close · 입력 주입 0) · 커밋 `efe3c84` → 병합 `0e24415` · 결함 1 수정([변경]이 보고 행 `about.info`를 셈) · 자동 시험 `scripts/settings-cmd-e2e.sh` 9/9 · V2 59 ✓ + 71 ✓/1 · check-3os ✓.
-**push 대기**: `e8bbc3e`(11-08 3차 기록) · `efe3c84` · `0e24415` + 이 기록 커밋 — 사용자 push 지시 대기.
+**push ✓**: `4fd29c1..bdfea4a` · ci `42457100799` ✓ 3-OS · 다음 = T-47 잔여 키맵(개발 설계 중).
 
 ---
 

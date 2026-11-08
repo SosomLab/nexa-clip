@@ -4,7 +4,7 @@
 
 | 브랜치 | 생성 | 병합 | 커밋 수 | 요약 |
 |---|---|---|---:|---|
-| `feat/settings-cmd-11-08` | 2026-11-08 | 2026-11-08 → main `--no-ff` 병합 `0e24415`(커밋 `efe3c84` · push 대기) | 1 | T-84 설정 창 기동 명령(`NEXA_CLIP_STARTUP_CMD` 13종 · `nclip-ui/settings.rs` · `nexa-clip/settings_win.rs`) · [변경] 보고 행 제외 · `scripts/settings-cmd-e2e.sh` 9/9 · check-3os ✓ |
+| `feat/settings-cmd-11-08` | 2026-11-08 | 2026-11-08 → main `--no-ff` 병합 `0e24415`(커밋 `efe3c84` · push `4fd29c1..bdfea4a` · ci `42457100799` ✓) | 1 | T-84 설정 창 기동 명령(`NEXA_CLIP_STARTUP_CMD` 13종 · `nclip-ui/settings.rs` · `nexa-clip/settings_win.rs`) · [변경] 보고 행 제외 · `scripts/settings-cmd-e2e.sh` 9/9 · check-3os ✓ |
 | (main 직접) | 2026-11-08 | — | 1 | 11-08 기록(협업 세션) — journal 11-08 신설 · STATUS · DEVLOG · TODO T-42 ✅ · docs/14 `adv.log` 행 · docs/21 P2-17 · `4fd29c1` · push `90b5df0..4fd29c1` · ci `42454616744` ✓ |
 | `feat/diag-log-file-11-08` | 2026-11-08 | 2026-11-08 → main `--no-ff` 병합 `3c0df12`(커밋 `cb9f8da` = `221bcc5` amend · push `90b5df0..4fd29c1` · ci `42454616744` ✓) | 1 | T-42 진단 로그 파일 싱크(`nclip-plat/logfile.rs` · `conf.rs`·`tray_cmd.rs`·`settings_win.rs` · `adv.log` → `diag.log` · 2 MB 회전) · V2 47/0 + 71/0/1 · check-3os ✓ |
 | `docs/progress-11-06` | 2026-11-06 | 2026-11-06 → main `--no-ff` 병합 | 1 | 11-06 5차 진행사항 최신화(journal · STATUS · DEVLOG · BRANCHES 해시 보충 · choco 포터블 0.2.6 검수 대기 확인) |
