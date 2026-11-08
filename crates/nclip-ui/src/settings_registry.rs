@@ -906,7 +906,7 @@ pub(crate) const REGISTRY: &[Entry] = &[
         Msg::SubNotifyScroll,
         Msg::SetScrollFastHudPos,
         Msg::SetScrollFastHudPosDesc,
-        SettingKind::PositionGrid, // 값 = posgrid 코드(tl…br) · nexa-ctl `HudPos::parse`가 그대로 읽는다
+        SettingKind::PositionGrid, // 값 = posgrid 코드(tl…br) · nexa-ctl `HudPos::from_code`로 읽는다(`parse`는 긴 이름용 · 11-08 D1)
         "scroll.fast_hud_pos",
     ),
     es(
