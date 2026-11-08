@@ -825,9 +825,17 @@ fn run(
                     &nclip_sync::relay::peer_hex(&client.server_peer())[..8],
                 );
                 let info = client.register_info();
+                let si = client.server_info();
                 println!(
-                    "동기화: 릴레이 접속 ok — {addr_str} · 관측 주소 {:?} · UDP 포트 {}",
-                    info.observed_tcp, info.udp_port
+                    "동기화: 릴레이 접속 ok — {addr_str} · 서버 {:?} v{}(와이어 v{}.{} · 능력 {:#x} · RID 상한 {}) · 관측 주소 {:?} · UDP 포트 {}",
+                    si.server_type,
+                    si.version,
+                    nclip_sync::proto::PROTO_MAJOR,
+                    si.proto_minor,
+                    si.caps,
+                    si.limits.max_rids,
+                    info.observed_tcp,
+                    info.udp_port
                 );
                 if expected.is_none() {
                     if let Err(e) = nclip_sync::relay::pinfile::store(
@@ -1046,13 +1054,27 @@ fn run(
             Err(e) => {
                 failures += 1;
                 let wait = policy().wait(failures);
+                // ★ 와이어 v2(11-08 · ADR-0016): 세대 불일치·거절은 **말로** 알린다 — v1처럼 조용히 기능만 빠지는 길을 없앤다.
+                let desc = match &e {
+                    nclip_sync::RelayError::VersionMismatch { server_major: 0 } => {
+                        "서버 세대 불일치 — 서버가 프리앰블 없음(v1 또는 beepd 아님) · 서버/앱 업데이트 필요".to_string()
+                    }
+                    nclip_sync::RelayError::VersionMismatch { server_major } => format!(
+                        "서버 세대 불일치 — 서버 와이어 v{server_major} · 앱 v{} · 앱 업데이트 필요",
+                        nclip_sync::proto::PROTO_MAJOR
+                    ),
+                    nclip_sync::RelayError::Rejected { code, reason } => {
+                        format!("서버 거절(코드 {code}) — {reason}")
+                    }
+                    other => format!("{other:?}"),
+                };
                 set_status(SyncStatus::Failed(format!(
-                    "{e:?} · {}s 뒤 재시도(실패 {failures}회)",
+                    "{desc} · {}s 뒤 재시도(실패 {failures}회)",
                     wait.as_secs()
                 )));
                 notify(false);
                 eprintln!(
-                    "동기화: 접속 실패({e:?}) — {}s 뒤 재시도(실패 {failures}회 · 지수 백오프)",
+                    "동기화: 접속 실패({desc}) — {}s 뒤 재시도(실패 {failures}회 · 지수 백오프)",
                     wait.as_secs()
                 );
                 pending_wait = Some(wait);

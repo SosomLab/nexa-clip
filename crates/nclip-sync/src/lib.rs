@@ -6,9 +6,9 @@
 //!
 //! ## 이식 계보(사본 · docs/22 I-5)
 //! `nbeep-core(identity/link/session/path/endpoint)` · `nbeep-crypto(noise/keyfile/sas)` ·
-//! `nbeep-net(tcp/udplink/arq)` · `nbeep-relay(lib → relay)` — 와이어 규약은 beep과
-//! 공유된다: kind 상수·OBS_MAGIC·포트는 **절대 변경 금지**. 앱 격리 지점만 다르다:
-//! 랑데부 도메인 `nclip-rid-v1`(relay) · 종단 prologue `nexa-clip/1`(noise) · 키파일 매직 `NCK1`.
+//! `nbeep-net(tcp/udplink/arq)` · `nbeep-relay(lib → relay)` · ★ `nbeep-relay-proto(lib → proto · 11-08 와이어 v2 · ADR-0016)` —
+//! 와이어 규약은 beep과 공유된다: kind·tag·능력 비트·prologue `nexa-beepd/2`·OBS_MAGIC·포트는 **절대 변경 금지**.
+//! 앱 격리 지점만 다르다: Hello.app `nexa-clip` · 랑데부 도메인 `nclip-rid-v1`(relay) · 종단 prologue `nexa-clip/1`(noise) · 키파일 매직 `NCK1`.
 
 // ★ 이식 사본 완화(09-03) — beep 린트 기준으로 쓰인 코드: 원본 diff를 최소로
 //   유지하기 위해 테스트 unwrap·미사용 헬퍼만 크레이트 단위로 허용한다(동기 비용 ↓).
@@ -25,6 +25,8 @@ pub mod link;
 pub mod name;
 pub mod noise;
 pub mod path;
+/// ★ 릴레이 와이어 v2 코덱 사본(11-08 · beep `nbeep-relay-proto` · ADR-0016).
+pub mod proto;
 pub mod relay;
 pub mod rid;
 pub mod sas;
@@ -48,7 +50,7 @@ pub use link::Link;
 pub use noise::Identity;
 pub use noise::NoiseSession;
 pub use path::{class_of_ip, PathClass};
-pub use relay::{attach, resolve_server, AttachError, Attached, RelayClient};
+pub use relay::{attach, resolve_server, AttachError, Attached, RelayClient, RelayError};
 pub use rid::{current_epoch_day, derive_rid, rids_around, Rid as PairRid};
 pub use session::{Session, SessionError};
 pub use tcp::TcpLink;

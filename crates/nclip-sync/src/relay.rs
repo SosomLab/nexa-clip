@@ -1,15 +1,28 @@
-// ★ 이식 사본(09-03 · M2 기반) — 원본: nexa-beep crates/nbeep-relay/src/lib.rs
-// ⚠️ 와이어 규약 공유 — beep과 어긋나면 통신이 깨진다(docs/22 I-5 · 변경 시 양쪽 동기).
-//! `nbeep-relay` — 릴레이 제어 와이어 + 클라이언트 어댑터(X-1·X-2b 1차 · [docs/32 §12-6·§13]).
+// ★ 이식 사본(09-03 · M2 기반 · ★ 11-08 와이어 v2로 재이식) — 원본: nexa-beep crates/nbeep-relay/src/lib.rs(origin/main 950bc37 · 7d8e9c3 BEEPD-2).
+// ⚠️ 와이어 규약 공유 — beep과 어긋나면 통신이 깨진다(docs/22 I-5 · 변경 시 양쪽 동기). 와이어 정의는 [`crate::proto`](사본).
+// clip 격리 지점: RID 도메인 `nclip-rid-v1` · 종단 prologue [`E2E_PROLOGUE`] `nexa-clip/1` · Hello.app = `nexa-clip` ·
+//   PSK(XXpsk3 · beep ADR-0015) 경로 없음(clip = DR-39 기기별 승인) · `transport`(X-2 Transport) 미이식 · [`connect_rid`] 추가.
+//! `nbeep-relay` — 릴레이 **클라이언트 어댑터**(X-1·X-2b · [docs/32 §12-6·§13]). 와이어 v2(ADR-0016 · [docs/56]).
 //!
-//! **서버(`nexa-beepd`)와 클라이언트가 이 크레이트 하나를 같이 쓴다** — 와이어 어긋남을
-//! 컴파일 시점에 잡는 한-저장소 구성의 본체다([docs/32 §9] · Q-32-13 확정 08-21).
+//! **와이어 정의는 [`proto`](= `nbeep-relay-proto` 사본) 한 곳**이다 — 서버(`nexa-beepd`)·이 어댑터·자매 프로젝트 `nexa-clip`
+//! (사본 · [docs/44 §7])이 같은 봉투+TLV 바이트를 쓴다. 이 크레이트는 **연결·핸드셰이크·세션 액터·채널·사다리**만 남긴다.
+//!
+//! ## 핸드셰이크(v2)
+//!
+//! ```text
+//! TCP → 프리앰블 "NBPD"+major(8B 평문 · 세대 판별) ‖ Noise_XX(prologue "nexa-beepd/2" · 서버 키 TOFU 핀)
+//!     → Hello{app, app_version, caps} ← Welcome{server_version, server_type, caps, limits, udp_port, observed} | Reject
+//!     → Register{rids, bind} ← RegisterResult{(rid,status)×n, udp_token}
+//! ```
+//! - 서버 major가 다르면 [`RelayError::VersionMismatch`] — "서버 세대 불일치 · 앱 업데이트 필요"로 **표시**한다
+//!   (v1처럼 기능만 조용히 빠지는 길이 없다). 프리앰블이 없는 서버(v1·beepd 아님)는 `server_major = 0`.
+//! - 상한(프레임·RID 수·카드)은 `Welcome.limits`를 따른다 — 하드코딩 상수([`MAX_RIDS`]·[`CARD_MAX`])는 **기본값**일 뿐이다.
 //!
 //! ## 봉투 원리(S-3)
 //!
 //! 서버가 보는 것 = **회전 RID · 채널 번호 · 바이트 수 · 시각**이 전부다.
 //! - 제어 세션은 서버와의 Noise(서버 신원 키 = TOFU 핀 대상 — [docs/32 §2-4])이고,
-//! - 그 안의 [`C2s::Data`]/[`S2c::Data`] 페이로드는 **종단 A↔B의 Noise 암호문**이다.
+//! - 그 안의 [`proto::Kind::Data`]/[`proto::Kind::DataS`] 페이로드는 **종단 A↔B의 Noise 암호문**이다.
 //!   서버는 자기 전송 계층을 벗겨도 종단 암호문만 남는다(릴레이는 MITM이 아니다 —
 //!   종단 핸드셰이크는 상대와 직접 한다 · [docs/32 §2-4] 시퀀스).
 //!
@@ -23,14 +36,18 @@
 #![cfg_attr(test, allow(clippy::unwrap_used))]
 
 use crate::link::{Link, LinkError};
+pub use crate::proto;
 use crate::session::{Session, SessionError};
 use crate::PeerId;
 use crate::TcpLink;
 use crate::{Identity, NoiseSession};
+use proto::{Channel, Envelope, Kind, Presence, Problem};
 use sha2::{Digest as _, Sha256};
 use std::collections::HashMap;
+use std::io::{Read as _, Write as _};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpStream, UdpSocket};
 use std::sync::mpsc::{Receiver, Sender, SyncSender};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 /// 릴레이 서버 기본 포트(TCP 제어 + 같은 번호의 UDP 관측) — 발견 47100·세션 47200 다음.
@@ -39,8 +56,11 @@ pub const DEFAULT_RELAY_PORT: u16 = 47_300;
 /// 랑데부 ID(16B) — 회전 가명([docs/32 §2-3]).
 pub type Rid = [u8; 16];
 
-/// UDP 관측 프로브 매직 — ARQ 매직(`NBU1`)과 다른 4B라 같은 소켓에서 섞여도 갈린다.
-pub const OBS_MAGIC: [u8; 4] = *b"NBOB";
+/// UDP 관측 프로브 매직(= [`proto::udp_obs::MAGIC`]) — ARQ 매직(`NBU1`)과 다른 4B라 같은 소켓에서 섞여도 갈린다.
+pub const OBS_MAGIC: [u8; 4] = proto::udp_obs::MAGIC;
+
+/// 이 클라가 쓰는 능력(Hello.caps) — 세션 능력은 서버와의 교집합([`ServerInfo::caps`]).
+pub const CLIENT_CAPS: u64 = proto::caps::ROSTER | proto::caps::UDP_OBSERVE;
 
 /// 링크 프레임 상한 — TCP·UDP 링크와 정합(Noise 상한).
 pub const MAX_FRAME: usize = crate::arq::MAX_FRAME;
@@ -61,7 +81,7 @@ pub const RELAY_CHUNK: usize = 32 * 1024;
 #[must_use]
 pub fn rid_for(peer: &PeerId, epoch_day: u64) -> Rid {
     let mut h = Sha256::new();
-    // ★ clip 도메인(docs/07 §3-4-1 · docs/22 I-1) — beep(`nbeep-rid-v1`)과 격리.
+    // ★ clip 도메인(docs/07 §3-4-1 · docs/22 I-1) — beep(`nbeep-rid-v1`)과 격리(v2에선 Hello.app 이름공간이 1차 · 이것은 2차 방어).
     //   ⚠️ 임의 변경 금지: 바꾸면 같은 사용자 기기끼리도 못 만난다.
     h.update(b"nclip-rid-v1");
     h.update(peer.as_bytes());
@@ -72,9 +92,7 @@ pub fn rid_for(peer: &PeerId, epoch_day: u64) -> Rid {
     rid
 }
 
-/// ★ 종단(A↔B) prologue — 앱 격리 2차(docs/07 §3-4-2 AP-1).
-/// ⚠️ **서버 제어 세션에는 넣지 않는다** — beepd는 prologue를 쓰지 않으므로
-/// 넣으면 접속 자체가 수학적으로 실패한다(이식 최대 함정 — beep 탐사 09-03).
+/// ★ 종단(A↔B) prologue — 앱 격리 2차(docs/07 §3-4-2 AP-1). 서버 제어 세션은 [`proto::PROLOGUE`](와이어 major 결속)를 쓴다 — 다른 값이다.
 pub const E2E_PROLOGUE: &[u8] = b"nexa-clip/1";
 
 /// 지금 시각의 에폭 일 번호(UTC).
@@ -119,134 +137,10 @@ pub fn rids_around(peer: &PeerId) -> [Rid; 3] {
     ]
 }
 
-// ── 와이어 인코딩 ────────────────────────────────────────────────
+// ── 와이어 = `nbeep-relay-proto`(v2) ───────────────────────────
 //
-// 제어 세션 프레임 = [kind u8][본문]. 정수는 전부 BE. 미지 kind는 조용히 버린다
-// (전방 호환 — sgroup·Info 꼬리와 같은 규약).
-
-/// 클라이언트 → 서버.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum C2s {
-    /// 프레즌스 등록 — 회전 RID 목록(≤[`MAX_RIDS`]).
-    Register {
-        /// 등록할 회전 RID들([`rids_around`]).
-        rids: Vec<Rid>,
-    },
-    /// `dst` RID로 채널 열기 요청. `token`은 응답 대조용.
-    Open {
-        /// 응답 대조 토큰.
-        token: u32,
-        /// 대상 RID.
-        dst: Rid,
-    },
-    /// 인바운드 채널 수락 — 이때부터 서버가 중계한다(양방향 성립만 — [docs/32 §2-6]).
-    Accept {
-        /// 채널 번호.
-        ch: u32,
-    },
-    /// 채널 데이터(종단 암호문 조각). `fin` = 링크 프레임의 마지막 조각.
-    Data {
-        /// 채널 번호.
-        ch: u32,
-        /// 링크 프레임의 마지막 조각인가.
-        fin: bool,
-        /// 조각 바이트(서버는 열 수 없다).
-        bytes: Vec<u8>,
-    },
-    /// 채널 닫기.
-    CloseCh {
-        /// 채널 번호.
-        ch: u32,
-    },
-    /// 생존 신호(서버 유휴 정리 방지).
-    Ping,
-    /// ★ 프레즌스 공개 여부(X-2e roster · 08-22 — [docs/32 §12-7] 옵트인):
-    /// `true` = 같은 서버의 공개 사용자 목록에 나(공개키)를 싣고, 그 목록을 받는다.
-    /// `false` = 내린다. 서버는 **켠 연결만** 메모리에 보관·배포한다(저장 0 불변).
-    Announce {
-        /// 목록에 실을지 여부.
-        listed: bool,
-    },
-    /// ★ 공개 + **공개 카드**(08-22 — 사용자 확정 "공개 정보 즉시 표시"): 본인이
-    /// 공개로 둔 항목(이름·이메일·소개)만 담은 소형 카드를 함께 싣는다. 서버는
-    /// 내용 해석 없이 크기만 재고 그대로 되뿌린다(상한 [`CARD_MAX`]). 구서버는
-    /// 미지 kind로 버리므로 클라는 [`C2s::Announce`]를 **뒤따라** 보낸다(폴백).
-    AnnounceCard {
-        /// 목록에 실을지 여부.
-        listed: bool,
-        /// 공개 카드 바이트([`encode_card`] — 빈 값 = 카드 없음·v2 표식만).
-        card: Vec<u8>,
-    },
-}
-
-/// 서버 → 클라이언트.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum S2c {
-    /// 등록 완료 — UDP 관측 토큰·포트 + 서버가 본 내 TCP 주소.
-    RegisterOk {
-        /// UDP 프로브에 실어 보낼 토큰(관측 ↔ 등록 연결 고리).
-        udp_token: u64,
-        /// 서버 UDP 관측 포트.
-        udp_port: u16,
-        /// 서버가 본 내 공인 TCP 엔드포인트.
-        observed: Option<SocketAddr>,
-    },
-    /// [`C2s::Open`] 결과. `status` 0=성립 · 1=대상 없음 · 2=상한/거절.
-    OpenResult {
-        /// 요청의 대조 토큰.
-        token: u32,
-        /// 결과 코드(0=성립).
-        status: u8,
-        /// 성립한 채널 번호(성립 시).
-        ch: u32,
-        /// 상대의 관측 UDP 엔드포인트(홀펀칭용 · 미관측이면 None).
-        peer_udp: Option<SocketAddr>,
-    },
-    /// 인바운드 채널 — `src` RID가 나를 찾는다.
-    Incoming {
-        /// 채널 번호.
-        ch: u32,
-        /// 여는 쪽의 등록 RID.
-        src: Rid,
-        /// 여는 쪽의 관측 UDP 엔드포인트(홀펀칭용).
-        peer_udp: Option<SocketAddr>,
-    },
-    /// 채널 데이터(종단 암호문 조각).
-    Data {
-        /// 채널 번호.
-        ch: u32,
-        /// 링크 프레임의 마지막 조각인가.
-        fin: bool,
-        /// 조각 바이트.
-        bytes: Vec<u8>,
-    },
-    /// 채널 종료(상대 이탈·닫음).
-    ChClosed {
-        /// 채널 번호.
-        ch: u32,
-    },
-    /// [`C2s::Ping`] 응답.
-    Pong,
-    /// ★ 공개 사용자 등장(X-2e roster) — 입장 스냅숏 + 이후 델타. 존재(공개키)만
-    /// 싣는다 — 이름·프로필은 성립 후 종단(P2P)이 나른다(DR-22 불변).
-    PeerUp {
-        /// 등장한 사용자 공개키.
-        peer: PeerId,
-    },
-    /// 공개 사용자 이탈(연결 종료·공개 해제).
-    PeerDown {
-        /// 이탈한 사용자 공개키.
-        peer: PeerId,
-    },
-    /// ★ 등장 + 공개 카드(08-22) — [`C2s::AnnounceCard`]를 보낸(v2) 연결에만
-    /// 온다. 카드가 바뀐 재공지도 같은 kind로(수신은 upsert).
-    PeerUpCard {
-        /// 등장한 사용자 공개키.
-        peer: PeerId,
-        /// 공개 카드 바이트(빈 값 = 카드 없음).
-        card: Vec<u8>,
-    },
-}
+// 제어 세션 프레임 = Envelope(kind u16 ‖ flags ‖ TLV). 모르는 핵심 kind는 Error{UnknownKind}로 **응답**하고
+// 확장 kind는 무시한다(ADR-0016 §2-1). v1 `C2s`/`S2c`(kind u8 + 고정 오프셋)는 삭제 — 호환 포기(사용자 11-07).
 
 /// 공개 카드 총 바이트 상한(서버·클라 공통 — 초과 = 카드 없는 것으로 취급).
 pub const CARD_MAX: usize = 1024;
@@ -306,317 +200,32 @@ pub fn decode_card(b: &[u8]) -> Option<(String, String, String)> {
     Some((name.to_string(), email.to_string(), bio.to_string()))
 }
 
-/// 연결당 등록 가능한 RID 상한(에폭 3 + 여유).
+/// 연결당 등록 가능한 RID 상한 **기본값**(에폭 3 + 여유) — 실제 상한은 `Welcome.limits.max_rids`(연결이 거기에 맞춰 자른다).
 pub const MAX_RIDS: usize = 8;
 
-const K_REGISTER: u8 = 0x01;
-const K_OPEN: u8 = 0x02;
-const K_ACCEPT: u8 = 0x03;
-const K_DATA: u8 = 0x04;
-const K_CLOSECH: u8 = 0x05;
-const K_PING: u8 = 0x06;
-const K_ANNOUNCE: u8 = 0x07;
-const K_ANNOUNCE_CARD: u8 = 0x09;
-const K_REGISTER_OK: u8 = 0x81;
-const K_OPEN_RESULT: u8 = 0x82;
-const K_INCOMING: u8 = 0x83;
-const K_S_DATA: u8 = 0x84;
-const K_CH_CLOSED: u8 = 0x85;
-const K_PONG: u8 = 0x86;
-const K_PEER_UP: u8 = 0x87;
-const K_PEER_DOWN: u8 = 0x88;
-const K_PEER_UP_CARD: u8 = 0x89;
-
-fn put_endpoint(out: &mut Vec<u8>, ep: Option<SocketAddr>) {
+fn ep_to_sock(ep: proto::Ep) -> Option<SocketAddr> {
     match ep {
-        None => out.push(0),
-        Some(SocketAddr::V4(a)) => {
-            out.push(4);
-            out.extend_from_slice(&a.ip().octets());
-            out.extend_from_slice(&a.port().to_be_bytes());
-        }
-        Some(SocketAddr::V6(a)) => {
-            out.push(6);
-            out.extend_from_slice(&a.ip().octets());
-            out.extend_from_slice(&a.port().to_be_bytes());
-        }
+        proto::Ep::None => None,
+        proto::Ep::V4(ip, port) => Some(SocketAddr::new(IpAddr::V4(Ipv4Addr::from(ip)), port)),
+        proto::Ep::V6(ip, port) => Some(SocketAddr::new(IpAddr::V6(Ipv6Addr::from(ip)), port)),
     }
 }
 
-fn take_endpoint(b: &[u8]) -> Option<(Option<SocketAddr>, usize)> {
-    match *b.first()? {
-        0 => Some((None, 1)),
-        4 => {
-            if b.len() < 7 {
-                return None;
-            }
-            let ip = Ipv4Addr::new(b[1], b[2], b[3], b[4]);
-            let port = u16::from_be_bytes([b[5], b[6]]);
-            Some((Some(SocketAddr::new(IpAddr::V4(ip), port)), 7))
-        }
-        6 => {
-            if b.len() < 19 {
-                return None;
-            }
-            let mut oct = [0u8; 16];
-            oct.copy_from_slice(&b[1..17]);
-            let port = u16::from_be_bytes([b[17], b[18]]);
-            Some((
-                Some(SocketAddr::new(IpAddr::V6(Ipv6Addr::from(oct)), port)),
-                19,
-            ))
-        }
-        _ => None,
-    }
-}
-
-impl C2s {
-    /// 제어 세션 프레임으로 인코딩.
-    #[must_use]
-    pub fn encode(&self) -> Vec<u8> {
-        let mut o = Vec::new();
-        match self {
-            Self::Register { rids } => {
-                o.push(K_REGISTER);
-                o.push(rids.len().min(MAX_RIDS) as u8);
-                for r in rids.iter().take(MAX_RIDS) {
-                    o.extend_from_slice(r);
-                }
-            }
-            Self::Open { token, dst } => {
-                o.push(K_OPEN);
-                o.extend_from_slice(&token.to_be_bytes());
-                o.extend_from_slice(dst);
-            }
-            Self::Accept { ch } => {
-                o.push(K_ACCEPT);
-                o.extend_from_slice(&ch.to_be_bytes());
-            }
-            Self::Data { ch, fin, bytes } => {
-                o.push(K_DATA);
-                o.extend_from_slice(&ch.to_be_bytes());
-                o.push(u8::from(*fin));
-                o.extend_from_slice(bytes);
-            }
-            Self::CloseCh { ch } => {
-                o.push(K_CLOSECH);
-                o.extend_from_slice(&ch.to_be_bytes());
-            }
-            Self::Ping => o.push(K_PING),
-            Self::Announce { listed } => {
-                o.push(K_ANNOUNCE);
-                o.push(u8::from(*listed));
-            }
-            Self::AnnounceCard { listed, card } => {
-                o.push(K_ANNOUNCE_CARD);
-                o.push(u8::from(*listed));
-                o.extend_from_slice(card);
-            }
-        }
-        o
-    }
-
-    /// 디코딩 — 형식 오류·미지 kind는 `None`(호출자가 조용히 버린다 · 전방 호환).
-    #[must_use]
-    pub fn decode(b: &[u8]) -> Option<Self> {
-        match *b.first()? {
-            K_REGISTER => {
-                let n = *b.get(1)? as usize;
-                if n > MAX_RIDS || b.len() < 2 + n * 16 {
-                    return None;
-                }
-                let mut rids = Vec::with_capacity(n);
-                for i in 0..n {
-                    let mut r = [0u8; 16];
-                    r.copy_from_slice(&b[2 + i * 16..2 + (i + 1) * 16]);
-                    rids.push(r);
-                }
-                Some(Self::Register { rids })
-            }
-            K_OPEN => {
-                if b.len() < 21 {
-                    return None;
-                }
-                let token = u32::from_be_bytes([b[1], b[2], b[3], b[4]]);
-                let mut dst = [0u8; 16];
-                dst.copy_from_slice(&b[5..21]);
-                Some(Self::Open { token, dst })
-            }
-            K_ACCEPT => Some(Self::Accept {
-                ch: u32::from_be_bytes([*b.get(1)?, *b.get(2)?, *b.get(3)?, *b.get(4)?]),
-            }),
-            K_DATA => {
-                if b.len() < 6 {
-                    return None;
-                }
-                Some(Self::Data {
-                    ch: u32::from_be_bytes([b[1], b[2], b[3], b[4]]),
-                    fin: b[5] != 0,
-                    bytes: b[6..].to_vec(),
-                })
-            }
-            K_CLOSECH => Some(Self::CloseCh {
-                ch: u32::from_be_bytes([*b.get(1)?, *b.get(2)?, *b.get(3)?, *b.get(4)?]),
-            }),
-            K_PING => Some(Self::Ping),
-            K_ANNOUNCE => Some(Self::Announce {
-                listed: *b.get(1)? != 0,
-            }),
-            K_ANNOUNCE_CARD => Some(Self::AnnounceCard {
-                listed: *b.get(1)? != 0,
-                card: b.get(2..)?.to_vec(),
-            }),
-            _ => None,
-        }
-    }
-}
-
-impl S2c {
-    /// 제어 세션 프레임으로 인코딩.
-    #[must_use]
-    pub fn encode(&self) -> Vec<u8> {
-        let mut o = Vec::new();
-        match self {
-            Self::RegisterOk {
-                udp_token,
-                udp_port,
-                observed,
-            } => {
-                o.push(K_REGISTER_OK);
-                o.extend_from_slice(&udp_token.to_be_bytes());
-                o.extend_from_slice(&udp_port.to_be_bytes());
-                put_endpoint(&mut o, *observed);
-            }
-            Self::OpenResult {
-                token,
-                status,
-                ch,
-                peer_udp,
-            } => {
-                o.push(K_OPEN_RESULT);
-                o.extend_from_slice(&token.to_be_bytes());
-                o.push(*status);
-                o.extend_from_slice(&ch.to_be_bytes());
-                put_endpoint(&mut o, *peer_udp);
-            }
-            Self::Incoming { ch, src, peer_udp } => {
-                o.push(K_INCOMING);
-                o.extend_from_slice(&ch.to_be_bytes());
-                o.extend_from_slice(src);
-                put_endpoint(&mut o, *peer_udp);
-            }
-            Self::Data { ch, fin, bytes } => {
-                o.push(K_S_DATA);
-                o.extend_from_slice(&ch.to_be_bytes());
-                o.push(u8::from(*fin));
-                o.extend_from_slice(bytes);
-            }
-            Self::ChClosed { ch } => {
-                o.push(K_CH_CLOSED);
-                o.extend_from_slice(&ch.to_be_bytes());
-            }
-            Self::Pong => o.push(K_PONG),
-            Self::PeerUp { peer } => {
-                o.push(K_PEER_UP);
-                o.extend_from_slice(peer.as_bytes());
-            }
-            Self::PeerDown { peer } => {
-                o.push(K_PEER_DOWN);
-                o.extend_from_slice(peer.as_bytes());
-            }
-            Self::PeerUpCard { peer, card } => {
-                o.push(K_PEER_UP_CARD);
-                o.extend_from_slice(peer.as_bytes());
-                o.extend_from_slice(card);
-            }
-        }
-        o
-    }
-
-    /// 디코딩 — 형식 오류·미지 kind는 `None`.
-    #[must_use]
-    pub fn decode(b: &[u8]) -> Option<Self> {
-        match *b.first()? {
-            K_REGISTER_OK => {
-                if b.len() < 11 {
-                    return None;
-                }
-                let udp_token =
-                    u64::from_be_bytes([b[1], b[2], b[3], b[4], b[5], b[6], b[7], b[8]]);
-                let udp_port = u16::from_be_bytes([b[9], b[10]]);
-                let (observed, _) = take_endpoint(&b[11..])?;
-                Some(Self::RegisterOk {
-                    udp_token,
-                    udp_port,
-                    observed,
-                })
-            }
-            K_OPEN_RESULT => {
-                if b.len() < 10 {
-                    return None;
-                }
-                let token = u32::from_be_bytes([b[1], b[2], b[3], b[4]]);
-                let status = b[5];
-                let ch = u32::from_be_bytes([b[6], b[7], b[8], b[9]]);
-                let (peer_udp, _) = take_endpoint(&b[10..])?;
-                Some(Self::OpenResult {
-                    token,
-                    status,
-                    ch,
-                    peer_udp,
-                })
-            }
-            K_INCOMING => {
-                if b.len() < 21 {
-                    return None;
-                }
-                let ch = u32::from_be_bytes([b[1], b[2], b[3], b[4]]);
-                let mut src = [0u8; 16];
-                src.copy_from_slice(&b[5..21]);
-                let (peer_udp, _) = take_endpoint(&b[21..])?;
-                Some(Self::Incoming { ch, src, peer_udp })
-            }
-            K_S_DATA => {
-                if b.len() < 6 {
-                    return None;
-                }
-                Some(Self::Data {
-                    ch: u32::from_be_bytes([b[1], b[2], b[3], b[4]]),
-                    fin: b[5] != 0,
-                    bytes: b[6..].to_vec(),
-                })
-            }
-            K_CH_CLOSED => Some(Self::ChClosed {
-                ch: u32::from_be_bytes([*b.get(1)?, *b.get(2)?, *b.get(3)?, *b.get(4)?]),
-            }),
-            K_PONG => Some(Self::Pong),
-            K_PEER_UP | K_PEER_DOWN => {
-                if b.len() < 33 {
-                    return None;
-                }
-                let mut k = [0u8; 32];
-                k.copy_from_slice(&b[1..33]);
-                let peer = PeerId::from_bytes(k);
-                Some(if b[0] == K_PEER_UP {
-                    Self::PeerUp { peer }
-                } else {
-                    Self::PeerDown { peer }
-                })
-            }
-            K_PEER_UP_CARD => {
-                if b.len() < 33 {
-                    return None;
-                }
-                let mut k = [0u8; 32];
-                k.copy_from_slice(&b[1..33]);
-                Some(Self::PeerUpCard {
-                    peer: PeerId::from_bytes(k),
-                    card: b[33..].to_vec(),
-                })
-            }
-            _ => None,
-        }
-    }
+/// 핸드셰이크 뒤 알게 된 서버 정보(Welcome) — X-2b "타입 협상(auto)"의 재료.
+#[derive(Clone, Debug)]
+pub struct ServerInfo {
+    /// 서버 버전 문자열(`CARGO_PKG_VERSION`).
+    pub version: String,
+    /// 서버 종류(relay/content/admin).
+    pub server_type: proto::ServerType,
+    /// 세션 능력(= 서버 ∩ 클라).
+    pub caps: u64,
+    /// 서버가 알린 상한.
+    pub limits: proto::Limits,
+    /// 세션 id(16B · 로그 대조용).
+    pub session_id: [u8; 16],
+    /// 프로토콜 minor(서버).
+    pub proto_minor: u16,
 }
 
 // ── UDP 관측 프로브(STUN-lite) ──────────────────────────────────
@@ -632,23 +241,19 @@ pub fn probe_udp(
     udp_token: u64,
     timeout: Duration,
 ) -> std::io::Result<SocketAddr> {
-    let mut probe = Vec::with_capacity(12);
-    probe.extend_from_slice(&OBS_MAGIC);
-    probe.extend_from_slice(&udp_token.to_be_bytes());
-    sock.send_to(&probe, server)?;
+    sock.send_to(&proto::udp_obs::encode_probe(udp_token), server)?;
     sock.set_read_timeout(Some(timeout))?;
     let mut buf = [0u8; 64];
     let deadline = std::time::Instant::now() + timeout;
     loop {
         let (n, from) = sock.recv_from(&mut buf)?;
-        // 프로브 소켓엔 펀칭 SYN 등 다른 트래픽이 섞일 수 있다 — 매직·발신원으로 거른다.
-        if from == server && n >= 13 && buf[..4] == OBS_MAGIC {
-            let echo_token = u64::from_be_bytes([
-                buf[4], buf[5], buf[6], buf[7], buf[8], buf[9], buf[10], buf[11],
-            ]);
-            if echo_token == udp_token {
-                if let Some((Some(ep), _)) = take_endpoint(&buf[12..n]) {
-                    return Ok(ep);
+        // 프로브 소켓엔 펀칭 SYN 등 다른 트래픽이 섞일 수 있다 — 매직·발신원·토큰으로 거른다.
+        if from == server {
+            if let Some((echo_token, ep)) = proto::udp_obs::parse_echo(&buf[..n]) {
+                if echo_token == udp_token {
+                    if let Some(sa) = ep_to_sock(ep) {
+                        return Ok(sa);
+                    }
                 }
             }
         }
@@ -679,6 +284,19 @@ pub enum RelayError {
     },
     /// 등록 응답 없음·형식 오류.
     Protocol,
+    /// ★ 서버 **세대(major) 불일치**(ADR-0016) — 프리앰블이 알린 서버 major. `0` = 프리앰블 없음(v1 서버 또는 beepd가
+    /// 아님). 표시 = "서버가 다른 세대 — 앱 업데이트 필요"(핀 불일치와 다르다 — 키는 그대로).
+    VersionMismatch {
+        /// 서버가 말한 major(0 = 모름).
+        server_major: u16,
+    },
+    /// 서버가 Hello를 거절했다(`Reject{code, reason}` — 앱 이름공간 금지 등).
+    Rejected {
+        /// [`proto::ErrorCode`] 값.
+        code: u16,
+        /// 서버 사유(상태만 · 내용 없음).
+        reason: String,
+    },
 }
 
 impl From<std::io::Error> for RelayError {
@@ -718,7 +336,10 @@ impl RelayIncoming {
     }
 }
 
-type OpenResp = SyncSender<Result<(RelayLink, Option<SocketAddr>), u8>>;
+type OpenResp = SyncSender<Result<(RelayLink, Option<SocketAddr>), u16>>;
+
+/// [`RelayClient::open`] 실패 코드 — 서버 세션 죽음·시간 초과(서버 [`proto::ErrorCode`]와 겹치지 않는 값).
+pub const OPEN_DEAD: u16 = 0xFFFF;
 
 enum Cmd {
     Open {
@@ -765,6 +386,48 @@ pub enum RosterEvent {
     Down(PeerId),
 }
 
+/// 프리앰블 링크 — **첫 recv 전에** 서버 프리앰블 8B를 원시 스트림에서 읽는다. 클라가 프리앰블+Noise msg1을
+/// 파이프라인으로 보냈으므로 서버도 프리앰블+msg2 순서로 답한다(RTT 추가 없음). 판별 결과는 `seen`에 남겨
+/// [`RelayClient::connect`]가 Noise 실패를 "세대 불일치"와 "핸드셰이크 실패"로 가른다.
+#[derive(Debug)]
+struct PreLink {
+    inner: TcpLink,
+    raw: Option<TcpStream>,
+    /// `None` = 아직 · `Some(None)` = 프리앰블 아님/EOF · `Some(Some(major))`.
+    seen: Arc<Mutex<Option<Option<u16>>>>,
+}
+
+impl Link for PreLink {
+    fn peer(&self) -> PeerId {
+        self.inner.peer()
+    }
+    fn send(&mut self, frame: &[u8]) -> Result<(), LinkError> {
+        self.inner.send(frame)
+    }
+    fn recv(&mut self) -> Result<Vec<u8>, LinkError> {
+        if let Some(mut raw) = self.raw.take() {
+            let mut b = [0u8; proto::preamble::LEN];
+            let got = raw
+                .read_exact(&mut b)
+                .ok()
+                .and_then(|()| proto::preamble::parse(&b));
+            if let Ok(mut s) = self.seen.lock() {
+                *s = Some(got);
+            }
+            if got != Some(proto::PROTO_MAJOR) {
+                return Err(LinkError::Closed);
+            }
+        }
+        self.inner.recv()
+    }
+    fn set_recv_timeout(&mut self, dur: Option<Duration>) -> Result<(), LinkError> {
+        self.inner.set_recv_timeout(dur)
+    }
+    fn remote_ip(&self) -> Option<IpAddr> {
+        self.inner.remote_ip()
+    }
+}
+
 /// 릴레이 서버에 붙은 클라이언트 — 제어 세션(서버와의 Noise)을 액터 스레드가 소유하고,
 /// 채널별 [`RelayLink`]가 그 위를 다중화한다.
 #[derive(Debug)]
@@ -777,28 +440,99 @@ pub struct RelayClient {
     server_peer: PeerId,
     server_addr: SocketAddr,
     reg: RegisterInfo,
+    info: ServerInfo,
 }
 
 impl RelayClient {
-    /// 서버 접속 → Noise 핸드셰이크 → (핀 검증) → RID 등록 → 액터 가동.
+    /// 서버 접속 → 프리앰블+Noise(prologue) → (핀 검증) → Hello/Welcome → RID 등록 → 액터 가동.
+    /// `app = "nexa-clip"`([`proto::app::CLIP`]) · `app_version` = 워크스페이스(= clip) 버전. 다른 앱은 [`Self::connect_as`].
     ///
     /// `expected_server`: 핀된 서버 키. `None` = 첫 접속(TOFU — 반환된
     /// [`Self::server_peer`]를 호출자가 핀에 저장한다). 불일치는 [`RelayError::PinMismatch`].
     ///
     /// # Errors
-    /// 연결·핸드셰이크·핀 불일치·등록 실패 시 [`RelayError`].
+    /// 연결·핸드셰이크·세대 불일치·핀 불일치·거절·등록 실패 시 [`RelayError`].
     pub fn connect(
         server: SocketAddr,
         id: &Identity,
         rids: &[Rid],
         expected_server: Option<PeerId>,
     ) -> Result<Self, RelayError> {
-        let stream =
+        Self::connect_as(
+            server,
+            id,
+            rids,
+            expected_server,
+            proto::app::CLIP,
+            env!("CARGO_PKG_VERSION"),
+            proto::BindMode::ExclusiveLastWins,
+        )
+    }
+
+    /// [`Self::connect`]의 앱 이름공간·바인딩 모드 지정판(서버는 `(app, rid)`로 라우팅 — 교차 Open 불가 ·
+    /// `Shared` = 같은 RID에 여러 기기 — 세션 능력 `SHARED_BIND`일 때만 성립).
+    ///
+    /// # Errors
+    /// [`Self::connect`]와 같다.
+    #[allow(clippy::too_many_lines, clippy::too_many_arguments)] // 핸드셰이크 4단계가 순차 왕복 하나다
+    pub fn connect_as(
+        server: SocketAddr,
+        id: &Identity,
+        rids: &[Rid],
+        expected_server: Option<PeerId>,
+        app: &str,
+        app_version: &str,
+        bind: proto::BindMode,
+    ) -> Result<Self, RelayError> {
+        let mut stream =
             TcpStream::connect_timeout(&server, Duration::from_secs(10)).map_err(RelayError::Io)?;
+        // 프리앰블(평문 8B) — 바로 이어 Noise msg1을 보내 서버가 "프리앰블+msg2"로 답하게 한다.
+        stream
+            .write_all(&proto::preamble::encode(proto::PROTO_MAJOR))
+            .map_err(RelayError::Io)?;
+        let raw = stream.try_clone().map_err(RelayError::Io)?;
+        let mut raw2 = stream.try_clone().map_err(RelayError::Io)?;
         let mut link = TcpLink::new(stream).map_err(RelayError::Io)?;
-        // 침묵 서버가 접속을 영구 점유하지 못하게 — 핸드셰이크·등록 왕복 상한.
+        // 침묵 서버가 접속을 영구 점유하지 못하게 — 핸드셰이크·등록 왕복 상한(소켓 옵션이라 raw에도 적용).
         let _ = link.set_recv_timeout(Some(Duration::from_secs(10)));
-        let mut session = NoiseSession::initiate(link, id).map_err(|_| RelayError::Handshake)?;
+        let seen = Arc::new(Mutex::new(None));
+        let pre = PreLink {
+            inner: link,
+            raw: Some(raw),
+            seen: Arc::clone(&seen),
+        };
+        let mut session = match NoiseSession::initiate_with_prologue(pre, id, proto::PROLOGUE) {
+            Ok(s) => s,
+            Err(_) => {
+                let mut seen = seen.lock().ok().and_then(|s| *s);
+                if seen.is_none() {
+                    // msg1 송신 자체가 실패했다(프리앰블을 모르는 서버가 먼저 끊어 RST) — 남은 바이트로 한 번 더 판별.
+                    let _ = raw2.set_read_timeout(Some(Duration::from_secs(2)));
+                    let mut b = [0u8; proto::preamble::LEN];
+                    seen = match raw2.read_exact(&mut b) {
+                        Ok(()) => Some(proto::preamble::parse(&b)),
+                        Err(e)
+                            if matches!(
+                                e.kind(),
+                                std::io::ErrorKind::UnexpectedEof
+                                    | std::io::ErrorKind::ConnectionReset
+                                    | std::io::ErrorKind::ConnectionAborted
+                            ) =>
+                        {
+                            Some(None)
+                        }
+                        Err(_) => None,
+                    };
+                }
+                return Err(match seen {
+                    Some(Some(m)) if m != proto::PROTO_MAJOR => {
+                        RelayError::VersionMismatch { server_major: m }
+                    }
+                    Some(None) => RelayError::VersionMismatch { server_major: 0 },
+                    _ => RelayError::Handshake,
+                });
+            }
+        };
         let server_peer = session.peer();
         if let Some(exp) = expected_server {
             if exp != server_peer {
@@ -808,42 +542,111 @@ impl RelayClient {
                 });
             }
         }
-        // 등록은 동기 왕복 — 액터 가동 전이라 세션을 직접 쓴다.
+        // Hello → Welcome | Reject.
+        // 능력 — Shared 바인딩을 원하면 SHARED_BIND도 요청한다(서버가 없으면 RegisterResult가 Unsupported).
+        let my_caps = CLIENT_CAPS
+            | if bind == proto::BindMode::Shared {
+                proto::caps::SHARED_BIND
+            } else {
+                0
+            };
+        let hello = proto::Hello {
+            proto_major: proto::PROTO_MAJOR,
+            proto_minor: proto::PROTO_MINOR,
+            app: app.to_string(),
+            app_version: app_version.to_string(),
+            caps: my_caps,
+        };
         session
-            .send(
-                &C2s::Register {
-                    rids: rids.to_vec(),
-                }
-                .encode(),
-            )
+            .send(&hello.encode().encode())
             .map_err(|_| RelayError::Protocol)?;
-        let reg = loop {
-            let frame = match session.recv() {
-                Ok(f) => f,
+        let welcome = loop {
+            let frame = session.recv().map_err(|_| RelayError::Protocol)?;
+            let env = match Envelope::decode(&frame) {
+                Ok(e) => e,
+                Err(proto::DecodeError::UnknownExtKind(_)) => continue,
                 Err(_) => return Err(RelayError::Protocol),
             };
-            match S2c::decode(&frame) {
-                Some(S2c::RegisterOk {
-                    udp_token,
-                    udp_port,
-                    observed,
-                }) => {
-                    break RegisterInfo {
-                        udp_token,
-                        udp_port,
-                        observed_tcp: observed,
-                    }
+            match env.kind() {
+                Some(Kind::Welcome) => {
+                    break proto::Welcome::decode(&env).map_err(|_| RelayError::Protocol)?;
                 }
-                Some(_) | None => continue, // 미지·이른 프레임은 버린다
+                Some(Kind::Reject) => {
+                    let p = Problem::decode(&env).map_err(|_| RelayError::Protocol)?;
+                    return Err(RelayError::Rejected {
+                        code: p.code,
+                        reason: p.reason,
+                    });
+                }
+                _ => return Err(RelayError::Protocol),
             }
         };
+        if welcome.proto_major != proto::PROTO_MAJOR {
+            return Err(RelayError::VersionMismatch {
+                server_major: welcome.proto_major,
+            });
+        }
+        let limits = welcome.limits;
+        // 등록 — RID 수는 서버 상한에 맞춰 자른다(하드코딩 제거 · 기기 RID 3이 앞에 있다).
+        let mut rids = rids.to_vec();
+        rids.truncate(usize::from(limits.max_rids.max(1)));
+        session
+            .send(&proto::Register { rids, bind }.encode().encode())
+            .map_err(|_| RelayError::Protocol)?;
+        let rr = loop {
+            let frame = session.recv().map_err(|_| RelayError::Protocol)?;
+            let env = match Envelope::decode(&frame) {
+                Ok(e) => e,
+                Err(proto::DecodeError::UnknownExtKind(_)) => continue,
+                Err(_) => return Err(RelayError::Protocol),
+            };
+            match env.kind() {
+                Some(Kind::RegisterResult) => {
+                    break proto::RegisterResult::decode(&env).map_err(|_| RelayError::Protocol)?;
+                }
+                Some(Kind::Error | Kind::Reject | Kind::GoawayS) => {
+                    return Err(RelayError::Protocol)
+                }
+                _ => continue, // 이른 명부 델타 등은 버린다(등록 전)
+            }
+        };
+        if !rr.entries.iter().any(|(_, st)| *st == proto::STATUS_OK) {
+            return Err(RelayError::Protocol); // 어느 RID도 안 잡혔다 = 랑데부 불가
+        }
+        let reg = RegisterInfo {
+            udp_token: rr.udp_token,
+            udp_port: welcome.udp_port,
+            observed_tcp: ep_to_sock(welcome.observed),
+        };
+        let info = ServerInfo {
+            version: welcome.server_version,
+            server_type: welcome.server_type,
+            caps: welcome.caps & my_caps,
+            limits,
+            session_id: welcome.session_id,
+            proto_minor: welcome.proto_minor,
+        };
+        let max_frame = usize::try_from(limits.max_frame).unwrap_or(MAX_FRAME);
+        let ping_every = Duration::from_secs(u64::from(limits.ping_interval_s.clamp(5, 300)));
         let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<Cmd>();
         let (incoming_tx, incoming_rx) = std::sync::mpsc::channel::<RelayIncoming>();
         let (roster_tx, roster_rx) = std::sync::mpsc::channel::<RosterEvent>();
         let actor_cmd = cmd_tx.clone();
         std::thread::Builder::new()
             .name("relay-client".into())
-            .spawn(move || actor(session, &cmd_rx, &actor_cmd, &incoming_tx, &roster_tx))
+            .spawn(move || {
+                actor(
+                    session,
+                    ActorCfg {
+                        max_frame,
+                        ping_every,
+                    },
+                    &cmd_rx,
+                    &actor_cmd,
+                    &incoming_tx,
+                    &roster_tx,
+                );
+            })
             .map_err(RelayError::Io)?;
         Ok(Self {
             cmd_tx,
@@ -852,6 +655,7 @@ impl RelayClient {
             server_peer,
             server_addr: server,
             reg,
+            info,
         })
     }
 
@@ -873,15 +677,26 @@ impl RelayClient {
         self.reg
     }
 
+    /// Welcome이 알린 서버 정보(버전·종류·능력·상한).
+    #[must_use]
+    pub fn server_info(&self) -> &ServerInfo {
+        &self.info
+    }
+
     /// `dst` RID로 채널을 연다. 성립 시 (링크, 상대 관측 UDP).
     ///
     /// # Errors
-    /// 상태 코드 — 1=대상 없음 · 2=상한/거절 · 255=세션 죽음/시간 초과.
-    pub fn open(&self, dst: Rid, timeout: Duration) -> Result<(RelayLink, Option<SocketAddr>), u8> {
+    /// 서버 상태 코드([`proto::ErrorCode`] 값 — `NoSuchPeer`=대상 없음 · `LimitExceeded`/`Busy`=상한·거절) ·
+    /// [`OPEN_DEAD`]=세션 죽음/시간 초과.
+    pub fn open(
+        &self,
+        dst: Rid,
+        timeout: Duration,
+    ) -> Result<(RelayLink, Option<SocketAddr>), u16> {
         let (resp_tx, resp_rx) = std::sync::mpsc::sync_channel(1);
         self.cmd_tx
             .send(Cmd::Open { dst, resp: resp_tx })
-            .map_err(|_| 255u8)?;
+            .map_err(|_| OPEN_DEAD)?;
         match resp_rx.recv_timeout(timeout) {
             Ok(mut r) => {
                 if let Ok((link, _)) = &mut r {
@@ -889,7 +704,7 @@ impl RelayClient {
                 }
                 r
             }
-            Err(_) => Err(255),
+            Err(_) => Err(OPEN_DEAD),
         }
     }
 
@@ -901,7 +716,7 @@ impl RelayClient {
     }
 
     /// 프레즌스 공개 지정(X-2e roster · 옵트인 — [docs/32 §12-7]). `true` = 같은
-    /// 서버의 공개 목록에 실리고 그 목록의 델타를 받기 시작한다(입장 스냅숏 포함).
+    /// 서버·같은 앱의 공개 목록에 실리고 그 목록의 델타를 받기 시작한다(입장 스냅숏 포함).
     pub fn set_announce(&self, listed: bool, card: Vec<u8>) {
         let _ = self.cmd_tx.send(Cmd::Announce { listed, card });
     }
@@ -942,9 +757,24 @@ impl Drop for RelayClient {
     }
 }
 
+/// 액터 매개변수(Welcome.limits에서).
+#[derive(Clone, Copy, Debug)]
+struct ActorCfg {
+    max_frame: usize,
+    ping_every: Duration,
+}
+
+fn ch_msg(kind: Kind, ch: u32) -> Vec<u8> {
+    let mut c = Channel::empty();
+    c.ch = Some(ch);
+    c.encode(kind).encode()
+}
+
 /// 제어 세션 액터 — 세션의 단일 소유자(수신 폴 + 송신 채널 드레인 교대 · 세션 액터 규약).
+#[allow(clippy::too_many_lines)] // 제어 프로토콜 분기 전체가 한 루프다
 fn actor(
-    mut session: NoiseSession<TcpLink>,
+    mut session: NoiseSession<PreLink>,
+    cfg: ActorCfg,
     cmd_rx: &Receiver<Cmd>,
     cmd_tx: &Sender<Cmd>,
     incoming_tx: &Sender<RelayIncoming>,
@@ -954,7 +784,10 @@ fn actor(
     let mut chans: HashMap<u32, Sender<ChEvent>> = HashMap::new();
     let mut pending: Vec<(u32, OpenResp)> = Vec::new();
     let mut next_token = 1u32;
+    let mut nonce = 0u64;
     let mut last_ping = std::time::Instant::now();
+    // 조각 상한 — 봉투 머리·TLV 여유를 뺀 서버 프레임 상한 안쪽.
+    let chunk = RELAY_CHUNK.min(cfg.max_frame.saturating_sub(64).max(1024));
     loop {
         // 1) 명령 드레인.
         let mut dead = false;
@@ -963,25 +796,27 @@ fn actor(
                 Cmd::Open { dst, resp } => {
                     let token = next_token;
                     next_token = next_token.wrapping_add(1);
-                    if session.send(&C2s::Open { token, dst }.encode()).is_err() {
-                        let _ = resp.try_send(Err(255));
+                    let mut c = Channel::empty();
+                    c.token = Some(token);
+                    c.rid = Some(dst);
+                    if session.send(&c.encode(Kind::Open).encode()).is_err() {
+                        let _ = resp.try_send(Err(OPEN_DEAD));
                         dead = true;
                         break;
                     }
                     pending.push((token, resp));
                 }
                 Cmd::Send { ch, frame } => {
-                    // 큰 프레임은 조각으로 — 제어 세션 페이로드 상한 안쪽(RELAY_CHUNK).
+                    // 큰 프레임은 조각으로 — 제어 세션 페이로드 상한 안쪽.
                     let mut rest = frame.as_slice();
                     loop {
-                        let take = rest.len().min(RELAY_CHUNK);
-                        let (chunk, tail) = rest.split_at(take);
-                        let msg = C2s::Data {
-                            ch,
-                            fin: tail.is_empty(),
-                            bytes: chunk.to_vec(),
-                        };
-                        if session.send(&msg.encode()).is_err() {
+                        let take = rest.len().min(chunk);
+                        let (piece, tail) = rest.split_at(take);
+                        let mut c = Channel::empty();
+                        c.ch = Some(ch);
+                        c.fin = tail.is_empty();
+                        c.bytes = piece.to_vec();
+                        if session.send(&c.encode(Kind::Data).encode()).is_err() {
                             dead = true;
                             break;
                         }
@@ -993,27 +828,33 @@ fn actor(
                 }
                 Cmd::CloseCh { ch } => {
                     chans.remove(&ch);
-                    let _ = session.send(&C2s::CloseCh { ch }.encode());
+                    let _ = session.send(&ch_msg(Kind::CloseCh, ch));
                 }
                 Cmd::AcceptCh { ch } => {
-                    if session.send(&C2s::Accept { ch }.encode()).is_err() {
+                    if session.send(&ch_msg(Kind::Accept, ch)).is_err() {
                         dead = true;
                         break;
                     }
                 }
                 Cmd::Shutdown => {
+                    // 우아한 종료 통지(서버가 즉시 정리) — 실패해도 TCP 종료가 같은 결과.
+                    let _ = session.send(
+                        &Problem::new(proto::ErrorCode::Shutdown, "client shutdown")
+                            .encode(Kind::Goaway)
+                            .encode(),
+                    );
                     dead = true;
                     break;
                 }
                 Cmd::Nop => {} // 생존 확인 — send 성공 자체가 답이다
                 Cmd::Announce { listed, card } => {
-                    // v2(카드) 먼저 — 신서버는 이걸로 싣고 뒤의 v1은 멱등 no-op,
-                    // 구서버는 미지 kind로 버리고 v1로 싣는다(전방 호환 폴백).
-                    if session
-                        .send(&C2s::AnnounceCard { listed, card }.encode())
-                        .is_err()
-                        || session.send(&C2s::Announce { listed }.encode()).is_err()
-                    {
+                    let p = Presence {
+                        listed,
+                        peer: None,
+                        rid: None,
+                        card,
+                    };
+                    if session.send(&p.encode(Kind::Announce).encode()).is_err() {
                         dead = true;
                         break;
                     }
@@ -1023,81 +864,121 @@ fn actor(
         if dead {
             break;
         }
-        // 2) 생존 신호(20초) — 서버 유휴 정리·NAT 타임아웃 방지.
-        if last_ping.elapsed() >= Duration::from_secs(20) {
+        // 2) 생존 신호(Welcome.ping_interval_s) — 서버 유휴 정리·NAT 타임아웃 방지.
+        if last_ping.elapsed() >= cfg.ping_every {
             last_ping = std::time::Instant::now();
-            if session.send(&C2s::Ping.encode()).is_err() {
+            nonce = nonce.wrapping_add(1);
+            if session
+                .send(&proto::ping(Kind::Ping, nonce).encode())
+                .is_err()
+            {
                 break;
             }
         }
         // 3) 세션 수신(15ms 폴 — 명령 드레인과 교대).
-        match session.recv() {
-            Ok(frame) => match S2c::decode(&frame) {
-                Some(S2c::Data { ch, fin, bytes }) => {
-                    if let Some(tx) = chans.get(&ch) {
-                        if tx.send(ChEvent::Data { fin, bytes }).is_err() {
-                            chans.remove(&ch); // 링크가 버려짐 — 서버에도 닫기 통지
-                            let _ = session.send(&C2s::CloseCh { ch }.encode());
-                        }
-                    }
+        let frame = match session.recv() {
+            Ok(f) => f,
+            Err(SessionError::TimedOut) => continue,
+            Err(_) => break, // 서버 세션 죽음 — 아래 정리로
+        };
+        let env = match Envelope::decode(&frame) {
+            Ok(e) => e,
+            Err(proto::DecodeError::UnknownCoreKind(k)) => {
+                // 모르는 핵심 kind = 응답(조용히 버리지 않는다 · ADR-0016).
+                let mut p = Problem::new(proto::ErrorCode::UnknownKind, "unknown kind");
+                p.ref_kind = Some(k);
+                if session.send(&p.encode(Kind::Error).encode()).is_err() {
+                    break;
                 }
-                Some(S2c::Incoming { ch, src, peer_udp }) => {
-                    // ★ 여기서 Accept를 **보내지 않는다**(지연 수락) — 소비자가
-                    // [`RelayIncoming::accept`]를 불러야 서버가 중계를 시작한다.
-                    // 수락 전에 UDP 프로브를 마치면 서버의 OpenResult가 내 신선한
-                    // 관측 엔드포인트를 상대에게 싣는다(홀펀칭 재료의 순서 보장).
-                    let (tx, rx) = std::sync::mpsc::channel();
-                    chans.insert(ch, tx);
-                    let link = RelayLink::new(ch, cmd_tx.clone(), rx);
-                    if incoming_tx
-                        .send(RelayIncoming {
-                            link,
-                            src,
-                            peer_udp,
+                continue;
+            }
+            Err(proto::DecodeError::UnknownExtKind(_)) => continue,
+            Err(_) => break, // 서버가 깨진 봉투를 보냈다 — fail-closed(재접속)
+        };
+        let Some(kind) = env.kind() else { continue };
+        match kind {
+            Kind::DataS => {
+                let Ok(c) = Channel::decode(&env) else { break };
+                let Some(ch) = c.ch else { continue };
+                if let Some(tx) = chans.get(&ch) {
+                    if tx
+                        .send(ChEvent::Data {
+                            fin: c.fin,
+                            bytes: c.bytes,
                         })
                         .is_err()
                     {
-                        // 소유자가 인바운드 수신단을 버렸다 — 채널만 정리.
-                        chans.remove(&ch);
-                        let _ = session.send(&C2s::CloseCh { ch }.encode());
+                        chans.remove(&ch); // 링크가 버려짐 — 서버에도 닫기 통지
+                        let _ = session.send(&ch_msg(Kind::CloseCh, ch));
                     }
                 }
-                Some(S2c::OpenResult {
-                    token,
-                    status,
-                    ch,
-                    peer_udp,
-                }) => {
-                    if let Some(pos) = pending.iter().position(|(t, _)| *t == token) {
-                        let (_, resp) = pending.swap_remove(pos);
-                        if status == 0 {
+            }
+            Kind::Incoming => {
+                // ★ 여기서 Accept를 **보내지 않는다**(지연 수락) — 소비자가
+                // [`RelayIncoming::accept`]를 불러야 서버가 중계를 시작한다.
+                // 수락 전에 UDP 프로브를 마치면 서버의 OpenResult가 내 신선한
+                // 관측 엔드포인트를 상대에게 싣는다(홀펀칭 재료의 순서 보장).
+                let Ok(c) = Channel::decode(&env) else { break };
+                let (Some(ch), Some(src)) = (c.ch, c.rid) else {
+                    continue;
+                };
+                let (tx, rx) = std::sync::mpsc::channel();
+                chans.insert(ch, tx);
+                let link = RelayLink::new(ch, cmd_tx.clone(), rx, cfg.max_frame);
+                if incoming_tx
+                    .send(RelayIncoming {
+                        link,
+                        src,
+                        peer_udp: ep_to_sock(c.ep),
+                    })
+                    .is_err()
+                {
+                    // 소유자가 인바운드 수신단을 버렸다 — 채널만 정리.
+                    chans.remove(&ch);
+                    let _ = session.send(&ch_msg(Kind::CloseCh, ch));
+                }
+            }
+            Kind::OpenResult => {
+                let Ok(c) = Channel::decode(&env) else { break };
+                let Some(token) = c.token else { continue };
+                if let Some(pos) = pending.iter().position(|(t, _)| *t == token) {
+                    let (_, resp) = pending.swap_remove(pos);
+                    let status = c.status.unwrap_or(proto::STATUS_OK);
+                    match (status, c.ch) {
+                        (proto::STATUS_OK, Some(ch)) => {
                             let (tx, rx) = std::sync::mpsc::channel();
                             chans.insert(ch, tx);
-                            let link = RelayLink::new(ch, cmd_tx.clone(), rx);
-                            let _ = resp.try_send(Ok((link, peer_udp)));
-                        } else {
-                            let _ = resp.try_send(Err(status));
+                            let link = RelayLink::new(ch, cmd_tx.clone(), rx, cfg.max_frame);
+                            let _ = resp.try_send(Ok((link, ep_to_sock(c.ep))));
+                        }
+                        (proto::STATUS_OK, None) => {
+                            let _ = resp.try_send(Err(proto::ErrorCode::Malformed as u16));
+                        }
+                        (st, _) => {
+                            let _ = resp.try_send(Err(st));
                         }
                     }
                 }
-                Some(S2c::ChClosed { ch }) => {
-                    if let Some(tx) = chans.remove(&ch) {
-                        let _ = tx.send(ChEvent::Closed);
-                    }
+            }
+            Kind::ChClosed => {
+                let Ok(c) = Channel::decode(&env) else { break };
+                if let Some(tx) = c.ch.and_then(|ch| chans.remove(&ch)) {
+                    let _ = tx.send(ChEvent::Closed);
                 }
-                Some(S2c::PeerUp { peer }) => {
-                    let _ = roster_tx.send(RosterEvent::Up(peer, Vec::new()));
-                }
-                Some(S2c::PeerUpCard { peer, card }) => {
-                    let _ = roster_tx.send(RosterEvent::Up(peer, card));
-                }
-                Some(S2c::PeerDown { peer }) => {
-                    let _ = roster_tx.send(RosterEvent::Down(peer));
-                }
-                Some(S2c::RegisterOk { .. } | S2c::Pong) | None => {}
-            },
-            Err(SessionError::TimedOut) => {}
-            Err(_) => break, // 서버 세션 죽음 — 아래 정리로
+            }
+            Kind::PeerUp | Kind::PeerDown => {
+                let Ok(p) = Presence::decode(&env) else { break };
+                let Some(peer) = p.peer else { continue };
+                let peer = PeerId::from_bytes(peer);
+                let _ = roster_tx.send(if kind == Kind::PeerUp {
+                    RosterEvent::Up(peer, p.card)
+                } else {
+                    RosterEvent::Down(peer)
+                });
+            }
+            Kind::GoawayS => break, // 서버 우아한 종료 — 호스트 백오프 재접속
+            // Pong·늦은 Welcome/RegisterResult·Error(서버 통지 — 상태만)·방향이 틀린 kind는 버린다.
+            _ => {}
         }
     }
     // 세션 죽음 = 전 채널 종료 통지(수신자들이 Closed를 본다).
@@ -1105,7 +986,7 @@ fn actor(
         let _ = tx.send(ChEvent::Closed);
     }
     for (_, resp) in pending.drain(..) {
-        let _ = resp.try_send(Err(255));
+        let _ = resp.try_send(Err(OPEN_DEAD));
     }
 }
 
@@ -1122,10 +1003,12 @@ pub struct RelayLink {
     recv_timeout: Option<Duration>,
     /// 경로 등급 판정용 서버 IP(릴레이 경유 = 서버 주소가 실소켓 상대).
     server_ip: Option<IpAddr>,
+    /// 조립 프레임 상한(Welcome.limits.max_frame).
+    max_frame: usize,
 }
 
 impl RelayLink {
-    fn new(ch: u32, cmd_tx: Sender<Cmd>, rx: Receiver<ChEvent>) -> Self {
+    fn new(ch: u32, cmd_tx: Sender<Cmd>, rx: Receiver<ChEvent>, max_frame: usize) -> Self {
         Self {
             ch,
             cmd_tx,
@@ -1134,6 +1017,7 @@ impl RelayLink {
             closed: false,
             recv_timeout: None,
             server_ip: None,
+            max_frame,
         }
     }
 
@@ -1160,7 +1044,7 @@ impl Link for RelayLink {
     }
 
     fn send(&mut self, frame: &[u8]) -> Result<(), LinkError> {
-        if self.closed || frame.len() > MAX_FRAME {
+        if self.closed || frame.len() > self.max_frame {
             return Err(LinkError::Closed);
         }
         self.cmd_tx
@@ -1178,7 +1062,7 @@ impl Link for RelayLink {
         loop {
             match self.next_event()? {
                 ChEvent::Data { fin, bytes } => {
-                    if self.buf.len() + bytes.len() > MAX_FRAME {
+                    if self.buf.len() + bytes.len() > self.max_frame {
                         self.closed = true; // 프레임 상한 위반 = 프로토콜 오류(fail-closed)
                         return Err(LinkError::Closed);
                     }
@@ -1274,6 +1158,12 @@ pub enum ViaError {
 /// 엔드포인트를 기록). **시도마다 새로 만든다** — 관측은 (로컬 포트, 목적지) 매핑에
 /// 붙으므로 오래된 소켓의 관측은 신뢰할 수 없고, 소켓 공유는 recv 경합을 만든다.
 fn fresh_probed_sock(client: &RelayClient) -> std::io::Result<UdpSocket> {
+    if client.server_info().caps & proto::caps::UDP_OBSERVE == 0 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "서버가 UDP 관측을 지원하지 않는다",
+        ));
+    }
     let server = client.server_addr();
     let bind: SocketAddr = if server.is_ipv4() {
         SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0)
@@ -1292,14 +1182,22 @@ fn fresh_probed_sock(client: &RelayClient) -> std::io::Result<UdpSocket> {
 }
 
 /// 먼저 뽑아 둔 프레임 하나를 되돌려주는 링크 래퍼 — 수락 측이 "어느 링크로 첫
-/// 프레임이 오나"를 보고 단을 고른 뒤, 그 프레임을 핸드셰이크에 되살린다.
-#[derive(Debug)]
-struct PrefixedLink<L: Link> {
+/// 프레임이 오나"를 보고 단을 고른 뒤, 그 프레임을 핸드셰이크에 되살린다. **랑데부 쪽에서만** 쓰이므로
+/// [`Link::rendezvous`] = `true`(X-2 승격 11-06 — 호스트가 LAN 인바운드와 같은 펌프에서 배지만 가른다).
+struct PrefixedLink {
     first: Option<Vec<u8>>,
-    inner: L,
+    inner: Box<dyn Link>,
 }
 
-impl<L: Link> Link for PrefixedLink<L> {
+impl core::fmt::Debug for PrefixedLink {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("PrefixedLink")
+            .field("first", &self.first.as_ref().map(Vec::len))
+            .finish_non_exhaustive()
+    }
+}
+
+impl Link for PrefixedLink {
     fn peer(&self) -> PeerId {
         self.inner.peer()
     }
@@ -1317,6 +1215,9 @@ impl<L: Link> Link for PrefixedLink<L> {
     }
     fn remote_ip(&self) -> Option<IpAddr> {
         self.inner.remote_ip()
+    }
+    fn rendezvous(&self) -> bool {
+        true
     }
 }
 
@@ -1345,54 +1246,15 @@ pub fn connect_via(
         rid_for(dst, day.saturating_sub(1)),
         rid_for(dst, day + 1),
     ];
-    // 프로브가 Open보다 **먼저** — 서버가 내 관측 엔드포인트를 상대의 Incoming에 싣는다.
-    let sock = if punch {
-        fresh_probed_sock(client).ok() // 실패 = 펀치 없이 릴레이만(사다리 한 단 생략)
-    } else {
-        None
-    };
-    for rid in rids {
-        let (mut relay, peer_udp) = match client.open(rid, open_timeout) {
-            Ok(v) => v,
-            Err(1) => continue, // 이 에폭 RID는 미등록 — 다음 에폭
-            Err(2) => return Err(ViaError::Limit),
-            Err(_) => return Err(ViaError::Dead),
-        };
-        // 1단: 홀펀칭 UDP — 성립 + 종단 핸드셰이크까지 돼야 이 단을 탄 것이다.
-        if let (Some(s), Some(ep)) = (&sock, peer_udp) {
-            if let Ok(sc) = s.try_clone() {
-                if let Ok(mut udp) = crate::UdpLink::punch(sc, ep, PUNCH_WINDOW) {
-                    let _ = udp.set_recv_timeout(Some(HS_TIMEOUT_UDP));
-                    let path = class_of_link(&udp, crate::PathClass::Remote);
-                    let boxed: Box<dyn Link> = Box::new(udp);
-                    if let Ok(session) =
-                        NoiseSession::initiate_with_prologue(boxed, id, E2E_PROLOGUE)
-                    {
-                        return finish_via(session, PathTaken::Udp, path, dst);
-                    }
-                    // 상대가 UDP를 듣지 않았다(창 어긋남) — 릴레이 단으로 내려간다.
-                }
-            }
-        }
-        // 2단: 릴레이 폴백 — 서버 미상은 Remote 취급(fail-closed 방향).
-        let _ = relay.set_recv_timeout(Some(HS_TIMEOUT_RELAY));
-        let path = class_of_link(&relay, crate::PathClass::Remote);
-        let boxed: Box<dyn Link> = Box::new(relay);
-        return match NoiseSession::initiate_with_prologue(boxed, id, E2E_PROLOGUE) {
-            Ok(session) => finish_via(session, PathTaken::Relay, path, dst),
-            Err(_) => Err(ViaError::Handshake),
-        };
-    }
-    Err(ViaError::NotFound)
+    connect_via_rids(client, id, &rids, punch, open_timeout, Some(dst))
 }
 
-/// ★ nclip 추가(09-03) — **임의 RID**(핸들·암호 파생 페어링 랑데부)로 열고 종단 세션을 맺는다.
-/// 상대 PeerId를 모르는 첫 만남이라 [`connect_via`]의 키 대조 대신 **세션이 확정한 키를 그대로**
-/// 돌려준다(호출자가 이름 교환·목록 등재). 릴레이 단만 탄다(홀펀칭은 알려진 기기 재접속 몫).
+/// ★ nclip 추가(09-03 · v2 유지) — **임의 RID**(핸들·암호 파생 페어링 랑데부 · docs/09 §6-2)로 열고 종단 세션을 맺는다.
+/// 상대 PeerId를 모르는 첫 만남이라 [`connect_via`]의 키 대조 대신 **세션이 확정한 키를 그대로** 돌려준다(호출자가
+/// 이름 교환·목록 등재 · DR-39 기기별 승인). 릴레이 단만 탄다(홀펀칭은 알려진 기기 재접속 몫).
 ///
 /// # Errors
-/// 대상 없음(`Err(1)` — 미등록 또는 **내가 등록자**) → [`ViaError::NotFound`] · 상한 · 서버 죽음 ·
-/// 핸드셰이크 실패.
+/// 대상 없음(`NoSuchPeer` — 미등록 또는 **내가 등록자**) → [`ViaError::NotFound`] · 상한 · 서버 죽음 · 핸드셰이크 실패.
 pub fn connect_rid(
     client: &RelayClient,
     id: &Identity,
@@ -1401,15 +1263,19 @@ pub fn connect_rid(
 ) -> Result<NoiseSession<Box<dyn Link>>, ViaError> {
     let (mut relay, _peer_udp) = match client.open(dst, open_timeout) {
         Ok(v) => v,
-        Err(1) => return Err(ViaError::NotFound),
-        Err(2) => return Err(ViaError::Limit),
+        Err(c) if c == proto::ErrorCode::NoSuchPeer as u16 => return Err(ViaError::NotFound),
+        Err(c)
+            if c == proto::ErrorCode::LimitExceeded as u16
+                || c == proto::ErrorCode::Busy as u16 =>
+        {
+            return Err(ViaError::Limit)
+        }
         Err(_) => return Err(ViaError::Dead),
     };
     let _ = relay.set_recv_timeout(Some(HS_TIMEOUT_RELAY));
     let boxed: Box<dyn Link> = Box::new(relay);
     match NoiseSession::initiate_with_prologue(boxed, id, E2E_PROLOGUE) {
         Ok(mut session) => {
-            use crate::Session as _;
             session.set_recv_timeout(None);
             Ok(session)
         }
@@ -1417,15 +1283,257 @@ pub fn connect_rid(
     }
 }
 
+fn connect_via_rids(
+    client: &RelayClient,
+    id: &Identity,
+    rids: &[Rid],
+    punch: bool,
+    open_timeout: Duration,
+    expect: Option<&PeerId>,
+) -> Result<ViaSession, ViaError> {
+    // ★ X-2 승격(11-06): 단 선택은 [`LadderLink`]가 **링크 수준**에서 한다(첫 회신이 온 단에 고정) — 핸드셰이크는 그 위.
+    //   종전(08-22)은 "UDP 핸드셰이크 실패 → 릴레이로 새 핸드셰이크"를 여기서 직접 했다. 바깥 동작은 같다
+    //   (UDP 상한 5s → 릴레이 상한 10s · 실패 사유 매핑 동일) — `Transport::connect`도 같은 사다리를 쓴다.
+    let ladder = open_ladder(client, rids, punch, open_timeout)?;
+    let taken = ladder.taken_handle();
+    let (udp_ip, server_ip) = ladder.candidate_ips();
+    let boxed: Box<dyn Link> = Box::new(ladder);
+    // ★ clip: 종단은 XX + E2E prologue(앱 격리 2차) — PSK 경로 없음.
+    let session = NoiseSession::initiate_with_prologue(boxed, id, E2E_PROLOGUE)
+        .map_err(|_| ViaError::Handshake)?;
+    // 성립 뒤 어느 단에 고정됐나 — 경로 등급은 그 단의 실주소(§5-1-5 · 서버 미상은 Remote · fail-closed).
+    let (taken, ip) = match taken.load(std::sync::atomic::Ordering::Acquire) {
+        LADDER_UDP => (PathTaken::Udp, udp_ip),
+        _ => (PathTaken::Relay, Some(server_ip)),
+    };
+    let path = ip.map_or(crate::PathClass::Remote, crate::class_of_ip);
+    finish_via(session, taken, path, expect)
+}
+
+/// 사다리 단 표식([`LadderLink`]가 공유 원자값으로 알린다 — 핸드셰이크가 링크를 삼킨 뒤에도 읽을 수 있게).
+const LADDER_PENDING: u8 = 0;
+const LADDER_UDP: u8 = 1;
+const LADDER_RELAY: u8 = 2;
+
+/// **여는 쪽 사다리를 링크 수준에서 연다**(X-2 Transport 승격 · 11-06) — 프로브 → 에폭 RID 순차 Open →
+/// (상대 관측이 있으면) 동시 펀치. 결과 [`LadderLink`]는 **핸드셰이크 전**이다 — 단 고정은 첫 회신이 정한다.
+///
+/// # Errors
+/// 어느 에폭 RID도 없음 = [`ViaError::NotFound`] · 서버 상한 = [`ViaError::Limit`] · 서버 세션 죽음/시간 초과 = [`ViaError::Dead`].
+pub(crate) fn open_ladder(
+    client: &RelayClient,
+    rids: &[Rid],
+    punch: bool,
+    open_timeout: Duration,
+) -> Result<LadderLink, ViaError> {
+    // 프로브가 Open보다 **먼저** — 서버가 내 관측 엔드포인트를 상대의 Incoming에 싣는다.
+    let sock = if punch {
+        fresh_probed_sock(client).ok() // 실패 = 펀치 없이 릴레이만(사다리 한 단 생략)
+    } else {
+        None
+    };
+    for rid in rids {
+        let (relay, peer_udp) = match client.open(*rid, open_timeout) {
+            Ok(v) => v,
+            Err(c) if c == proto::ErrorCode::NoSuchPeer as u16 => continue, // 이 에폭 RID는 미등록 — 다음 에폭
+            Err(c)
+                if c == proto::ErrorCode::LimitExceeded as u16
+                    || c == proto::ErrorCode::Busy as u16 =>
+            {
+                return Err(ViaError::Limit)
+            }
+            Err(_) => return Err(ViaError::Dead),
+        };
+        // 1단 후보: 홀펀칭 UDP — 펀치 성립(상대 패킷 도착)까지. 실패 = 1단 없음(2단만).
+        let udp = match (&sock, peer_udp) {
+            (Some(s), Some(ep)) => s
+                .try_clone()
+                .ok()
+                .and_then(|sc| crate::UdpLink::punch(sc, ep, PUNCH_WINDOW).ok()),
+            _ => None,
+        };
+        return Ok(LadderLink::new(udp, relay, client.server_addr().ip()));
+    }
+    Err(ViaError::NotFound)
+}
+
+/// 여는 쪽 사다리 **링크**(X-2 승격 · 11-06) — 1단(홀펀칭 UDP 직결)과 2단(릴레이 중계)을 하나의 [`Link`]로 묶어
+/// **첫 회신이 온 단에 고정**한다(수락 쪽 "첫 프레임 링크 추종"의 거울). 핸드셰이크는 이 위에서 호출자가 한다.
+///
+/// 규칙: 확정 전 `send`는 1단으로 나가며 사본을 든다(2단 재전송용 — 보통 핸드셰이크 msg1 하나) · 확정 전 `recv`가
+/// 1단에서 실패(상한 초과·종료 = 상대가 UDP를 듣지 않았다)하면 사본을 2단으로 다시 보내고 2단에 고정한다 · 1단이
+/// 없으면(관측 없음·펀치 실패) 첫 `send`에서 곧장 2단 고정. 고정 뒤 다른 단은 버린다. 확정 전 수신 상한은 단별
+/// 핸드셰이크 상한(`HS_TIMEOUT_UDP` 5s / `HS_TIMEOUT_RELAY` 10s)이고, 소비자가 건 타임아웃은 고정 뒤 그 단에 적용된다.
+pub struct LadderLink {
+    /// 1단 후보(펀치 성립) — 확정 전 실패하거나 2단 고정 뒤 버린다.
+    udp: Option<crate::UdpLink>,
+    /// 2단(릴레이 채널) — 1단 고정 뒤 버린다.
+    relay: Option<RelayLink>,
+    /// 고정된 단(`LADDER_*`) — 핸드셰이크 뒤 호출자가 읽을 수 있게 공유.
+    taken: std::sync::Arc<std::sync::atomic::AtomicU8>,
+    /// 확정 전 1단으로 보낸 프레임 사본(2단 재전송용).
+    pending: Vec<Vec<u8>>,
+    /// 소비자가 건 수신 타임아웃(고정 뒤 그 단에 적용).
+    consumer_timeout: Option<Duration>,
+    /// 경로 등급 판정용 서버 IP — 2단 실소켓 상대 · 확정 전 `remote_ip`의 fail-closed 값.
+    server_ip: IpAddr,
+}
+
+impl core::fmt::Debug for LadderLink {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("LadderLink")
+            .field("taken", &self.state())
+            .field("udp", &self.udp.is_some())
+            .field("relay", &self.relay.is_some())
+            .finish_non_exhaustive()
+    }
+}
+
+impl LadderLink {
+    fn new(udp: Option<crate::UdpLink>, relay: RelayLink, server_ip: IpAddr) -> Self {
+        Self {
+            udp,
+            relay: Some(relay),
+            taken: std::sync::Arc::new(std::sync::atomic::AtomicU8::new(LADDER_PENDING)),
+            pending: Vec::new(),
+            consumer_timeout: None,
+            server_ip,
+        }
+    }
+
+    /// 단 표식 공유 핸들 — 핸드셰이크가 링크를 삼킨 뒤 어느 단이었나를 읽는다(`connect_via` 호환 · 계측).
+    fn taken_handle(&self) -> std::sync::Arc<std::sync::atomic::AtomicU8> {
+        std::sync::Arc::clone(&self.taken)
+    }
+
+    /// (1단 상대 IP, 서버 IP) — 고정 뒤 경로 등급을 매기는 재료.
+    fn candidate_ips(&self) -> (Option<IpAddr>, IpAddr) {
+        (self.udp.as_ref().and_then(Link::remote_ip), self.server_ip)
+    }
+
+    fn state(&self) -> u8 {
+        self.taken.load(std::sync::atomic::Ordering::Acquire)
+    }
+
+    /// 1단 고정 — 2단·사본을 버리고 소비자 타임아웃을 1단에 적용.
+    fn commit_udp(&mut self) {
+        self.relay = None;
+        self.pending.clear();
+        if let Some(u) = self.udp.as_mut() {
+            let _ = u.set_recv_timeout(self.consumer_timeout);
+        }
+        self.taken
+            .store(LADDER_UDP, std::sync::atomic::Ordering::Release);
+    }
+
+    /// 2단 고정 — 1단을 버리고 사본을 2단으로 재전송.
+    fn commit_relay(&mut self) -> Result<(), LinkError> {
+        self.udp = None;
+        let relay = self.relay.as_mut().ok_or(LinkError::Closed)?;
+        for f in self.pending.drain(..) {
+            relay.send(&f)?;
+        }
+        let _ = relay.set_recv_timeout(self.consumer_timeout);
+        self.taken
+            .store(LADDER_RELAY, std::sync::atomic::Ordering::Release);
+        Ok(())
+    }
+}
+
+impl Link for LadderLink {
+    fn peer(&self) -> PeerId {
+        // 사다리 수준에서 상대 신원은 알 수 없다 — 종단 핸드셰이크가 확정한다(RelayLink와 같다).
+        PeerId::from_bytes([0u8; 32])
+    }
+
+    fn send(&mut self, frame: &[u8]) -> Result<(), LinkError> {
+        match self.state() {
+            LADDER_UDP => self.udp.as_mut().ok_or(LinkError::Closed)?.send(frame),
+            LADDER_RELAY => self.relay.as_mut().ok_or(LinkError::Closed)?.send(frame),
+            _ => {
+                if let Some(u) = self.udp.as_mut() {
+                    if u.send(frame).is_ok() {
+                        self.pending.push(frame.to_vec());
+                        return Ok(());
+                    }
+                    self.udp = None; // 1단 송신 실패 = 1단 없음
+                }
+                // 1단이 없으면 기다릴 회신도 없다 — 곧장 2단 고정.
+                self.commit_relay()?;
+                self.relay.as_mut().ok_or(LinkError::Closed)?.send(frame)
+            }
+        }
+    }
+
+    fn recv(&mut self) -> Result<Vec<u8>, LinkError> {
+        match self.state() {
+            LADDER_UDP => self.udp.as_mut().ok_or(LinkError::Closed)?.recv(),
+            LADDER_RELAY => self.relay.as_mut().ok_or(LinkError::Closed)?.recv(),
+            _ => {
+                // 1단: 첫 회신을 UDP 상한 안에 기다린다 — 오면 1단 고정.
+                if let Some(u) = self.udp.as_mut() {
+                    let _ =
+                        u.set_recv_timeout(Some(self.consumer_timeout.unwrap_or(HS_TIMEOUT_UDP)));
+                    if let Ok(f) = u.recv() {
+                        self.commit_udp();
+                        return Ok(f);
+                    }
+                    // 상대가 UDP를 듣지 않았다(창 어긋남·관측 비대칭) — 2단으로 내려간다.
+                }
+                // 2단: 사본 재전송 → 첫 회신(릴레이 상한) → 2단 고정.
+                self.commit_relay()?;
+                let relay = self.relay.as_mut().ok_or(LinkError::Closed)?;
+                let _ =
+                    relay.set_recv_timeout(Some(self.consumer_timeout.unwrap_or(HS_TIMEOUT_RELAY)));
+                let r = relay.recv();
+                let _ = relay.set_recv_timeout(self.consumer_timeout);
+                r
+            }
+        }
+    }
+
+    fn set_recv_timeout(&mut self, dur: Option<Duration>) -> Result<(), LinkError> {
+        self.consumer_timeout = dur;
+        match self.state() {
+            LADDER_UDP => self
+                .udp
+                .as_mut()
+                .ok_or(LinkError::Closed)?
+                .set_recv_timeout(dur),
+            LADDER_RELAY => self
+                .relay
+                .as_mut()
+                .ok_or(LinkError::Closed)?
+                .set_recv_timeout(dur),
+            _ => Ok(()), // 확정 전엔 단별 핸드셰이크 상한을 쓴다 — 고정 때 적용
+        }
+    }
+
+    fn remote_ip(&self) -> Option<IpAddr> {
+        match self.state() {
+            LADDER_UDP => self.udp.as_ref().and_then(Link::remote_ip),
+            LADDER_RELAY => self.relay.as_ref().and_then(Link::remote_ip),
+            // 확정 전 = 서버 주소(공인 = Remote) — 상대 UDP 관측도 공인 엔드포인트라 등급은 같다(fail-closed 방향).
+            _ => Some(self.server_ip),
+        }
+    }
+
+    fn rendezvous(&self) -> bool {
+        true
+    }
+}
+
 fn finish_via(
     mut session: NoiseSession<Box<dyn Link>>,
     taken: PathTaken,
     path: crate::PathClass,
-    dst: &PeerId,
+    expect: Option<&PeerId>,
 ) -> Result<ViaSession, ViaError> {
     use crate::Session as _;
-    if session.peer() != *dst {
-        return Err(ViaError::WrongPeer); // RID 충돌·오지정 — 인증된 키가 근거다
+    if let Some(dst) = expect {
+        if session.peer() != *dst {
+            return Err(ViaError::WrongPeer); // RID 충돌·오지정 — 인증된 키가 근거다
+        }
     }
     session.set_recv_timeout(None); // 핸드셰이크용 타임아웃 원복(소비자가 다시 건다)
     Ok(ViaSession {
@@ -1437,6 +1545,7 @@ fn finish_via(
 
 /// **받는 쪽 사다리** — 인바운드 랑데부에 프로브→수락 순서를 지키고, 펀치를 병행하며
 /// **첫 프레임이 온 링크**로 종단 수락을 잇는다(여는 쪽이 어느 단을 골랐든 따라간다).
+/// X-2 승격(11-06) 뒤 = `accept_link_via`(링크 수준 · crate 내부) + 종단 핸드셰이크 — CLI·기존 호출자 호환 층.
 ///
 /// # Errors
 /// `deadline` 내 어느 링크로도 첫 프레임이 없거나 핸드셰이크 실패 시 [`ViaError`].
@@ -1447,6 +1556,23 @@ pub fn accept_via(
     punch: bool,
     deadline: Duration,
 ) -> Result<ViaSession, ViaError> {
+    let (link, taken) = accept_link_via(client, inc, punch, deadline)?;
+    let path = class_of_link(&*link, crate::PathClass::Remote);
+    accept_on(link, id, taken, path)
+}
+
+/// **받는 쪽 사다리를 링크 수준에서 잇는다**(X-2 Transport 승격 · 11-06) — 프로브→수락 순서 · 펀치 병행 · **첫 프레임이
+/// 온 링크**를 고르고 그 프레임을 되살린 링크([`PrefixedLink`] · `rendezvous() == true`)를 돌려준다. 핸드셰이크는
+/// 호출자 몫(`Transport::incoming` 소비자 = 호스트의 단일 인바운드 펌프).
+///
+/// # Errors
+/// `deadline` 내 어느 링크로도 첫 프레임이 없으면 [`ViaError::Dead`].
+pub(crate) fn accept_link_via(
+    client: &RelayClient,
+    inc: RelayIncoming,
+    punch: bool,
+    deadline: Duration,
+) -> Result<(Box<dyn Link>, PathTaken), ViaError> {
     let RelayIncoming {
         mut link, peer_udp, ..
     } = inc;
@@ -1490,32 +1616,26 @@ pub fn accept_via(
             }
         }
         if let Some(first) = udp_first {
-            let u = udp.take().expect("프레임을 준 링크");
-            let path = class_of_link(&u, crate::PathClass::Remote);
-            return accept_on(
-                PrefixedLink {
+            let u = udp.take().ok_or(ViaError::Dead)?;
+            return Ok((
+                Box::new(PrefixedLink {
                     first: Some(first),
-                    inner: u,
-                },
-                id,
+                    inner: Box::new(u),
+                }),
                 PathTaken::Udp,
-                path,
-            );
+            ));
         }
         // 릴레이 쪽 첫 프레임 — 여는 쪽이 릴레이 단을 골랐다(또는 펀치 실패).
         if relay_alive {
             match link.recv() {
                 Ok(first) => {
-                    let path = class_of_link(&link, crate::PathClass::Remote);
-                    return accept_on(
-                        PrefixedLink {
+                    return Ok((
+                        Box::new(PrefixedLink {
                             first: Some(first),
-                            inner: link,
-                        },
-                        id,
+                            inner: Box::new(link),
+                        }),
                         PathTaken::Relay,
-                        path,
-                    );
+                    ));
                 }
                 Err(LinkError::TimedOut) => {}
                 Err(LinkError::Closed) => relay_alive = false,
@@ -1532,16 +1652,16 @@ fn inc_accept(link: &RelayLink) {
     let _ = link.cmd_tx.send(Cmd::AcceptCh { ch: link.ch });
 }
 
-fn accept_on<L: Link + 'static>(
-    mut link: PrefixedLink<L>,
+fn accept_on(
+    mut link: Box<dyn Link>,
     id: &Identity,
     taken: PathTaken,
     path: crate::PathClass,
 ) -> Result<ViaSession, ViaError> {
     use crate::Session as _;
     let _ = link.set_recv_timeout(Some(HS_TIMEOUT_UDP));
-    let boxed: Box<dyn Link> = Box::new(link);
-    match NoiseSession::accept_with_prologue(boxed, id, E2E_PROLOGUE) {
+    // ★ clip: 종단은 XX + E2E prologue(앱 격리 2차) — 양쪽이 같은 값이 아니면 수학적으로 실패.
+    match NoiseSession::accept_with_prologue(link, id, E2E_PROLOGUE) {
         Ok(mut session) => {
             session.set_recv_timeout(None);
             Ok(ViaSession {
@@ -1604,7 +1724,21 @@ pub mod pinfile {
             std::fs::create_dir_all(dir)?;
         }
         let tmp = path.with_extension(format!("tmp.{}", std::process::id()));
-        std::fs::write(&tmp, lines.join("\n") + "\n")?;
+        {
+            // 소유자 전용(0600 · Unix) — 핀은 평문이라 **훼손이 곧 서버 바꿔치기**다(09-05 ·
+            // 실측 664 = 같은 그룹 계정이 쓸 수 있었다). rename이 temp 모드를 나른다.
+            use std::io::Write as _;
+            let mut opts = std::fs::OpenOptions::new();
+            opts.write(true).create(true).truncate(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt as _;
+                opts.mode(0o600);
+            }
+            let mut f = opts.open(&tmp)?;
+            f.write_all((lines.join("\n") + "\n").as_bytes())?;
+            f.sync_all()?;
+        }
         if let Err(e) = std::fs::rename(&tmp, path) {
             let _ = std::fs::remove_file(&tmp);
             return Err(e);
@@ -1705,11 +1839,14 @@ pub fn attach(
     raw: &str,
     id: &Identity,
     pin_path: &std::path::Path,
+    extra_rids: &[Rid],
 ) -> Result<Attached, AttachError> {
     let (addr, sa) = resolve_server(raw).ok_or(AttachError::Resolve)?;
     let expected = pinfile::lookup(pin_path, &addr);
-    let client = RelayClient::connect(sa, id, &rids_around(&id.peer_id()), expected)
-        .map_err(AttachError::Relay)?;
+    // ★ 기기별 RID 3 + 추가(사용자 페어링 RID_pair 3 · ADR-0015 §3-4) — MAX_RIDS 8 안에서 서버 무변경.
+    let mut rids: Vec<Rid> = rids_around(&id.peer_id()).to_vec();
+    rids.extend(extra_rids.iter().copied().take(MAX_RIDS - 3));
+    let client = RelayClient::connect(sa, id, &rids, expected).map_err(AttachError::Relay)?;
     let first_pin = expected.is_none();
     let pin_write_failed =
         first_pin && pinfile::store(pin_path, &addr, &client.server_peer()).is_err();
@@ -1743,76 +1880,15 @@ mod tests {
     }
 
     #[test]
-    fn c2s_roundtrip() {
-        let msgs = [
-            C2s::Register {
-                rids: vec![[1u8; 16], [2u8; 16]],
-            },
-            C2s::Open {
-                token: 77,
-                dst: [3u8; 16],
-            },
-            C2s::Accept { ch: 9 },
-            C2s::Data {
-                ch: 5,
-                fin: true,
-                bytes: b"cipher".to_vec(),
-            },
-            C2s::CloseCh { ch: 1 },
-            C2s::Ping,
-        ];
-        for m in msgs {
-            assert_eq!(C2s::decode(&m.encode()), Some(m.clone()), "{m:?}");
-        }
-    }
-
-    #[test]
-    fn s2c_roundtrip() {
-        let ep4: SocketAddr = "1.2.3.4:5678".parse().unwrap();
-        let ep6: SocketAddr = "[2001:db8::1]:443".parse().unwrap();
-        let msgs = [
-            S2c::RegisterOk {
-                udp_token: 0x00de_adbe_efca_fe01,
-                udp_port: 47_300,
-                observed: Some(ep4),
-            },
-            S2c::RegisterOk {
-                udp_token: 1,
-                udp_port: 2,
-                observed: Some(ep6),
-            },
-            S2c::OpenResult {
-                token: 3,
-                status: 0,
-                ch: 4,
-                peer_udp: None,
-            },
-            S2c::Incoming {
-                ch: 8,
-                src: [9u8; 16],
-                peer_udp: Some(ep4),
-            },
-            S2c::Data {
-                ch: 5,
-                fin: false,
-                bytes: vec![0u8; 100],
-            },
-            S2c::ChClosed { ch: 6 },
-            S2c::Pong,
-        ];
-        for m in msgs {
-            assert_eq!(S2c::decode(&m.encode()), Some(m.clone()), "{m:?}");
-        }
-    }
-
-    #[test]
-    fn unknown_kind_is_none() {
+    fn card_roundtrip_and_cap() {
+        let c = encode_card("이름", "a@b.c", "소개");
         assert_eq!(
-            C2s::decode(&[0x7f, 1, 2]),
-            None,
-            "미지 kind = 조용히 버림(전방 호환)"
+            decode_card(&c),
+            Some(("이름".into(), "a@b.c".into(), "소개".into()))
         );
-        assert_eq!(S2c::decode(&[0x10]), None);
-        assert_eq!(C2s::decode(&[]), None);
+        let big = encode_card("n", "e", &"x".repeat(5000));
+        assert!(big.len() <= CARD_MAX, "상한 안으로 자른다");
+        assert!(decode_card(&big).is_some());
+        assert_eq!(decode_card(&vec![1u8; CARD_MAX + 1]), None);
     }
 }
