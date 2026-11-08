@@ -17,6 +17,8 @@
 pub mod jamo;
 /// 라이선스 화면 위젯(10-10 P4 · beep license_win.rs 이식).
 pub mod license_win;
+/// ★ 로그 화면(S9 · T-22b · 11-08) — 설정 ▸ 고급 ▸ [로그 보기…] · DR-31 기본 통보 채널.
+pub mod log_win;
 /// 파일 선택 대화상자 조립(10-10 P3 · nexa-dlg FilePicker + 앱 라벨·필터 · beep picker_win.rs 이식).
 pub mod picker_win;
 pub mod settings;

@@ -28,6 +28,8 @@ mod conf;
 mod dedup;
 mod demo;
 mod devices;
+/// ★ 앱 전역 진단 기록(S9 · T-22b · 11-08) — 설정 ▸ 고급 ▸ [로그 보기…]가 보여 준다.
+mod diag;
 mod icon;
 mod keys;
 mod kind_icon;
