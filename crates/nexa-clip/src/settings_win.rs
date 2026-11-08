@@ -1877,15 +1877,21 @@ impl App {
                 primary: false,
             });
         } else if let Some(kv) = id.strip_prefix("prefs.set:") {
-            match kv
-                .split_once('=')
-                .and_then(|(k, v)| Some((static_key(k)?, v)))
-            {
-                Some((k, v)) => {
-                    self.widget.set_value(k, v, &mut inv);
-                    self.apply_change(k, v.to_string(), Instant::now());
+            // 값 키 = 위젯 값 + 즉시 적용 · ★ 행위(Action) 행 `=run`(11-08 · 로그 보기… 등) = 버튼 클릭과 같은 길(위젯 값 없음).
+            match kv.split_once('=') {
+                Some((k, "run")) if action_key(k).is_some() => {
+                    if let Some(k) = action_key(k) {
+                        self.apply_change(k, "run".to_string(), Instant::now());
+                    }
                 }
-                None => eprintln!("기동 명령: `<값 키>=<값>` 형식이 아니거나 모르는 키 — {kv}"),
+                Some((k, v)) => match static_key(k) {
+                    Some(k) => {
+                        self.widget.set_value(k, v, &mut inv);
+                        self.apply_change(k, v.to_string(), Instant::now());
+                    }
+                    None => eprintln!("기동 명령: 모르는 키 — {k}"),
+                },
+                None => eprintln!("기동 명령: `<키>=<값>` 형식이 아님 — {kv}"),
             }
         } else if let Some(p) = id.strip_prefix("prefs.export:") {
             self.export_settings_to(std::path::Path::new(p));
@@ -1938,6 +1944,14 @@ fn log_entries() -> (Vec<LogEntry>, u64) {
         })
         .collect();
     (entries, dropped)
+}
+
+/// 행위(Action) 행의 키 문자열을 레지스트리의 `&'static str`로(기동 명령 `prefs.set:<키>=run` · 11-08).
+fn action_key(k: &str) -> Option<&'static str> {
+    nclip_ui::registry()
+        .iter()
+        .find(|e| e.key == k && matches!(e.kind, nclip_ui::SettingKind::Action { .. }))
+        .map(|e| e.key)
 }
 
 /// 설정 **값 키** 문자열을 레지스트리의 `&'static str`로(기동 명령 `prefs.set` · `apply_change`는 정적 키를 받는다).
