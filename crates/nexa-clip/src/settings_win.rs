@@ -949,8 +949,13 @@ impl App {
                     nclip_ui::NoteTone::Ok,
                 )
             }
-            S::Failed(e) => (
-                nclip_core::tr(lang, nclip_core::Msg::StSyncTestFail).replacen("{}", e, 1),
+            // ★ 11-08 — 사유를 종류별 i18n으로(와이어 v2 "세대 불일치"가 사용자 말로 보이게).
+            S::Failed(f) => (
+                nclip_core::tr(lang, nclip_core::Msg::StSyncTestFail).replacen(
+                    "{}",
+                    &sync_failure_text(f),
+                    1,
+                ),
                 nclip_ui::NoteTone::Warn,
             ),
             S::Stopped => (
@@ -964,6 +969,26 @@ impl App {
         };
         self.widget
             .set_row_note_toned("sync.test", &msg, tone, &mut inv);
+        // ★ 서버 보고 행(11-08) — 상태가 바뀔 때 함께(접속 = Welcome 요약 · 그 외 = 미접속).
+        let server_line = crate::sync_cmd::server_info().map_or_else(
+            || nclip_core::tr(lang, nclip_core::Msg::StSyncServerNone).to_string(),
+            |si| {
+                let caps = caps_text(si.caps);
+                nclip_core::tf(
+                    nclip_core::Msg::StSyncServerLine,
+                    &[
+                        &si.addr,
+                        &si.server_type,
+                        &si.version,
+                        &si.proto_major.to_string(),
+                        &si.proto_minor.to_string(),
+                        &caps,
+                        &si.max_rids.to_string(),
+                    ],
+                )
+            },
+        );
+        self.widget.set_value("sync.server", &server_line, &mut inv);
         self.sync_shown = Some(st);
         self.redraw();
     }
@@ -1888,6 +1913,53 @@ fn static_key(k: &str) -> Option<&'static str> {
         .flat_map(|e| e.default_values())
         .map(|(key, _)| key)
         .find(|key| *key == k)
+}
+
+/// ★ 접속 실패 사유 → 사용자 문구(11-08 · `SyncFail` 종류별 i18n · 재시도 꼬리 포함).
+fn sync_failure_text(f: &crate::sync_cmd::SyncFailure) -> String {
+    use crate::sync_cmd::SyncFail as F;
+    use nclip_core::{tf, Msg};
+    let major = nclip_sync::proto::PROTO_MAJOR.to_string();
+    let mut s = match &f.fail {
+        F::WireMismatch { server_major: 0 } => tf(Msg::StSyncFailWireNone, &[]),
+        F::WireMismatch { server_major } => {
+            tf(Msg::StSyncFailWire, &[&server_major.to_string(), &major])
+        }
+        F::Rejected { code, reason } => tf(Msg::StSyncFailRejected, &[&code.to_string(), reason]),
+        F::PinMismatch => tf(Msg::StSyncFailPin, &[]),
+        F::Handshake => tf(Msg::StSyncFailHandshake, &[]),
+        F::Io(e) => tf(Msg::StSyncFailIo, &[e]),
+        F::Protocol => tf(Msg::StSyncFailProtocol, &[]),
+        F::Identity(e) => tf(Msg::StSyncFailIdentity, &[e]),
+        F::Resolve(r) => tf(Msg::StSyncFailResolve, &[r]),
+    };
+    if f.retry_secs > 0 {
+        s.push_str(&tf(
+            Msg::StSyncRetryIn,
+            &[&f.retry_secs.to_string(), &f.failures.to_string()],
+        ));
+    }
+    s
+}
+
+/// 세션 능력 비트 → 짧은 이름 목록(없으면 "-").
+fn caps_text(caps: u64) -> String {
+    use nclip_sync::proto::caps as C;
+    let names: Vec<&str> = [
+        (C::ROSTER, "roster"),
+        (C::SHARED_BIND, "shared-bind"),
+        (C::UDP_OBSERVE, "udp-observe"),
+        (C::CONTENT, "content"),
+    ]
+    .into_iter()
+    .filter(|(b, _)| caps & b != 0)
+    .map(|(_, n)| n)
+    .collect();
+    if names.is_empty() {
+        "-".to_string()
+    } else {
+        names.join("+")
+    }
 }
 
 /// 설정 창이 지금 보여 주는 화면(10-10 P3·P4) — clip 설정 창은 창 하나에 위젯 하나를 띄우는 호스트라
