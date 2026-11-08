@@ -17,10 +17,26 @@ pub const ID_PASTE_PLAIN: u32 = 3;
 
 /// (설정 키, 동작 id, 기본 조합) — 화면 순서.
 pub const ACTIONS: &[(&str, u32, &str)] = &[
-    ("key.open", ID_OPEN, "Shift+Alt+C"),
+    ("key.open", ID_OPEN, g("Shift+Alt+C", "Shift+Win+C")),
     ("key.open_alt", ID_OPEN_ALT, ""), // 보조 = 기본 없음(09-04 사용자) — 원하면 지정
-    ("key.paste_plain", ID_PASTE_PLAIN, "Shift+Alt+X"),
+    (
+        "key.paste_plain",
+        ID_PASTE_PLAIN,
+        g("Shift+Alt+X", "Shift+Win+X"),
+    ),
 ];
+
+/// ★ 전역 단축키 기본값의 OS 분기(11-08 사용자 — "맥에서 ⌘⇧C로 동작하도록") — Windows/Linux = `Shift+Alt+…`(09-04 사용자 ·
+/// CopyQ 관례) · **macOS = `⇧⌘…`**(Maccy 관례 · `Win` = ⌘). 종전엔 셋 다 `Shift+Alt+C`였는데 mac에서 ⌥ 조합은 특수문자
+/// 입력과 겹치고, 같은 Mac에서 띄운 Windows(VM·원격)의 `Shift+Alt+C`를 Mac 쪽 상주가 먼저 삼켰다(11-08 dev 프로필 Debug 사례).
+/// 저장된 값이 있는 기존 설치는 그대로(기본값만 바뀐다 · [초기화]로 새 기본).
+const fn g(win: &'static str, mac: &'static str) -> &'static str {
+    if cfg!(target_os = "macos") {
+        mac
+    } else {
+        win
+    }
+}
 
 /// ★ 창 안 단축키 한 항목(09-08) — (설정 키, Win/Linux 기본, mac 기본). 화면 순서.
 ///
@@ -558,7 +574,35 @@ mod tests {
         keys.dedup();
         assert_eq!(keys.len(), WINDOW_ACTIONS.len(), "설정 키 중복");
         assert!(is_global_key("key.open"));
-        assert_eq!(default_for("key.open"), "Shift+Alt+C");
+        // ★ 11-08 — mac은 ⇧⌘C(Maccy 관례) · 그 외 ⇧⌥C.
+        assert_eq!(
+            default_for("key.open"),
+            if cfg!(target_os = "macos") {
+                "Shift+Win+C"
+            } else {
+                "Shift+Alt+C"
+            }
+        );
+        assert_eq!(
+            Hotkey::parse(default_for("key.open"))
+                .unwrap()
+                .display(true),
+            if cfg!(target_os = "macos") {
+                "⇧⌘C"
+            } else {
+                "⇧⌥C"
+            }
+        );
+        for (k, _, d) in ACTIONS {
+            if !d.is_empty() {
+                assert_eq!(
+                    Hotkey::parse(d).unwrap().canonical(),
+                    *d,
+                    "{k} 기본값은 정규 문자열"
+                );
+                assert!(Hotkey::parse(d).unwrap().is_global_safe(), "{k}");
+            }
+        }
         assert_eq!(default_for("key.nope"), "");
     }
 
