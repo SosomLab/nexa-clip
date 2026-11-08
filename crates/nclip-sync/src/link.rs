@@ -52,6 +52,12 @@ pub trait Link: Send {
     fn remote_ip(&self) -> Option<std::net::IpAddr> {
         None
     }
+
+    /// ★ 랑데부(릴레이·홀펀칭) 경로로 성립한 링크인가(beep X-2 11-06 이식 · 11-08) — 호스트가 LAN 인바운드와 같은 펌프에서
+    /// 배지만 가른다. 기본 `false`(LAN 직결·인메모리).
+    fn rendezvous(&self) -> bool {
+        false
+    }
 }
 
 impl Link for Box<dyn Link> {
@@ -69,5 +75,8 @@ impl Link for Box<dyn Link> {
     }
     fn remote_ip(&self) -> Option<std::net::IpAddr> {
         (**self).remote_ip()
+    }
+    fn rendezvous(&self) -> bool {
+        (**self).rendezvous()
     }
 }
