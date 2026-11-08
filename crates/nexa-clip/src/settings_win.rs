@@ -15,6 +15,24 @@
 //! | 우리 레지스트리 | 21항목 · 카테고리 8개가 우리 것으로 나온다 |
 //! | ★ **스플리터** | 사이드바 경계에 커서를 두면 **서서히 밝아지고** 좌우 리사이즈 커서 · 드래그로 조절 |
 //! | ★ **영속**(T-12c2) | 값을 바꾸고 창을 닫았다 다시 열면 **그대로 있다**([`crate::conf`]) |
+//!
+//! ## ★ 기동 명령(11-08 · T-84 · nexa-sql `NSQL_STARTUP_CMD` 차용)
+//!
+//! `NEXA_CLIP_STARTUP_CMD="<명령>,<명령>,…"` 로 띄우면 **첫 그리기 뒤 한 틱에 하나씩** 실행한다(한 명령의 레이아웃이
+//! 끝난 뒤 다음이 돈다 → 덤프가 새 화면을 본다). OS 입력 주입이 아니다 — 사용자의 커서·포커스·전경 창을 건드리지 않고
+//! 실제 입력과 **같은 경로**(`feed` · `apply_change`)를 탄다. 협업 V1 자동화·캡처용 · 단독 `settings` 명령에서(상주 트레이의
+//! 설정 창도 같은 호스트라 열려 있으면 받는다). 쉼표는 구분자라 값·경로에 못 쓴다.
+//!
+//! | 명령 | 하는 일 |
+//! |---|---|
+//! | `prefs.goto:<키>` | 그 키의 카테고리를 고르고 카드를 뷰포트 맨 위로 |
+//! | `prefs.filter:changed\|all` · `prefs.advanced:on\|off` | 하단 줄 [변경]·[고급] 스위치 |
+//! | `prefs.search:<글>` | 검색어(비우면 `prefs.search:`) |
+//! | `prefs.wheel:<노치>`(양수 = 위) · `prefs.key:up\|down\|pageup\|pagedown\|home\|end\|escape` | 실제 입력 경로로 휠·키 |
+//! | `prefs.set:<키>=<값>` | 값 변경(위젯 + 즉시 적용 · 설정 파일까지 — 격리 프로필에서) |
+//! | `prefs.export:<파일>` · `prefs.import:<파일>` · `prefs.json` | 내보내기·가져오기·JSON 편집(토스트가 뜬다) |
+//! | `prefs.dump:<파일>` | 보이는 카드 키 + `scroll=`·`top_card=`·`changed_only=`·… + `toast=` 줄들 + `view=` |
+//! | `prefs.sleep:<ms>` · `prefs.close` | 다음 명령 미루기(토스트 소멸 대기 등) · 창 닫기(단독 = 종료) |
 
 use nclip_ui::license_win::{license_view, state_text, LicAction, LicenseWidget};
 use nclip_ui::picker_win::{new_picker, FilePicker, PickFilter, PickerAction, PickerMode};
@@ -110,6 +128,12 @@ pub(crate) struct App {
     json_next: Instant,
     /// 파일 선택기가 무엇을 위해 열렸는가(라이선스 · 설정 가져오기 · 내보내기).
     picker_op: PickerOp,
+    /// ★ 기동 명령 큐(11-08 · T-84 · `NEXA_CLIP_STARTUP_CMD` · 모듈 머리말) — 첫 그리기 뒤 한 틱에 하나.
+    startup: std::collections::VecDeque<String>,
+    /// 마지막 기동 명령 뒤 그린 적 있는가 — 다음 명령은 그 뒤에(덤프가 새 레이아웃을 보도록).
+    painted: bool,
+    /// `prefs.sleep:<ms>` — 이 시각까지 다음 명령을 미룬다.
+    startup_until: Option<Instant>,
 }
 
 /// 파일 선택기 용도(11-03) — 확정·취소 뒤 돌아갈 곳이 다르다.
@@ -177,6 +201,18 @@ impl App {
             json_watch: None,
             json_next: Instant::now(),
             picker_op: PickerOp::License,
+            startup: std::env::var("NEXA_CLIP_STARTUP_CMD")
+                .ok()
+                .map(|v| {
+                    v.split(',')
+                        .map(str::trim)
+                        .filter(|c| !c.is_empty())
+                        .map(String::from)
+                        .collect()
+                })
+                .unwrap_or_default(),
+            painted: false,
+            startup_until: None,
         };
         app.refresh_license_info();
         app.refresh_system_option_labels();
@@ -1731,7 +1767,127 @@ impl App {
             );
         }
         let _ = buf.present();
+        self.painted = true;
     }
+
+    /// ★ 기동 명령 한 틱(11-08 · T-84) — 큐가 비면 `None` · 아니면 다음 깨어날 시각. 창이 한 번 그려진 뒤(`painted`)
+    ///   하나를 실행하고 다시 그리기를 요청한다 → 다음 명령은 그 그리기(레이아웃) 뒤에.
+    fn startup_tick(&mut self, now: Instant) -> Option<Instant> {
+        if self.startup.is_empty() {
+            return None;
+        }
+        if let Some(until) = self.startup_until {
+            if now < until {
+                return Some(until);
+            }
+            self.startup_until = None;
+        }
+        if !self.painted || self.laid_out == (0, 0) {
+            self.redraw();
+            return Some(now + Duration::from_millis(16));
+        }
+        if let Some(id) = self.startup.pop_front() {
+            self.startup_cmd(&id);
+        }
+        self.painted = false;
+        self.redraw();
+        Some(now + Duration::from_millis(16))
+    }
+
+    /// 기동 명령 하나(모듈 머리말 표) — 모르는 명령은 콘솔에 알리고 넘어간다.
+    fn startup_cmd(&mut self, id: &str) {
+        println!("기동 명령: {id}");
+        let mut inv = Invalidations::default();
+        if let Some(key) = id.strip_prefix("prefs.goto:") {
+            if !self.widget.focus_key(key, &mut inv) {
+                eprintln!("기동 명령: 모르는 설정 키 — {key}");
+            }
+        } else if let Some(mode) = id.strip_prefix("prefs.filter:") {
+            self.widget.set_changed_only(mode == "changed", &mut inv);
+        } else if let Some(v) = id.strip_prefix("prefs.advanced:") {
+            self.widget.set_advanced(v == "on", &mut inv);
+        } else if let Some(q) = id.strip_prefix("prefs.search:") {
+            self.widget.set_query(q, &mut inv);
+        } else if let Some(d) = id.strip_prefix("prefs.wheel:") {
+            // 노치 수(양수 = 위) → 실제 휠과 같은 경로. 마우스 위치는 창 밖(-1,-1)이라 우측 패널이 받는다.
+            match d.parse::<i32>() {
+                Ok(n) => self.feed(InputEvent::Wheel {
+                    delta: n * WHEEL_DELTA,
+                }),
+                Err(_) => eprintln!("기동 명령: 휠 노치 수가 아님 — {d}"),
+            }
+        } else if let Some(k) = id.strip_prefix("prefs.key:") {
+            let key = match k {
+                "up" => CtlKey::Up,
+                "down" => CtlKey::Down,
+                "pageup" => CtlKey::PageUp,
+                "pagedown" => CtlKey::PageDown,
+                "home" => CtlKey::Home,
+                "end" => CtlKey::End,
+                "escape" => CtlKey::Escape,
+                _ => {
+                    eprintln!("기동 명령: 모르는 키 — {k}");
+                    return;
+                }
+            };
+            self.feed(InputEvent::Key {
+                key,
+                shift: false,
+                primary: false,
+            });
+        } else if let Some(kv) = id.strip_prefix("prefs.set:") {
+            match kv
+                .split_once('=')
+                .and_then(|(k, v)| Some((static_key(k)?, v)))
+            {
+                Some((k, v)) => {
+                    self.widget.set_value(k, v, &mut inv);
+                    self.apply_change(k, v.to_string(), Instant::now());
+                }
+                None => eprintln!("기동 명령: `<값 키>=<값>` 형식이 아니거나 모르는 키 — {kv}"),
+            }
+        } else if let Some(p) = id.strip_prefix("prefs.export:") {
+            self.export_settings_to(std::path::Path::new(p));
+        } else if let Some(p) = id.strip_prefix("prefs.import:") {
+            self.import_settings_from(std::path::Path::new(p));
+        } else if id == "prefs.json" {
+            self.settings_io("settings.edit_json");
+        } else if let Some(p) = id.strip_prefix("prefs.dump:") {
+            let mut text = self.widget.dump_text();
+            for b in self.toasts.bodies() {
+                text.push_str(&format!("toast={b}\n"));
+            }
+            let view = match self.view {
+                View::Settings => "settings",
+                View::License(_) => "license",
+                View::Picker(_) => "picker",
+            };
+            text.push_str(&format!("view={view}\n"));
+            if let Err(e) = std::fs::write(p, text) {
+                eprintln!("기동 명령: 덤프 쓰기 실패({e}) — {p}");
+            }
+        } else if let Some(ms) = id.strip_prefix("prefs.sleep:") {
+            match ms.parse::<u64>() {
+                Ok(ms) => self.startup_until = Some(Instant::now() + Duration::from_millis(ms)),
+                Err(_) => eprintln!("기동 명령: 밀리초가 아님 — {ms}"),
+            }
+        } else if id == "prefs.close" {
+            self.close_pending = true;
+        } else {
+            eprintln!("기동 명령: 모름 — {id}");
+        }
+        drop(inv);
+    }
+}
+
+/// 설정 **값 키** 문자열을 레지스트리의 `&'static str`로(기동 명령 `prefs.set` · `apply_change`는 정적 키를 받는다).
+/// 값 키가 없는 행(행위·정보·보고)은 `None`.
+fn static_key(k: &str) -> Option<&'static str> {
+    nclip_ui::registry()
+        .iter()
+        .flat_map(|e| e.default_values())
+        .map(|(key, _)| key)
+        .find(|key| *key == k)
 }
 
 /// 설정 창이 지금 보여 주는 화면(10-10 P3·P4) — clip 설정 창은 창 하나에 위젯 하나를 띄우는 호스트라
@@ -2239,10 +2395,16 @@ impl ApplicationHandler for App {
         };
         // ★ 자동 재기동 예약이 있으면 그 만료에도 깨어난다(Wait만 두면 타이머가 영영 안 돈다).
         let json_at = self.json_watch.as_ref().map(|_| self.json_next);
-        let deadline = [self.sync_respawn_at, self.name_announce_at, json_at]
-            .into_iter()
-            .flatten()
-            .min();
+        let startup_at = self.startup_tick(wall); // ★ 기동 명령(11-08 · T-84) — 한 틱에 하나.
+        let deadline = [
+            self.sync_respawn_at,
+            self.name_announce_at,
+            json_at,
+            startup_at,
+        ]
+        .into_iter()
+        .flatten()
+        .min();
         let next = match (next, deadline) {
             (Some(d), Some(at)) => Some(d.min(at.saturating_duration_since(wall))),
             (None, Some(at)) => Some(at.saturating_duration_since(wall)),
