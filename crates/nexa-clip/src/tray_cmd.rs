@@ -926,6 +926,34 @@ impl Shell {
         }
     }
 
+    /// 항목 하나 삭제 — 이력 · 전송 · 섬네일 · 색인 · 저장소 · 트레이(메인·팝업 창 갱신은 호출자가 · 11-08 분리: 메인 Delete ·
+    /// 팝업 Delete가 같은 길). 없던 id면 `false`.
+    fn delete_item(&mut self, id: u64) -> bool {
+        if !self.history.remove(id) {
+            return false;
+        }
+        let _ = crate::xfer::with(|x| x.forget_item(id));
+        self.thumbs.borrow_mut().remove(id);
+        self.search_idx.borrow_mut().remove(&id);
+        self.store.remove(id);
+        self.refresh_tray();
+        true
+    }
+
+    /// 고정 제외 전부 삭제(설정 창 [기록 모두 삭제] · 메인창 `key.clear_all` · 11-08 분리) — 저장소까지 · 창·트레이 갱신.
+    fn clear_history_all(&mut self) {
+        let gone = self.history.remove_unpinned();
+        for id in &gone {
+            self.store.remove(*id);
+            self.search_idx.borrow_mut().remove(id);
+            self.thumbs.borrow_mut().remove(*id);
+        }
+        println!("기록 모두 삭제: {}개 (고정 항목 유지)", gone.len());
+        self.main.on_history_changed(&self.history);
+        self.popup.on_history_changed(&self.history);
+        self.refresh_tray();
+    }
+
     /// ★ 창 안 키맵 동기(09-08) — 설정 `key.*`(창 안)가 바뀌면 팝업·메인창에 새 표를 준다. 바뀐 게 없으면 no-op.
     fn apply_keymap(&mut self) {
         let sig = crate::keys::Keymap::sig(&self.app.conf);
@@ -2638,16 +2666,14 @@ impl ApplicationHandler<ShellEvent> for Shell {
                     self.on_xfer_tick();
                 }
                 MainAction::Delete(id) => {
-                    if self.history.remove(id) {
-                        let _ = crate::xfer::with(|x| x.forget_item(id));
-                        self.thumbs.borrow_mut().remove(id);
-                        self.search_idx.borrow_mut().remove(&id);
-                        self.store.remove(id);
+                    if self.delete_item(id) {
                         self.main.on_history_changed(&self.history);
-                        self.refresh_tray();
-                        self.main.on_history_changed(&self.history);
+                        // 팝업이 떠 있으면(드물지만) 같이 갱신.
+                        self.popup.on_history_changed(&self.history);
                     }
                 }
+                // ★ 전체 비우기(11-08 · T-47 잔여 · `key.clear_all` 2단계 통과) — 설정 창 [기록 모두 삭제]와 같은 길.
+                MainAction::ClearAll => self.clear_history_all(),
                 MainAction::TogglePin(id) => {
                     if self.toggle_pin(id) {
                         self.main.on_history_changed(&self.history);
@@ -2675,6 +2701,18 @@ impl ApplicationHandler<ShellEvent> for Shell {
                         self.popup.on_history_changed_keep(&self.history, pid);
                         self.main.on_history_changed(&self.history);
                     }
+                }
+                // ★ 팝업 삭제(11-08 · T-47 잔여) — 창은 열린 채 같은 자리(다음 행)를 고른다 · 메인창도 갱신.
+                PopupAction::Delete(pid) => {
+                    if self.delete_item(pid) {
+                        self.popup.on_item_removed(&self.history);
+                        self.main.on_history_changed(&self.history);
+                    }
+                }
+                // ★ 팝업 → 메인창(11-08 · T-47 잔여 · `key.main_window`) — 팝업은 닫고(포커스 복원 · 붙여넣기 없음) 트레이 "열기"와 같은 길.
+                PopupAction::OpenMain => {
+                    self.close_popup();
+                    let _ = self.proxy.send_event(ShellEvent::Open);
                 }
                 PopupAction::PickStack { ids, as_, newline } => {
                     self.close_popup();
@@ -2857,16 +2895,7 @@ impl ApplicationHandler<ShellEvent> for Shell {
         crate::conf::maintain_diag_log();
         // ★ 기록 모두 삭제(09-04 사용자 — 설정 고급 · 2단계 확인 통과) — 고정 제외 전부 · 저장소까지.
         if self.app.take_clear_history() {
-            let gone = self.history.remove_unpinned();
-            for id in &gone {
-                self.store.remove(*id);
-                self.search_idx.borrow_mut().remove(id);
-                self.thumbs.borrow_mut().remove(*id);
-            }
-            println!("기록 모두 삭제: {}개 (고정 항목 유지)", gone.len());
-            self.main.on_history_changed(&self.history);
-            self.popup.on_history_changed(&self.history);
-            self.refresh_tray();
+            self.clear_history_all();
         }
         // ★ 캐럿 깜박임(09-02) — 검색창 띄운 창이 있으면 500ms 위상. 설정 창 페이드와
         //   겹칠 땐 더 짧은 쪽 데드라인이 이기지만, 우리가 덮어도 250ms 주기라 체감 무해.

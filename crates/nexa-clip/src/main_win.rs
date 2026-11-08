@@ -94,6 +94,8 @@ pub(crate) enum MainAction {
     ToggleAlwaysTop,
     /// ★ 미리보기 패널 토글(09-02 K4) — 셸이 `ui.preview_open` 영속.
     TogglePreview,
+    /// ★ 고정 제외 전부 비우기(11-08 · T-47 잔여 · `key.clear_all` 2단계 통과) — 셸이 설정 창 [기록 모두 삭제]와 같은 길로.
+    ClearAll,
     /// ★ 감시 끄기 토글(09-04) — 셸이 캡처를 버린다(세션 한정 · 영속 없음).
     ToggleWatch,
     /// ★ 검색 방식 선택(09-04 드롭다운) — 셸이 `find.mode`에 쓴다(적용은 박동 동기).
@@ -292,6 +294,9 @@ pub(crate) struct MainWin {
     follow_new: Option<(u64, Instant)>,
     /// 툴바 hover — 머티리얼 상태 레이어 + 툴팁(09-01 사용자 요청).
     hovered: Option<Tool>,
+    /// ★ 전체 비우기 무장(11-08 · T-47 잔여 · DR-31 모달 없음) — `key.clear_all` 첫 누름 시각 · 2초 안 재누름 = 실행 ·
+    ///   지나면 풀린다(상태줄 안내가 그동안 보인다 · 설정 창 [기록 모두 삭제]의 2단계와 같은 박자).
+    clear_arm: Option<Instant>,
     /// ★ 툴바 hover 페이드(09-04 사용자 — "설정 창처럼 서서히 진해지게"): 공용 `HoverFade`(켜지는 것·꺼지는 것 둘).
     tool_fade: nexa_ctl::tokens::HoverFade,
     /// ★ 상태줄 점 툴팁 페이드(09-04) — 툴바 툴팁과 같은 곡선.
@@ -408,6 +413,7 @@ impl MainWin {
             follow_new: None,
             watch_off: false,
             hovered: None,
+            clear_arm: None,
             tool_fade: nexa_ctl::tokens::HoverFade::default(),
             dot_fade: nexa_ctl::tokens::Fade::hover(),
             row_fade: nexa_ctl::tokens::HoverFade::default(),
@@ -1081,6 +1087,12 @@ impl MainWin {
         (vi < self.rows.len()).then_some(vi)
     }
 
+    /// 전체 비우기 무장이 아직 유효한가(2초).
+    fn clear_arm_active(&self, now: Instant) -> bool {
+        self.clear_arm
+            .is_some_and(|t| now.duration_since(t) < std::time::Duration::from_secs(2))
+    }
+
     fn selected_id(&self) -> Option<u64> {
         self.rows.get(self.sel).map(|r| r.id)
     }
@@ -1242,11 +1254,17 @@ impl MainWin {
         {
             self.redraw();
         }
+        // ★ 전체 비우기 무장 시효(11-08) — 지나면 상태줄 안내를 지운다 · 유효한 동안은 박동을 유지.
+        if self.clear_arm.is_some() && !self.clear_arm_active(Instant::now()) {
+            self.clear_arm = None;
+            self.redraw();
+        }
         self.tool_fade.is_animating()
             || self.dot_fade.is_animating()
             || self.row_fade.is_animating()
             || self.row_intent.is_waiting(now_ms)
             || self.tool_intent.is_waiting(now_ms)
+            || self.clear_arm.is_some()
     }
 
     /// ★ 미리보기 내용을 현재 선택과 동기(09-02 K4) — id 비교만이라 매 사건 호출해도 값싸다.
@@ -1865,6 +1883,21 @@ impl MainWin {
                         if let Some(id) = self.selected_id() {
                             return MainAction::Delete(id);
                         }
+                        return MainAction::None;
+                    }
+                    // ★ T-47 잔여(11-08) — 미리보기 토글 · 전체 비우기(2단계: 첫 누름 무장 → 2초 안 재누름).
+                    if self.keymap.is("key.preview", c) {
+                        return MainAction::TogglePreview;
+                    }
+                    if self.keymap.is("key.clear_all", c) {
+                        let now = Instant::now();
+                        if self.clear_arm_active(now) {
+                            self.clear_arm = None;
+                            self.redraw();
+                            return MainAction::ClearAll;
+                        }
+                        self.clear_arm = Some(now);
+                        self.redraw();
                         return MainAction::None;
                     }
                     let plain = self.keymap.is("key.pick_plain", c);
@@ -2892,7 +2925,11 @@ impl MainWin {
         dc.fill_rect(Rect::new(0, sy, w, self.status_h()), th.chrome_bg);
         dc.fill_rect(Rect::new(0, sy, w, 1), th.border);
         let lang = current_lang();
-        let status = if self.search.display_text().is_empty() {
+        // ★ 전체 비우기 무장 중(11-08 · T-47 잔여)이면 안내가 개수 자리를 대신한다(warn 색).
+        let armed = self.clear_arm_active(Instant::now());
+        let status = if armed {
+            tr(lang, Msg::StatusClearArm).replacen("{}", &self.keymap.label("key.clear_all"), 1)
+        } else if self.search.display_text().is_empty() {
             tr(lang, Msg::StatusLine).replacen("{}", &self.total.to_string(), 1)
         } else {
             tr(lang, Msg::StatusLineFiltered)
@@ -2900,7 +2937,13 @@ impl MainWin {
                 .replacen("{}", &self.total.to_string(), 1)
         };
         dc.select_font(FontSlot::Status, false);
-        dc.text(pad, sy + px(4.0), full, &status, th.text_dim);
+        dc.text(
+            pad,
+            sy + px(4.0),
+            full,
+            &status,
+            if armed { th.warn } else { th.text_dim },
+        );
         // ★ 보기 모드 + 전환 단축키(09-07 사용자 "적용된 단축키가 보이게") — 상태줄 우측(동기화 점 왼쪽).
         {
             let name = tr(
@@ -3776,6 +3819,7 @@ impl MainWin {
             Tool::Delete => Some((Msg::TipDelete, "key.delete")),
             Tool::Copy => Some((Msg::TipCopy, "key.pick")),
             Tool::CopyPlain => Some((Msg::TipCopyPlain, "key.pick_plain")),
+            Tool::Preview => Some((Msg::TipPreview, "key.preview")), // ★ 11-08 T-47 잔여
             _ => None,
         };
         if let Some((m, key)) = keyed {
@@ -3783,9 +3827,8 @@ impl MainWin {
         }
         let s = match t {
             // 위에서 이미 돌려줬다 — match 완전성 몫.
-            Tool::Pin | Tool::Delete | Tool::Copy | Tool::CopyPlain => "",
+            Tool::Pin | Tool::Delete | Tool::Copy | Tool::CopyPlain | Tool::Preview => "",
             Tool::CopyImage => tr(lang, Msg::MenuCopyImage),
-            Tool::Preview => tr(lang, Msg::TipPreview),
             Tool::Dedup => tr(lang, Msg::DedupLabel),
             Tool::AlwaysTop => tr(lang, Msg::TipAlwaysTop),
             Tool::Xfer => tr(lang, Msg::TipXfer),

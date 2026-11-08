@@ -88,6 +88,11 @@ pub const WINDOW_ACTIONS: &[WindowAction] = &[
     w("key.view_rich", "Alt+1", "Alt+1"),
     w("key.view_compact", "Alt+2", "Alt+2"),
     w("key.view_plain", "Alt+3", "Alt+3"),
+    // ★ T-47 잔여(11-08): 팝업 → 메인창 · 메인창 미리보기 토글 · 메인창 전체 비우기(고정 유지 · 2단계).
+    //   `Ctrl+Enter`(docs/04 초안)는 D-38 즉석 변형과, `Ctrl+Alt+Delete`는 Windows SAS(앱에 안 옴)와 충돌해 바꿨다.
+    w("key.main_window", "Ctrl+M", "Win+M"),
+    w("key.preview", "Ctrl+Shift+P", "Win+Shift+P"),
+    w("key.clear_all", "Ctrl+Shift+Delete", "Win+Shift+Delete"),
 ];
 
 /// 이 설정 키가 **전역** 단축키인가(OS에 등록 · 수식 키 필수) — 아니면 창 안.
@@ -560,7 +565,7 @@ mod tests {
     /// ★ 창 안 단축키(09-08) — 기본값은 전부 파싱되고 창 안 규칙을 지키며, 키는 겹치지 않는다.
     #[test]
     fn window_actions_defaults() {
-        assert_eq!(WINDOW_ACTIONS.len(), 14);
+        assert_eq!(WINDOW_ACTIONS.len(), 17); // ★ 11-08 T-47 잔여 +3(main_window · preview · clear_all)
         for a in WINDOW_ACTIONS {
             for d in [a.default_win, a.default_mac] {
                 let h = Hotkey::parse(d).unwrap_or_else(|| panic!("{}: {d}", a.key));
@@ -610,6 +615,14 @@ mod tests {
     fn window_safe_and_matches() {
         assert!(Hotkey::parse("Enter").unwrap().is_window_safe());
         assert!(Hotkey::parse("Delete").unwrap().is_window_safe());
+        // ★ T-47 잔여(11-08) 기본값이 파싱되고 창 안에서 쓸 수 있다.
+        for a in WINDOW_ACTIONS {
+            for d in [a.default_win, a.default_mac] {
+                let h =
+                    Hotkey::parse(d).unwrap_or_else(|| panic!("{} 기본값 파싱 실패: {d}", a.key));
+                assert!(h.is_window_safe(), "{} = {d}", a.key);
+            }
+        }
         assert!(
             !Hotkey::parse("P").unwrap().is_window_safe(),
             "맨 글자 = 검색어"
