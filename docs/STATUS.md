@@ -4,7 +4,16 @@
 
 ---
 
-## 2026-11-08 (mac · 3) — 🔴 beepd 와이어 v2 전환 대응 · main `32ac5ca`(push·v0.2.7 릴리스 = 사용자 확인 대기)
+## 2026-11-08 (mac · 4) — ★ v0.2.7 릴리스 ✓(와이어 v2 · T-42 · T-84) · 🔴 pkg.sosomlab.com 미반영
+
+**릴리스**: 태그 `v0.2.7` = 병합 `42ad62f` · ci `42458782849` ✓ · release `42458959776` **12/12 ✓** · 자산 15 · brew `0f56ef2` · winget = validate 경고 통과(`c772d03` 처방 ✓) · 제출 guard skip · choco 두 패키지 skip(설치본 0.1.5 · 포터블 0.2.6 미승인).
+**배포 전 V3(mac)**: test 433/0/2 · clippy · fmt · check-3os ✓ · Release 2,486,304 B · `--version` 0.2.7.
+**🔴 linux-repo 실패**: run `42459212122` — nexa-beep latest = `beepd-v1.0.0`(앱 .deb 없음)을 집어 저장소 생성 실패 → APT 0.2.6 그대로 · 처방 = beep latest 해제 또는 linux-repo `beepd-*` 제외(clip 밖 · 사용자 승인).
+**main 로컬 앞섬**: mac 단축키 기본값 `⇧⌘C`/`⇧⌘X` 병합 `d06ce2a`(다음 릴리스) + 이 기록 — push 대기.
+
+---
+
+## 2026-11-08 (mac · 3) — 🔴 beepd 와이어 v2 전환 대응 · main `32ac5ca`
 
 **상황**: 운영 릴레이 `beepd.sosomlab.com`이 11-08 07:05Z `beepd-v1.0.0`(와이어 v2 · 호환 포기)으로 바뀜 → **설치본 0.2.6 원격 동기화 끊김**(LAN 직결은 별도) · 원장 [22](22-upstream-beep-liaison.md) I-12.
 **대응**: v2 이식 `e84a31a` → 병합 `32ac5ca` · **실서버 v2 접속 ✓**(dev 프로필 · 61초 유지 · ESTABLISHED) · V2 62 + 71/1 + 1 · check-3os ✓ · 다음 = v0.2.7 릴리스(T-42 · T-84 · 와이어 v2 묶음).

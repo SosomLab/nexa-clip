@@ -2,6 +2,9 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-11-08 (mac · 4) — ★ **v0.2.7 릴리스 ✓**(태그 `42ad62f` · release `42458959776` 12/12 ✓ · 자산 15 · brew `0f56ef2` · winget validate 경고 통과 · winget·choco 제출 guard skip) — 와이어 v2 · T-42 · T-84 · V3 433/0/2 · 🔴 linux-repo `42459212122` ✗(beep latest = `beepd-v1.0.0` → APT 0.2.6 그대로) · mac 단축키 기본값 `⇧⌘C`/`⇧⌘X` 병합 `d06ce2a`(다음 릴리스) · [journal](journal/2026-11-08.md) 7차
+- Release note (EN, next): macOS default global shortcuts are now ⇧⌘C (popup) and ⇧⌘X (paste as plain text); Windows/Linux keep Shift+Alt. Existing settings are kept.
+
 ## 2026-11-08 (mac · 3) — 🔴 **beepd 와이어 v2 전환 대응**(운영 서버 07:05Z `beepd-v1.0.0` → 설치본 0.2.6 원격 동기화 끊김) · v2 이식 `e84a31a` → 병합 `32ac5ca` · 실서버 v2 접속 ✓ · V2 62 + 71/1 · check-3os ✓ · 원장 22 I-12 · T-47 보류 · 다음 = v0.2.7 · [journal](journal/2026-11-08.md) 6차
 - Release note (EN): Sync: relay wire v2 (beepd 1.0.0) — required to connect to beepd.sosomlab.com after the server upgrade; older versions can no longer reach the relay. A relay of a different protocol generation is now reported ("update required") instead of failing silently. LAN direct sync is unchanged.
 - Release note (EN): Settings window startup commands (`NEXA_CLIP_STARTUP_CMD`) — drive the settings window (go to, filter, search, scroll, set, export/import, dump) without simulating OS input; for automated testing.
