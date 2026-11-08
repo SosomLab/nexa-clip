@@ -2,6 +2,9 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-11-08 (mac · 10) — ★ **T-22b S9 로그 화면 ✅ 코드**(설정 ▸ 고급 ▸ 로그 보기… · `adv.log_view` · DiagLog 싱크 · 계측 7곳 · i18n 32 · `1850adf` → 병합 `afa30d6` + Action 기동 명령 `8804827` · push 대기) · V1 view=log ✓ · 실패 로그 ✓ · V2 61 + 73/1 · Homebrew rust 재제거(+llvm@22 · 툴체인 영향 0 확인) · [journal](journal/2026-11-08.md) 13·14차
+- Release note (EN, next): Log view (Settings › Advanced): what failed, why and what to do — sync connection, autostart, clipboard publish, history store, paste keystroke, file sharing.
+
 ## 2026-11-08 (mac · 9) — push `b23314a..c398ebb`(10커밋) · ci `42464591092` ✓ 3-OS · 다음 = T-22b S9 로그 창(설정 창 안 뷰 · 사용자 확정) · [journal](journal/2026-11-08.md) 12차
 
 ## 2026-11-08 (mac · 8) — 전역 단축키 전부 제거 시 "등록 일부 실패" 거짓 경보 수정(`a122c95` → 병합 `ee6ab28` · push 대기 · 빈 목록 = 성공 · 라벨 미지정/없음 구분) · V1 = "전역 단축키: 없음" 경고 0 · T-88 실패 로그 ✓ · [journal](journal/2026-11-08.md) 11차
