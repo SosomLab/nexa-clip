@@ -246,8 +246,8 @@
 
 | 동작 | 설정 키 | Windows / Linux | macOS |
 |---|---|---|---|
-| 팝업 호출(**전역**) | `key.open` | `Shift+Alt+C` | `⇧⌥C` |
-| 클립보드를 평문으로 붙여넣기(**전역**) | `key.paste_plain` | `Shift+Alt+X` | `⇧⌥X` |
+| 팝업 호출(**전역**) | `key.open` | `Shift+Alt+C` | `⇧⌘C`(11-08 · 종전 `⇧⌥C`) |
+| 클립보드를 평문으로 붙여넣기(**전역**) | `key.paste_plain` | `Shift+Alt+X` | `⇧⌘X`(11-08 · 종전 `⇧⌥X`) |
 | 이동 | — | `↑` `↓` | 동일 |
 | 선택 항목 붙여넣기(팝업) / 복사(메인창) | `key.pick` | `Enter` | `Return` |
 | 평문으로 | `key.pick_plain` | `Shift+Enter` | `⇧Return` |

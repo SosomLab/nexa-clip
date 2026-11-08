@@ -144,9 +144,9 @@ General 안내문 그대로:
 
 | key | 종류 | 기본값(Win/Linux · mac) | 출처 |
 |---|---|---|:--:|
-| `key.open` | Hotkey | ★ **`Shift+Alt+C`**(09-04 사용자 · 종전 Ctrl+Shift+V) · mac ⇧⌥C | M |
+| `key.open` | Hotkey | ★ **`Shift+Alt+C`**(09-04 사용자 · 종전 Ctrl+Shift+V) · mac **⇧⌘C**(11-08 사용자 · Maccy 관례 · 종전 ⇧⌥C · 기존 설치의 저장값은 그대로) | M |
 | `key.open_alt` | Hotkey | **없음**(보조 — 같은 동작 · 원하면 지정 · 09-04 사용자 "기본 None") | N |
-| `key.paste_plain` | Hotkey | `Shift+Alt+X` — 맨 앞 항목의 평문을 게시·주입 · 0.3초 뒤 원본 복원(09-04) | N |
+| `key.paste_plain` | Hotkey | `Shift+Alt+X` · mac **⇧⌘X**(11-08) — 맨 앞 항목의 평문을 게시·주입 · 0.3초 뒤 원본 복원(09-04) | N |
 
 **창 안**(09-08 사용자 — "각 단축키는 설정 가능하게 · 내장 단축키도 전부 항목에" · `WINDOW_ACTIONS` · OS 등록 없음 ·
 팝업/메인창이 **물리 키 자리 + 수식 키 넷 정확 일치**로 판정 · 글자·숫자·`,`만 Ctrl/Alt/Win 필수 · Enter/Delete/Space는 단독 가능):
