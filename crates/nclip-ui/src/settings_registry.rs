@@ -497,7 +497,12 @@ pub(crate) const REGISTRY: &[Entry] = &[
         Msg::SetHotkeyOpen,
         Msg::SetHotkeyDesc,
         SettingKind::Hotkey {
-            default: "Shift+Alt+C",
+            // ★ 11-08: mac = ⇧⌘C(Maccy 관례) · 그 외 ⇧⌥C — nclip-core `hotkey::ACTIONS`와 같아야 한다(시험이 대조).
+            default: if cfg!(target_os = "macos") {
+                "Shift+Win+C"
+            } else {
+                "Shift+Alt+C"
+            },
             global: true,
         },
         "key.open",
@@ -519,7 +524,11 @@ pub(crate) const REGISTRY: &[Entry] = &[
         Msg::SetHotkeyPastePlain,
         Msg::SetHotkeyDesc,
         SettingKind::Hotkey {
-            default: "Shift+Alt+X",
+            default: if cfg!(target_os = "macos") {
+                "Shift+Win+X"
+            } else {
+                "Shift+Alt+X"
+            },
             global: true,
         },
         "key.paste_plain",

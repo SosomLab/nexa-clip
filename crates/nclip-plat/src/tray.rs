@@ -217,7 +217,11 @@ pub fn hotkey_label() -> String {
     }
     let l = HOTKEY_LABEL.lock().map(|g| g.clone()).unwrap_or_default();
     if l.is_empty() {
-        "Shift+Alt+C".to_string()
+        // 라벨이 아직 없으면 이 OS의 기본값(11-08 — mac ⇧⌘C · 그 외 ⇧⌥C).
+        nclip_core::hotkey::Hotkey::parse(nclip_core::hotkey::default_for("key.open")).map_or_else(
+            || "Shift+Alt+C".to_string(),
+            |h| h.display(cfg!(target_os = "macos")),
+        )
     } else {
         l
     }
