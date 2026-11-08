@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-11-08 (mac · 3) — 🔴 beepd 와이어 v2 전환 대응 · main `32ac5ca`(push·v0.2.7 릴리스 = 사용자 확인 대기)
+
+**상황**: 운영 릴레이 `beepd.sosomlab.com`이 11-08 07:05Z `beepd-v1.0.0`(와이어 v2 · 호환 포기)으로 바뀜 → **설치본 0.2.6 원격 동기화 끊김**(LAN 직결은 별도) · 원장 [22](22-upstream-beep-liaison.md) I-12.
+**대응**: v2 이식 `e84a31a` → 병합 `32ac5ca` · **실서버 v2 접속 ✓**(dev 프로필 · 61초 유지 · ESTABLISHED) · V2 62 + 71/1 + 1 · check-3os ✓ · 다음 = v0.2.7 릴리스(T-42 · T-84 · 와이어 v2 묶음).
+**보류**: T-47 잔여 키맵(소스 stash · 문서 행 미커밋).
+
+---
+
 ## 2026-11-08 (mac · 2) — T-84 설정 창 기동 명령 · main `0e24415` · push ✓ · 다음 = T-47 잔여 키맵
 
 **T-84 ✅**: env `NEXA_CLIP_STARTUP_CMD` 13종(goto·filter·advanced·search·wheel·key·set·export·import·json·dump·sleep·close · 입력 주입 0) · 커밋 `efe3c84` → 병합 `0e24415` · 결함 1 수정([변경]이 보고 행 `about.info`를 셈) · 자동 시험 `scripts/settings-cmd-e2e.sh` 9/9 · V2 59 ✓ + 71 ✓/1 · check-3os ✓.
