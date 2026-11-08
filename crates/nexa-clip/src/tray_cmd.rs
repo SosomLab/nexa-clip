@@ -2828,6 +2828,7 @@ impl ApplicationHandler<ShellEvent> for Shell {
             }
             ShellEvent::HotkeyStatus(ok) => {
                 if ok {
+                    // 빈 목록이면 "없음"(11-08 — 등록 0 = 정상 · 설정 › 단축키에서 지정).
                     println!("전역 단축키: {}", nclip_plat::tray::hotkey_label());
                 } else {
                     eprintln!(
