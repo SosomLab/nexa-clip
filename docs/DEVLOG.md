@@ -2,6 +2,11 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-11-08 (mac · 3) — 🔴 **beepd 와이어 v2 전환 대응**(운영 서버 07:05Z `beepd-v1.0.0` → 설치본 0.2.6 원격 동기화 끊김) · v2 이식 `e84a31a` → 병합 `32ac5ca` · 실서버 v2 접속 ✓ · V2 62 + 71/1 · check-3os ✓ · 원장 22 I-12 · T-47 보류 · 다음 = v0.2.7 · [journal](journal/2026-11-08.md) 6차
+- Release note (EN): Sync: relay wire v2 (beepd 1.0.0) — required to connect to beepd.sosomlab.com after the server upgrade; older versions can no longer reach the relay. A relay of a different protocol generation is now reported ("update required") instead of failing silently. LAN direct sync is unchanged.
+- Release note (EN): Settings window startup commands (`NEXA_CLIP_STARTUP_CMD`) — drive the settings window (go to, filter, search, scroll, set, export/import, dump) without simulating OS input; for automated testing.
+- Release note (EN): Fix — "Show changed only" in Settings no longer lists informational rows (such as About) as changed.
+
 ## 2026-11-08 (mac · 2) — ★ **T-84 ✅** 설정 창 기동 명령(`NEXA_CLIP_STARTUP_CMD` 13종 · 입력 주입 0 · `efe3c84` → 병합 `0e24415` · push 대기) · [변경] 보고 행 오집계 수정 · `scripts/settings-cmd-e2e.sh` 9/9 · V2 59 + 71/1 · check-3os ✓ · T-42 push `90b5df0..4fd29c1` ci `42454616744` ✓ · [journal](journal/2026-11-08.md) 3·4차
 
 ## 2026-11-08 (mac) — 저장소 최신화(clip +44 → `90b5df0` · ui +12 → `93f2324`) · ★ **T-42 ✅** 진단 로그 파일 싱크(`adv.log` → `diag.log` · dup2/SetStdHandle · 2 MB 회전 · 외부 crate 0 · `cb9f8da` → 병합 `3c0df12` · push 대기) · V1 mac ✓ · V2 47/0 + 71/0/1 · check-3os ✓ · choco 설치본 0.1.5 자동 반려 ≈ 11-14 · Homebrew rust 재설치 함정 · [journal](journal/2026-11-08.md)
