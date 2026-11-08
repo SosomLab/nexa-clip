@@ -2,6 +2,9 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-11-08 (mac · 7) — ★ **T-88 와이어 v2 후속 UI ✅ 코드**(실패 사유 종류별 i18n · 설정 › 동기화 서버 행 `sync.server` · `f84ee71` → 병합 `8b44259` · push 대기) · V1 ① ✓ · ② 중단 = 빈 전역 단축키인데 ⇧⌘C 등록 시도(개발 분석) · [journal](journal/2026-11-08.md) 10차
+- Release note (EN, next): Sync: connection failures are explained in your language (protocol generation mismatch → update the app · rejected · pinned-key mismatch …) and Settings › Sync shows the connected server (type · version · wire generation · capabilities).
+
 ## 2026-11-08 (mac · 6) — ★ **T-47 잔여 키맵 ✅**(팝업 Delete · `Ctrl+M`/`⌘M` 메인창 · `Ctrl+Shift+Delete`/`⌘⇧Delete` 전체 비우기 2단계 · `Ctrl+Shift+P`/`⌘⇧P` 미리보기 · `e28e898` → 병합 `2ac70b9` · push 대기) · 실기 P2-18 ☐ · 위키 단축키 페이지 초안(릴리스 뒤 공개) · [journal](journal/2026-11-08.md) 9차
 - Release note (EN, next): Keymap: Delete in the popup, main-window shortcut (Ctrl+M / ⌘M), clear-all (Ctrl+Shift+Delete / ⌘⇧Delete, press twice), preview toggle (Ctrl+Shift+P / ⌘⇧P) — all configurable.
 

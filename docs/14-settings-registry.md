@@ -324,6 +324,7 @@ General 안내문 그대로:
 | ★ `about.copy` | Action | — | 위 내용을 평문으로 클립보드에(버그 보고용) |
 | `sync.retry` | Radio | `normal` | 재시도 정책 — 실패 n회째 = base×2^(n−1)(상한 · ±20% 지터 · 성공 시 초기화) · normal 5s→5분 · patient 15s→15분 · eager 2s→1분 |
 | `sync.test` | Action | — | 릴레이 접속 시험 → 성공 = `sync.enabled` 자동 켬 + 러너 (재)기동 · 연결 중엔 잠금 · 실행 시 자동 Test 노트 |
+| ★ `sync.server` | Report | — | **연결된 릴레이 서버 정보**(11-08 · T-88 · 와이어 v2 후속) — 연결 시 `주소 · Relay <버전> · 와이어 <major.minor> · <능력: roster·udp-observe…> · RID 최대 <n>`(서버 `Welcome`) · 해제·실패 시 "연결 안 됨" · 호스트가 채움 · 비영속 |
 | `sync.disconnect` | Action | — | 릴레이 세션 해제(연결 중에만 활성 · Connected 자리에 Disconnected) |
 | `sync.devices` | ★ DeviceList | — | 만난 기기 행별 **[승인/해제][삭제]** + 온라인 행 6자리 대조 코드 · `연결됨 (LAN/relay)` · 승인 전엔 전파 없음 |
 | `ui.dedup_view` | (숨김 · 메인 툴바 토글) | **on** | 중복 제외 보기(같은 내용 한 행 · 로컬 우선 · 출처 메타) — 팝업도 동일 |
