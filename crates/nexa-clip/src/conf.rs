@@ -23,7 +23,7 @@
 //! 되돌려 주면 그대로 재방출된다.
 
 use std::path::{Path, PathBuf};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use nclip_ui::SettingsState;
 
@@ -461,6 +461,63 @@ pub(crate) fn load_mono_font(conf: &Settings, ui: &nexa_gfx::Font) -> Option<nex
     f.push_fallback_font(ui);
     println!("고정폭 글꼴: {name} (+주 글꼴 폴백)");
     Some(f)
+}
+
+/// ★ `adv.log` 적용(11-08 · T-42) — 켜지면 stdout·stderr를 데이터 폴더 `diag.log`로 돌리고, 꺼지면 되돌린다.
+///   부팅(`tray_cmd::run` 첫머리 · 설정 읽은 직후)과 설정 변경 때 부른다. 2 MB 넘으면 `.1` 한 벌 회전
+///   ([`nclip_plat::logfile`]). 파일 경로는 켤 때 **돌리기 전에** 콘솔에 한 줄 — 터미널로 보던 사용자가 출력이
+///   어디로 갔는지 알도록(V1 11-08: 돌린 뒤 찍으면 그 줄이 파일 2번째 줄로 들어가 콘솔엔 아무 안내가 없었다).
+pub(crate) fn apply_diag_log(conf: &Settings) {
+    use nclip_plat::logfile;
+    let want = conf.state.get("adv.log") == "on";
+    let path = diag_log_path();
+    if want {
+        if logfile::is_on() {
+            return;
+        }
+        println!("진단 로그: 파일로 남깁니다 — {}", path.display());
+        match logfile::enable(&path, logfile::DEFAULT_MAX_BYTES, &diag_log_banner()) {
+            Ok(_) => {}
+            Err(e) => eprintln!("진단 로그: 파일을 열 수 없음({e}) — {}", path.display()),
+        }
+    } else if logfile::disable() {
+        println!("진단 로그: 파일 기록 끔 — {}", path.display());
+    }
+}
+
+/// 진단 로그 주기 점검(상한 회전) — 셸 박동에서 부른다. 꺼져 있으면 즉시 반환.
+pub(crate) fn maintain_diag_log() {
+    use nclip_plat::logfile;
+    // 박동마다 stat하지 않는다(DR-41) — 30초에 한 번 · 꺼져 있으면 그것도 안 한다.
+    static LAST: std::sync::Mutex<Option<Instant>> = std::sync::Mutex::new(None);
+    if !logfile::is_on() {
+        return;
+    }
+    {
+        let mut last = LAST
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if last.is_some_and(|t| t.elapsed() < Duration::from_secs(30)) {
+            return;
+        }
+        *last = Some(Instant::now());
+    }
+    if let Err(e) = logfile::maintain(logfile::DEFAULT_MAX_BYTES, &diag_log_banner()) {
+        eprintln!("진단 로그: 회전 실패({e}) — 옛 파일에 계속 씁니다");
+    }
+}
+
+/// 진단 로그 파일 — 데이터 폴더(프로필 포함) `diag.log`.
+pub(crate) fn diag_log_path() -> PathBuf {
+    data_dir().join("diag.log")
+}
+
+fn diag_log_banner() -> String {
+    format!(
+        "nexa-clip {} · {}",
+        env!("CARGO_PKG_VERSION"),
+        std::env::consts::OS
+    )
 }
 
 /// ★ `app.lang` 적용(09-02 "재시작 없는 설정") — 부팅·변경 즉시 전역 언어를 바꾼다.

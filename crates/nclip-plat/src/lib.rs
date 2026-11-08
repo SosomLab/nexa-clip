@@ -27,6 +27,8 @@ pub mod imgdec;
 #[cfg(target_os = "linux")]
 pub mod keystate_x11;
 pub mod launch;
+/// ★ 진단 로그 파일 싱크(11-08 · T-42) — `adv.log`가 켜지면 stdout·stderr를 데이터 폴더 `diag.log`로.
+pub mod logfile;
 /// ★ 창 투명도(11-06 · nexa-dir3 T-102 이식) — 레이어드 알파 · NSWindow alphaValue · `_NET_WM_WINDOW_OPACITY`.
 pub mod opacity;
 pub mod paste;

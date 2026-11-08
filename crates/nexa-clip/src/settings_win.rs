@@ -1252,6 +1252,10 @@ impl App {
             if key.starts_with("scroll.") {
                 crate::conf::apply_fast_scroll(&self.conf);
             }
+            // ★ 진단 로그 파일(11-08 · T-42) — 토글 즉시 stdout·stderr 대상 전환(설치본은 콘솔이 없다).
+            if key == "adv.log" {
+                crate::conf::apply_diag_log(&self.conf);
+            }
             if key.starts_with("ui.flash_") {
                 self.widget.apply_flash_prefs(&self.conf.state);
             }
