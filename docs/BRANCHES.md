@@ -4,6 +4,7 @@
 
 | 브랜치 | 생성 | 병합 | 커밋 수 | 요약 |
 |---|---|---|---:|---|
+| `feat/keymap-rest-11-08` | 2026-11-08 | 2026-11-08 → main `--no-ff` 병합 `2ac70b9`(커밋 `e28e898` · push 대기) | 1 | T-47 잔여 키맵(팝업 Delete · `key.main_window` · `key.clear_all` 2단계 · `key.preview`) · 소스 6 |
 | `feat/mac-hotkey-default-11-08` | 2026-11-08 | 2026-11-08 → main `--no-ff` 병합 `d06ce2a`(커밋 `20f96ca` · push `42ad62f..b23314a` · ci `42459600188` ✓) | 1 | mac 전역 단축키 기본값 `⇧⌥C`/`⇧⌥X` → `⇧⌘C`/`⇧⌘X`(사용자 지시 · 기존 설치 무영향 · 다음 릴리스) |
 | `chore/release-0.2.7` | 2026-11-08 | 2026-11-08 → main `--no-ff` 병합 `42ad62f`(커밋 `11643e7` + 협업 문서 `689613d` · push `7d2e3e9..42ad62f` · ci `42458782849` ✓ · 태그 `v0.2.7` · release `42458959776` ✓) | 2 | v0.2.7 버전 올림(Cargo + lock) · 11-08 6차 문서 · `--version` 0.2.7 · Release(macOS x64) 2,486,304 B · V3 433/0/2 |
 | `feat/relay-wire-v2-11-08` | 2026-11-08 | 2026-11-08 → main `--no-ff` 병합 `32ac5ca`(커밋 `e84a31a` · push `7d2e3e9..42ad62f` · v0.2.7 포함) | 1 | 🔴 릴레이 와이어 v2 이식(beep ADR-0016 · beepd-v1.0.0 · `nclip-sync/proto.rs` · `relay.rs` · Hello.app="nexa-clip" · 세대 불일치 안내) · 실서버 v2 접속 ✓ · check-3os ✓ |

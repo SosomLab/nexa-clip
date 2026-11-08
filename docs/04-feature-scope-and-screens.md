@@ -258,12 +258,14 @@
 | ★ 순차 + **항목 사이 줄바꿈**(09-08) | `key.stack_paste_nl` | `Alt+Enter` | `⌥Return` |
 | ★ 순차 **평문** | `key.stack_paste_plain` | `Shift+Enter` | `⇧Return` |
 | ★ 순차 평문 + 줄바꿈 | `key.stack_paste_plain_nl` | `Shift+Alt+Enter` | `⇧⌥Return` |
-| 고정 토글(메인창) | `key.pin` | `Ctrl+P` | `⌘P` |
-| 삭제(메인창) | `key.delete` | `Delete` | `Delete` |
+| 고정 토글(팝업·메인창) | `key.pin` | `Ctrl+P` | `⌘P` |
+| 삭제(팝업·메인창) | `key.delete` | `Delete` | `Delete` |
 | ★ **보기 일반/간략/한 줄**(메인창) | `key.view_rich/compact/plain` | `Alt+1·2·3` | `⌥1·2·3` |
 | 설정 | `key.settings` | `Ctrl+,` | `⌘,` |
 | 닫기 | — | `Esc` | `Esc` |
-| 미리보기 토글 · 전체 비우기 · 메인창으로 | — | ☐ 미구현(툴바·메뉴로) | |
+| ★ 메인창으로(팝업 · 11-08 T-47) | `key.main_window` | `Ctrl+M` | `⌘M` |
+| ★ 전체 비우기(메인창 · 고정 유지 · 두 번 눌러 실행) | `key.clear_all` | `Ctrl+Shift+Delete` | `⌘⇧Delete` |
+| ★ 미리보기 토글(메인창) | `key.preview` | `Ctrl+Shift+P` | `⌘⇧P` |
 
 > ⚠️ **팝업은 포커스를 훔치되 반드시 돌려준다.** 닫는 순간 **직전 활성 창을 복원**하지 못하면 FR-P-2(자동 붙여넣기)가 통째로 무너진다 — 3-OS 각각의 "직전 포커스 창" 획득이 `plat` 포트의 핵심 과제([02 K-1](02-roadmap.md#7-리스크--일정을-실제로-흔들-것)).
 

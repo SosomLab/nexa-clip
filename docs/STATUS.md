@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-11-08 (mac · 5) — T-47 잔여 키맵 ✅ · main `2ac70b9`(push 대기 · 다음 릴리스)
+
+**T-47 잔여**: 팝업 `Delete` · `key.main_window` `Ctrl+M`/`⌘M` · `key.clear_all` `Ctrl+Shift+Delete`/`⌘⇧Delete`(2초 2단계) · `key.preview` `Ctrl+Shift+P`/`⌘⇧P` · 커밋 `e28e898` → 병합 `2ac70b9` · 실기 [21 §15](21-manual-test.md) P2-18 ☐.
+**다음 릴리스 대기분**: mac 전역 단축키 `⇧⌘C`/`⇧⌘X`(`d06ce2a`) · T-47 잔여(`2ac70b9`) · 위키 단축키 페이지(초안 보관 · 릴리스 뒤 공개).
+**push 대기**: `e0701ce` · `e28e898` · `2ac70b9` + 이 기록.
+
+---
+
 ## 2026-11-08 (mac · 4) — ★ v0.2.7 릴리스 ✓(와이어 v2 · T-42 · T-84) · pkg.sosomlab.com 0.2.7 ✓(8차 해소)
 
 **릴리스**: 태그 `v0.2.7` = 병합 `42ad62f` · ci `42458782849` ✓ · release `42458959776` **12/12 ✓** · 자산 15 · brew `0f56ef2` · winget = validate 경고 통과(`c772d03` 처방 ✓) · 제출 guard skip · choco 두 패키지 skip(설치본 0.1.5 · 포터블 0.2.6 미승인).

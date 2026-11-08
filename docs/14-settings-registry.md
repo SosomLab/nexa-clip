@@ -161,14 +161,17 @@ General 안내문 그대로:
 | `key.stack_paste_nl` | 순차 + 항목 사이 줄바꿈(Enter 주입) | `Alt+Enter` | 팝업 |
 | `key.stack_paste_plain` | 순차 평문 | `Shift+Enter` | 팝업 |
 | `key.stack_paste_plain_nl` | 순차 평문 + 줄바꿈 | `Shift+Alt+Enter` | 팝업 |
-| `key.pin` | 고정/해제 | `Ctrl+P` · `⌘P` | 메인 |
-| `key.delete` | 삭제 | `Delete` | 메인 |
+| `key.pin` | 고정/해제 | `Ctrl+P` · `⌘P` | 팝업·메인 |
+| `key.delete` | 삭제(팝업 = 창 열린 채 · 11-08 T-47) | `Delete` | 팝업·메인 |
+| `key.main_window` | 팝업 → 메인창 열기(11-08 T-47 · `Ctrl+Enter`는 D-38 즉석 변형 = 개체라 피함) | `Ctrl+M` · `⌘M` | 팝업 |
+| `key.clear_all` | 전체 비우기(고정 유지 · 2단계 = 첫 누름 무장 2초 → 재누름 실행 · 모달 없음 DR-31 · 11-08 T-47 · `Ctrl+Alt+Delete`는 Windows SAS라 앱에 안 옴) | `Ctrl+Shift+Delete` · `⌘⇧Delete` | 메인 |
+| `key.preview` | 미리보기 패널 토글(11-08 T-47) | `Ctrl+Shift+P` · `⌘⇧P` | 메인 |
 | `key.settings` | 설정 열기 | `Ctrl+,` · `⌘,` | 팝업·메인 |
 | `key.view_rich` / `_compact` / `_plain` | 보기 3모드 | `Alt+1/2/3` · `⌥1/2/3` | 메인 |
 
 > ★ 각 행은 **캡처 오버레이**(누르면 변경 · 제거 = 없음)로 바꾼다. 빈 값 = 그 동작 키 없음(배지·툴팁·힌트에서도 빠진다).
 > 표시(번호 배지 · 상태줄 `Alt+1/2/3` · ⚙ 툴팁 · 팝업 푸터 힌트)는 전부 설정값에서 나온다(`nexa-clip::keys::Keymap`).
-> 미구현(명세만): `key.main_window` · `key.preview` · 전체 비우기 · 충돌 감지 표시(FR-U-9).
+> 미구현(명세만): 충돌 감지 표시(FR-U-9). (`key.main_window` · `key.preview` · 전체 비우기 `key.clear_all` = 11-08 T-47 구현)
 
 ### 3-3. 캡처 (Capture)
 
