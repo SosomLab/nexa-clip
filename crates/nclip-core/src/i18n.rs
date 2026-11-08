@@ -237,6 +237,12 @@ pub enum Msg {
     SetKeyViewRich,
     SetKeyViewCompact,
     SetKeyViewPlain,
+    /// ★ T-47 잔여(11-08) — 팝업 → 메인창 · 미리보기 토글 · 전체 비우기.
+    SetKeyMainWindow,
+    SetKeyPreview,
+    SetKeyClearAll,
+    /// ★ 전체 비우기 2단계 무장 안내(메인창 상태줄 · `{}` = 단축키 표기).
+    StatusClearArm,
     HotkeyNone,
     HotkeyTitle,
     HotkeyPrompt,
@@ -1126,12 +1132,26 @@ impl Msg {
                 "按序粘贴堆栈（纯文本）+ 项间换行",
                 "スタックを順に貼り付け（プレーン）+ 項目間に改行",
             ],
-            Msg::SetKeyPin => ["Pin/unpin (main window)", "고정/해제 (메인창)", "固定/取消（主窗口）", "固定/解除（メイン）"],
-            Msg::SetKeyDelete => ["Delete item (main window)", "항목 삭제 (메인창)", "删除项（主窗口）", "項目を削除（メイン）"],
+            Msg::SetKeyPin => ["Pin/unpin (popup · main window)", "고정/해제 (팝업·메인창)", "固定/取消（弹窗·主窗口）", "固定/解除（ポップアップ·メイン）"],
+            Msg::SetKeyDelete => ["Delete item (popup · main window)", "항목 삭제 (팝업·메인창)", "删除项（弹窗·主窗口）", "項目を削除（ポップアップ·メイン）"],
             Msg::SetKeySettings => ["Open settings", "설정 열기", "打开设置", "設定を開く"],
             Msg::SetKeyViewRich => ["View: Normal (main window)", "보기: 일반 (메인창)", "视图：常规（主窗口）", "表示：標準（メイン）"],
             Msg::SetKeyViewCompact => ["View: Compact (main window)", "보기: 간략 (메인창)", "视图：紧凑（主窗口）", "表示：コンパクト（メイン）"],
             Msg::SetKeyViewPlain => ["View: One line (main window)", "보기: 한 줄 (메인창)", "视图：单行（主窗口）", "表示：1 行（メイン）"],
+            Msg::SetKeyMainWindow => ["Open main window (popup)", "메인창 열기 (팝업)", "打开主窗口（弹窗）", "メインウィンドウを開く（ポップアップ）"],
+            Msg::SetKeyPreview => ["Toggle preview panel (main window)", "미리보기 패널 토글 (메인창)", "切换预览面板（主窗口）", "プレビューパネル切替（メイン）"],
+            Msg::SetKeyClearAll => [
+                "Clear all unpinned items (main window · press twice)",
+                "고정 제외 전부 비우기 (메인창 · 두 번 누름)",
+                "清空所有未固定项（主窗口·按两次）",
+                "固定以外をすべて消去（メイン·2 回押し）",
+            ],
+            Msg::StatusClearArm => [
+                "Press {} again to clear all unpinned items",
+                "{} 다시 누르면 고정 제외 전부 비웁니다",
+                "再按一次 {} 清空所有未固定项",
+                "もう一度 {} を押すと固定以外をすべて消去",
+            ],
             Msg::HotkeyNone => ["None", "없음", "无", "なし"],
             Msg::HotkeyTitle => ["Set shortcut", "단축키 지정", "设置快捷键", "ショートカットを設定"],
             Msg::HotkeyPrompt => [
@@ -2406,7 +2426,7 @@ impl Msg {
             Msg::TipAlwaysTop => ["Always on top", "최상위 고정", "总在最前", "常に手前"],
             Msg::TipSettings => ["Settings ({})", "설정 ({})", "设置 ({})", "設定 ({})"],
             Msg::StatusView => ["{} · {}", "{} · {}", "{} · {}", "{} · {}"],
-            Msg::TipPreview => ["Preview", "미리보기", "预览", "プレビュー"],
+            Msg::TipPreview => ["Preview ({})", "미리보기 ({})", "预览 ({})", "プレビュー ({})"],
             Msg::TipXfer => ["File transfers panel", "파일 전송 패널", "文件传输面板", "ファイル転送パネル"],
             Msg::TipCaptureStop => [
                 "Capturing — click to stop",
@@ -2810,7 +2830,7 @@ mod tests {
     use super::*;
 
     /// 카탈로그 전수 — 새 `Msg`를 더하면 여기도 더한다(빈칸 검사가 그걸 강제한다).
-    const ALL_MSG: [Msg; 511] = [
+    const ALL_MSG: [Msg; 515] = [
         Msg::AppName,
         Msg::SearchPlaceholder,
         Msg::EmptyHistory,
@@ -2891,6 +2911,10 @@ mod tests {
         Msg::SetKeyViewRich,
         Msg::SetKeyViewCompact,
         Msg::SetKeyViewPlain,
+        Msg::SetKeyMainWindow,
+        Msg::SetKeyPreview,
+        Msg::SetKeyClearAll,
+        Msg::StatusClearArm,
         Msg::HotkeyNone,
         Msg::HotkeyTitle,
         Msg::HotkeyPrompt,

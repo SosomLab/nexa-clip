@@ -574,6 +574,20 @@ pub(crate) const REGISTRY: &[Entry] = &[
     wk(Msg::SetKeyViewRich, "key.view_rich", "Alt+1", "Alt+1"),
     wk(Msg::SetKeyViewCompact, "key.view_compact", "Alt+2", "Alt+2"),
     wk(Msg::SetKeyViewPlain, "key.view_plain", "Alt+3", "Alt+3"),
+    // ★ T-47 잔여(11-08) — 기본값은 nclip-core `hotkey::WINDOW_ACTIONS`와 같아야 한다.
+    wk(Msg::SetKeyMainWindow, "key.main_window", "Ctrl+M", "Win+M"),
+    wk(
+        Msg::SetKeyPreview,
+        "key.preview",
+        "Ctrl+Shift+P",
+        "Win+Shift+P",
+    ),
+    wk(
+        Msg::SetKeyClearAll,
+        "key.clear_all",
+        "Ctrl+Shift+Delete",
+        "Win+Shift+Delete",
+    ),
     // ── 검색 ────────────────────────────────────────────────
     e(
         Msg::CatSearch,

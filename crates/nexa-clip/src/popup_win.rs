@@ -62,6 +62,11 @@ pub(crate) enum PopupAction {
     /// ★ 핀 지정/해제(10-17 사용자 — "붙여넣기 팝업 상태에서 Pin 지정/해제") — 값 = 항목 id. `key.pin`(Ctrl+P ·
     ///   mac ⌘P) 또는 거터(핀 점 자리) 클릭. 셸이 이력·저장소에 반영하고 팝업은 **열린 채** 같은 항목을 다시 고른다.
     TogglePin(u64),
+    /// ★ 선택 항목 삭제(11-08 · T-47 잔여 · `key.delete` 공용 · CopyQ/Maccy 관례) — 셸이 이력·저장소에서 지우고 팝업은
+    ///   **열린 채** 같은 자리(다음 행)를 고른다(`on_item_removed`).
+    Delete(u64),
+    /// ★ 메인창 열기(11-08 · T-47 잔여 · `key.main_window`) — 셸이 팝업을 닫고(포커스 복원 · 붙여넣기 없음) 메인창을 띄운다.
+    OpenMain,
     /// ★ 붙여넣기 스택(09-03 ③ — Ditto 화법): 담은 순서대로 **순차** 붙여넣기.
     ///   09-08 사용자: 원본/평문 × 항목 사이 줄바꿈(`Alt+Enter` · `Shift+Alt+Enter`).
     PickStack {
@@ -882,6 +887,15 @@ impl Popup {
         self.redraw();
     }
 
+    /// ★ 항목이 지워진 뒤 갱신(11-08 · T-47 잔여) — 같은 자리(= 다음 행)를 고른다 · 끝이었으면 마지막 행.
+    pub(crate) fn on_item_removed(&mut self, hist: &History) {
+        let keep = self.sel;
+        self.refresh(hist);
+        self.sel = keep.min(self.rows.len().saturating_sub(1));
+        self.ensure_visible();
+        self.redraw();
+    }
+
     /// 거터 폭(핀·수신 점 자리) — 이 안의 클릭은 붙여넣기가 아니라 핀 토글(10-17).
     fn gutter_w(&self) -> i32 {
         (18.0 * self.scale).round() as i32
@@ -1350,6 +1364,16 @@ impl Popup {
                             Some(row) => PopupAction::TogglePin(row.id),
                             None => PopupAction::None,
                         };
+                    }
+                    // ★ 삭제 · 메인창 열기(11-08 · T-47 잔여) — 검색어 편집보다 앞(팝업 Delete = 항목 삭제 관례).
+                    if self.keymap.is("key.delete", c) {
+                        return match self.rows.get(self.sel) {
+                            Some(row) => PopupAction::Delete(row.id),
+                            None => PopupAction::None,
+                        };
+                    }
+                    if self.keymap.is("key.main_window", c) {
+                        return PopupAction::OpenMain;
                     }
                     // ★ 번호 선택(09-07 사용자 확정 · FR-P-8) — **보이는 순서** N번째(필터 후 · 핀 구획 포함)를
                     //   **원본 그대로**. 수식 키를 쥔 채 치므로 "Ctrl = 개체" 변형은 적용하지 않는다(Maccy `⌘n`).
