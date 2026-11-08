@@ -2,6 +2,8 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-11-08 (mac · 5) — push `42ad62f..b23314a` · ci `42459600188` ✓ · ✅ pkg.sosomlab.com 0.2.7(beep latest → v0.9.0 · linux-repo `17383bf` 앱 태그 선별 · 재실행 `42459677476` ✓ · APT·RPM 0.2.7) · T-47 재개 · [journal](journal/2026-11-08.md) 8차
+
 ## 2026-11-08 (mac · 4) — ★ **v0.2.7 릴리스 ✓**(태그 `42ad62f` · release `42458959776` 12/12 ✓ · 자산 15 · brew `0f56ef2` · winget validate 경고 통과 · winget·choco 제출 guard skip) — 와이어 v2 · T-42 · T-84 · V3 433/0/2 · 🔴 linux-repo `42459212122` ✗(beep latest = `beepd-v1.0.0` → APT 0.2.6 그대로) · mac 단축키 기본값 `⇧⌘C`/`⇧⌘X` 병합 `d06ce2a`(다음 릴리스) · [journal](journal/2026-11-08.md) 7차
 - Release note (EN, next): macOS default global shortcuts are now ⇧⌘C (popup) and ⇧⌘X (paste as plain text); Windows/Linux keep Shift+Alt. Existing settings are kept.
 
