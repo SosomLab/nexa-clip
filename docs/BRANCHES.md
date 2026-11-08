@@ -4,6 +4,7 @@
 
 | 브랜치 | 생성 | 병합 | 커밋 수 | 요약 |
 |---|---|---|---:|---|
+| `fix/hotkey-empty-11-08` | 2026-11-08 | 2026-11-08 → main `--no-ff` 병합 `ee6ab28`(커밋 `a122c95` · push 대기) | 1 | 전역 단축키 전부 제거 시 거짓 경보 수정(빈 목록 = 성공 win·mac · 라벨 None/Some("") 구분) · tray.rs · tray_cmd.rs |
 | `feat/sync-v2-ui-11-08` | 2026-11-08 | 2026-11-08 → main `--no-ff` 병합 `8b44259`(커밋 `f84ee71` · push 대기) | 1 | T-88 와이어 v2 후속 UI(실패 사유 종류별 i18n 15 · `sync.server` 보고 행) · 소스 4 |
 | `feat/keymap-rest-11-08` | 2026-11-08 | 2026-11-08 → main `--no-ff` 병합 `2ac70b9`(커밋 `e28e898` · push 대기) | 1 | T-47 잔여 키맵(팝업 Delete · `key.main_window` · `key.clear_all` 2단계 · `key.preview`) · 소스 6 |
 | `feat/mac-hotkey-default-11-08` | 2026-11-08 | 2026-11-08 → main `--no-ff` 병합 `d06ce2a`(커밋 `20f96ca` · push `42ad62f..b23314a` · ci `42459600188` ✓) | 1 | mac 전역 단축키 기본값 `⇧⌥C`/`⇧⌥X` → `⇧⌘C`/`⇧⌘X`(사용자 지시 · 기존 설치 무영향 · 다음 릴리스) |

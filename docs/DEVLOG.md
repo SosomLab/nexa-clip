@@ -2,6 +2,9 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-11-08 (mac · 8) — 전역 단축키 전부 제거 시 "등록 일부 실패" 거짓 경보 수정(`a122c95` → 병합 `ee6ab28` · push 대기 · 빈 목록 = 성공 · 라벨 미지정/없음 구분) · V1 = "전역 단축키: 없음" 경고 0 · T-88 실패 로그 ✓ · [journal](journal/2026-11-08.md) 11차
+- Release note (EN, next): Fix: no false "hotkey registration failed" warning when all global shortcuts are removed.
+
 ## 2026-11-08 (mac · 7) — ★ **T-88 와이어 v2 후속 UI ✅ 코드**(실패 사유 종류별 i18n · 설정 › 동기화 서버 행 `sync.server` · `f84ee71` → 병합 `8b44259` · push 대기) · V1 ① ✓ · ② 중단 = 빈 전역 단축키인데 ⇧⌘C 등록 시도(개발 분석) · [journal](journal/2026-11-08.md) 10차
 - Release note (EN, next): Sync: connection failures are explained in your language (protocol generation mismatch → update the app · rejected · pinned-key mismatch …) and Settings › Sync shows the connected server (type · version · wire generation · capabilities).
 
