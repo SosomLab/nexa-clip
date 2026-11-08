@@ -180,7 +180,8 @@ mod endsession {
 static HOTKEYS: std::sync::Mutex<Vec<(u32, nclip_core::hotkey::Hotkey)>> =
     std::sync::Mutex::new(Vec::new());
 /// 사람이 읽는 조합 설명(호스트 안내용) — 셸이 함께 준다.
-static HOTKEY_LABEL: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+/// `None` = 아직 셸이 목록을 주지 않았다(기본값 표시) · `Some("")` = 사용자가 전역 단축키를 전부 지웠다("없음").
+static HOTKEY_LABEL: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 
 /// ★ 단축키 목록 지정(09-04). 트레이 기동 전에 부르면 기동 때 등록되고, 기동 뒤에 부르면 **Windows·mac은 즉시 재등록**
 /// (Windows = 트레이 스레드 메시지 · mac = 메인 스레드 Carbon 재등록 09-04) · Linux = 포털 세션을 닫고 새로 등록(10-05 · T-38).
@@ -189,7 +190,7 @@ pub fn set_hotkeys(list: Vec<(u32, nclip_core::hotkey::Hotkey)>, label: String) 
         *g = list;
     }
     if let Ok(mut g) = HOTKEY_LABEL.lock() {
-        *g = label;
+        *g = Some(label);
     }
     #[cfg(windows)]
     win::rebind_hotkeys();
@@ -215,15 +216,16 @@ pub fn hotkey_label() -> String {
             return t;
         }
     }
-    let l = HOTKEY_LABEL.lock().map(|g| g.clone()).unwrap_or_default();
-    if l.is_empty() {
-        // 라벨이 아직 없으면 이 OS의 기본값(11-08 — mac ⇧⌘C · 그 외 ⇧⌥C).
-        nclip_core::hotkey::Hotkey::parse(nclip_core::hotkey::default_for("key.open")).map_or_else(
-            || "Shift+Alt+C".to_string(),
-            |h| h.display(cfg!(target_os = "macos")),
-        )
-    } else {
-        l
+    match HOTKEY_LABEL.lock().map(|g| g.clone()).unwrap_or(None) {
+        // 셸이 아직 목록을 주지 않았다 — 이 OS의 기본값(11-08 — mac ⇧⌘C · 그 외 ⇧⌥C).
+        None => nclip_core::hotkey::Hotkey::parse(nclip_core::hotkey::default_for("key.open"))
+            .map_or_else(
+                || "Shift+Alt+C".to_string(),
+                |h| h.display(cfg!(target_os = "macos")),
+            ),
+        // ★ 전부 지웠다(11-08 거짓 경보 교훈 — 기본값으로 꾸미지 않는다 · 등록 0 = 정상).
+        Some(l) if l.is_empty() => "없음".to_string(),
+        Some(l) => l,
     }
 }
 
@@ -1063,7 +1065,9 @@ mod win {
                 UnregisterHotKey(hwnd, id);
             }
             let list = super::hotkeys();
-            let mut all = !list.is_empty();
+            // ★ 빈 목록 = 사용자가 전역 단축키를 전부 지웠다(설정 "바로가기 제거") → 등록할 것이 없으니 **성공**
+            //   (11-08 — 종전 `!is_empty()`는 이를 실패로 보고 "등록 일부 실패" 거짓 경보를 냈다).
+            let mut all = true;
             for (id, hk) in list {
                 if !(1..=HOTKEY_ID_MAX as u32).contains(&id) {
                     continue;
@@ -1992,7 +1996,8 @@ mod mac {
                     }
                 });
                 let list = super::super::hotkeys();
-                let mut all = !list.is_empty();
+                // ★ 빈 목록 = 등록할 것이 없다 = 성공(11-08 · Windows와 같은 판정 · 종전 거짓 경보).
+                let mut all = true;
                 for (n, hk) in list {
                     let id = EventHotKeyID {
                         signature: u32::from_be_bytes(*b"nclp"),
