@@ -333,7 +333,7 @@ General 안내문 그대로:
 |---|---|---|---|:--:|
 | `adv.ignore_next` | 동작 버튼 | — | ★ **다음 복사 1건만 무시**([§2-2](#2-2--다음-1건만-무시)) | M |
 | `adv.portable` | 정보행 | — | 포터블 모드 여부 표시 | B |
-| `adv.log` | Checkbox | off | 진단 로그(로컬만) | B |
+| `adv.log` | Checkbox | off | 진단 로그를 데이터 폴더 `diag.log`에 남긴다(로컬만 · 2 MB 넘으면 `.1` 한 벌 회전 · 토글 즉시 반영 · 11-08 T-42) | B |
 | `adv.cli` | Checkbox | off | CLI 제어 활성 — P2 | N |
 | `adv.reset` | 위험 버튼 | — | 초기화(확인 필요) | B |
 | `settings.open_file` | Action | — | ★ **설정 파일 열기**(11-03 — 하단 줄 버튼에서 고급 카테고리 카드로 이동 · `nclip-plat/src/launch.rs`) | N |

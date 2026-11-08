@@ -4,6 +4,8 @@
 
 | 브랜치 | 생성 | 병합 | 커밋 수 | 요약 |
 |---|---|---|---:|---|
+| (main 직접) | 2026-11-08 | — | 1 | 11-08 기록(협업 세션) — journal 11-08 신설 · STATUS · DEVLOG · TODO T-42 ✅ · docs/14 `adv.log` 행 · docs/21 P2-17 · push 대기 |
+| `feat/diag-log-file-11-08` | 2026-11-08 | 2026-11-08 → main `--no-ff` 병합 `3c0df12`(커밋 `cb9f8da` = `221bcc5` amend · push 대기) | 1 | T-42 진단 로그 파일 싱크(`nclip-plat/logfile.rs` · `conf.rs`·`tray_cmd.rs`·`settings_win.rs` · `adv.log` → `diag.log` · 2 MB 회전) · V2 47/0 + 71/0/1 · check-3os ✓ |
 | `docs/progress-11-06` | 2026-11-06 | 2026-11-06 → main `--no-ff` 병합 | 1 | 11-06 5차 진행사항 최신화(journal · STATUS · DEVLOG · BRANCHES 해시 보충 · choco 포터블 0.2.6 검수 대기 확인) |
 | `fix/winget-validate-warn-11-06` | 2026-11-06 | 2026-11-06 → main `--no-ff` 병합 `def3309`(커밋 `c772d03` · push `7147976..3948975` · ci `42222440874` ✓) | 1 | winget validate "succeeded with warnings" = `::warning::` 후 통과 · 실패는 그대로(v0.2.6 release `42221069264` winget 잡 ✗ 처방) |
 | `chore/release-0.2.6` | 2026-11-06 | 2026-11-06 → main `--no-ff` 병합 `7147976`(커밋 `a83daa0` · push `76c7265..7147976` · ci `42220757756` ✓ · 태그 `v0.2.6`) | 1 | v0.2.6 버전 올림(Cargo 0.2.6 + lock) · 11-06 해시 보충 문서 |

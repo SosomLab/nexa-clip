@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-11-08 (mac) — T-42 진단 로그 파일 싱크 · main `3c0df12`(push 대기)
+
+**T-42 ✅**: `adv.log` 켜면 stdout·stderr를 데이터 폴더 `diag.log`로(Unix dup2 · Win SetStdHandle · 2 MB `.1` 회전 · 토글 즉시 반영 · 외부 crate 0) · 커밋 `cb9f8da` → 병합 `3c0df12` · V1 mac(켬·회전·끔) ✓ · V2 test nclip-plat 47/0 · nexa-clip 71/0/1 · check-3os ✓ · 복사 줄·실행 중 토글 = 사용자 실기 [21 §15](21-manual-test.md) P2-17.
+**배포 상태(11-08 확인)**: 이 Mac 설치본 0.2.6 · choco 포터블 0.2.6 = Ready(사람 검수 대기 · VT Note) · 🔴 설치본 0.1.5 = Waiting for Maintainer · **자동 반려 ≈ 11-14 23:59 KST**(T-78 결정 대기).
+**⚠️ 툴체인**: 이 Mac에 Homebrew rust 1.99.1이 10-27 재설치돼 PATH 앞 — 빌드·check-3os는 `~/.cargo/bin` 우선으로(제거는 사용자 결정).
+
+---
+
 ## 2026-11-06 (2차 · win) — ★ v0.2.6 릴리스 ✓ — GAP-042 우회 · 텍스트류 GC · 창 투명도 첫 배포
 
 **릴리스**: 태그 `v0.2.6` = 병합 `7147976`(커밋 `a83daa0`) · release run `42221069264` 11/12 ✓(winget 잡만 ✗ = validate 경고 · 게시 영향 0 · 처방 `c772d03` → `def3309` = 경고는 통과) · GitHub Release 자산 15 · brew `c7741a1` · pkg.sosomlab.com APT+RPM 0.2.6(linux-repo `42221955155` ✓) · choco 포터블 0.2.6 제출 → Pending automated review · 설치본(0.1.5)·winget(PR OPEN) guard skip.

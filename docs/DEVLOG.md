@@ -2,6 +2,9 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-11-08 (mac) — 저장소 최신화(clip +44 → `90b5df0` · ui +12 → `93f2324`) · ★ **T-42 ✅** 진단 로그 파일 싱크(`adv.log` → `diag.log` · dup2/SetStdHandle · 2 MB 회전 · 외부 crate 0 · `cb9f8da` → 병합 `3c0df12` · push 대기) · V1 mac ✓ · V2 47/0 + 71/0/1 · check-3os ✓ · choco 설치본 0.1.5 자동 반려 ≈ 11-14 · Homebrew rust 재설치 함정 · [journal](journal/2026-11-08.md)
+- Release note (EN): Diagnostic log (Advanced): when enabled, the app's log is written to `diag.log` in the data folder (rotated at 2 MB, kept locally only).
+
 ## 2026-11-06 (4차 · win) — 진행사항 최신화 · 해시 보충(push `7147976..3948975` · ci `42222440874` ✓ 3-OS · BRANCHES push 해시 2건) · choco 포터블 0.2.6 = Pending automated review · 코드 변경 없음 · 남은 것 = 사용자 결정·실기 · [journal](journal/2026-11-06.md) 5차
 
 ## 2026-11-06 (3차 · win) — ★ **v0.2.6 릴리스 ✓**(태그 `7147976` · release `42221069264` 11/12 ✓ — winget 잡만 ✗ = validate 경고 · 게시 영향 0 · 자산 15 · brew `c7741a1` · pkg.sosomlab.com 0.2.6 · choco 포터블 0.2.6 제출 · 설치본·winget guard skip) — GAP-042 우회 · T-81 ④ 텍스트류 GC · T-87 창 투명도(기본 5/10 사후 확인) 첫 배포 · V3 426/0/4 · [journal](journal/2026-11-06.md) 4차
