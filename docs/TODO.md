@@ -135,7 +135,7 @@
 | **T-20** | P0 | 중 | 파일·폴더 캡처(`CF_HDROP` / file URL / `text/uri-list`) | T-14 | ☐ |
 | **T-21** | P0 | 중 | **민감 표식 존중 + 제외 앱**(FR-S-1·2) | T-14 | ✅ **완료 판정**(09-01 — 게이트 통과분만 이력·저장 진입: 구조상 충족. 표식·제외 앱·차단 URL 실기 통과) |
 | **T-22** | P0 | 중 | S2 메인창 · S3 설정 · S6 트레이 · S7 온보딩 | T-17 | 🚧 S2 1단·S3(ListEdit·폰트·예산 포함)·S6(Win·Linux) ✅ — S7 온보딩·mac 트레이 남음 |
-| **T-22b** | P1 | 소 | ★ **S9 로그 창** — `DiagLog` 표시 · 심각도 필터 · 복사. **모달 대신 여기가 기본 채널**([DR-31](10-decision-record.md)) · ✅ **11-08 = 설정 창 안 뷰**(사용자 확정 · `adv.log_view` "로그 보기…" · `nclip-ui/log_win.rs` · `nexa-clip/diag.rs` 싱크 · 계측 7곳 · i18n 32 · 현지 시각 `utc_offset_secs` FFI) · 커밋 `1850adf` → main `--no-ff` 병합 `afa30d6` + Action 행 기동 명령 `8804827`(push 대기) · 실기 = [21 §15](21-manual-test.md) P2-20 | T-22 | ✅ 코드(11-08) · ⏳ 실기 P2-20 |
+| **T-22b** | P1 | 소 | ★ **S9 로그 창** — `DiagLog` 표시 · 심각도 필터 · 복사. **모달 대신 여기가 기본 채널**([DR-31](10-decision-record.md)) · ✅ **11-08 = 설정 창 안 뷰**(사용자 확정 · `adv.log_view` "로그 보기…" · `nclip-ui/log_win.rs` · `nexa-clip/diag.rs` 싱크 · 계측 7곳 · i18n 32 · 현지 시각 `utc_offset_secs` FFI) · 커밋 `1850adf` → main `--no-ff` 병합 `afa30d6` + Action 행 기동 명령 `8804827`(push ✓ ci `42465792715`) · 실기 = [21 §15](21-manual-test.md) P2-20 | T-22 | ✅ 코드(11-08) · ⏳ 실기 P2-20 |
 | **T-23** | P0 | 중 | 다크·고DPI·다국어(ko/en/ja) · 자동 시작 · 포터블 | T-22 | 🚧 다크(테마 추종)·다국어 4언어 + ★ 동적 언어(09-02)·자동 시작 ✅ — 고DPI 실측·포터블 남음 |
 
 ## 4. M2 — 동기화 (2차)

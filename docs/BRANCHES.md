@@ -4,8 +4,8 @@
 
 | 브랜치 | 생성 | 병합 | 커밋 수 | 요약 |
 |---|---|---|---:|---|
-| (main 직접) | 2026-11-08 | — | 1 | `8804827` 기동 명령 `prefs.set:<행위 키>=run`(Action 행 · 협업 V1 발견 · 개발) · push 대기 |
-| `feat/diag-view-11-08` | 2026-11-08 | 2026-11-08 → main `--no-ff` 병합 `afa30d6`(커밋 `1850adf` · push 대기) | 1 | T-22b S9 로그 화면(설정 ▸ 고급 ▸ 로그 보기… · `log_win.rs` · `diag.rs` · 계측 7곳 · i18n 32 · `utc_offset_secs`) · 10파일 |
+| (main 직접) | 2026-11-08 | — | 1 | `8804827` 기동 명령 `prefs.set:<행위 키>=run`(Action 행 · 협업 V1 발견 · 개발) · 협업 기록 `3ab23e5`·`c8f836a`·`d337e61` · CLAUDE.md `f126f10` · push `c398ebb..f126f10` · ci `42465792715` ✓ |
+| `feat/diag-view-11-08` | 2026-11-08 | 2026-11-08 → main `--no-ff` 병합 `afa30d6`(커밋 `1850adf` · push `c398ebb..f126f10` · ci `42465792715` ✓) | 1 | T-22b S9 로그 화면(설정 ▸ 고급 ▸ 로그 보기… · `log_win.rs` · `diag.rs` · 계측 7곳 · i18n 32 · `utc_offset_secs`) · 10파일 |
 | `fix/hotkey-empty-11-08` | 2026-11-08 | 2026-11-08 → main `--no-ff` 병합 `ee6ab28`(커밋 `a122c95` · push `b23314a..c398ebb` · ci `42464591092` ✓) | 1 | 전역 단축키 전부 제거 시 거짓 경보 수정(빈 목록 = 성공 win·mac · 라벨 None/Some("") 구분) · tray.rs · tray_cmd.rs |
 | `feat/sync-v2-ui-11-08` | 2026-11-08 | 2026-11-08 → main `--no-ff` 병합 `8b44259`(커밋 `f84ee71` · push `b23314a..c398ebb` · ci `42464591092` ✓) | 1 | T-88 와이어 v2 후속 UI(실패 사유 종류별 i18n 15 · `sync.server` 보고 행) · 소스 4 |
 | `feat/keymap-rest-11-08` | 2026-11-08 | 2026-11-08 → main `--no-ff` 병합 `2ac70b9`(커밋 `e28e898` · push `b23314a..c398ebb` · ci `42464591092` ✓) | 1 | T-47 잔여 키맵(팝업 Delete · `key.main_window` · `key.clear_all` 2단계 · `key.preview`) · 소스 6 |

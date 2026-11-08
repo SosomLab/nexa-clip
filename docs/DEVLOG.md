@@ -2,6 +2,8 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-11-08 (mac · 마감) — push `c398ebb..f126f10` · ci `42465792715` ✓ · 다음 세션 = 실기 P2-18~20 → 0.2.8 · 개발 다음 = T-30 설계안 · [journal](journal/2026-11-08.md) 15차
+
 ## 2026-11-08 (mac · 10) — ★ **T-22b S9 로그 화면 ✅ 코드**(설정 ▸ 고급 ▸ 로그 보기… · `adv.log_view` · DiagLog 싱크 · 계측 7곳 · i18n 32 · `1850adf` → 병합 `afa30d6` + Action 기동 명령 `8804827` · push 대기) · V1 view=log ✓ · 실패 로그 ✓ · V2 61 + 73/1 · Homebrew rust 재제거(+llvm@22 · 툴체인 영향 0 확인) · [journal](journal/2026-11-08.md) 13·14차
 - Release note (EN, next): Log view (Settings › Advanced): what failed, why and what to do — sync connection, autostart, clipboard publish, history store, paste keystroke, file sharing.
 
