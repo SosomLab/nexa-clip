@@ -2,6 +2,12 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-11-08 (17차 · linux) — v0.2.8 Linux 점검 → 결함 4건 수정(main `c1a22f5` · 미push · v0.2.9 후보) — 빈 단축키 포털 미전송 · HUD 위치 · 접속 실패 로그 중복 · 언어 변경 뒤 빈칸 · V2 444/0/9 · 🔴 빈 단축키 재현이 GNOME 승인을 지움(33 §12) → [journal](journal/2026-11-08.md) 17차
+- Release note (EN, next): Linux: removing all global shortcuts no longer clears the desktop's saved shortcut approval.
+- Release note (EN, next): Fix: the fast-scroll speed indicator now honors its position setting (it always appeared at the bottom left).
+- Release note (EN, next): Log view: a failing sync connection is recorded once per cause instead of on every retry, in your display language.
+- Release note (EN, next): Settings: the sync status note and server row no longer go blank after changing the language; the search hint follows the language.
+
 ## 2026-11-08 (mac · 마감 2) — ★ **v0.2.8 릴리스 ✓**(태그 `23be18f` · release `42466391244` 12/12 ✓ · 자산 15 · brew `4d01913` · winget 경고 통과 · winget·choco guard skip) — mac 단축키 · T-47 잔여 · T-88 · 거짓 경보 수정 · T-22b · V3 437/0/2 · linux-repo GitHub 다운로드 504 → 패치 2(`675e2c1` · `92dd82a`) → `42467176929` ✓ · pkg.sosomlab.com 0.2.8 · ⚠️ browser 다운로드 504 진행 중 · [journal](journal/2026-11-08.md) 16차
 
 ## 2026-11-08 (mac · 마감) — push `c398ebb..f126f10` · ci `42465792715` ✓ · 다음 세션 = 실기 P2-18~20 → 0.2.8 · 개발 다음 = T-30 설계안 · [journal](journal/2026-11-08.md) 15차
