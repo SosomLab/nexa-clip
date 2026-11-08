@@ -1346,6 +1346,9 @@ impl App {
                 self.widget.set_scale(self.scale, &mut inv2);
                 self.laid_out = (0, 0);
                 self.ui_refresh = true;
+                // ★ 새 위젯은 동기화 노트·서버 행이 비어 있다 — 다음 poll_sync_status가 다시 채우게(11-08 D3 — 종전엔
+                //   `sync_shown`이 옛 상태를 들고 있어 상태가 바뀔 때까지 빈칸이었다 · 연결 유지 중이면 창을 다시 열 때까지).
+                self.sync_shown = None;
                 self.refresh_license_info();
                 self.refresh_system_option_labels();
                 self.redraw();
@@ -2158,6 +2161,7 @@ impl App {
                 println!("로그: 지움");
                 if let View::Log(lw) = &mut self.view {
                     lw.set_entries(Vec::new(), 0, &mut inv);
+                    lw.clear_note(&mut inv); // "복사했습니다"가 빈 목록 위에 남지 않게(11-08 사소 ③)
                 }
             }
             LogAction::Close => self.back_to_settings(),

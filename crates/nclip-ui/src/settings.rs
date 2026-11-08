@@ -1219,7 +1219,7 @@ impl SettingsWidget {
         let mut w = Self {
             bounds: Rect::default(),
             scale: 1.0,
-            search: TextBox::new("Search").with_clearable(),
+            search: TextBox::new(tr(current_lang(), Msg::SearchHint)).with_clearable(),
             query: String::new(),
             default_base_name: String::new(),
             default_mono_name: String::new(),

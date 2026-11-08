@@ -117,6 +117,13 @@ impl LogWidget {
         inv.push(self.bounds);
     }
 
+    /// 결과 한 줄 지우기([지우기] 뒤 · 11-08).
+    pub fn clear_note(&mut self, inv: &mut Invalidations) {
+        if self.note.take().is_some() {
+            inv.push(self.bounds);
+        }
+    }
+
     /// 1회성 행동.
     pub fn take_action(&mut self) -> Option<LogAction> {
         self.action.take()
