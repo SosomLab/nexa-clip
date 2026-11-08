@@ -47,7 +47,7 @@
 
 **T-42 ✅**: `adv.log` 켜면 stdout·stderr를 데이터 폴더 `diag.log`로(Unix dup2 · Win SetStdHandle · 2 MB `.1` 회전 · 토글 즉시 반영 · 외부 crate 0) · 커밋 `cb9f8da` → 병합 `3c0df12` · push `90b5df0..4fd29c1` · ci `42454616744` ✓ 3-OS · V1 mac(켬·회전·끔) ✓ · V2 test nclip-plat 47/0 · nexa-clip 71/0/1 · check-3os ✓ · 복사 줄·실행 중 토글 = 사용자 실기 [21 §15](21-manual-test.md) P2-17.
 **배포 상태(11-08 확인)**: 이 Mac 설치본 0.2.6 · choco 포터블 0.2.6 = Ready(사람 검수 대기 · VT Note) · 🔴 설치본 0.1.5 = Waiting for Maintainer · **자동 반려 ≈ 11-14 23:59 KST**(T-78 결정 대기).
-**⚠️ 툴체인**: 이 Mac에 Homebrew rust 1.99.1이 10-27 재설치돼 PATH 앞 — 빌드·check-3os는 `~/.cargo/bin` 우선으로(제거는 사용자 결정).
+**✅ 툴체인**: 10-27 의존성으로 재설치된 Homebrew rust(고아)를 11-08 다시 제거(+`llvm@22`) — `rustc`·`cargo` = `~/.cargo/bin`(rustup 1.99.1)만.
 
 ---
 
