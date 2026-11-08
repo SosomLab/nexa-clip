@@ -1178,6 +1178,9 @@ pub struct SettingsWidget {
     ///   (검색·카테고리로 행이 재구성돼도 맞는 행을 찾는다). `paint(&self)`라 `RefCell`.
     copy_flash: std::cell::RefCell<nexa_ctl::controls::Flash>,
     copy_flash_key: Option<&'static str>,
+    /// ★ 기동 명령 `prefs.goto:<키>`(11-08 · T-84 · nexa-sql T-278 차용) — 다음 레이아웃에서 이 키의 카드를
+    ///   뷰포트 맨 위로 스크롤한다(행 높이는 레이아웃이 재야 알므로 거기서 푼다). 숨은 키(고급 꺼짐·검색)면 그냥 지운다.
+    pending_focus: Option<&'static str>,
 }
 
 /// 행 노트의 시각 톤(08-22 — "검증됨"이 눈에 띄어야 한다는 사용자 요청).
@@ -1258,6 +1261,7 @@ impl SettingsWidget {
             pw_arm: None,
             copy_flash: std::cell::RefCell::new(nexa_ctl::controls::Flash::new()),
             copy_flash_key: None,
+            pending_focus: None,
         };
         let mut inv = Invalidations::default();
         w.rebuild(&mut inv);
@@ -1303,6 +1307,61 @@ impl SettingsWidget {
     #[must_use]
     pub fn changed_only(&self) -> bool {
         self.changed_keys.is_some()
+    }
+
+    /// ★ 설정 키의 카드로 간다(기동 명령 `prefs.goto:<키>` · 11-08 · T-84 · nexa-sql `focus_key` 차용) — 그 키의 카테고리를
+    ///   고르고(검색어 비움) 다음 레이아웃에서 카드를 뷰포트 맨 위로. 모르는 키면 `false`.
+    pub fn focus_key(&mut self, key: &str, inv: &mut Invalidations) -> bool {
+        let Some(e) = registry().iter().find(|e| e.key == key) else {
+            return false;
+        };
+        self.select_category(e.cat, inv);
+        self.pending_focus = Some(e.key);
+        self.layout(inv);
+        inv.push(self.bounds);
+        true
+    }
+
+    /// ★ 검색어를 코드 경로로 넣는다(기동 명령 `prefs.search:<글>` · 11-08 · T-84) — 입력 상자에 친 것과 같은 재구성.
+    pub fn set_query(&mut self, q: &str, inv: &mut Invalidations) {
+        self.search.set_text(q);
+        self.query = q.to_string();
+        self.hist_pos = None;
+        self.scroll = 0;
+        self.rebuild(inv);
+        inv.push(self.bounds);
+    }
+
+    /// ★ 자체 시험용 덤프(기동 명령 `prefs.dump:<파일>` · 11-08 · T-84 · nexa-sql `dump_text` 차용) — 지금 보이는 카드의 키
+    ///   (한 줄 하나) 뒤에 `이름=값` 줄: `scroll` · `top_card`(뷰포트 맨 위에 걸친 카드) · `content_h` · `viewport_h` ·
+    ///   `changed_only` · `advanced` · `adv_hidden` · `cards` · `query` · `selected`. 입력 주입 없이 화면 상태를 판정하기 위한 것.
+    #[must_use]
+    pub fn dump_text(&self) -> String {
+        let mut out: String = self
+            .rows
+            .iter()
+            .map(|r| format!("{}\n", registry()[r.idx].key))
+            .collect();
+        let vp = self.right_viewport();
+        let top_card = self
+            .rows
+            .iter()
+            .find(|r| r.rect.bottom() > vp.y)
+            .map_or("-", |r| registry()[r.idx].key);
+        out.push_str(&format!(
+            "scroll={} top_card={top_card} content_h={} viewport_h={}\n",
+            self.scroll, self.content_h, vp.h
+        ));
+        out.push_str(&format!(
+            "changed_only={} advanced={} adv_hidden={} cards={}\n",
+            self.changed_keys.is_some(),
+            self.advanced,
+            self.adv_hidden,
+            self.rows.len()
+        ));
+        out.push_str(&format!("query={}\n", self.query));
+        out.push_str(&format!("selected={:?}\n", self.selected));
+        out
     }
 
     /// 선택 복사(① 08-13) — 포커스된 텍스트 입력(검색·글꼴명)에서만 나온다.
@@ -1535,8 +1594,13 @@ impl SettingsWidget {
     }
     /// 이 행이 기본값과 다른가(값 키가 하나라도 다르면 · 값 키 없는 행 = 거짓).
     fn is_modified(&self, idx: usize) -> bool {
-        registry()[idx]
-            .default_values()
+        let e = &registry()[idx];
+        // ★ 보고·기기 목록 행(11-08 · T-84 V1 ②에서 발각)은 호스트가 `set_value`로 채우는 **표시값**이라 사용자 변경이 아니다 —
+        //   종전엔 빈 기본값과 달라 "변경" 보기에 about.info가 늘 끼었다.
+        if matches!(e.kind, SettingKind::Report | SettingKind::DeviceList) {
+            return false;
+        }
+        e.default_values()
             .iter()
             .any(|(k, d)| self.values.get(k).map(String::as_str) != Some(d.as_str()))
     }
@@ -2236,6 +2300,18 @@ impl SettingsWidget {
             .map(|(row, m)| m.h + gap + if row.head.is_some() { head_h } else { 0 })
             .sum();
         let vp_h = self.right_viewport().h;
+        // ★ `prefs.goto:<키>`(11-08 · T-84) — 그 카드(하위 제목 포함)가 뷰포트 맨 위에 오는 오프셋. 행이 없으면(숨김) 무시.
+        if let Some(key) = self.pending_focus.take() {
+            let mut off = 0;
+            for (row, m) in self.rows.iter().zip(&metrics) {
+                if registry()[row.idx].key == key {
+                    self.scroll = off;
+                    self.bars.show();
+                    break;
+                }
+                off += m.h + gap + if row.head.is_some() { head_h } else { 0 };
+            }
+        }
         self.scroll = self.scroll.clamp(0, (self.content_h - vp_h).max(0));
         // [초기화] 표시 여부 = 기본값과 다름 ∧ 잠기지 않음.
         let show_reset: Vec<bool> = self
@@ -4120,6 +4196,45 @@ mod card_tests {
         assert_eq!(w.copy_flash_key, Some(key0));
         assert!(w.copy_flash.borrow().text().contains(key0));
         assert!(w.tick(0), "메시지가 보이는 동안 = 재그리기");
+    }
+
+    /// ★ T-84(11-08) 기동 명령 경로 — `focus_key`는 그 카드를 뷰포트 맨 위로(`top_card`) · 모르는 키는 거짓.
+    #[test]
+    fn focus_key_puts_card_on_top() {
+        let (mut w, mut inv) = widget();
+        assert!(w.focus_key("scroll.fast", &mut inv));
+        let d = w.dump_text();
+        assert!(d.contains("top_card=scroll.fast"), "{d}");
+        assert!(
+            !d.contains("scroll=0 "),
+            "카테고리 첫 카드가 아니라 스크롤이 있어야 한다: {d}"
+        );
+        assert!(!w.focus_key("no.such.key", &mut inv));
+    }
+
+    /// ★ T-84(11-08) `set_query`는 입력 상자에 친 것과 같은 재구성 — 덤프의 `query=` · 카드 키.
+    #[test]
+    fn set_query_filters_cards() {
+        let (mut w, mut inv) = widget();
+        w.set_query("ui.flash_", &mut inv);
+        let d = w.dump_text();
+        assert!(d.contains("query=ui.flash_"), "{d}");
+        assert!(d.lines().any(|l| l == "ui.flash_ms"), "{d}");
+        assert!(!d.lines().any(|l| l == "ui.toast_ms"), "{d}");
+    }
+
+    /// ★ V1 ②(11-08)에서 발각 — 호스트가 채우는 보고 행(about.info)은 "변경" 보기에 끼지 않는다.
+    #[test]
+    fn changed_view_ignores_report_rows() {
+        let (mut w, mut inv) = widget();
+        w.set_value("about.info", "nexa-clip 0.0.0", &mut inv);
+        w.set_changed_only(true, &mut inv);
+        let d = w.dump_text();
+        assert!(
+            d.contains("changed_only=true cards=0") || d.contains(" cards=0"),
+            "{d}"
+        );
+        assert!(!d.lines().any(|l| l == "about.info"), "{d}");
     }
 }
 
