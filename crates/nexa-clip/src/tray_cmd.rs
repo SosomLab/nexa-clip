@@ -435,11 +435,27 @@ fn sync_autostart(conf: &mut Settings) {
                         .map_or_else(|| "경로 미상".to_string(), |p| p.display().to_string())
                 );
             }
-            Err(e) => eprintln!("자동 시작 등록 실패: {e} — 다음 시작에서 재시도합니다"),
+            Err(e) => {
+                eprintln!("자동 시작 등록 실패: {e} — 다음 시작에서 재시도합니다");
+                crate::diag::record(
+                    nclip_core::diag::Level::Warn,
+                    nclip_core::Msg::DiagWhatAutostart,
+                    None,
+                    e.to_string(),
+                    nclip_core::Msg::DiagActAutostart,
+                );
+            }
         },
         BootSync::Unregister => {
             if let Err(e) = apply(false) {
                 eprintln!("자동 시작 해제 실패: {e}");
+                crate::diag::record(
+                    nclip_core::diag::Level::Warn,
+                    nclip_core::Msg::DiagWhatAutostart,
+                    None,
+                    e.to_string(),
+                    nclip_core::Msg::DiagActAutostart,
+                );
             } else if was {
                 conf.set("app.autostart_reg", "off".into(), now);
             }
@@ -711,7 +727,16 @@ fn publish_remote(reps: Vec<RawRep>) {
                 Ok(n) => {
                     println!("동기화: 클립보드 게시 — 표현 {n}개(이 PC에서 바로 붙여넣기 가능)");
                 }
-                Err(e) => eprintln!("동기화: 클립보드 게시 실패({e}) — 이력에는 들어갔습니다"),
+                Err(e) => {
+                    eprintln!("동기화: 클립보드 게시 실패({e}) — 이력에는 들어갔습니다");
+                    crate::diag::record(
+                        nclip_core::diag::Level::Warn,
+                        nclip_core::Msg::DiagWhatPublish,
+                        None,
+                        e,
+                        nclip_core::Msg::DiagActPublish,
+                    );
+                }
             }
         });
     if let Err(e) = spawned {
@@ -999,6 +1024,13 @@ impl Shell {
                 Ok(()) => println!("평문 붙여넣기: 주입 ok — 0.3초 뒤 원본 복원"),
                 Err(e) => {
                     eprintln!("평문 붙여넣기: 주입 실패 {e:?} — 클립보드에는 평문이 실려 있습니다");
+                    crate::diag::record(
+                        nclip_core::diag::Level::Error,
+                        nclip_core::Msg::DiagWhatInject,
+                        None,
+                        format!("{e:?}"),
+                        nclip_core::Msg::DiagActInject,
+                    );
                 }
             }
             std::thread::sleep(Duration::from_millis(300));
@@ -2309,6 +2341,13 @@ impl Shell {
             }
             Err(e) => {
                 eprintln!("파일 공유: 클립보드 게시 실패({e}) — 캐시에는 있습니다");
+                crate::diag::record(
+                    nclip_core::diag::Level::Warn,
+                    nclip_core::Msg::DiagWhatFiles,
+                    Some(format!("item {item_id}")),
+                    e,
+                    nclip_core::Msg::DiagActFiles,
+                );
                 false
             }
         }
@@ -2421,7 +2460,16 @@ impl Shell {
     fn paste_now(&mut self, as_: PasteAs) {
         let report = |r: Result<(), nclip_core::PasteError>| match r {
             Ok(()) => println!("붙여넣기: 포커스 복원 + 키 주입 ok"),
-            Err(e) => eprintln!("붙여넣기 실패: {e:?} — 클립보드에는 실려 있습니다(Ctrl+V)"),
+            Err(e) => {
+                eprintln!("붙여넣기 실패: {e:?} — 클립보드에는 실려 있습니다(Ctrl+V)");
+                crate::diag::record(
+                    nclip_core::diag::Level::Error,
+                    nclip_core::Msg::DiagWhatInject,
+                    None,
+                    format!("{e:?}"),
+                    nclip_core::Msg::DiagActInject,
+                );
+            }
         };
         // ★ Linux는 워커에서(10-05 · T-41 ④) — 복원 대기(150ms)와 포털 왕복이 UI 스레드를 막지 않게.
         #[cfg(target_os = "linux")]
@@ -3089,6 +3137,13 @@ pub(crate) fn run() {
             }
             Err(e) => {
                 eprintln!("⚠️ 저장소를 열 수 없음: {e} — 이번 세션은 메모리로만 보관합니다");
+                crate::diag::record(
+                    nclip_core::diag::Level::Error,
+                    nclip_core::Msg::DiagWhatStore,
+                    None,
+                    e.to_string(),
+                    nclip_core::Msg::DiagActStore,
+                );
                 (Box::new(NullStore), History::new(cap))
             }
         };

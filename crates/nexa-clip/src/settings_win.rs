@@ -35,6 +35,7 @@
 //! | `prefs.sleep:<ms>` · `prefs.close` | 다음 명령 미루기(토스트 소멸 대기 등) · 창 닫기(단독 = 종료) |
 
 use nclip_ui::license_win::{license_view, state_text, LicAction, LicenseWidget};
+use nclip_ui::log_win::{LogAction, LogEntry, LogWidget};
 use nclip_ui::picker_win::{new_picker, FilePicker, PickFilter, PickerAction, PickerMode};
 use nclip_ui::SettingsWidget;
 use nexa_ctl::controls::toast::ToastCorner;
@@ -1154,6 +1155,7 @@ impl App {
         let mut inv = Invalidations::default();
         let mut lic_action = None;
         let mut pick_action = None;
+        let mut log_action = None;
         match &mut self.view {
             View::Settings => {
                 self.widget.on_event(&ev, &mut inv);
@@ -1174,6 +1176,13 @@ impl App {
                     pick_action = Some(a);
                 }
             }
+            View::Log(lw) => {
+                lw.on_event(&ev, &mut inv);
+                log_action = lw.take_action();
+            }
+        }
+        if let Some(a) = log_action {
+            self.log_action(a);
         }
         if matches!(self.view, View::License(_)) {
             self.license_edit_ctx(&mut inv);
@@ -1264,6 +1273,11 @@ impl App {
             // ★ 라이선스 화면(10-10 P4 · 정보 › [라이선스…]).
             if key == "license.open" && val == "run" {
                 self.open_license(None);
+                return;
+            }
+            // ★ 로그 화면(S9 · T-22b · 11-08 · 고급 › [로그 보기…]) — DR-31 기본 통보 채널.
+            if key == "adv.log_view" && val == "run" {
+                self.open_log();
                 return;
             }
             // ★ 설정 파일 열기(10-10 P2 · 하단 [설정 파일 열기…]) — OS 기본 프로그램으로.
@@ -1759,6 +1773,7 @@ impl App {
                 View::Settings => self.widget.set_bounds(full, &mut inv),
                 View::License(lw) => lw.set_bounds(full, &mut inv),
                 View::Picker(fp) => fp.set_bounds(full, &mut inv),
+                View::Log(lw) => lw.set_bounds(full, &mut inv),
             }
             self.laid_out = (iw, ih);
         }
@@ -1780,6 +1795,7 @@ impl App {
                 }
                 View::License(lw) => lw.paint(&mut dc, &self.theme),
                 View::Picker(fp) => fp.paint(&mut dc, &self.theme),
+                View::Log(lw) => lw.paint(&mut dc, &self.theme),
             }
             // ★ 토스트(11-03) — 맨 위 층 · 모서리 = `ui.toast_position`.
             let corner = ToastCorner::parse(self.conf.state.get("ui.toast_position"));
@@ -1886,6 +1902,7 @@ impl App {
                 View::Settings => "settings",
                 View::License(_) => "license",
                 View::Picker(_) => "picker",
+                View::Log(_) => "log",
             };
             text.push_str(&format!("view={view}\n"));
             if let Err(e) = std::fs::write(p, text) {
@@ -1903,6 +1920,24 @@ impl App {
         }
         drop(inv);
     }
+}
+
+/// 앱 전역 진단 기록 → 로그 화면 줄(최신이 위 · 시각은 로컬 `HH:MM:SS`).
+fn log_entries() -> (Vec<LogEntry>, u64) {
+    let (recs, dropped) = crate::diag::snapshot();
+    let entries = recs
+        .into_iter()
+        .rev()
+        .map(|r| LogEntry {
+            time: crate::diag::hms_local(r.at_ms),
+            level: r.level,
+            what: r.what,
+            subject: r.subject,
+            cause: r.cause,
+            action: r.action,
+        })
+        .collect();
+    (entries, dropped)
 }
 
 /// 설정 **값 키** 문자열을 레지스트리의 `&'static str`로(기동 명령 `prefs.set` · `apply_change`는 정적 키를 받는다).
@@ -1969,6 +2004,8 @@ enum View {
     Settings,
     License(Box<LicenseWidget>),
     Picker(Box<FilePicker>),
+    /// ★ 로그 화면(S9 · T-22b · 11-08) — 설정 ▸ 고급 ▸ [로그 보기…].
+    Log(Box<LogWidget>),
 }
 
 impl core::fmt::Debug for View {
@@ -1977,6 +2014,7 @@ impl core::fmt::Debug for View {
             View::Settings => "Settings",
             View::License(_) => "License",
             View::Picker(_) => "Picker",
+            View::Log(_) => "Log",
         })
     }
 }
@@ -2065,6 +2103,44 @@ impl App {
         p.set_scale(self.scale);
         self.view = View::Picker(Box::new(p));
         self.laid_out = (0, 0);
+        self.redraw();
+    }
+    /// ★ 로그 화면 열기(S9 · T-22b) — 앱 전역 기록 스냅숏(최신이 위).
+    fn open_log(&mut self) {
+        let (entries, dropped) = log_entries();
+        let mut lw = LogWidget::new(entries, dropped);
+        let mut inv = Invalidations::default();
+        lw.set_scale(self.scale, &mut inv);
+        self.view = View::Log(Box::new(lw));
+        self.laid_out = (0, 0);
+        self.redraw();
+    }
+    /// 로그 화면 행동 — 복사(클립보드 평문 · 감시가 글 항목으로 잡아도 무방) · 지우기 · 닫기.
+    fn log_action(&mut self, a: LogAction) {
+        let mut inv = Invalidations::default();
+        match a {
+            LogAction::Copy(text) => {
+                match nclip_plat::clipboard::set_reps(&nclip_plat::clipboard::plain_text_reps(
+                    &text,
+                )) {
+                    Ok(_) => {
+                        println!("로그: 복사 — {} 줄", text.lines().count());
+                        if let View::Log(lw) = &mut self.view {
+                            lw.set_note(nclip_core::t(nclip_core::Msg::LogCopied), &mut inv);
+                        }
+                    }
+                    Err(e) => eprintln!("로그: 복사 실패 — {e}"),
+                }
+            }
+            LogAction::Clear => {
+                crate::diag::clear();
+                println!("로그: 지움");
+                if let View::Log(lw) = &mut self.view {
+                    lw.set_entries(Vec::new(), 0, &mut inv);
+                }
+            }
+            LogAction::Close => self.back_to_settings(),
+        }
         self.redraw();
     }
     /// 설정 화면으로 복귀 — 정보 카드도 지금 상태로.
@@ -2157,6 +2233,7 @@ impl App {
             View::Settings => self.widget.clipboard_copy(),
             View::License(lw) => lw.clipboard_copy(),
             View::Picker(fp) => fp.focused_textbox_ref()?.copy_selection(),
+            View::Log(_) => None,
         }
     }
     fn view_clipboard_cut(&mut self, inv: &mut Invalidations) -> Option<String> {
@@ -2164,6 +2241,7 @@ impl App {
             View::Settings => self.widget.clipboard_cut(inv),
             View::License(lw) => lw.clipboard_cut(inv),
             View::Picker(fp) => fp.focused_textbox()?.cut_selection(inv),
+            View::Log(_) => None,
         }
     }
     fn view_clipboard_paste(&mut self, text: &str, inv: &mut Invalidations) {
@@ -2175,6 +2253,7 @@ impl App {
                     tb.paste(text, inv);
                 }
             }
+            View::Log(_) => {}
         }
     }
     fn view_set_clipboard_has_text(&mut self, yes: bool) {
@@ -2186,6 +2265,7 @@ impl App {
                     tb.set_clipboard_has_text(yes);
                 }
             }
+            View::Log(_) => {}
         }
     }
     /// 라이선스 화면의 텍스트 입력 우클릭 메뉴 실행(설정 화면의 `drain_edit_ctx`와 같은 경로).
@@ -2277,6 +2357,7 @@ impl ApplicationHandler for App {
                 match &mut self.view {
                     View::License(lw) => lw.set_scale(self.scale, &mut inv),
                     View::Picker(fp) => fp.set_scale(self.scale),
+                    View::Log(lw) => lw.set_scale(self.scale, &mut inv),
                     View::Settings => {}
                 }
                 self.laid_out = (0, 0); // 재배치 강제

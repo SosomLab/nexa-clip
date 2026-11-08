@@ -204,6 +204,29 @@ fn set_server_info(v: Option<ServerSummary>) {
 }
 
 fn set_status(st: SyncStatus) {
+    // ★ 로그 기록(S9 · 11-08) — 접속 실패는 **첫 실패 또는 사유가 바뀔 때만**(백오프 재시도마다 쌓지 않는다).
+    if let SyncStatus::Failed(f) = &st {
+        let same = STATUS
+            .lock()
+            .ok()
+            .is_some_and(|g| matches!(&*g, SyncStatus::Failed(prev) if prev.fail == f.fail));
+        if !same {
+            use nclip_core::Msg;
+            let action = match &f.fail {
+                SyncFail::WireMismatch { .. } => Msg::DiagActSyncUpdate,
+                SyncFail::PinMismatch => Msg::DiagActSyncPin,
+                SyncFail::Resolve(_) | SyncFail::Rejected { .. } => Msg::DiagActSyncAddr,
+                _ => Msg::DiagActSyncRetry,
+            };
+            crate::diag::record(
+                nclip_core::diag::Level::Warn,
+                Msg::DiagWhatSync,
+                None,
+                f.log_line(),
+                action,
+            );
+        }
+    }
     if let Ok(mut g) = STATUS.lock() {
         *g = st;
     }

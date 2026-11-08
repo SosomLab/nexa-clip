@@ -951,6 +951,16 @@ pub(crate) const REGISTRY: &[Entry] = &[
         SettingKind::Toggle,
         "adv.log",
     ),
+    // ★ 로그 보기(S9 · T-22b · 11-08) — 설정 창 안 뷰로 전환(원인·조치 · 필터 · 복사). 셸(settings_win)이 `run`을 받는다.
+    e(
+        Msg::CatAdvanced,
+        Msg::SetLogView,
+        Msg::SetLogViewDesc,
+        SettingKind::Action {
+            verb: Msg::SetLogViewVerb,
+        },
+        "adv.log_view",
+    ),
     // ★ 기록 모두 삭제(09-04 사용자) — 2단계 확인(첫 클릭 무장 2초 → 둘째 클릭 실행)은 셸(settings_win)이 맡는다.
     e(
         Msg::CatAdvanced,
