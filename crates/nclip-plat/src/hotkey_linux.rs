@@ -121,6 +121,19 @@ fn run(
             &(),
         );
     }
+    // ★ 빈 목록 = 사용자가 전역 단축키를 전부 지웠다(설정 "바로가기 제거") → 등록할 것이 없으니 **성공**
+    //   (11-08 · Windows·mac `a122c95`와 같은 판정). 옛 세션은 위에서 닫았고, 포털에 빈 `BindShortcuts`를
+    //   보내지 않는다 — 보내면 셸이 빈 확인 대화창을 띄우거나 code≠0으로 답해 "등록 일부 실패" 거짓 경보가 난다.
+    if binds.is_empty() {
+        if let Ok(mut g) = TRIGGER.lock() {
+            g.clear();
+        }
+        on_event(HotkeyEvent::Bound {
+            ok: true,
+            trigger: String::new(),
+        });
+        return Ok(());
+    }
     // 요청·세션 토큰은 세대마다 달라야 한다(같은 경로를 다시 쓰면 응답이 섞인다).
     let (tok_session_req, tok_session, tok_bind) = (
         format!("nclip_req_session{gen}"),
@@ -329,6 +342,33 @@ mod tests {
     #[test]
     fn trigger_description_missing_is_empty() {
         assert_eq!(trigger_description(&Results::new()), "");
+    }
+    /// ★ 빈 목록 = 성공(11-08 · 전역 단축키 전부 제거) — 포털에 닿지 않고(D-Bus 불요) `Bound { ok: true }`
+    ///   한 번 · 트리거 설명은 비운다(트레이 라벨 "없음" 경로).
+    #[test]
+    fn empty_binds_report_success_without_portal() {
+        if let Ok(mut g) = TRIGGER.lock() {
+            *g = "<Shift><Alt>c".into();
+        }
+        let got = Mutex::new(Vec::new());
+        let r = run(
+            &[],
+            &|ev| {
+                if let Ok(mut g) = got.lock() {
+                    g.push(ev);
+                }
+            },
+            u32::MAX,
+        );
+        assert!(r.is_ok());
+        assert_eq!(
+            got.into_inner().unwrap_or_default(),
+            vec![HotkeyEvent::Bound {
+                ok: true,
+                trigger: String::new(),
+            }]
+        );
+        assert_eq!(bound_trigger(), "");
     }
     /// ★ 쥐고 있는 동안의 반복은 버리고, 뗐다가 다시 누른 것은 받는다(10-04 실측 간격 — 500ms 뒤 30ms씩).
     #[test]

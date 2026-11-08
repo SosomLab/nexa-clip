@@ -1346,6 +1346,9 @@ impl App {
                 self.widget.set_scale(self.scale, &mut inv2);
                 self.laid_out = (0, 0);
                 self.ui_refresh = true;
+                // ★ 새 위젯은 동기화 노트·서버 행이 비어 있다 — 다음 poll_sync_status가 다시 채우게(11-08 D3 — 종전엔
+                //   `sync_shown`이 옛 상태를 들고 있어 상태가 바뀔 때까지 빈칸이었다 · 연결 유지 중이면 창을 다시 열 때까지).
+                self.sync_shown = None;
                 self.refresh_license_info();
                 self.refresh_system_option_labels();
                 self.redraw();
@@ -1964,12 +1967,26 @@ fn static_key(k: &str) -> Option<&'static str> {
         .find(|key| *key == k)
 }
 
-/// ★ 접속 실패 사유 → 사용자 문구(11-08 · `SyncFail` 종류별 i18n · 재시도 꼬리 포함).
-fn sync_failure_text(f: &crate::sync_cmd::SyncFailure) -> String {
+/// ★ 접속 실패 사유 → 사용자 문구(11-08 · `SyncFail` 종류별 i18n · 재시도 꼬리 포함) — 설정 창 노트용.
+pub(crate) fn sync_failure_text(f: &crate::sync_cmd::SyncFailure) -> String {
+    use nclip_core::{tf, Msg};
+    let mut s = sync_fail_reason_text(&f.fail);
+    if f.retry_secs > 0 {
+        s.push_str(&tf(
+            Msg::StSyncRetryIn,
+            &[&f.retry_secs.to_string(), &f.failures.to_string()],
+        ));
+    }
+    s
+}
+
+/// 접속 실패 **사유만**(재시도 꼬리 없음 · 화면 언어) — 로그 화면 기록용(11-08 D2 — 첫 실패만 남기므로 "5초 뒤 재시도(실패 1회)"
+/// 꼬리가 영구히 남으면 틀린 정보가 된다).
+pub(crate) fn sync_fail_reason_text(fail: &crate::sync_cmd::SyncFail) -> String {
     use crate::sync_cmd::SyncFail as F;
     use nclip_core::{tf, Msg};
     let major = nclip_sync::proto::PROTO_MAJOR.to_string();
-    let mut s = match &f.fail {
+    match fail {
         F::WireMismatch { server_major: 0 } => tf(Msg::StSyncFailWireNone, &[]),
         F::WireMismatch { server_major } => {
             tf(Msg::StSyncFailWire, &[&server_major.to_string(), &major])
@@ -1981,14 +1998,7 @@ fn sync_failure_text(f: &crate::sync_cmd::SyncFailure) -> String {
         F::Protocol => tf(Msg::StSyncFailProtocol, &[]),
         F::Identity(e) => tf(Msg::StSyncFailIdentity, &[e]),
         F::Resolve(r) => tf(Msg::StSyncFailResolve, &[r]),
-    };
-    if f.retry_secs > 0 {
-        s.push_str(&tf(
-            Msg::StSyncRetryIn,
-            &[&f.retry_secs.to_string(), &f.failures.to_string()],
-        ));
     }
-    s
 }
 
 /// 세션 능력 비트 → 짧은 이름 목록(없으면 "-").
@@ -2151,6 +2161,7 @@ impl App {
                 println!("로그: 지움");
                 if let View::Log(lw) = &mut self.view {
                     lw.set_entries(Vec::new(), 0, &mut inv);
+                    lw.clear_note(&mut inv); // "복사했습니다"가 빈 목록 위에 남지 않게(11-08 사소 ③)
                 }
             }
             LogAction::Close => self.back_to_settings(),

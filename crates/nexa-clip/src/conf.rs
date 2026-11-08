@@ -540,7 +540,9 @@ pub(crate) fn apply_fast_scroll(conf: &Settings) {
         max,
         window_ms: ms("scroll.fast_window_ms", 20, 2_000, 160),
         hud: st.get("scroll.fast_hud") != "off",
-        hud_pos: nexa_ctl::HudPos::parse(st.get("scroll.fast_hud_pos")),
+        // ★ 저장값은 posgrid 코드(`tl`…`br` · settings_registry PositionGrid) → `from_code`(11-08 D1 — 종전 `parse`는
+        //   긴 이름(`top_right`)만 받아 늘 기본 BottomLeft가 됐다 · 11-03부터 위치 설정이 안 먹던 결함).
+        hud_pos: nexa_ctl::HudPos::from_code(st.get("scroll.fast_hud_pos")),
         hud_hold_ms: ms("scroll.fast_hud_hold_ms", 0, 10_000, 250),
         hud_fade_ms: ms("scroll.fast_hud_fade_ms", 50, 10_000, 600),
     });
