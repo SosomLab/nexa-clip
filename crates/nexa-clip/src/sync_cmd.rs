@@ -90,12 +90,118 @@ pub(crate) enum SyncStatus {
     LanOnly,
     Connecting,
     Connected,
-    Failed(String),
+    /// 접속 실패 — ★ 11-08 구조화(와이어 v2 후속): 사유를 **종류**로 들고 문구는 설정 창이 i18n으로 만든다
+    ///   (종전 한국어 고정 문자열). `retry_secs`/`failures` = 백오프 안내.
+    Failed(SyncFailure),
     Stopped,
     /// ★ 핸들·페어링 암호 중 하나라도 비어 있다(09-04 사용자) — 릴레이·LAN 어느 쪽도 접속하지 않는다.
     Unconfigured,
 }
 static STATUS: std::sync::Mutex<SyncStatus> = std::sync::Mutex::new(SyncStatus::Off);
+
+/// 접속 실패 사유(설정 창 노트 · 콘솔 공용) — 와이어 v2(ADR-0016)가 준 "세대 불일치·거절"을 **말로** 가른다.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum SyncFail {
+    /// 기기 신원 키 파일 실패.
+    Identity(String),
+    /// 릴레이 주소 해석 실패(형식·DNS).
+    Resolve(String),
+    /// ★ 서버 와이어 세대 불일치 — `server_major` 0 = 프리앰블 없음(v1 서버 또는 beepd 아님).
+    WireMismatch { server_major: u16 },
+    /// 서버가 Hello를 거절(앱 이름공간 금지 등).
+    Rejected { code: u16, reason: String },
+    /// 서버 키가 핀과 다르다(DR-28 시끄럽게).
+    PinMismatch,
+    /// Noise 핸드셰이크 실패(세대는 같은데 키/프로토콜 문제).
+    Handshake,
+    /// TCP 연결·소켓 실패.
+    Io(String),
+    /// 등록 응답 없음·형식 오류.
+    Protocol,
+}
+
+/// [`SyncStatus::Failed`] 본문 — 사유 + 재시도 안내.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct SyncFailure {
+    pub(crate) fail: SyncFail,
+    /// 다음 재시도까지(초 · 0 = 재시도 없음).
+    pub(crate) retry_secs: u64,
+    /// 연속 실패 횟수(0 = 해당 없음).
+    pub(crate) failures: u32,
+}
+
+impl SyncFailure {
+    fn once(fail: SyncFail) -> Self {
+        Self {
+            fail,
+            retry_secs: 0,
+            failures: 0,
+        }
+    }
+    /// 콘솔용 한 줄(한국어 · 진단 로그) — 화면 문구는 설정 창 i18n.
+    pub(crate) fn log_line(&self) -> String {
+        match &self.fail {
+            SyncFail::Identity(e) => format!("신원 키 실패({e})"),
+            SyncFail::Resolve(r) => format!("릴레이 주소 해석 실패 — {r}"),
+            SyncFail::WireMismatch { server_major: 0 } => {
+                "서버 세대 불일치 — 서버가 프리앰블 없음(v1 또는 beepd 아님) · 서버/앱 업데이트 필요".to_string()
+            }
+            SyncFail::WireMismatch { server_major } => format!(
+                "서버 세대 불일치 — 서버 와이어 v{server_major} · 앱 v{} · 앱 업데이트 필요",
+                nclip_sync::proto::PROTO_MAJOR
+            ),
+            SyncFail::Rejected { code, reason } => format!("서버 거절(코드 {code}) — {reason}"),
+            SyncFail::PinMismatch => "서버 키가 핀과 다름 — 접속 거부(server.pin 확인)".to_string(),
+            SyncFail::Handshake => "서버 핸드셰이크 실패".to_string(),
+            SyncFail::Io(e) => format!("연결 실패({e})"),
+            SyncFail::Protocol => "등록 응답 없음/형식 오류".to_string(),
+        }
+    }
+}
+
+impl From<&nclip_sync::RelayError> for SyncFail {
+    fn from(e: &nclip_sync::RelayError) -> Self {
+        use nclip_sync::RelayError as R;
+        match e {
+            R::Io(e) => Self::Io(e.to_string()),
+            R::Handshake => Self::Handshake,
+            R::PinMismatch { .. } => Self::PinMismatch,
+            R::Protocol => Self::Protocol,
+            R::VersionMismatch { server_major } => Self::WireMismatch {
+                server_major: *server_major,
+            },
+            R::Rejected { code, reason } => Self::Rejected {
+                code: *code,
+                reason: reason.clone(),
+            },
+        }
+    }
+}
+
+/// ★ 접속 중인 서버 요약(11-08 · Welcome) — 설정 › 동기화 "서버" 보고 행이 보여 준다. `None` = 미접속.
+static SERVER_INFO: std::sync::Mutex<Option<ServerSummary>> = std::sync::Mutex::new(None);
+
+/// 서버 요약(표시용 사본 — `nclip_sync::relay::ServerInfo`에서 뽑는다).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ServerSummary {
+    pub(crate) addr: String,
+    pub(crate) server_type: String,
+    pub(crate) version: String,
+    pub(crate) proto_major: u16,
+    pub(crate) proto_minor: u16,
+    pub(crate) caps: u64,
+    pub(crate) max_rids: u16,
+}
+
+pub(crate) fn server_info() -> Option<ServerSummary> {
+    SERVER_INFO.lock().ok().and_then(|g| g.clone())
+}
+
+fn set_server_info(v: Option<ServerSummary>) {
+    if let Ok(mut g) = SERVER_INFO.lock() {
+        *g = v;
+    }
+}
 
 fn set_status(st: SyncStatus) {
     if let Ok(mut g) = STATUS.lock() {
@@ -731,7 +837,9 @@ pub(crate) fn spawn_if_enabled(
         }
         Err(e) => {
             eprintln!("동기화: 신원 키 실패({e}) — 중단");
-            set_status(SyncStatus::Failed(format!("identity: {e}")));
+            set_status(SyncStatus::Failed(SyncFailure::once(SyncFail::Identity(
+                e.to_string(),
+            ))));
             wake(&proxy);
             return;
         }
@@ -796,7 +904,9 @@ fn run(
     // ② 서버 주소·핀 준비.
     let Some((addr_str, addr)) = nclip_sync::relay::resolve_server(relay_raw) else {
         eprintln!("동기화: 릴레이 주소 해석 실패 — {relay_raw}");
-        set_status(SyncStatus::Failed(format!("resolve: {relay_raw}")));
+        set_status(SyncStatus::Failed(SyncFailure::once(SyncFail::Resolve(
+            relay_raw.to_string(),
+        ))));
         tick();
         return;
     };
@@ -826,6 +936,15 @@ fn run(
                 );
                 let info = client.register_info();
                 let si = client.server_info();
+                set_server_info(Some(ServerSummary {
+                    addr: addr_str.clone(),
+                    server_type: format!("{:?}", si.server_type),
+                    version: si.version.clone(),
+                    proto_major: nclip_sync::proto::PROTO_MAJOR,
+                    proto_minor: si.proto_minor,
+                    caps: si.caps,
+                    max_rids: si.limits.max_rids,
+                }));
                 println!(
                     "동기화: 릴레이 접속 ok — {addr_str} · 서버 {:?} v{}(와이어 v{}.{} · 능력 {:#x} · RID 상한 {}) · 관측 주소 {:?} · UDP 포트 {}",
                     si.server_type,
@@ -1034,6 +1153,7 @@ fn run(
                     }
                     // ★ 사용자 해제(09-03) — 세션을 버리고 스레드를 마친다.
                     if STOP_REQ.swap(false, std::sync::atomic::Ordering::Relaxed) {
+                        set_server_info(None);
                         drop(client);
                         PEER_GEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                         crate::devices::all_offline_via("relay");
@@ -1043,6 +1163,7 @@ fn run(
                         return;
                     }
                     if !client.is_alive() {
+                        set_server_info(None);
                         eprintln!("동기화: 릴레이 세션 끊김 — 재접속");
                         PEER_GEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                         crate::devices::all_offline_via("relay");
@@ -1055,28 +1176,19 @@ fn run(
                 failures += 1;
                 let wait = policy().wait(failures);
                 // ★ 와이어 v2(11-08 · ADR-0016): 세대 불일치·거절은 **말로** 알린다 — v1처럼 조용히 기능만 빠지는 길을 없앤다.
-                let desc = match &e {
-                    nclip_sync::RelayError::VersionMismatch { server_major: 0 } => {
-                        "서버 세대 불일치 — 서버가 프리앰블 없음(v1 또는 beepd 아님) · 서버/앱 업데이트 필요".to_string()
-                    }
-                    nclip_sync::RelayError::VersionMismatch { server_major } => format!(
-                        "서버 세대 불일치 — 서버 와이어 v{server_major} · 앱 v{} · 앱 업데이트 필요",
-                        nclip_sync::proto::PROTO_MAJOR
-                    ),
-                    nclip_sync::RelayError::Rejected { code, reason } => {
-                        format!("서버 거절(코드 {code}) — {reason}")
-                    }
-                    other => format!("{other:?}"),
+                //   화면 문구는 설정 창이 i18n으로(SyncFail 종류) · 콘솔은 한국어 한 줄.
+                let failure = SyncFailure {
+                    fail: SyncFail::from(&e),
+                    retry_secs: wait.as_secs(),
+                    failures,
                 };
-                set_status(SyncStatus::Failed(format!(
-                    "{desc} · {}s 뒤 재시도(실패 {failures}회)",
-                    wait.as_secs()
-                )));
-                notify(false);
                 eprintln!(
-                    "동기화: 접속 실패({desc}) — {}s 뒤 재시도(실패 {failures}회 · 지수 백오프)",
+                    "동기화: 접속 실패({}) — {}s 뒤 재시도(실패 {failures}회 · 지수 백오프)",
+                    failure.log_line(),
                     wait.as_secs()
                 );
+                set_status(SyncStatus::Failed(failure));
+                notify(false);
                 pending_wait = Some(wait);
             }
         }

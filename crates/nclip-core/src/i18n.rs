@@ -734,6 +734,23 @@ pub enum Msg {
     StSyncTestOk,
     /// 상태: 접속 실패(`{}` = 사유).
     StSyncTestFail,
+    /// ★ 접속 실패 사유(11-08 · 와이어 v2 후속 · `SyncFail` 종류별) — `StSyncTestFail`의 `{}` 자리에 들어간다.
+    StSyncFailWire,
+    StSyncFailWireNone,
+    StSyncFailRejected,
+    StSyncFailPin,
+    StSyncFailHandshake,
+    StSyncFailIo,
+    StSyncFailProtocol,
+    StSyncFailIdentity,
+    StSyncFailResolve,
+    /// 재시도 안내 꼬리 — `{}` = 초 · `{}` = 연속 실패 횟수.
+    StSyncRetryIn,
+    /// ★ 설정 › 동기화 "서버" 보고 행(11-08) — 제목 · 설명 · 본문(연결됨 / 미접속).
+    SyncServerInfo,
+    SyncServerInfoDesc,
+    StSyncServerLine,
+    StSyncServerNone,
     /// 상태: 패스프레이즈 추천됨.
     StSyncPassSuggested,
     /// 연결 해제 라벨.
@@ -2557,6 +2574,80 @@ impl Msg {
                 "失败 — {}",
                 "失敗 — {}",
             ],
+            Msg::StSyncFailWire => [
+                "The server speaks a different protocol generation (server wire v{} · app v{}) — update the app",
+                "서버 세대 불일치(서버 와이어 v{} · 앱 v{}) — 앱 업데이트 필요",
+                "服务器协议代际不同（服务器 v{} · 应用 v{}）— 请更新应用",
+                "サーバーのプロトコル世代が異なります（サーバー v{} · アプリ v{}）— アプリを更新してください",
+            ],
+            Msg::StSyncFailWireNone => [
+                "The server did not identify itself (older relay or not a relay) — update the server or the app",
+                "서버가 세대를 알리지 않음(구버전 릴레이 또는 릴레이 아님) — 서버/앱 업데이트 필요",
+                "服务器未报告协议代际（旧版中继或非中继）— 请更新服务器或应用",
+                "サーバーが世代を通知しません（旧版リレーまたはリレーではない）— サーバーかアプリを更新してください",
+            ],
+            Msg::StSyncFailRejected => [
+                "The server refused the connection (code {}): {}",
+                "서버가 연결을 거절했습니다(코드 {}): {}",
+                "服务器拒绝连接（代码 {}）：{}",
+                "サーバーが接続を拒否しました（コード {}）: {}",
+            ],
+            Msg::StSyncFailPin => [
+                "The server key differs from the pinned key — connection refused (check server.pin)",
+                "서버 키가 고정(핀)된 키와 다릅니다 — 접속 거부(server.pin 확인)",
+                "服务器密钥与已固定的密钥不同 — 已拒绝连接（检查 server.pin）",
+                "サーバー鍵が固定（ピン）された鍵と異なります — 接続拒否（server.pin を確認）",
+            ],
+            Msg::StSyncFailHandshake => [
+                "Secure handshake with the server failed",
+                "서버와의 보안 핸드셰이크 실패",
+                "与服务器的安全握手失败",
+                "サーバーとのセキュアハンドシェイクに失敗",
+            ],
+            Msg::StSyncFailIo => [
+                "Connection failed: {}",
+                "연결 실패: {}",
+                "连接失败：{}",
+                "接続に失敗: {}",
+            ],
+            Msg::StSyncFailProtocol => [
+                "No registration reply from the server (protocol error)",
+                "서버 등록 응답 없음(프로토콜 오류)",
+                "服务器无注册响应（协议错误）",
+                "サーバーから登録応答なし（プロトコルエラー）",
+            ],
+            Msg::StSyncFailIdentity => [
+                "Device identity key: {}",
+                "기기 신원 키: {}",
+                "设备身份密钥：{}",
+                "端末 ID 鍵: {}",
+            ],
+            Msg::StSyncFailResolve => [
+                "Cannot resolve the relay address: {}",
+                "릴레이 주소를 해석할 수 없음: {}",
+                "无法解析中继地址：{}",
+                "リレーアドレスを解決できません: {}",
+            ],
+            Msg::StSyncRetryIn => [
+                " · retrying in {} s (attempt {})",
+                " · {}초 뒤 재시도(실패 {}회)",
+                " · {} 秒后重试（第 {} 次失败）",
+                " · {} 秒後に再試行（失敗 {} 回）",
+            ],
+            Msg::SyncServerInfo => ["Server", "서버", "服务器", "サーバー"],
+            Msg::SyncServerInfoDesc => [
+                "The relay server this device is connected to — type, version, wire generation and capabilities",
+                "이 기기가 붙어 있는 릴레이 서버 — 종류 · 버전 · 와이어 세대 · 능력",
+                "此设备连接的中继服务器 — 类型·版本·协议代际·能力",
+                "この端末が接続中のリレーサーバー — 種類・バージョン・ワイヤー世代・能力",
+            ],
+            Msg::StSyncServerLine => [
+                "{} · {} v{} · wire v{}.{} · {} · up to {} RIDs",
+                "{} · {} v{} · 와이어 v{}.{} · {} · RID 최대 {}",
+                "{} · {} v{} · 协议 v{}.{} · {} · 最多 {} 个 RID",
+                "{} · {} v{} · ワイヤー v{}.{} · {} · RID 最大 {}",
+            ],
+            Msg::StSyncServerNone => ["Not connected", "연결 안 됨", "未连接", "未接続"],
             Msg::SyncDisconnect => ["Disconnect", "연결 해제", "断开连接", "切断"],
             Msg::SyncDisconnectDesc => [
                 "Drop the current relay session (reconnects on next start)",
@@ -2830,7 +2921,7 @@ mod tests {
     use super::*;
 
     /// 카탈로그 전수 — 새 `Msg`를 더하면 여기도 더한다(빈칸 검사가 그걸 강제한다).
-    const ALL_MSG: [Msg; 515] = [
+    const ALL_MSG: [Msg; 529] = [
         Msg::AppName,
         Msg::SearchPlaceholder,
         Msg::EmptyHistory,
@@ -3209,6 +3300,20 @@ mod tests {
         Msg::StSyncTesting,
         Msg::StSyncTestOk,
         Msg::StSyncTestFail,
+        Msg::StSyncFailWire,
+        Msg::StSyncFailWireNone,
+        Msg::StSyncFailRejected,
+        Msg::StSyncFailPin,
+        Msg::StSyncFailHandshake,
+        Msg::StSyncFailIo,
+        Msg::StSyncFailProtocol,
+        Msg::StSyncFailIdentity,
+        Msg::StSyncFailResolve,
+        Msg::StSyncRetryIn,
+        Msg::SyncServerInfo,
+        Msg::SyncServerInfoDesc,
+        Msg::StSyncServerLine,
+        Msg::StSyncServerNone,
         Msg::StSyncPassSuggested,
         Msg::SyncDisconnect,
         Msg::SyncDisconnectDesc,

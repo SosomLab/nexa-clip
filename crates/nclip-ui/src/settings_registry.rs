@@ -673,6 +673,14 @@ pub(crate) const REGISTRY: &[Entry] = &[
         },
         "sync.test",
     ),
+    // ★ 접속 중인 서버 요약(11-08 · 와이어 v2 후속) — 호스트(settings_win)가 `sync_cmd::server_info`로 채운다 · 비영속.
+    e(
+        Msg::CatSync,
+        Msg::SyncServerInfo,
+        Msg::SyncServerInfoDesc,
+        SettingKind::Report,
+        "sync.server",
+    ),
     // ★ 재시도 대기 정책(09-04 사용자) — 실패 횟수 비례 지수 백오프의 기준·설명.
     e(
         Msg::CatSync,
