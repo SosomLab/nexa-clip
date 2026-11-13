@@ -2,6 +2,8 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-11-14 (1차 · linux) — 세션 재편(개발 nexa-clip-4f) · 최신화(clip 123 · nexa-ui 31 · license 0) · V2 rustc 1.100 = test 444/0/9 · 새 clippy 린트 `duplicated_attributes` 1건(`history.rs:97`) → `801f525` · check-3os ✓ · 미push · 🔴 choco T-78 11-14 23:59 KST 자동 반려 예상(결정 대기) → [journal](journal/2026-11-14.md)
+
 ## 2026-11-08 (17차 · linux) — v0.2.8 Linux 점검 → 결함 4건 수정(main `c1a22f5` · 미push · v0.2.9 후보) — 빈 단축키 포털 미전송 · HUD 위치 · 접속 실패 로그 중복 · 언어 변경 뒤 빈칸 · V2 444/0/9 · 🔴 빈 단축키 재현이 GNOME 승인을 지움(33 §12) → [journal](journal/2026-11-08.md) 17차
 - Release note (EN, next): Linux: removing all global shortcuts no longer clears the desktop's saved shortcut approval.
 - Release note (EN, next): Fix: the fast-scroll speed indicator now honors its position setting (it always appeared at the bottom left).

@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-11-14 (1차 · linux) — 세션 재편 · 세 저장소 최신화 · ★ rustc 1.100 새 린트 수정(`801f525` · 미push) · 🔴 choco T-78 오늘 23:59 KST 자동 반려 예상
+
+**세션**: 개발 = nexa-clip-4f · 협업 = Opus(사용자 지시 11-14 · docs/33).
+**최신화**: nexa-clip `3de050a` → `19c9cad`(123) · nexa-ui `7d9a1d1` → `eae2d98`(31 · `Key::Tab`/`ContextMenu` · `Store::open` last_saved · TextBox 더블클릭) · nexa-license 0 · 로컬 문서 3건 = 원격 중복 → `stash@{0}` 보관.
+**V2**(rustc **1.100.0**): fmt ✓ · test 444/0/9 ✓(nexa-ui 영향 없음) · clippy 1건 = `history.rs:97` 중복 `#[allow(clippy::too_many_arguments)]`(새 린트 `duplicated_attributes` · 다음 push CI 빨강 예방) → `801f525`(브랜치 `fix/clippy-1.100-11-14` ff) → clippy ✓ · check-3os ✓.
+**choco T-78**: 설치본 0.1.5 = "Waiting for Maintainer" · 30 Oct 자동 공지 + 15일 → **11-14 23:59 KST 자동 반려** · 권장 = 자연 반려(T-77 서명 뒤 재제출).
+**☐ 사용자**: push 지시 · choco T-78 결정 · (11-08 17차 이월) GNOME 단축키 대화창 허용 · P2-18 키맵 실기. → [journal](journal/2026-11-14.md)
+
+---
+
 ## 2026-11-08 (17차 · linux) — v0.2.8 Linux 점검 · 결함 4건 수정(main `c1a22f5` · 미push · **v0.2.9 후보**) · 🔴 빈 단축키 재현이 GNOME 승인을 지움
 
 **수정**: 빈 전역 단축키 포털 미전송(`fd83923` · 빈 `BindShortcuts`가 GNOME 저장 승인 삭제 — Linux 결함) · 고속 스크롤 HUD 위치가 항상 왼쪽 아래(`023f2ce` · 3-OS) · 접속 실패 로그 재시도마다 중복 + 원인 언어(`e967ebf`) · 언어 변경 뒤 동기화 노트·서버 행 빈칸 + 검색 자리글 + [지우기] 노트(`507da5c`).
