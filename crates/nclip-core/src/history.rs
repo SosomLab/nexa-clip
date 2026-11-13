@@ -94,7 +94,6 @@ impl HistoryItem {
     /// 저장소에서 복원할 때의 생성자 — 지문은 여기서 재계산한다(디스크의 지문을 믿지 않는다).
     #[must_use]
     #[allow(clippy::too_many_arguments)] // 영속 형상 1:1 — 묶으면 오히려 한 겹 더 생긴다
-    #[allow(clippy::too_many_arguments)]
     pub fn restored(
         id: u64,
         kind: ClipKind,
