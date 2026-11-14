@@ -4,8 +4,8 @@
 
 | 브랜치 | 생성 | 병합 | 커밋 수 | 요약 |
 |---|---|---|---:|---|
-| `docs/progress-11-14` | 2026-11-14 | (push 뒤 보충) | — | 진행사항 최신화(문서만) — TODO 정리(✅ T-20 · T-28 · T-12e · T-9b · T-70 · 🔶 재확인 7) · TODO §0 개발 잔여 요약 · journal 11-14 2차 · STATUS · DEVLOG |
-| `fix/clippy-1.100-11-14` | 2026-11-14 | 2026-11-14 → main ff(`801f525` · 삭제 ✓ · 미push) | 1 | rustc 1.100 새 린트 `clippy::duplicated_attributes` — `history.rs` `HistoryItem::restored`의 중복 `#[allow(clippy::too_many_arguments)]`(09-01 `5182367`부터) 제거 · 다음 push CI 빨강 예방 · 협업 V2(clippy ✓ · check-3os ✓ · test 444/0/9) · journal 11-14 1차 |
+| `docs/progress-11-14` | 2026-11-14 | 2026-11-14 → main `--no-ff` 병합 `ad22fed`(커밋 `d246273` · 삭제 ✓ · push `19c9cad..ad22fed` · ci `43478416471` ✅ 3 OS) | 1 | 진행사항 최신화(문서만) — TODO 정리(✅ T-20 · T-28 · T-12e · T-9b · T-70 · 🔶 재확인 7) · TODO §0 개발 잔여 요약 · journal 11-14 2차 · STATUS · DEVLOG |
+| `fix/clippy-1.100-11-14` | 2026-11-14 | 2026-11-14 → main ff(`801f525` · 삭제 ✓ · push `19c9cad..ad22fed` · ci `43478416471` ✅) | 1 | rustc 1.100 새 린트 `clippy::duplicated_attributes` — `history.rs` `HistoryItem::restored`의 중복 `#[allow(clippy::too_many_arguments)]`(09-01 `5182367`부터) 제거 · 다음 push CI 빨강 예방 · 협업 V2(clippy ✓ · check-3os ✓ · test 444/0/9) · journal 11-14 1차 |
 | `fix/hotkey-empty-linux-11-08` | 2026-11-08 | 2026-11-08 → main `--no-ff` 병합 `c1a22f5`(삭제 ✓ · 미push) | 4 | Linux 점검 결함 수정 — 빈 단축키 포털 미전송 `fd83923`(빈 `BindShortcuts`가 GNOME 저장 승인 삭제) · HUD 위치 `023f2ce` · 접속 실패 로그 중복·원인 언어 `e967ebf` · 언어 변경 뒤 빈칸·검색 자리글·[지우기] 노트 `507da5c` · V2 444/0/9 · check-3os ✓ · journal 11-08 17차 · v0.2.9 후보 |
 | `chore/release-0.2.8` | 2026-11-08 | 2026-11-08 → main `--no-ff` 병합 `23be18f`(커밋 `b6a81e2` · 기반 `bc7c26e` 15차 · push ✓ · ci `42466186085` ✓ · 태그 `v0.2.8` · release `42466391244` ✓) | 1 | v0.2.8 버전 올림(Cargo + lock) · `--version` 0.2.8 · Release(macOS x64) 2,515,072 B · V3 437/0/2 · 이어 CLAUDE.md `8df150d`(main 직접 · 개발) |
 | (main 직접) | 2026-11-08 | — | 1 | `8804827` 기동 명령 `prefs.set:<행위 키>=run`(Action 행 · 협업 V1 발견 · 개발) · 협업 기록 `3ab23e5`·`c8f836a`·`d337e61` · CLAUDE.md `f126f10` · push `c398ebb..f126f10` · ci `42465792715` ✓ |
