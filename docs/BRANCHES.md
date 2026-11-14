@@ -4,6 +4,8 @@
 
 | 브랜치 | 생성 | 병합 | 커밋 수 | 요약 |
 |---|---|---|---:|---|
+| `docs/progress-11-14-close` | 2026-11-14 | (push 뒤 보충) | 1 | 11-14 4차 세션 마감 문서 — 3차 해시 보충 · 개발 잔여 정리 · choco T-78 재확인 · TODO §0 · STATUS · DEVLOG (문서만) |
+| `docs/release-0.2.9-11-14` | 2026-11-14 | 2026-11-14 → main `--no-ff` 병합 `e56ed65`(커밋 `2c2a9c5` · 삭제 ✓ · push `0258708..e56ed65` · ci `43551525200` ✅ 3 OS) | 1 | 11-14 3차 문서 — T-89~91 ✅ · v0.2.9 릴리스 기록 · 22 I-13 · 21 P2-21·P2-22 · CLAUDE.md 현 단계 v0.2.9 (문서만) |
 | `chore/release-0.2.9` | 2026-11-14 | 2026-11-14 → main ff(`0258708` · 삭제 ✓ · push `ad22fed..0258708` · ci `43550542636` ✅ 3 OS · 태그 `v0.2.9` → `0258708` · release `43550778396` ✅ 12/12) | 1 | v0.2.9 버전 올림(Cargo 0.2.9 + lock) · 자산 15 · brew `903ead2` · pkg.sosomlab.com 0.2.9 APT+RPM(linux-repo `43551140009` ✓) · choco 포터블 0.2.9 제출 · 설치본·winget guard skip · journal 11-14 3차 |
 | `fix/t89-91-11-14` | 2026-11-14 | 2026-11-14 → main `--no-ff` 병합 `8b431d8`(부모 `ad22fed` + `0f04abc` · 삭제 ✓ · push `ad22fed..0258708` · ci `43550542636` ✅ 3 OS) | 5 | T-89 검색 자리글 언어 추종 `7f512a6` · T-90 서버 재접속 힌트(beep `fc64da9` 이식 + Reject) `ff254d7` · T-91 Wayland 투명도 안내 `13b0289` · e2e 언어 고정 `e29d9b6` · 2차 해시 보충 `0f04abc`(협업) · 협업 V2 446/0/9 · check-3os ✓ · V1 settings-cmd-e2e ko·en 9/0 |
 | `docs/progress-11-14` | 2026-11-14 | 2026-11-14 → main `--no-ff` 병합 `ad22fed`(커밋 `d246273` · 삭제 ✓ · push `19c9cad..ad22fed` · ci `43478416471` ✅ 3 OS) | 1 | 진행사항 최신화(문서만) — TODO 정리(✅ T-20 · T-28 · T-12e · T-9b · T-70 · 🔶 재확인 7) · TODO §0 개발 잔여 요약 · journal 11-14 2차 · STATUS · DEVLOG |

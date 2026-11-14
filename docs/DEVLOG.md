@@ -2,6 +2,8 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-11-14 (4차 · linux · 마감) — 개발 종료(사용자 지시) · 3차 해시 보충(병합 `e56ed65` · push `0258708..e56ed65` · ci `43551525200` ✅) · choco T-78 = 대기 중(04:11Z · 23:59 KST 반려 예정) · 다음 = T-30 설계안 → [journal](journal/2026-11-14.md) 4차
+
 ## 2026-11-14 (3차 · linux) — ★ **v0.2.9 릴리스 ✓**(태그 → `0258708` · release `43550778396` 12/12 · 자산 15 · brew `903ead2` · pkg.sosomlab.com 0.2.9 APT+RPM · choco 포터블 0.2.9 제출 · 설치본·winget guard skip) — T-89 `7f512a6` · T-90 `ff254d7` · T-91 `13b0289` · V2 446/0/9 · V1 9/0 · ci `43550542636` ✅ → [journal](journal/2026-11-14.md) 3차
 - Release note (EN, 0.2.9): The search hint in the main window and the popup now follows a language change right away.
 - Release note (EN, 0.2.9): Sync: when the server asks clients to wait before reconnecting (shutdown, redeploy or rejection), Nexa Clip now honors that delay instead of retrying sooner.
