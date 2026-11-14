@@ -2603,6 +2603,10 @@ pub(crate) fn run() {
     crate::conf::apply_fast_scroll(&conf_probe);
     // ★ 창 투명도(11-06) — 트레이 없이 뜨는 단독 설정 창도 포커스 값으로(협업 V2 ⑤ 발견 · 트레이 기동은 tray_cmd가 넣는다).
     crate::transparency::set_pct(crate::transparency::Values::from_conf(&conf_probe).focused);
+    // ★ T-91(11-14) — 단독 설정 창은 X11을 강제하지 않는다 → Wayland 세션이면 곧 Wayland 네이티브 창(투명도 안내).
+    nclip_ui::settings::set_transparency_unsupported(
+        cfg!(all(unix, not(target_os = "macos"))) && std::env::var_os("WAYLAND_DISPLAY").is_some(),
+    );
     let Some(font) = crate::conf::load_ui_font(&conf_probe) else {
         eprintln!("시스템 UI 폰트를 찾지 못했습니다.");
         std::process::exit(1);

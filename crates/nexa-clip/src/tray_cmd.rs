@@ -3083,6 +3083,8 @@ pub(crate) fn run() {
     let atop_effective = std::env::var_os("WAYLAND_DISPLAY").is_none() || x11_windows;
     #[cfg(not(all(unix, not(target_os = "macos"))))]
     let atop_effective = true;
+    // ★ 창 투명도도 같은 조건(T-91 · 11-14) — Wayland 네이티브 창이면 안 먹는다 → 설정 카드 설명에 안내.
+    nclip_ui::settings::set_transparency_unsupported(!atop_effective);
 
     let mut el_builder = EventLoop::<ShellEvent>::with_user_event();
     // ★ Dock 아이콘(T-12e mac · 09-03) — 끔 = 처음부터 Accessory로 기동(Dock 깜빡임 없음).
