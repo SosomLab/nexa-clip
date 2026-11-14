@@ -15,7 +15,7 @@
 use crate::xfer::{ItemStatus, State as XferState, XferView};
 use nclip_core::capture::decode_plain;
 use nclip_core::history::History;
-use nclip_core::{current_lang, tr, ClipKind, Msg, PasteAs};
+use nclip_core::{current_lang, tr, ClipKind, Lang, Msg, PasteAs};
 use nexa_ctl::controls::{
     ContextMenu, Control as _, CtxItem, LabelSide, ScrollBars, Switch, TextBox,
 };
@@ -252,6 +252,8 @@ pub(crate) struct MainWin {
     /// ★ 검색 입력(09-01 — 사용자 요청 "캐럿·복사/붙여넣기·드래그 선택") — 이식 `TextBox`
     ///   정식 편집기. 항상 포커스(키보드 기본 캡처)·IME preedit 인라인 표시.
     search: TextBox,
+    /// 검색 자리글을 넣은 언어(T-89 · 11-14) — 실행 중 언어 변경을 그리기 때 따라간다.
+    search_lang: Lang,
     /// ★ 검색 방식 드롭다운(09-04 사용자) — 검색바 앞 정사각(Aa · ≈ · .*).
     mode_drop: nexa_ctl::controls::IconDropdown,
     /// 캐럿 깜빡임 위상(셸 500ms 타이머).
@@ -391,6 +393,7 @@ impl MainWin {
                 t.set_focused(true);
                 t
             },
+            search_lang: current_lang(),
             caret_phase: true,
             always_top: false,
             rows: Vec::new(),
@@ -2048,6 +2051,12 @@ impl MainWin {
             return;
         };
         let (w, h) = (size.width as i32, size.height as i32);
+        // ★ 검색 자리글 = 현재 언어(T-89 · 11-14) — 상태줄처럼 실행 중 언어 변경을 따라간다(바뀐 때만 다시 넣음).
+        let lang = current_lang();
+        if lang != self.search_lang {
+            self.search_lang = lang;
+            self.search.set_placeholder(tr(lang, Msg::SearchHint));
+        }
         {
             let l = self.list_rect(w, h);
             self.rebuild_offsets(l.w);

@@ -34,6 +34,38 @@ use nexa_ctl::tokens::Fade;
 use nexa_ctl::widget::{Invalidations, Widget};
 use std::collections::HashMap;
 
+/// ★ 창 투명도가 이 세션에서 안 먹는가(T-91 · 11-14) — Wayland 네이티브 창(창 알파 요청이 프로토콜에 없음).
+///   호스트가 기동 때 창 백엔드를 정한 뒤 [`set_transparency_unsupported`]로 알린다 · 설명 꼬리에 안내를 붙인다.
+static TRANSPARENCY_UNSUPPORTED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// 창 투명도 미지원 여부를 알린다(T-91) — `true`면 `ui.transparency*` 설명 끝에 Wayland 안내가 붙는다.
+pub fn set_transparency_unsupported(v: bool) {
+    TRANSPARENCY_UNSUPPORTED.store(v, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// 항목 설명 = 등재 문구 + (해당 시) 환경 안내 꼬리(T-91 · Wayland 투명도).
+fn desc_text(lang: Lang, e: &Entry) -> std::borrow::Cow<'static, str> {
+    desc_text_with(
+        lang,
+        e,
+        TRANSPARENCY_UNSUPPORTED.load(std::sync::atomic::Ordering::Relaxed),
+    )
+}
+
+/// [`desc_text`]의 순수 본체 — 미지원 여부를 인자로 받는다(시험이 전역을 건드리지 않게).
+fn desc_text_with(lang: Lang, e: &Entry, unsupported: bool) -> std::borrow::Cow<'static, str> {
+    let base = tr(lang, e.desc);
+    if unsupported && e.key.starts_with("ui.transparency") {
+        std::borrow::Cow::Owned(format!(
+            "{base} {}",
+            tr(lang, Msg::SetTransparencyWaylandNote)
+        ))
+    } else {
+        std::borrow::Cow::Borrowed(base)
+    }
+}
+
 // 크기 콤보 후보(beep 레지스트리 전용) — 우리 레지스트리가 해당 항목을 갖게 되면 되살린다.
 
 /// 크기 기본값 — 순서와 무관하게 '보통' 고정.
@@ -979,7 +1011,7 @@ fn entry_matches(e: &Entry, toks: &[String]) -> bool {
         }
         hay.push_str(tr(lang, e.label));
         hay.push(' ');
-        hay.push_str(tr(lang, e.desc));
+        hay.push_str(&desc_text(lang, e));
         hay.push(' ');
     }
     let hay = hay.to_lowercase();
@@ -2261,7 +2293,7 @@ impl SettingsWidget {
             .map(|row| {
                 let e = &registry()[row.idx];
                 // 설명 줄 수 추정(ASCII 7·그 외 14 논리px — 실측은 페인트가 하고 여기는 **예약**).
-                let est_logical: i32 = tr(lang, e.desc)
+                let est_logical: i32 = desc_text(lang, e)
                     .chars()
                     .map(|c| if c.is_ascii() { 7 } else { 14 })
                     .sum();
@@ -3423,7 +3455,7 @@ impl Widget for SettingsWidget {
             #[allow(clippy::cast_sign_loss)]
             let lines = wrap_text(
                 ctx,
-                tr(lang, e.desc),
+                &desc_text(lang, e),
                 row.desc_avail,
                 row.desc_lines as usize,
             );
@@ -3775,6 +3807,31 @@ mod paste_tests {
                 .any(|(k, v)| *k == "sync.passphrase" && v == "correct horse battery"),
             "{got:?}"
         );
+    }
+}
+
+#[cfg(test)]
+mod transparency_note_tests {
+    use super::{desc_text_with, registry};
+    use nclip_core::{tr, Lang, Msg};
+
+    /// ★ T-91(11-14) — Wayland 네이티브 창이면 투명도 두 항목 설명에만 안내 꼬리 · 아니면 등재 문구 그대로.
+    #[test]
+    fn wayland_note_only_on_transparency_rows_when_unsupported() {
+        let note = tr(Lang::Ko, Msg::SetTransparencyWaylandNote);
+        let find = |k: &str| registry().iter().find(|e| e.key == k).expect(k);
+        let (t, b, theme) = (
+            find("ui.transparency"),
+            find("ui.transparency_blur"),
+            find("ui.theme"),
+        );
+        assert!(desc_text_with(Lang::Ko, t, true).ends_with(note));
+        assert!(desc_text_with(Lang::Ko, b, true).ends_with(note));
+        assert!(
+            !desc_text_with(Lang::Ko, theme, true).contains(note),
+            "다른 항목엔 안 붙는다"
+        );
+        assert_eq!(desc_text_with(Lang::Ko, t, false), tr(Lang::Ko, t.desc));
     }
 }
 

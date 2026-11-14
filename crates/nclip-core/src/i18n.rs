@@ -514,6 +514,8 @@ pub enum Msg {
     /// 창 투명도 — 포커스 없을 때(메인만).
     SetTransparencyBlur,
     SetTransparencyBlurDesc,
+    /// 창 투명도 설명 꼬리 — Wayland 네이티브 창이라 적용 안 됨(T-91 · 11-14).
+    SetTransparencyWaylandNote,
     /// 자체 창(설정 · 팝업) 포커스 때 메인 활성 유지(GAP-039 묶음).
     SetDialogKeepsActive,
     SetDialogKeepsActiveDesc,
@@ -2048,6 +2050,12 @@ impl Msg {
                 "焦点转到其他应用时主窗口的透明度（单位: %，0 = 不透明，最大 90）。失去焦点时应用，焦点返回时恢复。",
                 "他のアプリにフォーカスが移るとメインウィンドウがこの値まで透明になります（単位: % · 0 = 不透明 · 最大 90）。フォーカスが離れると適用され、戻ると復元されます。",
             ],
+            Msg::SetTransparencyWaylandNote => [
+                "Not applied in this Wayland session (Wayland has no window opacity request) — turn on \"Always on top\" in the toolbar and restart to run the windows via XWayland, where it works.",
+                "이 Wayland 세션에서는 적용되지 않습니다(Wayland에는 창 투명도 요청이 없음) — 툴바의 '최상위 고정'을 켜고 다시 시작하면 XWayland 창으로 떠서 적용됩니다.",
+                "在此 Wayland 会话中不生效（Wayland 没有窗口透明度请求）— 打开工具栏的“总在最前”并重新启动后，窗口将通过 XWayland 运行并生效。",
+                "この Wayland セッションでは適用されません（Wayland にはウィンドウ透明度の要求がない）— ツールバーの「常に手前」をオンにして再起動すると XWayland のウィンドウで起動し、適用されます。",
+            ],
             Msg::SetDialogKeepsActive => [
                 "Own windows keep the main window active",
                 "자체 창에 포커스가 있으면 메인창 활성 유지",
@@ -3042,7 +3050,7 @@ mod tests {
     use super::*;
 
     /// 카탈로그 전수 — 새 `Msg`를 더하면 여기도 더한다(빈칸 검사가 그걸 강제한다).
-    const ALL_MSG: [Msg; 560] = [
+    const ALL_MSG: [Msg; 561] = [
         Msg::AppName,
         Msg::SearchPlaceholder,
         Msg::EmptyHistory,
@@ -3270,6 +3278,7 @@ mod tests {
         Msg::SetTransparencyDesc,
         Msg::SetTransparencyBlur,
         Msg::SetTransparencyBlurDesc,
+        Msg::SetTransparencyWaylandNote,
         Msg::SetDialogKeepsActive,
         Msg::SetDialogKeepsActiveDesc,
         Msg::SetBlurGraceMs,

@@ -27,6 +27,9 @@ ok(){ PASS=$((PASS+1)); echo "  ✓ $1"; }
 bad(){ FAIL=$((FAIL+1)); echo "  ✗ $1"; }
 val(){ grep -m1 -o "$2=[^ ]*" "$D/$1" 2>/dev/null | cut -d= -f2-; }   # val <덤프> <이름>
 
+# ★ 화면 언어 고정(11-14) — 아래 판정이 영어 토스트 문구를 grep한다. 시스템 로캘이 ko면 ⑥⑦이 거짓 실패하던 것
+#   (협업 V1 11-14) → 격리 프로필 안에서 ⑥ 직전에 app.lang=en(OS별 로캘 경로와 무관 · 3-OS 동일).
+#   ② "변경만" 판정(cards=0) 뒤에 둔다 — 앞에 두면 app.lang이 변경 카드로 남는다.
 CMDS=(
   "prefs.goto:ui.toast_ms"   "prefs.dump:$D/1.txt"
   "prefs.goto:scroll.fast"   "prefs.dump:$D/1b.txt"
@@ -35,6 +38,7 @@ CMDS=(
   "prefs.search:플래시"       "prefs.dump:$D/3.txt"
   "prefs.search:"            "prefs.key:end"           "prefs.dump:$D/4.txt"
   "prefs.key:home"           "prefs.wheel:-3"          "prefs.dump:$D/5.txt"
+  "prefs.set:app.lang=en"
   "prefs.set:ui.flash_ms=900" "prefs.export:$D/e2e.json" "prefs.dump:$D/6.txt"
   "prefs.import:$D/e2e.json" "prefs.dump:$D/7.txt"
   "prefs.sleep:300"          "prefs.close"
