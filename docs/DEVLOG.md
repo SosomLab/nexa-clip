@@ -2,6 +2,11 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-11-14 (3차 · linux) — ★ **v0.2.9 릴리스 ✓**(태그 → `0258708` · release `43550778396` 12/12 · 자산 15 · brew `903ead2` · pkg.sosomlab.com 0.2.9 APT+RPM · choco 포터블 0.2.9 제출 · 설치본·winget guard skip) — T-89 `7f512a6` · T-90 `ff254d7` · T-91 `13b0289` · V2 446/0/9 · V1 9/0 · ci `43550542636` ✅ → [journal](journal/2026-11-14.md) 3차
+- Release note (EN, 0.2.9): The search hint in the main window and the popup now follows a language change right away.
+- Release note (EN, 0.2.9): Sync: when the server asks clients to wait before reconnecting (shutdown, redeploy or rejection), Nexa Clip now honors that delay instead of retrying sooner.
+- Release note (EN, 0.2.9): Linux (Wayland): the window transparency settings now explain that they don't apply to native Wayland windows, and how to get them via "Always on top" and a restart.
+
 ## 2026-11-14 (2차 · linux) — TODO 정리(✅ T-20 · T-28 · T-12e · T-9b · T-70 코드·배포 · 🔶 재확인 7건) · 개발 잔여 요약 TODO §0(T-89~91 → v0.2.9 → T-30) · 진행사항 최신화(브랜치 `docs/progress-11-14`) → [journal](journal/2026-11-14.md)
 
 ## 2026-11-14 (1차 · linux) — 세션 재편(개발 nexa-clip-4f) · 최신화(clip 123 · nexa-ui 31 · license 0) · V2 rustc 1.100 = test 444/0/9 · 새 clippy 린트 `duplicated_attributes` 1건(`history.rs:97`) → `801f525` · check-3os ✓ · 미push · 🔴 choco T-78 11-14 23:59 KST 자동 반려 예상(결정 대기) → [journal](journal/2026-11-14.md)
