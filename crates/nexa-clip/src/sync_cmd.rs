@@ -170,7 +170,7 @@ impl From<&nclip_sync::RelayError> for SyncFail {
             R::VersionMismatch { server_major } => Self::WireMismatch {
                 server_major: *server_major,
             },
-            R::Rejected { code, reason } => Self::Rejected {
+            R::Rejected { code, reason, .. } => Self::Rejected {
                 code: *code,
                 reason: reason.clone(),
             },
@@ -962,6 +962,8 @@ fn run(
     // ③ 등록할 RID — 기기 3(에폭 오차) + ★ 페어링 3(같은 핸들·암호 기기가 만나는 지점).
     let mut failures = 0u32;
     let mut pending_wait: Option<Duration> = None;
+    // 서버 Goaway 재접속 힌트(T-90) — 끊긴 세션이 남긴 값 · 다음 대기 계산에서 한 번 쓴다.
+    let mut server_hint: Option<Duration> = None;
     loop {
         set_status(SyncStatus::Connecting);
         tick();
@@ -1211,7 +1213,14 @@ fn run(
                     }
                     if !client.is_alive() {
                         set_server_info(None);
-                        eprintln!("동기화: 릴레이 세션 끊김 — 재접속");
+                        server_hint = client.goaway_retry_after();
+                        match server_hint {
+                            Some(h) => eprintln!(
+                                "동기화: 서버 종료 통지(Goaway) — {}s 뒤 재접속 힌트",
+                                h.as_secs()
+                            ),
+                            None => eprintln!("동기화: 릴레이 세션 끊김 — 재접속"),
+                        }
                         PEER_GEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                         crate::devices::all_offline_via("relay");
                         notify(false);
@@ -1221,7 +1230,15 @@ fn run(
             }
             Err(e) => {
                 failures += 1;
-                let wait = policy().wait(failures);
+                // ★ 서버 거절의 재접속 힌트(T-90 · 11-14)는 대기의 하한 — 서버가 부른 시간보다 일찍 두드리지 않는다.
+                let hint = match &e {
+                    nclip_sync::RelayError::Rejected {
+                        retry_after_s: Some(s),
+                        ..
+                    } => Some(Duration::from_secs(u64::from(*s))),
+                    _ => None,
+                };
+                let wait = hinted_wait(policy().wait(failures), hint);
                 // ★ 와이어 v2(11-08 · ADR-0016): 세대 불일치·거절은 **말로** 알린다 — v1처럼 조용히 기능만 빠지는 길을 없앤다.
                 //   화면 문구는 설정 창이 i18n으로(SyncFail 종류) · 콘솔은 한국어 한 줄.
                 let failure = SyncFailure {
@@ -1248,10 +1265,15 @@ fn run(
         // 끊김(성공 뒤 종료)도 한 번의 실패로 세어 같은 규칙을 탄다.
         let wait = pending_wait.take().unwrap_or_else(|| {
             failures += 1;
-            policy().wait(failures)
+            hinted_wait(policy().wait(failures), server_hint.take())
         });
         std::thread::sleep(wait);
     }
+}
+
+/// 재시도 대기 = 백오프와 서버 힌트(`retry_after_s`) 중 긴 쪽(T-90 · 11-14 — 힌트는 하한 · 없으면 백오프 그대로).
+fn hinted_wait(backoff: Duration, hint: Option<Duration>) -> Duration {
+    hint.map_or(backoff, |h| backoff.max(h))
 }
 
 #[cfg(test)]
@@ -1289,5 +1311,14 @@ mod backoff_tests {
         assert_eq!(Backoff::from_setting("???"), Backoff::NORMAL);
         let w = p.wait(2).as_millis();
         assert!((8_000..=12_000).contains(&w), "±20% 지터 안: {w}");
+    }
+
+    /// ★ T-90(11-14) — 서버 힌트는 대기의 하한: 백오프보다 길면 힌트 · 짧으면 백오프 · 없으면 백오프.
+    #[test]
+    fn server_hint_is_lower_bound_of_wait() {
+        let s = Duration::from_secs;
+        assert_eq!(hinted_wait(s(5), Some(s(60))), s(60), "힌트가 길다");
+        assert_eq!(hinted_wait(s(20), Some(s(5))), s(20), "백오프가 길다");
+        assert_eq!(hinted_wait(s(5), None), s(5), "힌트 없음");
     }
 }

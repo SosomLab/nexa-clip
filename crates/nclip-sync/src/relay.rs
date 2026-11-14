@@ -46,6 +46,7 @@ use sha2::{Digest as _, Sha256};
 use std::collections::HashMap;
 use std::io::{Read as _, Write as _};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpStream, UdpSocket};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::mpsc::{Receiver, Sender, SyncSender};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -296,6 +297,8 @@ pub enum RelayError {
         code: u16,
         /// 서버 사유(상태만 · 내용 없음).
         reason: String,
+        /// 서버 재접속 힌트(`retry_after_s` · 초) — 호스트가 다음 재시도 대기의 하한으로 쓴다(T-90 · 11-14).
+        retry_after_s: Option<u16>,
     },
 }
 
@@ -441,6 +444,9 @@ pub struct RelayClient {
     server_addr: SocketAddr,
     reg: RegisterInfo,
     info: ServerInfo,
+    /// 서버 `Goaway.retry_after_s`(초 · 0 = 받은 적 없음) — 액터가 세션을 내려놓기 직전에 적는다
+    /// (beep `fc64da9` 이식 · T-90 · 11-14).
+    goaway_retry_s: Arc<AtomicU32>,
 }
 
 impl RelayClient {
@@ -576,6 +582,7 @@ impl RelayClient {
                     return Err(RelayError::Rejected {
                         code: p.code,
                         reason: p.reason,
+                        retry_after_s: p.retry_after_s,
                     });
                 }
                 _ => return Err(RelayError::Protocol),
@@ -632,6 +639,8 @@ impl RelayClient {
         let (incoming_tx, incoming_rx) = std::sync::mpsc::channel::<RelayIncoming>();
         let (roster_tx, roster_rx) = std::sync::mpsc::channel::<RosterEvent>();
         let actor_cmd = cmd_tx.clone();
+        let goaway_retry_s = Arc::new(AtomicU32::new(0));
+        let goaway_w = Arc::clone(&goaway_retry_s);
         std::thread::Builder::new()
             .name("relay-client".into())
             .spawn(move || {
@@ -645,6 +654,7 @@ impl RelayClient {
                     &actor_cmd,
                     &incoming_tx,
                     &roster_tx,
+                    &goaway_w,
                 );
             })
             .map_err(RelayError::Io)?;
@@ -656,7 +666,18 @@ impl RelayClient {
             server_addr: server,
             reg,
             info,
+            goaway_retry_s,
         })
+    }
+
+    /// 서버가 `Goaway{retry_after_s}`로 내려보낸 재접속 힌트(우아한 종료·재배포 · ADR-0016). 세션이 죽은 뒤
+    /// 호스트가 다음 재시도 대기의 하한으로 쓴다. 힌트 없이 죽었으면 `None`(T-90 · beep `fc64da9` 이식).
+    #[must_use]
+    pub fn goaway_retry_after(&self) -> Option<Duration> {
+        match self.goaway_retry_s.load(Ordering::Relaxed) {
+            0 => None,
+            s => Some(Duration::from_secs(u64::from(s))),
+        }
     }
 
     /// 서버의 신원 키(= TOFU 핀 대상). 첫 접속이면 호출자가 저장한다.
@@ -779,6 +800,7 @@ fn actor(
     cmd_tx: &Sender<Cmd>,
     incoming_tx: &Sender<RelayIncoming>,
     roster_tx: &Sender<RosterEvent>,
+    goaway_retry_s: &AtomicU32,
 ) {
     session.set_recv_timeout(Some(Duration::from_millis(15)));
     let mut chans: HashMap<u32, Sender<ChEvent>> = HashMap::new();
@@ -976,7 +998,13 @@ fn actor(
                     RosterEvent::Down(peer)
                 });
             }
-            Kind::GoawayS => break, // 서버 우아한 종료 — 호스트 백오프 재접속
+            Kind::GoawayS => {
+                // 서버 우아한 종료 — 재접속 힌트를 남기고 내려간다(호스트가 대기 하한으로 쓴다 · 0초 힌트는 1초로).
+                if let Some(s) = Problem::decode(&env).ok().and_then(|p| p.retry_after_s) {
+                    goaway_retry_s.store(u32::from(s.max(1)), Ordering::Relaxed);
+                }
+                break;
+            }
             // Pong·늦은 Welcome/RegisterResult·Error(서버 통지 — 상태만)·방향이 틀린 kind는 버린다.
             _ => {}
         }
