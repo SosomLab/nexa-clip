@@ -17,7 +17,7 @@
 //! 가변 높이 가상화·미리보기 패널은 T-18 본편에서.
 
 use nclip_core::history::History;
-use nclip_core::{current_lang, tr, ClipKind, Msg, PasteAs};
+use nclip_core::{current_lang, tr, ClipKind, Lang, Msg, PasteAs};
 use nexa_ctl::controls::{Control as _, ScrollBars, TextBox};
 use nexa_ctl::draw::{DrawCtx, FontSlot};
 use nexa_ctl::event::{InputEvent as CtlEvent, Key as CtlKey};
@@ -125,6 +125,8 @@ pub(crate) struct Popup {
     /// ★ 검색 입력(09-02 — "메인 검색창의 모든 기능을 팝업에도") — 이식 `TextBox`
     ///   정식 편집기: 캐럿·드래그 선택·×지우기·우클릭 편집 메뉴·IME preedit.
     search: TextBox,
+    /// 검색 자리글을 넣은 언어(T-89 · 11-14) — 실행 중 언어 변경을 그리기 때 따라간다.
+    search_lang: Lang,
     /// ★ 검색 방식 드롭다운(09-04) — 메인과 동일.
     mode_drop: nexa_ctl::controls::IconDropdown,
     /// 캐럿 깜박임 위상(셸이 500ms마다 돌린다).
@@ -350,6 +352,7 @@ impl Popup {
                 t.set_focused(true);
                 t
             },
+            search_lang: current_lang(),
             caret_phase: true,
             rows: Vec::new(),
             dedup: true,
@@ -1548,6 +1551,12 @@ impl Popup {
             let size = win.inner_size();
             let px = |v: f32| (v * self.scale).round() as i32;
             let mut inv = Invalidations::default();
+            // ★ 검색 자리글 = 현재 언어(T-89 · 11-14) — 메인과 같다(바뀐 때만 다시 넣음).
+            let lang = current_lang();
+            if lang != self.search_lang {
+                self.search_lang = lang;
+                self.search.set_placeholder(tr(lang, Msg::SearchHint));
+            }
             self.search.set_scale(self.scale);
             // ★ 검색 방식 드롭다운(09-04) — 정사각 · 검색창은 그 오른쪽부터.
             let (side, gap) = (px(24.0), px(6.0));
