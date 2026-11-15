@@ -11,6 +11,7 @@
 **릴리스**: push `5bbf0ac..c5472b5` · ci `43741918735` ✓ · 태그 `v0.2.10` = `c5472b5` · release **`43742210988` 12/12 ✓** · 자산 15 · brew `b4ea6bd` · pkg.sosomlab.com 0.2.10(linux-repo `43742540472`) · winget skip(0.1.6 PR) · ★ **choco 설치본 `nexa-clip` 0.2.10 + 포터블 0.2.10 제출 → Pending automated review**(0.1.5 반려 → guard 설치본 go · VT 결과 대기 T-78) · winget validate 경고 "schema header URL pattern"(통과 · T-85 때 확인) → [journal 9차](journal/2026-11-16.md).
 **Debug**: PID 70888 기본 프로필(`target/debug/data` = 설치본 데이터 아님 · 6개 복원) · ⚠️ HKCU Run `NexaClip`이 Debug 경로로 바뀜(설치본 재실행 시 복귀 예상 · 보류) · 설치본 0.2.8은 사용자가 종료.
 **스토어(11-16 규칙 A)**: 🔴 choco 설치본 0.1.5 **반려 확정(11-14 · stale · VT >10)** → T-78 결정 = T-77 서명 vs 0.2.x 재제출 · ★ choco 포터블 **0.2.9 승인(11-14)** · winget PR 2건 = 미확인.
+**다음 릴리스 대기분(main · 미배포)**: `2274ace` settings-cmd-e2e cygpath · **`2d458d7` 콘솔 진단 줄 시각 접두**(P2-11 · 발화원 판정용 · Debug 66108 반영).
 **☐ 다음**: choco 설치본·포터블 0.2.10 검수 결과(규칙 A · 1~3일) · 이 PC 설치본 0.2.8 → 0.2.10 교체(사용자) · 사용자 실기 [21 §15](21-manual-test.md) **P2-23**(팝업 선택 유지) · **P2-24**(퍼지·공백) · **P2-25**(검색 입력 nexa-sql 기준) · 팝업 1행 복귀 발화원 판정 = 로그 시각 접두(개발 후보) + adv.log → [journal 11-16](journal/2026-11-16.md).
 
 ---

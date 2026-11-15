@@ -2,6 +2,8 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-11-16 (3차 · win) — P2-11 콘솔 진단 줄 시각 접두 `2d458d7`(협업 · SEM · diag.rs now_hms + tray_cmd.rs 5곳 · 발화원 A/B/C 판정용 · check-3os ✓ · Debug 66108) · 조사 결론 = diag.log는 fd 통째 교체라 단일 지점 없음(전 줄 접두 = 개발 몫) · settings-cmd-e2e cygpath `2274ace` · [journal](journal/2026-11-16.md) 10차
+
 ## 2026-11-16 (2차 · win) — ★ **v0.2.10 릴리스 ✓**(태그 `c5472b5` · ci `43741918735` ✓ · release `43742210988` 12/12 ✓ · 자산 15 · brew `b4ea6bd` · pkg.sosomlab.com 0.2.10 · ★ **choco 설치본 `nexa-clip` 0.2.10 + 포터블 0.2.10 제출 → Pending**(0.1.5 반려로 guard 설치본 go · 첫 설치본 재제출) · winget skip · validate 경고 "schema header URL pattern" 새 종류) — 내용 = 팝업 선택 결함 `79a38be` · 설정 검색 퍼지 `3bdde7b`·`c58dd42` · 공백 `7c023d7`·`5dfc355` · 검색 입력 nexa-sql 기준 `aedc83f` · fmt `0b6615a` · V3 446/0/4(rustc 1.100 · nexa-ui 71b72b6) · check-3os ✓ · Release 2,633,728 B · settings-cmd-e2e 9/0(cygpath 수정 `2274ace`) · [journal](journal/2026-11-16.md) 8·9차
 
 ## 2026-11-16 (win · LAPTOP-V3NOGHF6) — 세션 재편(개발 [d75a5e] × 협업 [ed2f72] · §1-1 세마포어 첫 적용) · 최신화 `19c9cad` → `5bbf0ac`(v0.2.9 반영 · 미배포 소스 0) · ★ 팝업 선택 결함 수정 `79a38be`(nav_moved 유지 · test 77/0/2) · ★ 설정 검색 퍼지 `3bdde7b`→`c58dd42`(nexa-sql f7495f16 이식 · ALL_MSG 562 · test 301/0/3) · 공백 입력 `7c023d7`(test 302/0/3 · 비접촉 `ui fl`→ui.flash_ms ✓) · Debug 기본 프로필 70888(target/debug/data · ⚠️ autostart 덮어씀) · 설치본 종료 권한 거부(보류) · choco 설치본 0.1.5 **반려 확정** · 포터블 0.2.9 **승인** · 팝업 1행 복귀 발화원 = rdpclip 재공지/원격 수신 추정(로그 없음) · 실기 P2-23·P2-24 · [journal](journal/2026-11-16.md)
