@@ -3058,7 +3058,7 @@ mod tests {
     use super::*;
 
     /// 카탈로그 전수 — 새 `Msg`를 더하면 여기도 더한다(빈칸 검사가 그걸 강제한다).
-    const ALL_MSG: [Msg; 561] = [
+    const ALL_MSG: [Msg; 562] = [
         Msg::AppName,
         Msg::SearchPlaceholder,
         Msg::EmptyHistory,
