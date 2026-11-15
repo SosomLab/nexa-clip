@@ -3141,7 +3141,7 @@ impl Widget for SettingsWidget {
                 }
                 let after = self.tree.selected_row();
                 if self.tree.bounds().contains(p) && after != before
-                    || (self.tree.bounds().contains(p) && !self.query.is_empty())
+                    || (self.tree.bounds().contains(p) && !self.query.trim().is_empty())
                 {
                     if let Some(&sel) = self.cat_map.get(after) {
                         self.selected = sel;
@@ -3307,7 +3307,8 @@ impl Widget for SettingsWidget {
                         }
                         self.drain_changes(inv);
                         inv.push(self.bounds);
-                    } else {
+                    } else if self.any_family_focused() || !self.search.text().is_empty() {
+                        // 빈 검색어의 첫 공백은 뜻이 없다 — 버린다(검색어가 " "가 되면 ↑/↓ 분류 이동이 이력 순환으로 바뀐다).
                         self.on_event(&InputEvent::Char { c: ' ', now_ms: 0 }, inv);
                     }
                 }
@@ -3382,7 +3383,7 @@ impl Widget for SettingsWidget {
                 Key::Up | Key::Down
                     if !self.history.is_empty()
                         && self.search.is_focused()
-                        && (!self.query.is_empty() || self.hist_pos.is_some()) =>
+                        && (!self.query.trim().is_empty() || self.hist_pos.is_some()) =>
                 {
                     let n = self.history.len();
                     let next = match (key, self.hist_pos) {
@@ -3409,7 +3410,7 @@ impl Widget for SettingsWidget {
                     self.changes.push(("prefs.search", self.history.join("\t")));
                     inv.push(self.bounds);
                 }
-                Key::Up | Key::Down if self.query.is_empty() => {
+                Key::Up | Key::Down if self.query.trim().is_empty() => {
                     // 사이드바 카테고리 탐색(검색 중엔 유지).
                     let before = self.tree.selected_row();
                     self.tree.on_event(ev, inv);
