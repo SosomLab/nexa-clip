@@ -17,7 +17,11 @@ BIN="${1:-target/debug/nexa-clip}"
 
 PROFILE=cmd-e2e
 X="$(cd "$(dirname "$BIN")" && pwd)/data/profiles/$PROFILE"   # Debug = 실행 파일 옆 data/(포터블)
-D="$(mktemp -d "${TMPDIR:-/tmp}/nclip-cmd-e2e.XXXXXX")"
+# ★ Windows Git Bash(11-16 · 협업): `/tmp` 같은 POSIX 경로는 앱(Win32)이 못 열어 prefs.dump가 "지정된 경로를 찾을 수 없습니다(os error 3)"로
+#   실패한다(1차 0/9) → 임시 폴더를 Windows 표기(`cygpath -m` · C:/…)로 만든다. Linux·mac은 종전대로.
+TMP_BASE="${TMPDIR:-/tmp}"
+case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) TMP_BASE="$(cygpath -m "${TMPDIR:-${TEMP:-/tmp}}")";; esac
+D="$(mktemp -d "$TMP_BASE/nclip-cmd-e2e.XXXXXX")"
 mkdir -p "$X"
 CFG_BAK=""
 if [ -f "$X/settings.cfg" ]; then CFG_BAK="$D/settings.cfg.before"; cp "$X/settings.cfg" "$CFG_BAK"; fi
