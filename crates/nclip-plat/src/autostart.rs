@@ -29,12 +29,41 @@ const MAC_LABEL: &str = "com.sosomlab.nexa-clip";
 /// 등록(덮어쓰기), 아니면 등록 제거(없어도 성공). 실패는 호출자가 화면에 알린다
 /// (조용한 실패 금지 — 설정값 자체는 유지돼 다음 부팅·토글에서 재시도된다).
 pub fn apply(enabled: bool) -> io::Result<()> {
+    // ★ 개발 산출물(`…/target/debug|release/…`)에서 뜬 실행 파일은 등록을 건드리지 않는다(11-16 — Debug가 설치본의
+    //   HKCU Run을 자기 경로로 덮어쓴 사고 · `dev-install`로 설치 폴더에 넣은 Debug exe는 경로가 다르므로 종전대로).
+    if let Some(exe) = dev_build_exe() {
+        println!(
+            "자동 시작: 개발 산출물 경로라 등록 동기화 생략 — {}",
+            exe.display()
+        );
+        return Ok(());
+    }
     if enabled {
         let exe = std::env::current_exe()?;
         register(&exe)
     } else {
         unregister()
     }
+}
+
+/// 경로가 cargo 산출물 폴더(`target/debug` · `target/release`) 아래인가 — 순수(구분자는 `Path` 컴포넌트가 흡수).
+#[must_use]
+pub fn is_cargo_target_path(p: &Path) -> bool {
+    let parts: Vec<&str> = p
+        .components()
+        .filter_map(|c| c.as_os_str().to_str())
+        .collect();
+    parts
+        .windows(2)
+        .any(|w| w[0] == "target" && matches!(w[1], "debug" | "release"))
+}
+
+/// 지금 실행 파일이 개발 산출물이면 그 경로.
+#[must_use]
+pub fn dev_build_exe() -> Option<std::path::PathBuf> {
+    std::env::current_exe()
+        .ok()
+        .filter(|p| is_cargo_target_path(p))
 }
 
 /// 자동 실행이 **가리키는 실행 파일**(로그·안내용 · 10-05 · T-64) — Linux는 패키지 설치본이 있으면 그쪽,
@@ -507,6 +536,25 @@ mod tests {
 
     // 콘텐츠 빌더는 순수 함수 — OS 상태를 건드리지 않고 계약을 박제한다.
     // (레지스트리·홈 폴더 변조는 테스트에서 하지 않는다 — 사용자 환경이다.)
+
+    // 개발 산출물 판정은 컴포넌트 기준 — 시험 경로는 슬래시만(백슬래시는 unix에서 구분자가 아니라 3-OS 시험이 갈린다).
+    #[test]
+    fn cargo_target_paths_are_dev_builds() {
+        assert!(is_cargo_target_path(Path::new(
+            "D:/Projects/nexa-clip/target/debug/nexa-clip.exe"
+        )));
+        assert!(is_cargo_target_path(Path::new(
+            "/home/u/nexa-clip/target/release/deps/x"
+        )));
+        assert!(!is_cargo_target_path(Path::new(
+            "C:/Users/u/AppData/Local/Programs/NexaClip/nexa-clip.exe"
+        )));
+        assert!(!is_cargo_target_path(Path::new("/usr/bin/nexa-clip")));
+        assert!(
+            !is_cargo_target_path(Path::new("/opt/target/nexa-clip")),
+            "target 다음이 debug|release가 아니면 아님"
+        );
+    }
 
     #[test]
     fn plist_escapes_xml_and_carries_label() {

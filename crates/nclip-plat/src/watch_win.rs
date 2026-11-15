@@ -470,8 +470,24 @@ thread_local! {
 /// *"와서 버려진다"* 를 구분하는 용도(08-27 탐색기 복사 유실 조사).
 fn diag(msg: &str) {
     if std::env::var_os("NEXA_CLIP_DIAG").is_some() {
-        eprintln!("[diag] {msg}");
+        eprintln!("[diag {}] {msg}", now_hms());
     }
+}
+
+/// 지금 로컬 시각 `HH:MM:SS.mmm`(std만 · 진단 줄 접두 · 11-16 — 팝업 "1행 복귀" 발화원 A(재공지) 간격 판정용).
+fn now_hms() -> String {
+    let d = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    let secs = i64::try_from(d.as_secs()).unwrap_or(0) + i64::from(crate::host::utc_offset_secs());
+    let day = secs.rem_euclid(86_400);
+    format!(
+        "{:02}:{:02}:{:02}.{:03}",
+        day / 3600,
+        (day % 3600) / 60,
+        day % 60,
+        d.subsec_millis()
+    )
 }
 
 /// ★ 안정화 읽기(09-01 — Sublime `Ctrl+C` 연타 실기) — 앱이 표현을 **순차 게시하는
