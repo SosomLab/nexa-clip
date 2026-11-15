@@ -218,6 +218,9 @@ status          : Local only
 | ★ mac `check-3os`가 다른 타깃에서 `E0463 can't find crate for std`(타깃은 `rustup target add` 해 둠) | **Homebrew `cargo`/`rustc`(`/usr/local/bin` · `/opt/homebrew/bin`)가 PATH에서 rustup보다 앞** — Homebrew 도구 체인은 rustup 타깃 std를 못 본다(10-05 mac 개발 세션) | `which cargo`가 `~/.cargo/bin/cargo`인지 확인 · 셸 설정에서 `~/.cargo/bin`을 앞에 두거나 그 자리에서 `PATH="$HOME/.cargo/bin:$PATH" scripts/check-3os.sh` · Homebrew `rust`는 지우는 것을 권장(`brew uninstall rust`) |
 | ★ Windows에서 `cargo: command not found` · `cargo`/`rustc` 명령 자체가 없음(11-03 이 PC) | **Rust 툴체인 미설치**(설치본은 CI 빌드본이라 앱은 돌아도 개발 환경은 없을 수 있다) | 사용자 승인 뒤 winget으로 `Rustlang.Rustup` + VS 2022 Build Tools(VCTools 워크로드 · Windows SDK 포함 — `rc.exe`가 있어야 버전 리소스가 들어감) → 새 셸이 아니면 PATH 앞에 `~/.cargo/bin`(PowerShell `$env:Path = "$env:USERPROFILE\.cargo\bin;$env:Path"` · bash `export PATH="$HOME/.cargo/bin:$PATH"`) · ⚠️ 백그라운드·`tail` 출력은 **종료 코드와 `command not found` 줄을 먼저** 본다([33 §12](33-collab-session-operation.md) 11-03) |
 | 한글이 네모로 | 시스템 UI 폰트 후보 미스 | 실행 시 콘솔의 `폰트:` 줄 확인 → [`nclip-plat/src/font.rs`](../crates/nclip-plat/src/font.rs) 후보 |
+| ★ Debug를 띄운 뒤 로그인 자동 시작이 **설치본 대신 Debug exe**를 가리킴(HKCU Run `NexaClip` = `…\target\debug
+exa-clip.exe` · 11-16 이 PC) | 자동 시작은 부팅마다 `current_exe()`로 재동기화(autostart.rs) — 기본 프로필 Debug가 설치본 등록을 덮어씀 | **11-16부터 cargo 산출물(`target/debug|release`)에서 뜬 exe는 등록 동기화를 건너뜀**(`autostart::dev_build_exe` · 로그 "개발 산출물 경로라 등록 동기화 생략") · 이미 덮어쓴 값은 설치본을 한 번 다시 실행하면 자기 경로로 복귀(또는 레지스트리에서 직접) · `dev-install-win.ps1`로 설치 폴더에 넣은 Debug는 종전대로 등록됨 |
+| Windows Git Bash에서 `scripts/settings-cmd-e2e.sh`가 0/9 · 콘솔에 "덤프 쓰기 실패(지정된 경로를 찾을 수 없습니다 · os error 3)" | `mktemp -d "${TMPDIR:-/tmp}/…"`의 `/tmp` POSIX 경로를 Win32 앱이 못 연다 | **`2274ace`부터 스크립트가 MINGW/MSYS/CYGWIN이면 `cygpath -m`으로 `C:/…` 임시 폴더를 만든다**(11-16) — 옛 판이면 `TMPDIR=$(cygpath -m "$TEMP")`로 실행 |
 
 ---
 
@@ -603,7 +606,7 @@ scripts/mac-dev-cert.sh                  # 1회: 자체 서명 신원(TCC는 서
 scripts/dev-install-mac.sh [--debug]     # 빌드 → 종료 → 번들 교체 → 재서명 → 재시작(신원 있으면 그것으로)
 scripts/mac-ppt-e2e.sh                   # PowerPoint 자동 실기 12항(서식 텍스트 · 글상자 2개 — 복사→재게시→붙여넣기 검증)
 scripts/mac-paste-e2e.sh                 # 붙여넣기 자동 실기 3항(설정 단축키로 팝업 Enter·⇧Enter·전역 평문 → TextEdit)
-scripts/settings-cmd-e2e.sh              # ★ 설정 창 기동 명령 자동 시험 9판정(11-08 · T-84 · 3-OS bash · --profile cmd-e2e 격리 · 입력 주입 0) — 명령 표 = crates/nexa-clip/src/settings_win.rs 머리말
+scripts/settings-cmd-e2e.sh              # ★ 설정 창 기동 명령 자동 시험 9판정(11-08 · T-84 · 3-OS bash · --profile cmd-e2e 격리 · 입력 주입 0 · Windows Git Bash = 임시 폴더 cygpath -m · 11-16) — 명령 표 = crates/nexa-clip/src/settings_win.rs 머리말
 scripts/mac-grant-accessibility.sh       # 주입이 안 붙을 때: TCC 항목 리셋→재시작→토글 ON→검증(토글은 최초 서명에 고착 · 껐다 켜도 무효)
 
 # ── 배포 파이프라인 드라이런(태그 없이 · 초안 릴리스만) — 5타깃 빌드·게이트·매니페스트까지 그대로 돈다
