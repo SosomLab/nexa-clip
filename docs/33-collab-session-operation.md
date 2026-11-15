@@ -200,7 +200,7 @@
 | 단계 | 언제 | 무엇을 | 하지 않는 것 |
 |---|---|---|---|
 | **V0** 수정 중 | 개발 세션이 고치는 동안(개발 세션 몫) | `cargo check` + 바뀐 크레이트의 관련 단위 시험 | 전체 빌드 · 재시작 |
-| **V1** 재시작 | [P0] 빌드 + Debug 재시작 | Debug 증분 빌드 + 재시작 **만** → 이어서 바뀐 크레이트에 한한 clippy + 바뀐 기능의 자체 확인(로그 · 캡처 1~2장) | 전체 시험 · Release · check-3os |
+| **V1** 재시작 | [P0] 빌드 + Debug 재시작 | Debug 증분 빌드 + 재시작 **만** → 이어서 바뀐 크레이트에 한한 clippy + 바뀐 기능의 자체 확인(로그 · 캡처 1~2장 · **비접촉 기동 명령 시험** = `scripts/settings-cmd-e2e.sh` 9판정 · `scripts/popup-cmd-e2e.sh` 6판정 — 격리 프로필 · OS 입력 0 · 11-16) | 전체 시험 · Release · check-3os |
 | **V2** 커밋·push 전(1회) | 커밋 요청 | 🔴 **먼저 로컬 stable을 최신으로**(`rustup update stable` · 회신 첫머리에 `rustc -V` 버전 — CI는 고정 없는 stable이라 로컬이 낡으면 새 린트를 못 잡는다 · 10-05) · `cargo test --workspace` · `cargo clippy --workspace --all-targets -- -D warnings` · `cargo fmt --check` · 🔴 **`scripts/check-3os.sh`**(CLAUDE.md §4 · cfg 모듈 경로를 건드렸으면 다른 OS 모듈 깊이 확인) · Release 빌드 1회 · **같은 소스 기준으로 이미 통과했으면 다시 돌리지 않는다**(문서만 바뀐 경우 포함) · push 뒤 판정 = CI | 전 기능 점검 |
 | **V3** 전수 시험 | 아래 네 경우에만(기본은 안 돌림) | V2 전부 + 이 OS에서 돌 수 있는 E2E 스크립트(`scripts/mac-paste-e2e.sh` · `mac-ppt-e2e.sh` · `linux-watch-e2e.sh`) + 예산 계측(유휴 RSS · 바이너리 크기 · DR-9) · [21 수동 시험](21-manual-test.md)은 사용자 실기라 목록만 정리 | — |
 
