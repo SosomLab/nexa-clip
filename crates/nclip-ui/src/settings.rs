@@ -3286,6 +3286,31 @@ impl Widget for SettingsWidget {
                 Key::Enter if self.any_list_wants_keys() => {
                     self.route_key_to_list(ev, inv);
                 }
+                // ★ Space(11-16 사용자 신고 "설정 검색에 공백 입력이 안 된다") — 셸은 Space를 글자가 아니라
+                //   **이름 있는 키**(`Key::Space`)로 보낸다(컨트롤 토글용). 여기서 받는 팔이 없어 `_ => {}`로 버려졌고,
+                //   그래서 "ui fl"처럼 낱말을 나눠 치는 AND 검색을 쓸 수 없었다. 포커스된 실행 버튼이 있으면 클릭,
+                //   아니면 **글자 ' '** 로 다시 흘린다(글꼴명 입력·검색 — 문자 경로와 같은 규칙).
+                Key::Space => {
+                    let act_focused = self
+                        .rows
+                        .iter()
+                        .any(|r| matches!(&r.ctl, RowCtl::Act(b) if b.is_focused()));
+                    if act_focused {
+                        let locked: Vec<bool> =
+                            self.rows.iter().map(|r| self.is_locked(r.idx)).collect();
+                        for (row, lock) in self.rows.iter_mut().zip(locked) {
+                            if let RowCtl::Act(b) = &mut row.ctl {
+                                if b.is_focused() && !lock {
+                                    b.on_event(ev, inv);
+                                }
+                            }
+                        }
+                        self.drain_changes(inv);
+                        inv.push(self.bounds);
+                    } else {
+                        self.on_event(&InputEvent::Char { c: ' ', now_ms: 0 }, inv);
+                    }
+                }
                 Key::Escape if self.any_list_editing() => {
                     self.route_key_to_list(ev, inv);
                 }
@@ -4339,6 +4364,21 @@ mod card_tests {
             w.banner_text()
         );
         w.set_query("flms", &mut inv);
+        assert!(w.dump_text().lines().any(|l| l == "ui.flash_ms"));
+    }
+
+    /// ★ 11-16 사용자 신고 — 셸이 보내는 `Key::Space`가 검색어의 공백으로 들어간다(낱말 AND 검색의 전제).
+    #[test]
+    fn space_key_types_into_search() {
+        let (mut w, mut inv) = widget();
+        for c in "ui".chars() {
+            w.on_event(&ch(c), &mut inv);
+        }
+        w.on_event(&key(Key::Space), &mut inv);
+        for c in "fl".chars() {
+            w.on_event(&ch(c), &mut inv);
+        }
+        assert_eq!(w.query, "ui fl");
         assert!(w.dump_text().lines().any(|l| l == "ui.flash_ms"));
     }
 
