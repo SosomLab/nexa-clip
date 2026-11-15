@@ -945,6 +945,8 @@ pub enum Msg {
     // ── ★ 설정 창 "변경" 보기 · JSON 편집 · 가져오기/내보내기(11-03 · nexa-sql prefs_win 차용) ──
     PrefsChangedOnly,
     PrefsNoChanged,
+    /// 설정 검색 0건 안내(11-16 · nexa-sql D-475 차용) — "'{}'와 일치하는 설정이 없습니다".
+    PrefsNoMatch,
     BtnEditJson,
     BtnImportSettings,
     BtnExportSettings,
@@ -1414,6 +1416,12 @@ impl Msg {
                 "기본값과 다른 설정이 없습니다.",
                 "没有与默认值不同的设置。",
                 "既定値と異なる設定はありません。",
+            ],
+            Msg::PrefsNoMatch => [
+                "No settings match '{}'.",
+                "'{}'와 일치하는 설정이 없습니다.",
+                "没有与“{}”匹配的设置。",
+                "「{}」に一致する設定はありません。",
             ],
             Msg::BtnEditJson => ["Edit JSON…", "JSON 편집…", "编辑 JSON…", "JSON を編集…"],
             Msg::BtnImportSettings => ["Import…", "가져오기…", "导入…", "インポート…"],
@@ -3050,7 +3058,7 @@ mod tests {
     use super::*;
 
     /// 카탈로그 전수 — 새 `Msg`를 더하면 여기도 더한다(빈칸 검사가 그걸 강제한다).
-    const ALL_MSG: [Msg; 561] = [
+    const ALL_MSG: [Msg; 562] = [
         Msg::AppName,
         Msg::SearchPlaceholder,
         Msg::EmptyHistory,
@@ -3589,6 +3597,7 @@ mod tests {
         Msg::ValGraceMsRange,
         Msg::PrefsChangedOnly,
         Msg::PrefsNoChanged,
+        Msg::PrefsNoMatch,
         Msg::BtnEditJson,
         Msg::BtnImportSettings,
         Msg::BtnExportSettings,

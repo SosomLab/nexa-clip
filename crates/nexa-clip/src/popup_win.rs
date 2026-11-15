@@ -203,6 +203,23 @@ pub(crate) struct Popup {
     /// ★ 행 hover 페이드(09-04 사용자 — 메인과 동일): 의도 코얼레싱(70ms · 휠 안정 120ms) + 상태 레이어 6%.
     row_fade: nexa_ctl::tokens::HoverFade,
     row_intent: nexa_ctl::tokens::HoverIntent<usize>,
+    /// ★ 사용자가 선택·화면을 직접 옮겼다(11-16 · ↑/↓ · 휠 · 거터/Ctrl 클릭) — 이 뒤로는 이력 변경 통지가 와도
+    ///   **선택을 맨 위로 되돌리지 않고** 같은 항목(id)을 지킨다. 열 때 false.
+    nav_moved: bool,
+    /// ★ 이력 변경으로 행 배열이 실제로 바뀐 시각(11-16) — 직후 [`ROW_SHIFT_GUARD`] 동안의 행 클릭은 버린다
+    ///   (사용자가 보고 누른 프레임과 판정 행이 한 칸 어긋나 **옆 항목이 붙여넣어지던** 틈).
+    rows_shifted_at: Option<std::time::Instant>,
+}
+
+/// 행이 밀린 직후 클릭을 버리는 시간 — 사람의 반응 지연(보고 → 누름)보다 조금 길게.
+const ROW_SHIFT_GUARD: std::time::Duration = std::time::Duration::from_millis(350);
+
+/// ★ 이력 변경 뒤 선택할 행(11-16) — `keep`(지킬 항목 id)이 남아 있으면 그 행, 없으면 최신 항목(이력 0번), 그것도
+///   없으면 0. `rows` = (id, 이력 인덱스) 순서열.
+fn reselect(rows: impl Iterator<Item = (u64, usize)> + Clone, keep: Option<u64>) -> usize {
+    keep.and_then(|id| rows.clone().position(|(rid, _)| rid == id))
+        .or_else(|| rows.clone().position(|(_, hi)| hi == 0))
+        .unwrap_or(0)
 }
 
 /// 열림 직후 문자 입력 유예 — 단축키(Ctrl+Shift+V)를 누른 손이 떨어지기 전의
@@ -388,7 +405,23 @@ impl Popup {
             search_idx: None,
             row_fade: nexa_ctl::tokens::HoverFade::default(),
             row_intent: nexa_ctl::tokens::HoverIntent::default(),
+            nav_moved: false,
+            rows_shifted_at: None,
         }
+    }
+
+    /// ★ 행 오프셋을 **지금 rows에 맞춘다**(11-16) — 예전에는 paint에서만 다시 만들어, `refresh` 뒤 다음 프레임
+    ///   전까지 클릭 판정(`row_at`)·`ensure_visible`이 낡은 오프셋에 새 rows를 맞췄다. 창이 없으면(열기 전) 건너뛴다.
+    fn sync_offsets(&mut self) {
+        if let Some(w) = self.window.as_ref().map(|w| w.inner_size().width as i32) {
+            self.rebuild_offsets(w);
+        }
+    }
+
+    /// 스크롤 상한(px) — 전체 높이 − 목록 높이.
+    fn max_scroll(&self) -> i32 {
+        let Some(vp) = self.list_vp() else { return 0 };
+        (*self.row_offs.last().unwrap_or(&0) - vp.h).max(0)
     }
 
     /// 좌표 → 목록 행(rows 인덱스) — 그리기와 같은 자(scale 기반)를 쓴다.
@@ -814,6 +847,10 @@ impl Popup {
         self.ime_gated = false;
         self.had_letters = false;
         self.ime_grace_until = None;
+        self.nav_moved = false;
+        self.rows_shifted_at = None;
+        // ★ 커서 좌표 초기화(11-16) — 지난 세션의 마지막 좌표로 첫 클릭 행을 판정하지 않는다(CursorMoved가 오면 채워진다).
+        self.cursor = (-1, -1);
         self.refresh(hist);
         // ★ 열 때 선택 = 최신 항목(핀 구획 뒤에 있어도 · 09-02).
         self.sel = self
@@ -998,6 +1035,7 @@ impl Popup {
         if self.sel >= self.rows.len() {
             self.sel = self.rows.len().saturating_sub(1);
         }
+        self.sync_offsets();
         self.scroll = self
             .scroll
             .min(self.row_offs.get(self.sel).copied().unwrap_or(0));
@@ -1005,16 +1043,38 @@ impl Popup {
 
     /// ★ 이력이 바뀌었다(새 복사·승격) — **커서를 맨 위로**(방금 것이 첫 줄이고
     /// 선택도 그걸 가리킨다 — 08-28 사용자 요청) + 다시 그린다.
+    ///
+    /// ★ 11-16 사용자 신고("↑/↓로 옮기면 원래 자리로 돌아가거나 맨 위로 튄다 · 옆 항목이 붙여넣어졌다"):
+    ///   이 통지는 새 복사뿐 아니라 **같은 내용 재복사(승격) · 동기화 수신 · 파일 전송 완료(사전 캐시)** 마다 온다.
+    ///   사용자가 이미 선택·화면을 옮긴 뒤(`nav_moved`)에는 맨 위로 되돌리지 않고 **같은 항목(id)과 그 화면 위치**를
+    ///   지킨다 — 손대지 않았을 때만 예전 계약(최신 항목 선택 · 맨 위)을 따른다.
     pub(crate) fn on_history_changed(&mut self, hist: &History) {
-        self.scroll = 0;
+        let before: Vec<u64> = self.rows.iter().map(|r| r.id).collect();
+        let keep = self.nav_moved.then(|| self.rows.get(self.sel).map(|r| r.id)).flatten();
+        // 선택 행의 화면 위치(행 위쪽 − 스크롤)를 기억했다가 그대로 돌려놓는다.
+        let (old_scroll, old_top) = (
+            self.scroll,
+            self.row_offs.get(self.sel).copied().unwrap_or(0),
+        );
+        if keep.is_none() {
+            self.scroll = 0;
+        }
         self.refresh(hist);
-        // ★ 선택 = 방금 복사한 항목(이력 맨 앞) — 핀 구획이 앞에 와도 계약 유지(08-28·09-02).
-        self.sel = self
-            .rows
-            .iter()
-            .position(|r| r.hist_index == 0)
-            .unwrap_or(0);
-        self.ensure_visible();
+        self.sel = reselect(self.rows.iter().map(|r| (r.id, r.hist_index)), keep);
+        let kept = keep.is_some_and(|id| self.rows.get(self.sel).is_some_and(|r| r.id == id));
+        if kept {
+            let new_top = self.row_offs.get(self.sel).copied().unwrap_or(0);
+            self.scroll = (old_scroll + (new_top - old_top)).clamp(0, self.max_scroll());
+        } else {
+            if keep.is_some() {
+                self.scroll = 0; // 지키던 항목이 사라졌다 — 최신 항목으로.
+            }
+            self.ensure_visible();
+        }
+        // 행 배열이 실제로 바뀌었으면 직후 클릭을 잠깐 버린다(보고 누른 행과 판정 행의 어긋남).
+        if !self.rows.iter().map(|r| r.id).eq(before.iter().copied()) {
+            self.rows_shifted_at = Some(std::time::Instant::now());
+        }
         self.redraw();
     }
 
@@ -1102,10 +1162,12 @@ impl Popup {
                     return PopupAction::None;
                 }
                 let mut inv = Invalidations::default();
-                let changed = match ime {
+                // ★ 글이 **실제로 바뀐 때만** 선택을 맨 위로(11-16) — 조합이 끝날 때 오는 빈 Preedit/Commit이
+                //   글을 바꾸지 않고도 선택·스크롤을 0으로 되돌렸다(다른 입력 경로는 이미 변화를 비교한다).
+                let before = self.search.display_text();
+                match ime {
                     Ime::Preedit(t, _) => {
                         self.search.set_preedit(t, &mut inv);
-                        true
                     }
                     Ime::Commit(t) => {
                         self.search.set_preedit("", &mut inv);
@@ -1113,10 +1175,13 @@ impl Popup {
                             self.search
                                 .on_event(&CtlEvent::Char { c, now_ms: 0 }, &mut inv);
                         }
-                        true
                     }
-                    _ => false,
-                };
+                    _ => {}
+                }
+                let changed = self.search.display_text() != before;
+                if !changed {
+                    self.redraw(); // 캐럿·조합 밑줄만 바뀌었을 수 있다.
+                }
                 // ★ 검색창에 **실제로 들어 있는 글**을 남긴다(10-05 · T-58 — 검색창이 `*`로 가득 찼던 회차의
                 //   원인 추적용 · 코드에는 `*`를 그리는 경로가 없다). 진단 모드에서만.
                 if changed && crate::keys::diag() {
@@ -1249,8 +1314,16 @@ impl Popup {
                         return PopupAction::None;
                     }
                     if let Some(vi) = self.row_at(x, y) {
+                        // ★ 행이 방금 밀렸다(11-16) — 사용자가 본 프레임의 행이 아닐 수 있으니 이 클릭은 버린다.
+                        if self
+                            .rows_shifted_at
+                            .is_some_and(|t| t.elapsed() < ROW_SHIFT_GUARD)
+                        {
+                            return PopupAction::None;
+                        }
                         // ★ 거터(핀 점 자리) 클릭 = 핀 지정/해제(10-17 사용자) — 붙여넣기와 구분되는 좁은 띠.
                         if x < self.gutter_w() && !self.ctrl {
+                            self.nav_moved = true;
                             self.sel = vi;
                             self.redraw();
                             return match self.rows.get(vi) {
@@ -1260,6 +1333,7 @@ impl Popup {
                         }
                         // ★ Ctrl+클릭 = 스택 토글(09-03 ③ — 즉시 붙여넣기 대신 선택만).
                         if self.ctrl {
+                            self.nav_moved = true;
                             self.sel = vi;
                             self.toggle_mark(vi);
                             return PopupAction::None;
@@ -1298,7 +1372,9 @@ impl Popup {
                     // ★ 고속 스크롤(11-03 · scroll.fast) — 같은 방향 틱이 빨리 이어지면 배수 · ×N HUD는 스크롤바가 그린다.
                     let k = self.accel.factor_cfg(d.signum(), &self.bars.fast_cfg());
                     self.bars.note_fast(k);
-                    self.scroll += d * k; // 상한은 paint에서 죈다.
+                    // ★ 상한을 **여기서** 죈다(11-16) — paint까지 미루면 그 사이 클릭이 화면보다 아래 행을 골랐다.
+                    self.scroll = (self.scroll + d * k).clamp(0, self.max_scroll());
+                    self.nav_moved = true;
                     self.bars.show();
                     self.redraw();
                 }
@@ -1430,11 +1506,13 @@ impl Popup {
                 match event.logical_key.as_ref() {
                     Key::Named(NamedKey::Escape) => return PopupAction::Close,
                     Key::Named(NamedKey::ArrowUp) => {
+                        self.nav_moved = true;
                         self.sel = self.sel.saturating_sub(1);
                         self.ensure_visible();
                         self.redraw();
                     }
                     Key::Named(NamedKey::ArrowDown) => {
+                        self.nav_moved = true;
                         if self.sel + 1 < self.rows.len() {
                             self.sel += 1;
                         }
@@ -2041,4 +2119,27 @@ fn draw(
     // 검색 우클릭 편집 메뉴 — 맨 위 레이어(z = 그리는 순서).
     search.paint_popup(dc, &th);
     mode_drop.paint_popup(dc, &th);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::reselect;
+
+    /// 11-16 — 이력 변경 뒤에도 사용자가 고른 항목(id)을 따라간다(새 항목이 위에 끼어 인덱스가 밀려도).
+    #[test]
+    fn reselect_follows_kept_id_when_rows_shift() {
+        // (id, 이력 인덱스) — 새 항목 9가 맨 위에 끼었다.
+        let rows = [(9u64, 0usize), (5, 1), (4, 2), (3, 3)];
+        assert_eq!(reselect(rows.iter().copied(), Some(4)), 2);
+    }
+
+    /// 지킬 항목이 없거나 사라졌으면 최신 항목(이력 0번 — 핀 구획 뒤에 있어도).
+    #[test]
+    fn reselect_falls_back_to_newest() {
+        // 핀 항목(이력 2번)이 맨 앞 · 최신은 둘째 행.
+        let rows = [(7u64, 2usize), (9, 0), (5, 1)];
+        assert_eq!(reselect(rows.iter().copied(), None), 1);
+        assert_eq!(reselect(rows.iter().copied(), Some(42)), 1);
+        assert_eq!(reselect(std::iter::empty(), Some(1)), 0);
+    }
 }

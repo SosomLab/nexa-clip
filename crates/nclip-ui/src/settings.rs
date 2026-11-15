@@ -988,39 +988,78 @@ pub(crate) fn wrap_text(
     lines
 }
 
-/// 검색 매칭(10-10 개정 · beep D-33-1): 공백 토큰 **AND** · 대상 = 키 이름 + 그룹·카테고리·하위·제목·설명(전 언어) ·
-/// 한글 토큰은 **자모열 대조**(조합 중 "ㅌ"·"테"도 "테마"에 맞는다 · [`crate::jamo`]).
+/// 검색 매칭(10-10 개정 · beep D-33-1 · ★ 11-16 퍼지 = nexa-sql `prefs_win.rs` `query_hit`·`head_subseq` 이식 · D-475):
+/// 공백 토큰 **AND** · 대상을 둘로 나눈다 —
+/// - **short** = 키 이름 + 제목(전 언어): 영문·숫자 토큰은 **낱말 머리에서 시작하는 부분열**([`head_subseq`] —
+///   "flms" → `ui.flash_ms` · "pop view" → `ui.popup_view`) 또는 부분 문자열.
+/// - **long** = 그룹·카테고리·하위·설명(전 언어): 부분 문자열만(긴 글에 부분열을 걸면 아무 데나 맞는다).
+///
+/// 한글 토큰은 **자모열 대조**(조합 중 "ㅌ"·"테"도 "테마"에 맞는다 · [`crate::jamo`]) — short·long 모두.
 /// 전 언어에 걸쳐 매칭한다 — 영어 UI에서도 "테마"로, 한국어 UI에서도 "theme"로 찾힌다.
+/// 정렬은 레이아웃 순 그대로(점수 정렬 없음 — 원본과 동일).
 fn entry_matches(e: &Entry, toks: &[String]) -> bool {
     if toks.is_empty() {
         return true;
     }
-    let mut hay = String::new();
-    hay.push_str(e.key);
-    hay.push(' ');
+    let (mut short, mut long) = (String::new(), String::new());
+    short.push_str(e.key);
+    short.push(' ');
     for lang in Lang::ALL {
+        short.push_str(tr(lang, e.label));
+        short.push(' ');
         if let Some(g) = group_of(e.cat) {
-            hay.push_str(tr(lang, g));
-            hay.push(' ');
+            long.push_str(tr(lang, g));
+            long.push(' ');
         }
-        hay.push_str(tr(lang, e.cat));
-        hay.push(' ');
+        long.push_str(tr(lang, e.cat));
+        long.push(' ');
         if let Some(sub) = e.sub {
-            hay.push_str(tr(lang, sub));
-            hay.push(' ');
+            long.push_str(tr(lang, sub));
+            long.push(' ');
         }
-        hay.push_str(tr(lang, e.label));
-        hay.push(' ');
-        hay.push_str(&desc_text(lang, e));
-        hay.push(' ');
+        long.push_str(&desc_text(lang, e));
+        long.push(' ');
     }
-    let hay = hay.to_lowercase();
+    query_hit(&short.to_lowercase(), &long.to_lowercase(), toks)
+}
+
+/// 토큰 전부가 맞는가(AND) — `short`·`long`은 소문자. 원본 = nexa-sql `prefs_win.rs` `query_hit`
+/// (차이: 영문 토큰의 short **부분 문자열**도 인정 — clip의 기존 검색("lash" → flash)을 깨지 않는다).
+fn query_hit(short: &str, long: &str, toks: &[String]) -> bool {
     toks.iter().all(|t| {
         if crate::jamo::has_hangul(t) {
-            crate::jamo::contains_jamo(&hay, &crate::jamo::decompose(t, true), true)
+            let j = crate::jamo::decompose(t, true);
+            crate::jamo::contains_jamo(short, &j, true)
+                || crate::jamo::contains_jamo(long, &j, true)
         } else {
-            hay.contains(t.as_str())
+            let tok: Vec<char> = t.chars().collect();
+            short.contains(t.as_str()) || long.contains(t.as_str()) || head_subseq(&tok, short)
         }
+    })
+}
+
+/// **낱말 머리에서 시작하는** 순서 유지 부분열(틈 허용) — 첫 글자는 문자열 처음이거나 앞 글자가 영숫자가 아닌
+/// 자리(`.`·`_`·공백 뒤)에서만 시작한다. 아무 데서나 시작하게 두면 "edi fin"이 `gfx.linux_backend`에도 걸린다
+/// (nexa-sql 협업 V1에서 발각 · 원본 `head_subseq` 그대로).
+fn head_subseq(tok: &[char], hay: &str) -> bool {
+    let Some(&first) = tok.first() else {
+        return true;
+    };
+    let chars: Vec<char> = hay.chars().collect();
+    (0..chars.len()).any(|i| {
+        if chars[i] != first || (i > 0 && chars[i - 1].is_alphanumeric()) {
+            return false;
+        }
+        let mut rest = tok[1..].iter();
+        let mut need = rest.next();
+        for &c in &chars[i + 1..] {
+            match need {
+                Some(&n) if n == c => need = rest.next(),
+                Some(_) => {}
+                None => break,
+            }
+        }
+        need.is_none()
     })
 }
 
@@ -2095,6 +2134,11 @@ impl SettingsWidget {
     }
     /// 밴드 셋째 줄 안내(11-03) — 고급 숨김 수(변경 보기 꺼짐) · 변경 보기인데 바뀐 설정 없음.
     fn banner_text(&self) -> Option<String> {
+        // ★ 검색 0건 안내(11-16 · nexa-sql D-475) — 빈 화면 대신 한 줄. 고급 숨김 때문에 0건이면 그 안내가 먼저다.
+        let q = self.query.trim();
+        if !q.is_empty() && self.rows.is_empty() && self.adv_hidden == 0 {
+            return Some(nclip_core::tf(Msg::PrefsNoMatch, &[q]));
+        }
         if self.changed_keys.is_some() {
             self.rows
                 .is_empty()
@@ -3097,7 +3141,7 @@ impl Widget for SettingsWidget {
                 }
                 let after = self.tree.selected_row();
                 if self.tree.bounds().contains(p) && after != before
-                    || (self.tree.bounds().contains(p) && !self.query.is_empty())
+                    || (self.tree.bounds().contains(p) && !self.query.trim().is_empty())
                 {
                     if let Some(&sel) = self.cat_map.get(after) {
                         self.selected = sel;
@@ -3242,6 +3286,32 @@ impl Widget for SettingsWidget {
                 Key::Enter if self.any_list_wants_keys() => {
                     self.route_key_to_list(ev, inv);
                 }
+                // ★ Space(11-16 사용자 신고 "설정 검색에 공백 입력이 안 된다") — 셸은 Space를 글자가 아니라
+                //   **이름 있는 키**(`Key::Space`)로 보낸다(컨트롤 토글용). 여기서 받는 팔이 없어 `_ => {}`로 버려졌고,
+                //   그래서 "ui fl"처럼 낱말을 나눠 치는 AND 검색을 쓸 수 없었다. 포커스된 실행 버튼이 있으면 클릭,
+                //   아니면 **글자 ' '** 로 다시 흘린다(글꼴명 입력·검색 — 문자 경로와 같은 규칙).
+                Key::Space => {
+                    let act_focused = self
+                        .rows
+                        .iter()
+                        .any(|r| matches!(&r.ctl, RowCtl::Act(b) if b.is_focused()));
+                    if act_focused {
+                        let locked: Vec<bool> =
+                            self.rows.iter().map(|r| self.is_locked(r.idx)).collect();
+                        for (row, lock) in self.rows.iter_mut().zip(locked) {
+                            if let RowCtl::Act(b) = &mut row.ctl {
+                                if b.is_focused() && !lock {
+                                    b.on_event(ev, inv);
+                                }
+                            }
+                        }
+                        self.drain_changes(inv);
+                        inv.push(self.bounds);
+                    } else if self.any_family_focused() || !self.search.text().is_empty() {
+                        // 빈 검색어의 첫 공백은 뜻이 없다 — 버린다(검색어가 " "가 되면 ↑/↓ 분류 이동이 이력 순환으로 바뀐다).
+                        self.on_event(&InputEvent::Char { c: ' ', now_ms: 0 }, inv);
+                    }
+                }
                 Key::Escape if self.any_list_editing() => {
                     self.route_key_to_list(ev, inv);
                 }
@@ -3313,7 +3383,7 @@ impl Widget for SettingsWidget {
                 Key::Up | Key::Down
                     if !self.history.is_empty()
                         && self.search.is_focused()
-                        && (!self.query.is_empty() || self.hist_pos.is_some()) =>
+                        && (!self.query.trim().is_empty() || self.hist_pos.is_some()) =>
                 {
                     let n = self.history.len();
                     let next = match (key, self.hist_pos) {
@@ -3340,7 +3410,7 @@ impl Widget for SettingsWidget {
                     self.changes.push(("prefs.search", self.history.join("\t")));
                     inv.push(self.bounds);
                 }
-                Key::Up | Key::Down if self.query.is_empty() => {
+                Key::Up | Key::Down if self.query.trim().is_empty() => {
                     // 사이드바 카테고리 탐색(검색 중엔 유지).
                     let before = self.tree.selected_row();
                     self.tree.on_event(ev, inv);
@@ -4267,6 +4337,50 @@ mod card_tests {
             "카테고리 첫 카드가 아니라 스크롤이 있어야 한다: {d}"
         );
         assert!(!w.focus_key("no.such.key", &mut inv));
+    }
+
+    /// ★ 11-16 퍼지 검색(nexa-sql D-475 이식) — 키·제목은 낱말 머리 부분열 · 설명은 부분 문자열 · 0건 안내.
+    #[test]
+    fn fuzzy_query_matches_word_heads_and_notes_no_match() {
+        let find = |k: &str| registry().iter().find(|e| e.key == k).expect("key");
+        let flash = find("ui.flash_ms");
+        assert!(entry_matches(flash, &tokens("flms")), "낱말 머리 부분열");
+        assert!(entry_matches(flash, &tokens("ui fl ms")), "공백 낱말 AND");
+        assert!(
+            entry_matches(flash, &tokens("lash")),
+            "기존 부분 문자열 유지"
+        );
+        assert!(!entry_matches(flash, &tokens("zzqqxx")));
+        // 머리 제한 — 낱말 가운데에서 시작하는 부분열은 맞지 않는다.
+        assert!(head_subseq(&['f', 'm'], "ui.flash_ms"));
+        assert!(!head_subseq(&['l', 'm'], "ui.flash_ms"));
+        assert!(head_subseq(&['e', 'd', 'i'], "editor.find"));
+        assert!(!head_subseq(&['f', 'i', 'n'], "gfx.linux_backend"));
+        // 0건 안내 한 줄.
+        let (mut w, mut inv) = widget();
+        w.set_query("zzqqxx", &mut inv);
+        assert!(
+            w.banner_text().is_some_and(|b| b.contains("zzqqxx")),
+            "{:?}",
+            w.banner_text()
+        );
+        w.set_query("flms", &mut inv);
+        assert!(w.dump_text().lines().any(|l| l == "ui.flash_ms"));
+    }
+
+    /// ★ 11-16 사용자 신고 — 셸이 보내는 `Key::Space`가 검색어의 공백으로 들어간다(낱말 AND 검색의 전제).
+    #[test]
+    fn space_key_types_into_search() {
+        let (mut w, mut inv) = widget();
+        for c in "ui".chars() {
+            w.on_event(&ch(c), &mut inv);
+        }
+        w.on_event(&key(Key::Space), &mut inv);
+        for c in "fl".chars() {
+            w.on_event(&ch(c), &mut inv);
+        }
+        assert_eq!(w.query, "ui fl");
+        assert!(w.dump_text().lines().any(|l| l == "ui.flash_ms"));
     }
 
     /// ★ T-84(11-08) `set_query`는 입력 상자에 친 것과 같은 재구성 — 덤프의 `query=` · 카드 키.
