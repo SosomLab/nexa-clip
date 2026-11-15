@@ -1814,7 +1814,10 @@ impl Shell {
             match hit {
                 Some(id) if self.history.promote(id) => {
                     self.store.touch(id);
-                    println!("이력: Promoted — 캐시 게시 에코(원격 파일 약속 승격 · 전파 안 함)");
+                    println!(
+                        "[{}] 이력: Promoted — 캐시 게시 에코(원격 파일 약속 승격 · 전파 안 함)",
+                        crate::diag::now_hms()
+                    );
                 }
                 _ => println!("이력: 캐시 경로 캡처 — 약속 항목 없음(무시 · 전파 안 함)"),
             }
@@ -1849,7 +1852,8 @@ impl Shell {
         //   승격(Promoted)으로 흡수됐는지 새 항목(New)으로 늘었는지 로그로 판정한다.
         if let Some(front) = self.history.get(0) {
             println!(
-                "이력: {:?} — {} (표현 {}개)",
+                "[{}] 이력: {:?} — {} (표현 {}개)",
+                crate::diag::now_hms(),
                 pushed,
                 log_item(front.kind, &front.label),
                 n_reps
@@ -2068,7 +2072,10 @@ impl Shell {
         if let Some(h) = skip_hash {
             self.sync_skip = Some((h, std::time::Instant::now()));
         }
-        println!("동기화: ← {from} 항목 수신 — {summary}");
+        println!(
+            "[{}] 동기화: ← {from} 항목 수신 — {summary}",
+            crate::diag::now_hms()
+        );
         let promise = crate::syncitem::has_promise(&reps);
         // ★ 받은 것이 지금 맨 앞 서식 항목의 **평문판**이면 게시하지 않는다(10-04 사용자 실기 —
         //   서식 글을 복사한 직후 상대가 같은 글을 평문으로 되돌려 보내 클립보드의 서식이 덮였다).
@@ -2366,12 +2373,14 @@ impl Shell {
             if newest {
                 if self.publish_cached(item_id, PasteAs::Original) {
                     println!(
-                        "파일 공유: 사전 캐시 완료 — 최신 항목이라 클립보드 게시(이 PC에서 바로 붙여넣기 가능)"
+                        "[{}] 파일 공유: 사전 캐시 완료 — 최신 항목이라 클립보드 게시(이 PC에서 바로 붙여넣기 가능)",
+                        crate::diag::now_hms()
                     );
                 }
             } else {
                 println!(
-                    "파일 공유: 사전 캐시 완료 — 항목 {item_id}(최신 항목이 아니라 게시 없음 · 고르면 즉시)"
+                    "[{}] 파일 공유: 사전 캐시 완료 — 항목 {item_id}(최신 항목이 아니라 게시 없음 · 고르면 즉시)",
+                    crate::diag::now_hms()
                 );
             }
         } else if done {

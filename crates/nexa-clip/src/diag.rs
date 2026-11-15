@@ -55,6 +55,12 @@ pub(crate) fn len() -> usize {
     LOG.lock().map_or(0, |g| g.as_ref().map_or(0, DiagLog::len))
 }
 
+/// 지금 시각 `HH:MM:SS.mmm`(로컬) — 콘솔 진단 줄의 시각 접두(11-16 · 팝업 "1행 복귀" 발화원 간격 판정용 · 시각만 · 내용 없음).
+pub(crate) fn now_hms() -> String {
+    let ms = now_ms();
+    format!("{}.{:03}", hms_local(ms), ms % 1000)
+}
+
 /// UNIX 밀리초 → 로컬 `HH:MM:SS`(라이브러리 없이 — 시스템 UTC 오프셋은 [`nclip_plat::host::utc_offset_secs`]).
 pub(crate) fn hms_local(at_ms: u64) -> String {
     let secs =
