@@ -1050,7 +1050,10 @@ impl Popup {
     ///   지킨다 — 손대지 않았을 때만 예전 계약(최신 항목 선택 · 맨 위)을 따른다.
     pub(crate) fn on_history_changed(&mut self, hist: &History) {
         let before: Vec<u64> = self.rows.iter().map(|r| r.id).collect();
-        let keep = self.nav_moved.then(|| self.rows.get(self.sel).map(|r| r.id)).flatten();
+        let keep = self
+            .nav_moved
+            .then(|| self.rows.get(self.sel).map(|r| r.id))
+            .flatten();
         // 선택 행의 화면 위치(행 위쪽 − 스크롤)를 기억했다가 그대로 돌려놓는다.
         let (old_scroll, old_top) = (
             self.scroll,
