@@ -2,6 +2,8 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-11-16 (6차 · win) — ★ 팝업 비접촉 자동 시험 `9ca919a`(셸 기동 명령 popup.*·clip.*·shell.* · `scripts/popup-cmd-e2e.sh` 6/0 · T-84 확장 · 개발) + autostart 호출처 정리 `d0440ea` → 협업 게이트(test 191/0/3 · check-3os ✓ · popup 6/0 · settings 9/0 · 생략 1줄·거짓 등록 0줄) → 병합 `ba14a35` push · Debug 69080 · 다음 릴리스 대기분 5(2274ace · 2d458d7 · 0674f79 · 2228df1 · ba14a35) · [journal](journal/2026-11-16.md) 13차
+
 ## 2026-11-16 (5차 · win) — 개선 후보 8건 판정 · `2228df1`(협업 · SEM) = 개발 산출물 exe는 autostart 등록 동기화 생략(`is_cargo_target_path` · 시험 1 · Debug가 설치본 HKCU Run 덮어쓴 사고 재발 방지) + watch_win diag 시각 접두 · test 125/0/3 · check-3os ✓ · Debug 75408 · 문서 = 18 §7 처방 2행 · TODO T-92(전 줄 시각 접두 설계) · 보류(실기 적체 P2-18~25) · [journal](journal/2026-11-16.md) 12차
 
 ## 2026-11-16 (4차 · win) — 설정 검색 잔여 소수정 `57bb0af`(언어 변경·재적용 때 검색어 유지 · 토큰 \→/ · 개발) → 협업 게이트(test 143/0/2 · check-3os ✓ · 비접촉 언어 변경 뒤 query 유지 ✓) → 병합 `0674f79` push · Debug 66188 · 다음 릴리스 대기분 3(2274ace · 2d458d7 · 0674f79) · 개선 후보 8건 → [journal](journal/2026-11-16.md) 11차
