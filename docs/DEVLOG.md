@@ -2,6 +2,8 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-11-16 (4차 · win) — 설정 검색 잔여 소수정 `57bb0af`(언어 변경·재적용 때 검색어 유지 · 토큰 \→/ · 개발) → 협업 게이트(test 143/0/2 · check-3os ✓ · 비접촉 언어 변경 뒤 query 유지 ✓) → 병합 `0674f79` push · Debug 66188 · 다음 릴리스 대기분 3(2274ace · 2d458d7 · 0674f79) · 개선 후보 8건 → [journal](journal/2026-11-16.md) 11차
+
 ## 2026-11-16 (3차 · win) — P2-11 콘솔 진단 줄 시각 접두 `2d458d7`(협업 · SEM · diag.rs now_hms + tray_cmd.rs 5곳 · 발화원 A/B/C 판정용 · check-3os ✓ · Debug 66108) · 조사 결론 = diag.log는 fd 통째 교체라 단일 지점 없음(전 줄 접두 = 개발 몫) · settings-cmd-e2e cygpath `2274ace` · [journal](journal/2026-11-16.md) 10차
 
 ## 2026-11-16 (2차 · win) — ★ **v0.2.10 릴리스 ✓**(태그 `c5472b5` · ci `43741918735` ✓ · release `43742210988` 12/12 ✓ · 자산 15 · brew `b4ea6bd` · pkg.sosomlab.com 0.2.10 · ★ **choco 설치본 `nexa-clip` 0.2.10 + 포터블 0.2.10 제출 → Pending**(0.1.5 반려로 guard 설치본 go · 첫 설치본 재제출) · winget skip · validate 경고 "schema header URL pattern" 새 종류) — 내용 = 팝업 선택 결함 `79a38be` · 설정 검색 퍼지 `3bdde7b`·`c58dd42` · 공백 `7c023d7`·`5dfc355` · 검색 입력 nexa-sql 기준 `aedc83f` · fmt `0b6615a` · V3 446/0/4(rustc 1.100 · nexa-ui 71b72b6) · check-3os ✓ · Release 2,633,728 B · settings-cmd-e2e 9/0(cygpath 수정 `2274ace`) · [journal](journal/2026-11-16.md) 8·9차

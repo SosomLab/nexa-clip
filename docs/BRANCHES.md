@@ -4,6 +4,7 @@
 
 | 브랜치 | 생성 | 병합 | 커밋 수 | 요약 |
 |---|---|---|---:|---|
+| `fix/settings-search-small-11-16` | 2026-11-16 | 2026-11-16 → main `--no-ff` 병합 `0674f79`(협업 병합 · push ✓ · ci `43744492884`) | 1 | `57bb0af` 설정 검색 잔여 소수정 — 언어 변경·재적용 때 검색어 유지(`set_query` 복원 · `query()`) · 토큰 `\`→`/` · 협업 게이트 test 143/0/2 · check-3os ✓ · 비접촉 언어 변경 뒤 query 유지 ✓ |
 | (main 직접) | 2026-11-16 | — | 4 | `fa0e990` chore(release) v0.2.10 · `0b6615a` style fmt(popup_win) · `4cf5122` 11-16 1~8차 기록(협업) · `2274ace` settings-cmd-e2e cygpath(협업 · SEM) |
 | `feat/settings-search-parity-11-16` | 2026-11-16 | 2026-11-16 → main 병합 **`c5472b5`**(worktree `../nexa-clip-wt`) · push `5bbf0ac..c5472b5` · ci `43741918735` ✓ · **태그 `v0.2.10` = `c5472b5`** · release `43742210988` 12/12 ✓ | 1 | `aedc83f` 설정 검색 입력 nexa-sql 기준 맞춤 — 편집 키 라우팅(←/→ · Home/End · Delete · Shift 선택 · Ctrl+A · Ctrl+Z/Y · 드래그 · 우클릭 메뉴) · 설정 창 IME(`set_ime_allowed` · `WindowEvent::Ime` → ime_preedit/commit) · 검색어 변경 scroll=0 · 이력 ↓ 초안 보존 · Esc 단계 · 퍼지 short 언어별 · 개발 `cargo test -p nclip-ui` 66/0 |
 | `feat/settings-fuzzy-11-16` | 2026-11-16 | 2026-11-16 → main `--no-ff` 병합 `7935a10` → `fa0e990` chore(release) 0.2.10 · `0b6615a` fmt → v0.2.10에 포함(push ✓) | 4 | `3bdde7b` 설정 검색 퍼지(nexa-sql f7495f16 `query_hit`/`head_subseq` 이식 · short/long · PrefsNoMatch 4언어) · `c58dd42` ALL_MSG 561→562(협업 V1 발견) · `7c023d7` 설정 검색 공백 입력(Key::Space 재전달) · `5dfc355` 빈 검색어 첫 Space 버림 + trim 3곳 · 협업 V1 = test 302/0/3 · clippy 0 · 비접촉 flms·ui fl ✓ |
