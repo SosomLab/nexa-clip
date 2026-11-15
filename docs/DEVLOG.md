@@ -2,6 +2,8 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-11-16 (win · LAPTOP-V3NOGHF6) — 세션 재편(개발 [d75a5e] × 협업 [ed2f72] · §1-1 세마포어 첫 적용) · 최신화 `19c9cad` → `5bbf0ac`(v0.2.9 반영 · 미배포 소스 0) · ★ 팝업 선택 결함 수정 `79a38be`(nav_moved 유지 · test 77/0/2) · ★ 설정 검색 퍼지 `3bdde7b`→`c58dd42`(nexa-sql f7495f16 이식 · ALL_MSG 562 · test 301/0/3) · 공백 입력 `7c023d7`(test 302/0/3 · 비접촉 `ui fl`→ui.flash_ms ✓) · Debug 기본 프로필 70888(target/debug/data · ⚠️ autostart 덮어씀) · 설치본 종료 권한 거부(보류) · choco 설치본 0.1.5 **반려 확정** · 포터블 0.2.9 **승인** · 팝업 1행 복귀 발화원 = rdpclip 재공지/원격 수신 추정(로그 없음) · 실기 P2-23·P2-24 · [journal](journal/2026-11-16.md)
+
 ## 2026-11-14 (4차 · linux · 마감) — 개발 종료(사용자 지시) · 3차 해시 보충(병합 `e56ed65` · push `0258708..e56ed65` · ci `43551525200` ✅) · choco T-78 = 대기 중(04:11Z · 23:59 KST 반려 예정) · 다음 = T-30 설계안 → [journal](journal/2026-11-14.md) 4차
 
 ## 2026-11-14 (3차 · linux) — ★ **v0.2.9 릴리스 ✓**(태그 → `0258708` · release `43550778396` 12/12 · 자산 15 · brew `903ead2` · pkg.sosomlab.com 0.2.9 APT+RPM · choco 포터블 0.2.9 제출 · 설치본·winget guard skip) — T-89 `7f512a6` · T-90 `ff254d7` · T-91 `13b0289` · V2 446/0/9 · V1 9/0 · ci `43550542636` ✅ → [journal](journal/2026-11-14.md) 3차

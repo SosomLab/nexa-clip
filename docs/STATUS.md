@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-11-16 (win · LAPTOP-V3NOGHF6) — ★ v0.2.10 준비(main `c5472b5` · 미push) — 팝업 선택 결함 · 설정 검색 퍼지+공백 · 검색 입력 nexa-sql 기준 맞춤 · 협업 게이트 진행
+
+**범위**: `79a38be`(팝업 선택) · `3bdde7b`·`c58dd42`·`7c023d7`·`5dfc355`(퍼지·공백) → 병합 `7935a10` → `fa0e990` v0.2.10 → `0b6615a` fmt → `aedc83f`(검색 입력 nexa-sql 기준 · IME · 편집 키 · 이력 초안 · Esc) 병합 **`c5472b5`** · beep 영향 없음 · nexa-ui `71b72b6`(pull · 한글 조합 확정) · nexa-license `f33ebef`.
+**V1(협업)**: 79a38be 77/0/2 · c58dd42 301/0/3 · 7c023d7 302/0/3 · clippy 0 · 비접촉 flms·zzqqxx·`ui fl` ✓. **게이트 1차(fa0e990)**: rustc **1.100.0**(update) · `cargo test --workspace` **444/0/4** · check-3os fmt ✗(→ 0b6615a) · clippy 3타깃 ✓. **게이트 2차(c5472b5 + nexa-ui `71b72b6`) ✓ 전부** = test **446/0/4** · check-3os ✓ · Release **2,633,728 B** · `--version` 0.2.10 · Debug 63984 · settings-cmd-e2e 9/0(TMPDIR Windows 경로로 재실행) → push·태그 = 개발([journal 8차](journal/2026-11-16.md)).
+**Debug**: PID 70888 기본 프로필(`target/debug/data` = 설치본 데이터 아님 · 6개 복원) · ⚠️ HKCU Run `NexaClip`이 Debug 경로로 바뀜(설치본 재실행 시 복귀 예상 · 보류) · 설치본 0.2.8은 사용자가 종료.
+**스토어(11-16 규칙 A)**: 🔴 choco 설치본 0.1.5 **반려 확정(11-14 · stale · VT >10)** → T-78 결정 = T-77 서명 vs 0.2.x 재제출 · ★ choco 포터블 **0.2.9 승인(11-14)** · winget PR 2건 = 미확인.
+**☐ 다음**: 게이트 통과 → 개발 push → CI 감시 → 태그 v0.2.10 → release 감시·기록 · 사용자 실기 [21 §15](21-manual-test.md) **P2-23**(팝업 선택 유지) · **P2-24**(퍼지·공백) · **P2-25**(검색 입력 nexa-sql 기준) · 팝업 1행 복귀 발화원 판정 = 로그 시각 접두(개발 후보) + adv.log → [journal 11-16](journal/2026-11-16.md).
+
+---
+
 ## 2026-11-14 (4차 · linux · 마감) — 개발 종료 · main = origin `e56ed65`(CI `43551525200` ✅) · 미커밋 0 · v0.2.9 배포 상태
 
 **다음**: 기능 = **T-30** 설계안 → T-24 · T-29b · T-31b(D-7) · 다음 세션 1차 = 해시 보충 · T-78 반려 결과 기록.

@@ -4,6 +4,9 @@
 
 | 브랜치 | 생성 | 병합 | 커밋 수 | 요약 |
 |---|---|---|---:|---|
+| `feat/settings-search-parity-11-16` | 2026-11-16 | 2026-11-16 → main 병합 `c5472b5`(worktree `../nexa-clip-wt` · 미push) | 1 | `aedc83f` 설정 검색 입력 nexa-sql 기준 맞춤 — 편집 키 라우팅(←/→ · Home/End · Delete · Shift 선택 · Ctrl+A · Ctrl+Z/Y · 드래그 · 우클릭 메뉴) · 설정 창 IME(`set_ime_allowed` · `WindowEvent::Ime` → ime_preedit/commit) · 검색어 변경 scroll=0 · 이력 ↓ 초안 보존 · Esc 단계 · 퍼지 short 언어별 · 개발 `cargo test -p nclip-ui` 66/0 |
+| `feat/settings-fuzzy-11-16` | 2026-11-16 | 2026-11-16 → main `--no-ff` 병합 `7935a10`(미push) → `fa0e990` v0.2.10 · `0b6615a` fmt | 4 | `3bdde7b` 설정 검색 퍼지(nexa-sql f7495f16 `query_hit`/`head_subseq` 이식 · short/long · PrefsNoMatch 4언어) · `c58dd42` ALL_MSG 561→562(협업 V1 발견) · `7c023d7` 설정 검색 공백 입력(Key::Space 재전달) · `5dfc355` 빈 검색어 첫 Space 버림 + trim 3곳 · 협업 V1 = test 302/0/3 · clippy 0 · 비접촉 flms·ui fl ✓ |
+| `fix/popup-selection-11-16` | 2026-11-16 | 2026-11-16 → feat/settings-fuzzy-11-16의 바탕으로 `7935a10`에 포함(main `5bbf0ac` 위 · fmt 보정 `0b6615a`) | 1 | `79a38be` 팝업 ↑/↓ 선택이 원래 자리·맨 위로 되돌아가던 결함 + 옆 항목 붙여넣기 틈(nav_moved 유지 · IME 빈 Preedit 초기화 제거 · 350ms 클릭 무시 · 시험 reselect_* 2) · 협업 V1 test 77/0/2 · clippy 0 |
 | `docs/progress-11-14-close` | 2026-11-14 | (push 뒤 보충) | 1 | 11-14 4차 세션 마감 문서 — 3차 해시 보충 · 개발 잔여 정리 · choco T-78 재확인 · TODO §0 · STATUS · DEVLOG (문서만) |
 | `docs/release-0.2.9-11-14` | 2026-11-14 | 2026-11-14 → main `--no-ff` 병합 `e56ed65`(커밋 `2c2a9c5` · 삭제 ✓ · push `0258708..e56ed65` · ci `43551525200` ✅ 3 OS) | 1 | 11-14 3차 문서 — T-89~91 ✅ · v0.2.9 릴리스 기록 · 22 I-13 · 21 P2-21·P2-22 · CLAUDE.md 현 단계 v0.2.9 (문서만) |
 | `chore/release-0.2.9` | 2026-11-14 | 2026-11-14 → main ff(`0258708` · 삭제 ✓ · push `ad22fed..0258708` · ci `43550542636` ✅ 3 OS · 태그 `v0.2.9` → `0258708` · release `43550778396` ✅ 12/12) | 1 | v0.2.9 버전 올림(Cargo 0.2.9 + lock) · 자산 15 · brew `903ead2` · pkg.sosomlab.com 0.2.9 APT+RPM(linux-repo `43551140009` ✓) · choco 포터블 0.2.9 제출 · 설치본·winget guard skip · journal 11-14 3차 |
