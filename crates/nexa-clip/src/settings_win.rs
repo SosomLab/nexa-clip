@@ -754,6 +754,9 @@ impl App {
             Err(e) => eprintln!("softbuffer context 실패: {e}"),
         }
         self.laid_out = (0, 0);
+        // ★ 한글 조합 이벤트(Ime::Preedit/Commit)를 받는다(11-16 · nexa-sql prefs_win 기준 — 메인창·팝업에는 있었고
+        //   설정 창에만 빠져 있어 **설정 검색에 한글을 칠 수 없었다**).
+        win.set_ime_allowed(true);
         self.window = Some(win);
     }
 
@@ -2455,6 +2458,31 @@ impl ApplicationHandler for App {
                 }
             }
 
+            // ★ 한글 조합(11-16) — 설정 화면은 위젯이 지금 글을 받는 입력 상자(검색·글꼴명·직접 입력)에 넣는다.
+            //   다른 화면(라이선스·파일 선택·로그)은 확정 글자만 문자 입력으로 흘린다.
+            WindowEvent::Ime(ime) => {
+                let in_settings = matches!(self.view, View::Settings);
+                match ime {
+                    winit::event::Ime::Preedit(t, _) if in_settings => {
+                        let mut inv = Invalidations::default();
+                        self.widget.ime_preedit(&t, &mut inv);
+                    }
+                    winit::event::Ime::Commit(t) if in_settings => {
+                        let mut inv = Invalidations::default();
+                        self.widget.ime_commit(&t, &mut inv);
+                    }
+                    winit::event::Ime::Commit(t) => {
+                        let now = self.now_ms();
+                        for c in t.chars().filter(|c| !c.is_control()) {
+                            self.feed(InputEvent::Char { c, now_ms: now });
+                        }
+                    }
+                    _ => {}
+                }
+                self.drain_changes();
+                self.redraw();
+            }
+
             WindowEvent::KeyboardInput { event, .. } => {
                 if event.state != ElementState::Pressed {
                     return;
@@ -2469,7 +2497,9 @@ impl ApplicationHandler for App {
                 };
                 match event.logical_key.as_ref() {
                     Key::Named(NamedKey::Escape) => {
-                        if matches!(self.view, View::Settings) {
+                        // ★ 열린 콤보·직접 입력·목록 행 편집·편집 메뉴가 있으면 Esc는 **그것을 닫는다**(11-16 · nexa-sql
+                        //   `any_combo_open` 기준 — 종전에는 곧바로 창이 닫혔다).
+                        if matches!(self.view, View::Settings) && !self.widget.wants_escape() {
                             self.request_close(el);
                         } else {
                             self.feed(named(CtlKey::Escape));
@@ -2498,6 +2528,21 @@ impl ApplicationHandler for App {
                         && phys_is(&event.physical_key, winit::keyboard::KeyCode::KeyA) =>
                     {
                         self.feed(InputEvent::SelectAll);
+                    }
+                    // ★ 실행 취소·다시 실행(11-16 · nexa-sql 기준) — Ctrl+Z / Ctrl+Y · Ctrl+Shift+Z.
+                    _ if primary
+                        && phys_is(&event.physical_key, winit::keyboard::KeyCode::KeyZ) =>
+                    {
+                        self.feed(if shift {
+                            InputEvent::Redo
+                        } else {
+                            InputEvent::Undo
+                        });
+                    }
+                    _ if primary
+                        && phys_is(&event.physical_key, winit::keyboard::KeyCode::KeyY) =>
+                    {
+                        self.feed(InputEvent::Redo);
                     }
                     // ★ 클립보드 단축(09-03 — 암호·핸들 입력란): 복사·잘라내기·붙여넣기.
                     _ if primary

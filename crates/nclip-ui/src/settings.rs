@@ -1001,12 +1001,12 @@ fn entry_matches(e: &Entry, toks: &[String]) -> bool {
     if toks.is_empty() {
         return true;
     }
-    let (mut short, mut long) = (String::new(), String::new());
-    short.push_str(e.key);
-    short.push(' ');
+    // ★ short는 **언어별로 따로**(키 + 그 언어 제목) — 한 줄로 이으면 부분열이 다른 언어 제목까지 건너뛰어 느슨해진다
+    //   (nexa-sql은 UI 언어 1벌 `"{key} {label}"`에만 건다 · 11-16).
+    let mut shorts: Vec<String> = Vec::with_capacity(Lang::ALL.len());
+    let mut long = String::new();
     for lang in Lang::ALL {
-        short.push_str(tr(lang, e.label));
-        short.push(' ');
+        shorts.push(format!("{} {}", e.key, tr(lang, e.label)).to_lowercase());
         if let Some(g) = group_of(e.cat) {
             long.push_str(tr(lang, g));
             long.push(' ');
@@ -1020,20 +1020,25 @@ fn entry_matches(e: &Entry, toks: &[String]) -> bool {
         long.push_str(&desc_text(lang, e));
         long.push(' ');
     }
-    query_hit(&short.to_lowercase(), &long.to_lowercase(), toks)
+    query_hit(&shorts, &long.to_lowercase(), toks)
 }
 
 /// 토큰 전부가 맞는가(AND) — `short`·`long`은 소문자. 원본 = nexa-sql `prefs_win.rs` `query_hit`
 /// (차이: 영문 토큰의 short **부분 문자열**도 인정 — clip의 기존 검색("lash" → flash)을 깨지 않는다).
-fn query_hit(short: &str, long: &str, toks: &[String]) -> bool {
+fn query_hit(shorts: &[String], long: &str, toks: &[String]) -> bool {
     toks.iter().all(|t| {
         if crate::jamo::has_hangul(t) {
             let j = crate::jamo::decompose(t, true);
-            crate::jamo::contains_jamo(short, &j, true)
+            shorts
+                .iter()
+                .any(|s| crate::jamo::contains_jamo(s, &j, true))
                 || crate::jamo::contains_jamo(long, &j, true)
         } else {
             let tok: Vec<char> = t.chars().collect();
-            short.contains(t.as_str()) || long.contains(t.as_str()) || head_subseq(&tok, short)
+            long.contains(t.as_str())
+                || shorts
+                    .iter()
+                    .any(|s| s.contains(t.as_str()) || head_subseq(&tok, s))
         }
     })
 }
@@ -1206,6 +1211,8 @@ pub struct SettingsWidget {
     /// 검색 이력(최근이 앞 · `prefs.search` 탭 구분 · 최대 [`HISTORY_MAX`]) · ↑/↓ 탐색 위치.
     history: Vec<String>,
     hist_pos: Option<usize>,
+    /// ★ 이력 되부르기 전의 **치던 글**(11-16 · nexa-sql `search_history` 차용) — ↓로 끝까지 내려오면 돌려놓는다.
+    hist_draft: String,
     /// 우측 행들(가시 항목 + 컨트롤).
     rows: Vec<RowUi>,
     /// 현재 값 스냅숏(컨트롤 초기화·보고 근거).
@@ -1312,6 +1319,7 @@ impl SettingsWidget {
             option_labels: HashMap::new(),
             history,
             hist_pos: None,
+            hist_draft: String::new(),
             rows: Vec::new(),
             values,
             changes: Vec::new(),
@@ -1547,12 +1555,74 @@ impl SettingsWidget {
     }
 
     /// 검색 텍스트가 코드 경로(잘라내기·붙여넣기)로 바뀌었으면 결과를 재구성한다.
+    ///
+    /// ★ 11-16(nexa-sql 기준): 조합 중 글자까지 포함(`display_text`)해 즉시 거르고, 검색어가 바뀌면 **맨 위부터**
+    /// 보인다(`scroll = 0` — 내려 둔 채 검색하면 결과 중간부터 보였다) · 이력 탐색도 끝낸다.
     fn sync_query(&mut self, inv: &mut Invalidations) {
-        let q = self.search.text();
+        let q = self.search.display_text();
         if q != self.query {
             self.query = q;
+            self.hist_pos = None;
+            self.scroll = 0;
             self.rebuild(inv);
+            inv.push(self.bounds);
         }
+    }
+
+    /// ★ Esc를 **위젯이 먼저 받아야 하는 상태**인가(11-16 · nexa-sql `any_combo_open` 차용) — 열린 콤보·직접 입력 중인
+    /// 콤보·목록 행 편집·편집 메뉴가 있으면 Esc는 그것을 닫는 키다(셸이 곧바로 창을 닫으면 안 된다).
+    #[must_use]
+    pub fn wants_escape(&self) -> bool {
+        self.search.popup_open()
+            || self.any_list_editing()
+            || self.rows.iter().any(|r| match &r.ctl {
+                RowCtl::Combo(c) => c.is_open() || c.is_editing(),
+                RowCtl::Font { family, size } => {
+                    family.popup_open() || size.is_open() || size.is_editing()
+                }
+                RowCtl::Face(f) => f.popup_open(),
+                _ => false,
+            })
+    }
+
+    /// ★ 한글 등 **조합 중 글자**(IME Preedit · 11-16 · nexa-sql prefs_win `WindowEvent::Ime` 차용) — 지금 글을 받는
+    /// 입력 상자(글꼴명·직접 입력 콤보·목록 행 편집 → 없으면 검색)에 넣는다. 검색이면 조합 중 글자로 즉시 거른다.
+    pub fn ime_preedit(&mut self, text: &str, inv: &mut Invalidations) {
+        if let Some(tb) = self.editing_textbox_mut() {
+            tb.set_preedit(text, inv);
+        } else {
+            if !text.is_empty() {
+                self.search.set_focused(true);
+            }
+            self.search.set_preedit(text, inv);
+            self.sync_query(inv);
+        }
+        inv.push(self.bounds);
+    }
+
+    /// ★ 조합 확정(IME Commit · 11-16) — 조합 표시를 지우고 글자를 **문자 입력 경로 그대로** 흘린다.
+    pub fn ime_commit(&mut self, text: &str, inv: &mut Invalidations) {
+        self.ime_preedit("", inv);
+        for c in text.chars().filter(|c| !c.is_control()) {
+            self.on_event(&InputEvent::Char { c, now_ms: 0 }, inv);
+        }
+    }
+
+    /// 검색 말고 지금 글을 받는 입력 상자(포커스된 글꼴명 · 직접 입력 중인 콤보 · 편집 중인 목록 행).
+    fn editing_textbox_mut(&mut self) -> Option<&mut TextBox> {
+        self.rows.iter_mut().find_map(|r| match &mut r.ctl {
+            RowCtl::Font { family, size } => {
+                if family.is_focused() {
+                    Some(family.as_mut())
+                } else {
+                    size.editing_input()
+                }
+            }
+            RowCtl::Face(f) if f.is_focused() => Some(f),
+            RowCtl::Combo(c) => c.editing_input(),
+            RowCtl::List(l) => l.editing_input(),
+            _ => None,
+        })
     }
 
     /// 배율 지정(고DPI) — 전 컨트롤 전파 + 재구성.
@@ -2864,6 +2934,50 @@ impl Widget for SettingsWidget {
                 return;
             }
         }
+        // ── 검색 상자 — **편집 이벤트 일반 라우팅**(11-16 사용자 "nexa-sql 기준으로 모두 수정") ──
+        //    종전에는 MouseDown·Char만 닿아 ←/→·Home/End·Delete·Shift 선택·Ctrl+A·Ctrl+Z/Y·드래그 선택·우클릭 편집
+        //    메뉴가 전부 버려졌다(기능은 TextBox에 이미 있다 — 위 글꼴명 블록과 같은 결함). 원본 = nexa-sql
+        //    prefs_win.rs `route`·`focused_textbox`. 편집 메뉴가 열려 있으면 검색 상자가 모달로 전부 받는다.
+        {
+            let mut handled = false;
+            if self.search.popup_open() {
+                self.search.on_event(ev, inv);
+                handled = true;
+            } else if let InputEvent::RightDown { x, y } = *ev {
+                if self.search.bounds().contains(Point { x, y }) {
+                    self.search.set_focused(true);
+                    self.search.on_event(ev, inv); // 편집 메뉴 열기
+                    handled = true;
+                }
+            } else if self.search.is_focused()
+                && !self.any_family_focused()
+                && !self.any_list_wants_keys()
+                && !self.any_list_editing()
+            {
+                match *ev {
+                    InputEvent::MouseMove { .. } | InputEvent::MouseUp { .. } => {
+                        self.search.on_event(ev, inv); // 드래그 선택 추적(비캡처 — 아래로도 흐른다)
+                    }
+                    InputEvent::SelectAll | InputEvent::Undo | InputEvent::Redo => {
+                        self.search.on_event(ev, inv);
+                        handled = true;
+                    }
+                    InputEvent::Key {
+                        key: Key::Left | Key::Right | Key::Home | Key::End | Key::Delete,
+                        ..
+                    } => {
+                        self.search.on_event(ev, inv);
+                        handled = true;
+                    }
+                    _ => {}
+                }
+            }
+            if handled {
+                self.sync_query(inv);
+                inv.push(self.bounds);
+                return;
+            }
+        }
         // ── 하단 줄(10-10): 고급 스위치 · 설정 파일 열기 · 닫기 ──
         {
             let in_bar = match *ev {
@@ -3036,15 +3150,10 @@ impl Widget for SettingsWidget {
                 self.search.set_focused(self.search.bounds().contains(p));
                 // ×(지우기) 클릭 처리 — 값이 지워지면 검색 해제 재구성.
                 self.search.on_event(ev, inv);
-                if self.search.take_changed().is_some() {
-                    let q = self.search.text();
-                    if q != self.query {
-                        self.query = q;
-                        self.hist_pos = None;
-                        self.rebuild(inv);
-                        inv.push(self.bounds);
-                        return;
-                    }
+                if self.search.take_changed().is_some() && self.search.display_text() != self.query
+                {
+                    self.sync_query(inv);
+                    return;
                 }
                 // ★ 비밀 행 버튼(09-03) — 눈 = 가림 토글 · 생성 = 2초 무장 후 2차 클릭. 잠긴 행은 건너뛴다(09-04).
                 let locked_now: Vec<bool> =
@@ -3262,12 +3371,7 @@ impl Widget for SettingsWidget {
                     // 기본 타이핑 = 검색(포커스 없어도 검색으로 흐른다 — 기존 UX 유지).
                     self.search.set_focused(true);
                     self.search.on_event(ev, inv);
-                    let q = self.search.text();
-                    if q != self.query {
-                        self.query = q;
-                        self.hist_pos = None;
-                        self.rebuild(inv);
-                    }
+                    self.sync_query(inv);
                 }
                 inv.push(self.bounds);
             }
@@ -3385,20 +3489,31 @@ impl Widget for SettingsWidget {
                         && self.search.is_focused()
                         && (!self.query.trim().is_empty() || self.hist_pos.is_some()) =>
                 {
-                    let n = self.history.len();
-                    let next = match (key, self.hist_pos) {
-                        (Key::Up, None) => Some(0),
-                        (Key::Up, Some(i)) => Some((i + 1).min(n - 1)),
-                        (Key::Down, Some(0) | None) => None,
-                        (Key::Down, Some(i)) => Some(i - 1),
-                        _ => self.hist_pos,
-                    };
-                    self.hist_pos = next;
-                    let text = next.map_or(String::new(), |i| self.history[i].clone());
-                    self.search.set_text(&text);
-                    self.query = text;
-                    self.rebuild(inv);
-                    inv.push(self.bounds);
+                    // ★ 11-16(nexa-sql `search_history` 기준): 되부르기 전의 ↓는 **아무것도 하지 않는다**(종전에는 치던
+                    //   검색어를 지웠다) · 되부르기를 시작할 때 치던 글을 기억했다가 ↓로 끝까지 내려오면 돌려놓는다.
+                    if !matches!((key, self.hist_pos), (Key::Down, None)) {
+                        let n = self.history.len();
+                        if self.hist_pos.is_none() {
+                            self.hist_draft = self.query.clone();
+                        }
+                        let next = match (key, self.hist_pos) {
+                            (Key::Up, None) => Some(0),
+                            (Key::Up, Some(i)) => Some((i + 1).min(n - 1)),
+                            (Key::Down, Some(0)) => None,
+                            (Key::Down, Some(i)) => Some(i - 1),
+                            _ => self.hist_pos,
+                        };
+                        self.hist_pos = next;
+                        let text = next.map_or_else(
+                            || std::mem::take(&mut self.hist_draft),
+                            |i| self.history[i].clone(),
+                        );
+                        self.search.set_text(&text);
+                        self.query = text;
+                        self.scroll = 0;
+                        self.rebuild(inv);
+                        inv.push(self.bounds);
+                    }
                 }
                 // Enter = 검색어를 이력에 기록(중복 제거 · 최근이 앞 · 최대 20) → 호스트가 영속.
                 Key::Enter if self.search.is_focused() && !self.query.trim().is_empty() => {
@@ -4189,7 +4304,12 @@ mod card_tests {
         w.on_event(&key(Key::Up), &mut inv);
         assert_eq!(w.query, "theme");
         w.on_event(&key(Key::Down), &mut inv);
-        assert_eq!(w.query, "");
+        assert_eq!(w.query, "x", "끝까지 내려오면 치던 글로 돌아온다(11-16)");
+        w.on_event(&key(Key::Down), &mut inv);
+        assert_eq!(
+            w.query, "x",
+            "되부르기 전의 ↓는 검색어를 지우지 않는다(11-16)"
+        );
     }
 
     #[test]
@@ -4366,6 +4486,44 @@ mod card_tests {
         );
         w.set_query("flms", &mut inv);
         assert!(w.dump_text().lines().any(|l| l == "ui.flash_ms"));
+    }
+
+    /// ★ 11-16(nexa-sql 기준) — 검색 상자에 편집 키가 닿는다: ←·Home·Delete·Ctrl+A · 검색어가 바뀌면 맨 위부터.
+    #[test]
+    fn search_box_gets_edit_keys() {
+        let (mut w, mut inv) = widget();
+        for c in "uix".chars() {
+            w.on_event(&ch(c), &mut inv);
+        }
+        // ← 한 칸 뒤 Backspace = 가운데 글자('i')가 지워진다(캐럿 이동이 닿았다는 증거).
+        w.on_event(&key(Key::Left), &mut inv);
+        w.on_event(&ch('\u{8}'), &mut inv);
+        assert_eq!(w.query, "ux");
+        // Home 뒤 Delete = 첫 글자가 지워진다.
+        w.on_event(&key(Key::Home), &mut inv);
+        w.on_event(&key(Key::Delete), &mut inv);
+        assert_eq!(w.query, "x");
+        // 전체 선택 뒤 글자 = 통째로 바뀐다.
+        w.on_event(&InputEvent::SelectAll, &mut inv);
+        w.on_event(&ch('u'), &mut inv);
+        assert_eq!(w.query, "u");
+        // 내려 둔 채 검색어를 바꾸면 맨 위부터 보인다.
+        w.scroll = 120;
+        w.on_event(&ch('i'), &mut inv);
+        assert_eq!(w.scroll, 0);
+    }
+
+    /// ★ 11-16(nexa-sql 기준) — 한글 조합 중 글자로 즉시 거르고, 확정하면 검색어가 된다.
+    #[test]
+    fn ime_preedit_filters_and_commit_types() {
+        let (mut w, mut inv) = widget();
+        w.ime_preedit("테", &mut inv);
+        assert_eq!(w.query, "테");
+        assert!(w.dump_text().lines().any(|l| l == "ui.theme"));
+        w.ime_commit("테마", &mut inv);
+        assert_eq!(w.query, "테마");
+        assert_eq!(w.search.text(), "테마");
+        assert!(!w.wants_escape());
     }
 
     /// ★ 11-16 사용자 신고 — 셸이 보내는 `Key::Space`가 검색어의 공백으로 들어간다(낱말 AND 검색의 전제).
