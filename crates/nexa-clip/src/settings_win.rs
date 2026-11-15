@@ -158,6 +158,14 @@ struct HotkeyCapture {
     cancel: nexa_ctl::controls::Button,
 }
 
+/// ★ 기동 명령 중 **상주 셸이 처리하는 것**(11-16 · T-84 확장 — 팝업 비접촉 시험): `popup.*` · `clip.*` · `shell.*`.
+///   같은 환경변수(`NEXA_CLIP_STARTUP_CMD`)를 설정 창 큐와 셸 큐가 접두로 나눠 갖는다 — 명령 표 = `tray_cmd.rs` `startup_cmd`.
+pub(crate) fn is_shell_cmd(c: &str) -> bool {
+    ["popup.", "clip.", "shell."]
+        .iter()
+        .any(|p| c.starts_with(p))
+}
+
 impl App {
     pub(crate) fn new(font: Font, conf: Settings, resident: bool) -> Self {
         // 연결 상태 노트는 `poll_sync_status`가 첫 틱에 채운다(09-03 — 자동 Test 표시).
@@ -207,7 +215,8 @@ impl App {
                 .map(|v| {
                     v.split(',')
                         .map(str::trim)
-                        .filter(|c| !c.is_empty())
+                        // 셸 몫(`popup.`·`clip.`·`shell.` · 11-16)은 상주 셸의 큐가 가져간다 — 여기서는 뺀다.
+                        .filter(|c| !c.is_empty() && !is_shell_cmd(c))
                         .map(String::from)
                         .collect()
                 })
