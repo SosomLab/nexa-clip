@@ -930,9 +930,12 @@ pub(crate) fn value_valid(kind: SettingKind, value: &str) -> bool {
     }
 }
 
-/// 검색어 → 소문자 토큰(공백 구분 **AND 매칭** — VS Code 규약).
+/// 검색어 → 소문자 토큰(공백 구분 **AND 매칭** — VS Code 규약). `\`는 `/`로 본다(11-16 · nexa-sql
+/// `palette::query_tokens` `norm_seps` 기준 — 경로를 어느 구분자로 쳐도 같은 결과).
 fn tokens(q: &str) -> Vec<String> {
-    q.split_whitespace().map(str::to_lowercase).collect()
+    q.split_whitespace()
+        .map(|t| t.to_lowercase().replace('\\', "/"))
+        .collect()
 }
 
 /// 설명 워드랩(08-11) — `avail`(물리 px) 안에서 그리디 줄바꿈. 공백 없는 긴 조각
@@ -1399,6 +1402,12 @@ impl SettingsWidget {
         self.layout(inv);
         inv.push(self.bounds);
         true
+    }
+
+    /// 지금 검색어(11-16) — 호스트가 위젯을 다시 만들 때(언어 변경·설정 재적용) 되살리려고 읽는다.
+    #[must_use]
+    pub fn query(&self) -> &str {
+        &self.query
     }
 
     /// ★ 검색어를 코드 경로로 넣는다(기동 명령 `prefs.search:<글>` · 11-08 · T-84) — 입력 상자에 친 것과 같은 재구성.

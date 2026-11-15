@@ -1344,9 +1344,14 @@ impl App {
             //   셸(트레이·메인·팝업)은 take_ui_refresh로 알아채 갱신한다.
             if key == "app.lang" {
                 crate::conf::apply_lang(&self.conf);
+                // ★ 검색어 유지(11-16 · nexa-sql 기준 — 원본은 자리글만 바꾼다): 위젯을 새로 만들어도 치던 검색은 남긴다.
+                let q = self.widget.query().to_string();
                 self.widget = SettingsWidget::new(&self.conf.state);
                 let mut inv2 = Invalidations::default();
                 self.widget.set_scale(self.scale, &mut inv2);
+                if !q.trim().is_empty() {
+                    self.widget.set_query(&q, &mut inv2);
+                }
                 self.laid_out = (0, 0);
                 self.ui_refresh = true;
                 // ★ 새 위젯은 동기화 노트·서버 행이 비어 있다 — 다음 poll_sync_status가 다시 채우게(11-08 D3 — 종전엔
@@ -1728,9 +1733,13 @@ impl App {
 
     /// 값이 코드로 바뀐 뒤 위젯 스냅숏을 다시 만든다(언어 변경과 같은 길).
     fn rebuild_widget(&mut self) {
+        let q = self.widget.query().to_string(); // 검색어 유지(11-16)
         self.widget = SettingsWidget::new(&self.conf.state);
         let mut inv2 = Invalidations::default();
         self.widget.set_scale(self.scale, &mut inv2);
+        if !q.trim().is_empty() {
+            self.widget.set_query(&q, &mut inv2);
+        }
         self.laid_out = (0, 0);
         self.ui_refresh = true;
         self.refresh_license_info();
