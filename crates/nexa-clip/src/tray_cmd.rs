@@ -422,6 +422,15 @@ fn sync_autostart(conf: &mut Settings) {
     if crate::conf::profile().is_some() {
         return;
     }
+    // ★ 개발 산출물(target/debug|release)에서 뜬 exe는 자동 시작을 건드리지 않는다(11-16 · 2228df1의 호출처 짝) —
+    //   `apply`가 이미 건너뛰지만, 여기서 막지 않으면 "등록 동기화" 로그와 `app.autostart_reg=on` 마커가 거짓으로 남는다.
+    if let Some(exe) = nclip_plat::autostart::dev_build_exe() {
+        println!(
+            "자동 시작: 개발 산출물 경로라 등록 동기화 생략 — {}",
+            exe.display()
+        );
+        return;
+    }
     let want = conf.state.get("app.autostart") == "on";
     let was = conf.state.get("app.autostart_reg") == "on";
     let now = Instant::now();
@@ -509,6 +518,11 @@ fn to_history(it: StoredItem) -> HistoryItem {
 /// 상주 셸 — 창·트레이·감시·이력·팝업을 winit 한 루프로.
 struct Shell {
     app: App,
+    /// ★ 셸 기동 명령 큐(11-16 · T-84 확장 — 팝업 비접촉 시험): `NEXA_CLIP_STARTUP_CMD` 중 `popup.*`·`clip.*`·`shell.*`.
+    ///   설정 창 큐([`crate::settings_win`])와 같은 환경변수를 접두로 나눠 갖는다 · 명령 표 = [`Shell::startup_cmd`].
+    startup: std::collections::VecDeque<String>,
+    /// 기동 명령 `shell.sleep:<ms>`의 대기 마감.
+    startup_until: Option<Instant>,
     /// ★ 렌더 공용 폰트(09-03 — "이미지로 복사"가 창 없이도 그린다).
     font: nexa_gfx::Font,
     popup: Popup,
@@ -2590,6 +2604,17 @@ impl Shell {
             return;
         }
         println!("팝업: 열기 — 이력 {}개", self.history.len());
+        self.prep_popup();
+        // ★ 팝업이 뜨기 전의 포그라운드가 붙여넣기 대상이다(K-1 — 순서가 전부).
+        if !self.paste.capture_focus() {
+            eprintln!("대상 창을 기억하지 못했습니다 — 선택해도 주입은 생략됩니다");
+        }
+        self.popup
+            .open(el, nclip_plat::tray::cursor_pos(), &self.history);
+    }
+
+    /// 팝업을 열기 전 설정 반영(보기 모드 · 병합 · 마지막 크기 · 테마) — 단축키와 기동 명령이 같이 쓴다.
+    fn prep_popup(&mut self) {
         self.popup
             .set_view_code(self.app.conf.state.get("ui.popup_view"));
         self.popup
@@ -2600,12 +2625,87 @@ impl Shell {
         self.popup
             .set_pref_size((pw >= 200 && ph >= 160).then_some((pw, ph)));
         self.popup.set_theme(self.app.theme());
-        // ★ 팝업이 뜨기 전의 포그라운드가 붙여넣기 대상이다(K-1 — 순서가 전부).
-        if !self.paste.capture_focus() {
-            eprintln!("대상 창을 기억하지 못했습니다 — 선택해도 주입은 생략됩니다");
+    }
+
+    /// ★ 셸 기동 명령 한 틱(11-16) — 팝업이 떠 있으면 **한 번 그린 뒤** 다음 명령(설정 창 `startup_tick`과 같은 규칙).
+    ///   돌려주는 값 = 다시 깨어날 시각(큐가 비었으면 None).
+    fn startup_tick(&mut self, el: &ActiveEventLoop, now: Instant) -> Option<Instant> {
+        if self.startup.is_empty() {
+            return None;
         }
-        self.popup
-            .open(el, nclip_plat::tray::cursor_pos(), &self.history);
+        let soon = now + Duration::from_millis(16);
+        if let Some(t) = self.startup_until {
+            if now < t {
+                return Some(t);
+            }
+            self.startup_until = None;
+        }
+        if self.popup.is_open() && !self.popup.painted() {
+            return Some(soon);
+        }
+        if let Some(id) = self.startup.pop_front() {
+            self.startup_cmd(el, &id);
+            if self.popup.is_open() {
+                self.popup.clear_painted();
+            }
+        }
+        Some(soon)
+    }
+
+    /// ★ 셸 기동 명령(11-16 · T-84 확장) — **OS 입력·실제 클립보드를 쓰지 않고** 팝업 선택 로직을 시험한다
+    ///   (`scripts/popup-cmd-e2e.sh` · `--profile <이름> tray`로 격리). 명령 표:
+    ///
+    ///   | 명령 | 하는 일 |
+    ///   |---|---|
+    ///   | `clip.push:<글>` | 글 한 항목을 **캡처 경로 그대로**(`on_captured`) 이력에 넣는다 — 팝업이 떠 있으면 이력 변경 통지가 간다 |
+    ///   | `popup.open` | 팝업을 연다(포커스 기억·커서 위치 없이 · 포커스를 잃어도 닫히지 않는다) |
+    ///   | `popup.key:up` · `popup.key:down` | 선택 한 칸(실제 ↑/↓와 같은 본문) |
+    ///   | `popup.dump:<파일>` | 팝업 상태(`이름=값` 줄)를 파일로 |
+    ///   | `popup.close` | 팝업을 닫는다 |
+    ///   | `shell.sleep:<ms>` | 다음 명령까지 기다린다 |
+    ///   | `shell.quit` | 상주를 끝낸다(저장 마감 경로) |
+    ///
+    ///   붙여넣기(Enter)는 넣지 않았다 — 실제 클립보드와 키 주입을 건드린다.
+    fn startup_cmd(&mut self, el: &ActiveEventLoop, id: &str) {
+        println!("기동 명령: {id}");
+        if let Some(text) = id.strip_prefix("clip.push:") {
+            let snap = ClipSnapshot {
+                reps: vec![nclip_core::RawRep {
+                    format: "text/plain".to_string(),
+                    data: text.as_bytes().to_vec(),
+                }],
+                source_app: None,
+                concealed: false,
+                seq: 0,
+            };
+            self.on_captured(Box::new(snap), None);
+        } else if id == "popup.open" {
+            if !self.popup.is_open() {
+                self.prep_popup();
+                self.popup.set_hold_open(true);
+                self.popup.open(el, None, &self.history);
+                self.popup.set_hold_open(true); // open이 상태를 초기화해도 유지되게 뒤에도 건다
+            }
+        } else if let Some(k) = id.strip_prefix("popup.key:") {
+            match k {
+                "up" => self.popup.nav_step(false),
+                "down" => self.popup.nav_step(true),
+                _ => eprintln!("기동 명령: 모르는 키 — {k}"),
+            }
+        } else if let Some(path) = id.strip_prefix("popup.dump:") {
+            if let Err(e) = std::fs::write(path, self.popup.dump_text()) {
+                eprintln!("기동 명령: 덤프 실패 — {path}: {e}");
+            }
+        } else if id == "popup.close" {
+            self.close_popup();
+        } else if let Some(ms) = id.strip_prefix("shell.sleep:") {
+            let ms: u64 = ms.parse().unwrap_or(0);
+            self.startup_until = Some(Instant::now() + Duration::from_millis(ms.min(10_000)));
+        } else if id == "shell.quit" {
+            let _ = self.proxy.send_event(ShellEvent::Quit);
+        } else {
+            eprintln!("기동 명령: 모름 — {id}");
+        }
     }
 }
 
@@ -2991,6 +3091,17 @@ impl ApplicationHandler<ShellEvent> for Shell {
             }
             crate::transparency::Tick::Idle => {}
         }
+        // ★ 셸 기동 명령(11-16) — 큐가 남아 있으면 그 시각에 깨어난다(더 이른 예약은 유지).
+        if let Some(at) = self.startup_tick(el, Instant::now()) {
+            let cur = el.control_flow();
+            if !matches!(cur, ControlFlow::Poll) {
+                let at = match cur {
+                    ControlFlow::WaitUntil(t) if t < at => t,
+                    _ => at,
+                };
+                el.set_control_flow(ControlFlow::WaitUntil(at));
+            }
+        }
     }
 }
 
@@ -3347,6 +3458,17 @@ pub(crate) fn run() {
     let mut shell = Shell {
         font: font.clone(),
         app: App::new(font, conf, true),
+        startup: std::env::var("NEXA_CLIP_STARTUP_CMD")
+            .ok()
+            .map(|v| {
+                v.split(',')
+                    .map(str::trim)
+                    .filter(|c| crate::settings_win::is_shell_cmd(c))
+                    .map(String::from)
+                    .collect()
+            })
+            .unwrap_or_default(),
+        startup_until: None,
         popup: Popup::new(popup_font),
         main: MainWin::new(main_font),
         tray,

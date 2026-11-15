@@ -209,6 +209,10 @@ pub(crate) struct Popup {
     /// ★ 이력 변경으로 행 배열이 실제로 바뀐 시각(11-16) — 직후 [`ROW_SHIFT_GUARD`] 동안의 행 클릭은 버린다
     ///   (사용자가 보고 누른 프레임과 판정 행이 한 칸 어긋나 **옆 항목이 붙여넣어지던** 틈).
     rows_shifted_at: Option<std::time::Instant>,
+    /// ★ 마지막 명령 뒤로 한 번 그렸는가(11-16 · 기동 명령 순차 실행의 동기점 — 설정 창 `painted`와 같은 뜻).
+    painted: bool,
+    /// ★ 자동 시험 중(11-16 · 기동 명령 `popup.open`) — 포커스를 잃어도 닫지 않는다(시험이 포커스를 쥐지 않는다).
+    hold_open: bool,
 }
 
 /// 행이 밀린 직후 클릭을 버리는 시간 — 사람의 반응 지연(보고 → 누름)보다 조금 길게.
@@ -407,7 +411,72 @@ impl Popup {
             row_intent: nexa_ctl::tokens::HoverIntent::default(),
             nav_moved: false,
             rows_shifted_at: None,
+            painted: false,
+            hold_open: false,
         }
+    }
+
+    /// ★ ↑/↓ 한 칸(11-16) — 키 처리와 기동 명령(`popup.key:up|down`)이 **같은 본문**을 쓴다(시험이 실제 경로를 탄다).
+    pub(crate) fn nav_step(&mut self, down: bool) {
+        self.nav_moved = true;
+        if down {
+            if self.sel + 1 < self.rows.len() {
+                self.sel += 1;
+            }
+        } else {
+            self.sel = self.sel.saturating_sub(1);
+        }
+        self.ensure_visible();
+        self.redraw();
+    }
+
+    /// 자동 시험용 — 포커스를 잃어도 닫지 않게(기동 명령으로 연 팝업만 · 닫을 때 풀린다).
+    pub(crate) fn set_hold_open(&mut self, on: bool) {
+        self.hold_open = on;
+    }
+
+    /// 마지막 [`Self::clear_painted`] 뒤로 그렸는가 · 다시 그리기 요청(기동 명령 틱).
+    pub(crate) fn painted(&self) -> bool {
+        self.painted
+    }
+    pub(crate) fn clear_painted(&mut self) {
+        self.painted = false;
+        self.redraw();
+    }
+
+    /// ★ 자체 시험용 덤프(11-16 · 기동 명령 `popup.dump:<파일>` · 설정 창 `dump_text`와 같은 `이름=값` 줄):
+    ///   `open` · `rows` · `sel` · `sel_id` · `sel_hist` · `sel_label` · `scroll` · `max_scroll` · `nav_moved` · `query`,
+    ///   이어서 행마다 `row<순번>=<id>:<이력 인덱스>:<라벨 앞 40자>`. 입력 주입 없이 선택 상태를 판정하기 위한 것.
+    pub(crate) fn dump_text(&self) -> String {
+        let clean = |t: &str| -> String {
+            t.chars()
+                .take(40)
+                .map(|c| if c.is_whitespace() { '_' } else { c })
+                .collect()
+        };
+        let sel = self.rows.get(self.sel);
+        let mut out = format!(
+            "open={}\nrows={}\nsel={}\nsel_id={}\nsel_hist={}\nsel_label={}\nscroll={}\nmax_scroll={}\nnav_moved={}\nquery={}\n",
+            self.is_open(),
+            self.rows.len(),
+            self.sel,
+            sel.map_or(0, |r| r.id),
+            sel.map_or_else(|| "-".to_string(), |r| r.hist_index.to_string()),
+            sel.map_or_else(String::new, |r| clean(&r.label)),
+            self.scroll,
+            self.max_scroll(),
+            self.nav_moved,
+            self.search.display_text(),
+        );
+        for (i, r) in self.rows.iter().enumerate() {
+            out.push_str(&format!(
+                "row{i}={}:{}:{}\n",
+                r.id,
+                r.hist_index,
+                clean(&r.label)
+            ));
+        }
+        out
     }
 
     /// ★ 행 오프셋을 **지금 rows에 맞춘다**(11-16) — 예전에는 paint에서만 다시 만들어, `refresh` 뒤 다음 프레임
@@ -946,6 +1015,7 @@ impl Popup {
         self.surface = None;
         self.ctx = None;
         self.window = None;
+        self.hold_open = false;
         // ★ 뷰 캐시 비움(09-04 · 30 §2 V) — 다음 open이 다시 만든다.
         self.rows = Vec::new();
     }
@@ -1128,7 +1198,9 @@ impl Popup {
             // ★ 포커스 상실 = 닫기(Maccy 관례) — 단, **받아 본 적이 있을 때만**.
             //   생성 직후 `Focused(false)`가 먼저 오는 환경(잠금·일부 WM)에서
             //   열리자마자 닫히는 것을 막는다(08-28 실기).
-            WindowEvent::Focused(false) if self.was_focused => return PopupAction::Close,
+            WindowEvent::Focused(false) if self.was_focused && !self.hold_open => {
+                return PopupAction::Close
+            }
             WindowEvent::Focused(false) => {
                 self.residue.clear();
                 self.probe_until = None;
@@ -1508,20 +1580,8 @@ impl Popup {
                 }
                 match event.logical_key.as_ref() {
                     Key::Named(NamedKey::Escape) => return PopupAction::Close,
-                    Key::Named(NamedKey::ArrowUp) => {
-                        self.nav_moved = true;
-                        self.sel = self.sel.saturating_sub(1);
-                        self.ensure_visible();
-                        self.redraw();
-                    }
-                    Key::Named(NamedKey::ArrowDown) => {
-                        self.nav_moved = true;
-                        if self.sel + 1 < self.rows.len() {
-                            self.sel += 1;
-                        }
-                        self.ensure_visible();
-                        self.redraw();
-                    }
+                    Key::Named(NamedKey::ArrowUp) => self.nav_step(false),
+                    Key::Named(NamedKey::ArrowDown) => self.nav_step(true),
                     // ★ 키맵에 없는 Ctrl/Alt+Enter = D-38 수식 키 변형(Ctrl=개체 · Alt=경로 · 09-01 확정) —
                     //   단일 항목일 때만. 스택 중 미지정 조합은 무시(09-08).
                     Key::Named(NamedKey::Enter)
@@ -1668,6 +1728,7 @@ impl Popup {
         let footer_h = self.footer_h();
         let list_h = ((ih - footer_h) - px(38.0)).max(1);
         self.rebuild_offsets(iw);
+        self.painted = true; // 오프셋이 지금 rows와 맞았다 — 기동 명령 틱의 동기점(11-16).
         let Some(surface) = self.surface.as_mut() else {
             return;
         };
