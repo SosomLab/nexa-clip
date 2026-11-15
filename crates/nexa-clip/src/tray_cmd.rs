@@ -422,6 +422,15 @@ fn sync_autostart(conf: &mut Settings) {
     if crate::conf::profile().is_some() {
         return;
     }
+    // ★ 개발 산출물(target/debug|release)에서 뜬 exe는 자동 시작을 건드리지 않는다(11-16 · 2228df1의 호출처 짝) —
+    //   `apply`가 이미 건너뛰지만, 여기서 막지 않으면 "등록 동기화" 로그와 `app.autostart_reg=on` 마커가 거짓으로 남는다.
+    if let Some(exe) = nclip_plat::autostart::dev_build_exe() {
+        println!(
+            "자동 시작: 개발 산출물 경로라 등록 동기화 생략 — {}",
+            exe.display()
+        );
+        return;
+    }
     let want = conf.state.get("app.autostart") == "on";
     let was = conf.state.get("app.autostart_reg") == "on";
     let now = Instant::now();
