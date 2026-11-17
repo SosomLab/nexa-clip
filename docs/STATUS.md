@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-11-18 (win · LAPTOP-V3NOGHF6) — 상태 점검 · 콘솔 창 조사(nexa-clip 아님) · 코드 변경 0
+
+**상태**: main `ff9e34e` = origin · clean · nexa-ui `71b72b6` · nexa-license `f33ebef` · CI `43746510365` ✓ · 실행 중 = 설치본 **0.2.10**(PID 13404) · HKCU Run = 설치본 경로(보류 해소) · 다음 릴리스 대기분 5건(11-16) 그대로.
+**스토어(규칙 A)**: ★ choco 포터블 **0.2.10 승인(11-15)** · 설치본 `nexa-clip` 0.2.10 = 검수 중(Validation Passed · Scan "Flagged as a Note" · moderation 대기) · winget 0.1.6 PR OPEN.
+**조사**: "로그인 때 까만 콘솔 창" = **nexa-clip 원인 아님**(정적 판정 · [journal 11-18](journal/2026-11-18.md) ③) · 진범 미확인 · 다음 수단 3가지 = 사용자 선택.
+**☐ 다음**: 사용자 결정(T-30 착수 · T-78 설치본 검수 결과 · 실기 적체 P2-18~25 · 콘솔 창 조사 수단) · ⚠️ 같은 PC 다른 짝(개발 [49d828] · 협업 [53b488])과 `target/` 공유 여부 확인 후 빌드.
+
+---
+
 ## 2026-11-16 (win · LAPTOP-V3NOGHF6) — ★ v0.2.10 릴리스 ✓(태그 `c5472b5` · release `43742210988` 12/12) — 팝업 선택 결함 · 설정 검색 퍼지+공백 · 검색 입력 nexa-sql 기준 · ★ choco 설치본 0.2.10 첫 재제출
 
 **범위**: `79a38be`(팝업 선택) · `3bdde7b`·`c58dd42`·`7c023d7`·`5dfc355`(퍼지·공백) → 병합 `7935a10` → `fa0e990` v0.2.10 → `0b6615a` fmt → `aedc83f`(검색 입력 nexa-sql 기준 · IME · 편집 키 · 이력 초안 · Esc) 병합 **`c5472b5`** · beep 영향 없음 · nexa-ui `71b72b6`(pull · 한글 조합 확정) · nexa-license `f33ebef`.

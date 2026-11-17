@@ -2,6 +2,8 @@
 
 > 시간 역순. 항목당 1~2줄. **상세는 [journal](journal/)**, 여기는 요약 + 링크.
 
+## 2026-11-18 (win · LAPTOP-V3NOGHF6) — 세션 편성(개발 [b34786] × 협업 [e307c9] · 다른 짝 49d828·53b488 공존) · 상태 점검(세 저장소 origin 일치 · CI ✓ · 설치본 0.2.10 상주 · HKCU Run 설치본 복귀 = 보류 해소) · choco 포터블 0.2.10 **승인(11-15)** · 설치본 0.2.10 검수 중(Scan "Note") · "로그인 때 까만 콘솔 창" 조사 = **nexa-clip 원인 아님**(Run 설치본 직접 · PE GUI · imgdec CREATE_NO_WINDOW · NSIS Run 미등록) · 진범 미확인 · 코드 변경 0 · [journal](journal/2026-11-18.md)
+
 ## 2026-11-16 (6차 · win) — ★ 팝업 비접촉 자동 시험 `9ca919a`(셸 기동 명령 popup.*·clip.*·shell.* · `scripts/popup-cmd-e2e.sh` 6/0 · T-84 확장 · 개발) + autostart 호출처 정리 `d0440ea` → 협업 게이트(test 191/0/3 · check-3os ✓ · popup 6/0 · settings 9/0 · 생략 1줄·거짓 등록 0줄) → 병합 `ba14a35` push · Debug 69080 · 다음 릴리스 대기분 5(2274ace · 2d458d7 · 0674f79 · 2228df1 · ba14a35) · [journal](journal/2026-11-16.md) 13차
 
 ## 2026-11-16 (5차 · win) — 개선 후보 8건 판정 · `2228df1`(협업 · SEM) = 개발 산출물 exe는 autostart 등록 동기화 생략(`is_cargo_target_path` · 시험 1 · Debug가 설치본 HKCU Run 덮어쓴 사고 재발 방지) + watch_win diag 시각 접두 · test 125/0/3 · check-3os ✓ · Debug 75408 · 문서 = 18 §7 처방 2행 · TODO T-92(전 줄 시각 접두 설계) · 보류(실기 적체 P2-18~25) · [journal](journal/2026-11-16.md) 12차

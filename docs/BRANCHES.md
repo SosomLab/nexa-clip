@@ -4,6 +4,7 @@
 
 | 브랜치 | 생성 | 병합 | 커밋 수 | 요약 |
 |---|---|---|---:|---|
+| (main 직접) | 2026-11-18 | — | 1 | 11-18 1차 기록(journal 신설 · DEVLOG · STATUS · TODO T-78·보류·조사 행 · 18 §7 콘솔 창 처방 · BRANCHES) — 코드 변경 0(협업) |
 | `feat/popup-cmd-e2e-11-16` | 2026-11-16 | 2026-11-16 → main `--no-ff` 병합 `ba14a35`(협업 병합 · push ✓ · ci `43746103374`) | 2 | `9ca919a` 팝업 비접촉 자동 시험 — 셸 기동 명령 popup.*·clip.*·shell.* + `scripts/popup-cmd-e2e.sh` 6판정(T-84 확장 · 격리 프로필 · OS 입력·클립보드 0) · `d0440ea` autostart 호출처 정리(개발 산출물 exe = 로그 1줄 뒤 return) · 협업 게이트 test 191/0/3 · check-3os ✓ · popup 6/0 · settings 9/0 |
 | `fix/settings-search-small-11-16` | 2026-11-16 | 2026-11-16 → main `--no-ff` 병합 `0674f79`(협업 병합 · push ✓ · ci `43744492884`) | 1 | `57bb0af` 설정 검색 잔여 소수정 — 언어 변경·재적용 때 검색어 유지(`set_query` 복원 · `query()`) · 토큰 `\`→`/` · 협업 게이트 test 143/0/2 · check-3os ✓ · 비접촉 언어 변경 뒤 query 유지 ✓ |
 | (main 직접) | 2026-11-16 | — | 11 | `fa0e990` chore(release) v0.2.10 · `0b6615a` style fmt(popup_win) · `4cf5122` 11-16 1~8차 기록(협업) · `2274ace` settings-cmd-e2e cygpath(협업 · SEM) · `7fad361`·`7024447` 배포 결과 기록(협업) · `2d458d7` 진단 줄 시각 접두(협업 · SEM) · `1bd1902`·`00a260d` 기록(협업) · `2228df1` autostart 개발 산출물 생략 + watch_win diag 시각(협업 · SEM) · `40f3e77` 12차 기록 · `2ac65cd` popup-cmd-e2e 문서 선반영(협업) |
